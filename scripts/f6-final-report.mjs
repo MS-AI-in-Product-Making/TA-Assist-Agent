@@ -93,7 +93,14 @@ function assertExactWorksheetSet(worksheetNames, readyNames, label) {
 
 function assertReportScope(f2Report, f6Optimization) {
   const reportScope = f6Optimization.provenance.reportScope;
-  const expectedWorksheetNames = f2Report.worksheets.map(({ worksheetName }) => worksheetName);
+  const expectedWorksheetNames = f2Report.worksheets
+    .filter(({ status }) => status === "ready")
+    .map(({ worksheetName }) => worksheetName);
+  if (f2Report.worksheets.some(({ status }) => status !== "ready")) failInvalid("blocked worksheet");
+  if (reportScope.blockedWorksheetNames === undefined) {
+    if (!isDeepStrictEqual(reportScope.worksheetNames, expectedWorksheetNames)) failInvalid("report scope");
+    return;
+  }
   const expectedBlockedWorksheetNames = f2Report.worksheets
     .filter(({ status }) => status === "blocked")
     .map(({ worksheetName }) => worksheetName);
@@ -101,6 +108,129 @@ function assertReportScope(f2Report, f6Optimization) {
     || !isDeepStrictEqual(reportScope.blockedWorksheetNames, expectedBlockedWorksheetNames)) {
     failInvalid("report scope");
   }
+}
+
+const F6_V3_REPORT_CATALOG = {
+  en: {
+    title: "TA Engineering Analysis Report", workbook: "Workbook Summary", worksheet: "Worksheet",
+    image: "Tolerance Path Image", openImage: "Open tolerance path image", factors: "Complete Factor Table",
+    interpretation: "Image and Factor Table Context Interpretation", center: "Center Assessment",
+    contributors: "Contributor Priorities", specifications: "Specification Changes", factor: "Factor", part: "Part",
+    drawing: "Drawing Number", dimId: "DIM ID", nominal: "Nominal", upperTolerance: "+Tolerance",
+    lowerTolerance: "-Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "Status",
+    rank: "Rank", priority: "Priority", guidance: "Guidance", side: "Side", currentLimit: "Current Limit",
+    proposedLimit: "Proposed Limit", targetCpk: "Target Cpk", approval: "Approval",
+    approvalRequired: "Engineering approval required", noProposal: "No specification change is proposed.",
+    clarification: "Clarification required", high: "High", medium: "Medium", lower: "Lower",
+  },
+  zh: {
+    title: "TA 工程分析报告", workbook: "工作簿摘要", worksheet: "工作表", image: "公差路径图片",
+    openImage: "打开公差路径图片", factors: "完整 Factor 表", interpretation: "图片与 Factor 表上下文解读",
+    center: "中心评估", contributors: "贡献因子优先级", specifications: "规格变更建议", factor: "Factor",
+    part: "零件", drawing: "Drawing Number", dimId: "DIM ID", nominal: "名义值", upperTolerance: "+公差",
+    lowerTolerance: "-公差", distribution: "分布", sigmaLevel: "Sigma Level", status: "状态", rank: "排序",
+    priority: "优先级", guidance: "建议", side: "规格侧", currentLimit: "当前限值", proposedLimit: "建议限值",
+    targetCpk: "目标 Cpk", approval: "审批", approvalRequired: "需要工程审批", noProposal: "无需提出规格变更。",
+    clarification: "需要澄清", high: "高", medium: "中", lower: "较低",
+  },
+};
+
+function v3PriorityLabel(rank, count, catalog) {
+  if (rank === 1) return catalog.high;
+  if (rank <= Math.max(2, Math.ceil(count / 2))) return catalog.medium;
+  return catalog.lower;
+}
+
+function v3FactorRows(interpretation) {
+  if (interpretation === undefined) failInvalid("multimodal worksheet interpretation");
+  const interpretations = new Map(interpretation.rowMappings.map((mapping) => [
+    JSON.stringify([mapping.tableId, mapping.sourceRow, mapping.factorOrdinal]), mapping.interpretation,
+  ]));
+  return interpretation.request.factorRows.map((factor) => ({
+    ...factor,
+    rowInterpretation: interpretations.get(JSON.stringify([factor.tableId, factor.sourceRow, factor.factorOrdinal])),
+  }));
+}
+
+function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
+  const prefix = `3-${ordinal}`;
+  const [center, contributors, specifications] = worksheet.f6Worksheet.steps;
+  const relativePath = interpretation?.request?.image?.artifactPath;
+  const imageLink = typeof relativePath === "string" && !relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)
+    ? `[${catalog.openImage}](<${encodeURI(relativePath.replace(/\\/g, "/"))}>)`
+    : NA;
+  const factors = v3FactorRows(interpretation);
+  const lines = [
+    `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`, "",
+    `## ${prefix}.1 ${catalog.image}`, "", imageLink, "",
+    `## ${prefix}.2 ${catalog.factors}`, "",
+    `| ${catalog.factor} | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | ${catalog.distribution} | ${catalog.sigmaLevel} |`,
+    "|---|---|---|---|---:|---:|---:|---|---:|",
+  ];
+  for (const factor of factors) {
+    lines.push(row([clean(factor.factorName), clean(factor.partName), clean(factor.drawingNumber), clean(factor.dimId),
+      numberText(factor.nominal), numberText(factor.upperTolerance), numberText(factor.lowerTolerance),
+      clean(factor.distribution), numberText(factor.sigmaLevel)]));
+  }
+  lines.push("", `## ${prefix}.3 ${catalog.interpretation}`, "", clean(interpretation.imageTableInterpretation));
+  for (const factor of factors) lines.push(`- ${clean(factor.factorName)}: ${clean(factor.rowInterpretation)}`);
+  lines.push("", `## ${prefix}.4 ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
+  if (center.status === "offset") lines.push(`- Offset: ${numberText(center.offset)}. ${clean(center.interpretation)}`);
+  if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
+  lines.push("", `## ${prefix}.5 ${catalog.contributors}`, "",
+    `| ${catalog.rank} | ${catalog.factor} | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---|---|");
+  for (const item of contributors.priorities) {
+    lines.push(row([item.rank, clean(item.factor.factorName), v3PriorityLabel(item.rank, contributors.priorities.length, catalog), clean(item.guidance)]));
+  }
+  lines.push("", `## ${prefix}.6 ${catalog.specifications}`, "");
+  if (specifications.proposals.length === 0) lines.push(catalog.noProposal);
+  else {
+    lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
+    for (const proposal of specifications.proposals) {
+      lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
+    }
+  }
+  for (const item of specifications.clarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
+  return lines;
+}
+
+function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, generatedAt }) {
+  if (f6Optimization.runStatus !== "COMPLETED" || f6Optimization.worksheets.some(({ runStatus }) => runStatus !== "COMPLETED")) {
+    failInvalid("incomplete F6 optimization");
+  }
+  const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
+  const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
+  const catalog = F6_V3_REPORT_CATALOG[f6Optimization.interactionLanguage.uiCatalogLanguage];
+  const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
+  const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
+  const reportSummary = { workbookDisposition, worksheetDispositions };
+  const markdown = [`# ${catalog.title}`, "", `## 1. ${catalog.workbook}`, "", `- Workbook: ${clean(f2Report.workbook.fileName)}`, `- Worksheets: ${worksheets.length}`, `- Generated At: ${reportTimestamp(generatedAt)}`];
+  worksheets.forEach((worksheet, index) => markdown.push("", ...renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog)));
+  const projection = {
+    schemaVersion: "ta-engineering-report-projection-v1", title: catalog.title, workbookDisposition, worksheetDispositions,
+    workbook: { fileName: f2Report.workbook.fileName, ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }), contentHash: f2Report.workbook.contentHash },
+    worksheets: worksheets.map((worksheet) => {
+      const interpretation = interpretations.get(worksheet.worksheetName);
+      const calculation = worksheet.f4Calculation;
+      return {
+        worksheetName: worksheet.worksheetName,
+        toleranceLoopDescription: clean(worksheet.f2Worksheet.toleranceLoopDescription, NA),
+        disposition: worksheet.disposition,
+        requiredAction: requiredAction(worksheet),
+        findings: [clean(interpretation?.imageTableInterpretation)], assumptions: [],
+        clarifications: worksheet.f6Worksheet.steps.flatMap((step) => step.step === "centerAssessment" && step.status === "clarification_required"
+          ? [step.reasonCode] : step.step === "specificationChanges" ? step.clarifications.map(({ reasonCode }) => reasonCode) : []),
+        gatingEvidenceReferences: [`F4:${worksheet.worksheetName}`, `F5-multimodal:${worksheet.worksheetName}`],
+        metrics: { mean: calculation.system.mean, rssSigma: calculation.system.rssSigma,
+          worstCaseLower: calculation.system.worstCaseLower, worstCaseUpper: calculation.system.worstCaseUpper,
+          ...(calculation.capability.cp === undefined ? {} : { cp: calculation.capability.cp }),
+          ...(calculation.capability.cpk === undefined ? {} : { cpk: calculation.capability.cpk }),
+          ...(calculation.capability.yield === undefined ? {} : { yield: calculation.capability.yield }),
+          ...(calculation.capability.totalDpm === undefined ? {} : { dpm: calculation.capability.totalDpm }) },
+      };
+    }),
+  };
+  return { markdown: `${markdown.join("\n")}\n`, reportSummary, projection };
 }
 
 function indexCalculationsByWorksheetName(calculations) {
@@ -220,11 +350,13 @@ function assertBaselineIdentity(calculation, f6Worksheet) {
     yield: calculation.capability.yield,
     dpm: calculation.capability.totalDpm,
   };
-  for (const [field, expected] of Object.entries(expectedMetrics)) {
-    if (expected !== undefined
-      && f6Worksheet.baselineMetrics[field] !== undefined
-      && !nearlyEqual(expected, f6Worksheet.baselineMetrics[field])) {
-      failInvalid("baseline metrics");
+  if (f6Worksheet.baselineMetrics !== undefined) {
+    for (const [field, expected] of Object.entries(expectedMetrics)) {
+      if (expected !== undefined
+        && f6Worksheet.baselineMetrics[field] !== undefined
+        && !nearlyEqual(expected, f6Worksheet.baselineMetrics[field])) {
+        failInvalid("baseline metrics");
+      }
     }
   }
 }
@@ -880,12 +1012,15 @@ function renderSummaryJudgment(lines, worksheet, prefix) {
 }
 
 function modelInterpretationByWorksheet(context) {
+  if (context.modelInterpretation?.contractVersion === "f5-multimodal-artifact-v3") {
+    return new Map(context.modelInterpretation.worksheets.map(({ request, result }) => [
+      result.worksheetName,
+      { ...result, request },
+    ]));
+  }
   if (context.f6Optimization.provenance.modelInterpretationDecision?.outcome !== "CALLER_AUTHORIZED"
     || context.modelInterpretation === undefined) {
     return new Map();
-  }
-  if (context.modelInterpretation.contractVersion === "f5-multimodal-artifact-v3") {
-    return new Map(context.modelInterpretation.worksheets.map(({ result }) => [result.worksheetName, result]));
   }
   return new Map(context.modelInterpretation.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
 }
@@ -1193,6 +1328,15 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation"));
   if (requiredMultimodalV3 !== undefined) {
     assertMultimodalV3Authority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report });
+    return createF6V3Report({
+      f2Report,
+      f3Report,
+      f4Report,
+      f5Report,
+      f6Optimization,
+      modelInterpretation: requiredMultimodalV3,
+      generatedAt: options.generatedAt ?? input.generatedAt,
+    });
   }
   void analysisContext;
 

@@ -26,6 +26,7 @@ export function parseF6CliArgs(args = []) {
   }
 
   const selectedWorksheetNames = [];
+  let languageTag;
   const optionalPaths = Object.fromEntries(Object.values(OPTIONAL_PATHS).map((field) => [field, undefined]));
   for (let index = 4; index < args.length; index += 1) {
     const option = args[index];
@@ -37,6 +38,9 @@ export function parseF6CliArgs(args = []) {
         throw new Error(`Feature 6 worksheet is duplicated: ${worksheetName}`);
       }
       selectedWorksheetNames.push(worksheetName);
+    } else if (option === "--language") {
+      if (languageTag !== undefined) throw new Error("Feature 6 --language option is duplicated.");
+      languageTag = value.trim();
     } else if (OPTIONAL_PATHS[option] !== undefined) {
       const field = OPTIONAL_PATHS[option];
       if (optionalPaths[field] !== undefined) throw new Error(`Feature 6 ${option} option is duplicated.`);
@@ -50,6 +54,9 @@ export function parseF6CliArgs(args = []) {
   if (selectedWorksheetNames.length === 0) {
     throw new Error("Feature 6 requires at least one --worksheet selection.");
   }
+  if (languageTag === undefined) {
+    throw new Error("Feature 6 requires one locked --language value.");
+  }
 
   return {
     f2ArtifactRoot,
@@ -57,6 +64,13 @@ export function parseF6CliArgs(args = []) {
     f4ArtifactRoot,
     f5ArtifactRoot,
     selectedWorksheetNames,
+    interactionLanguage: {
+      languageTag,
+      uiCatalogLanguage: languageTag.toLowerCase().startsWith("zh") ? "zh" : "en",
+      lockedAtTurnId: "f6-cli",
+      source: "workflow_start",
+      fallbackUsed: false,
+    },
     ...optionalPaths,
   };
 }

@@ -14,7 +14,7 @@ import type {
   F5DataInterpretationResult,
   F5ImageObservationArtifact,
   F6InputDecision,
-  F6OptimizationResultV2,
+  F6OptimizationResultV3,
   TypedError,
   WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
@@ -177,6 +177,7 @@ export interface F6OptimizationRequest {
   readonly f4ArtifactRoot: string;
   readonly f5ArtifactRoot: string;
   readonly selectedWorksheetNames: readonly string[];
+  readonly interactionLanguage: F6OptimizationResultV3["interactionLanguage"];
   readonly supplierCapabilityPath?: string;
   readonly datumStrategyPath?: string;
   readonly costPath?: string;
@@ -187,12 +188,11 @@ export interface F6OptimizationRequest {
   readonly expectedOptimizationTargetsContentHash?: string;
   readonly modelInterpretationPath: string;
   readonly expectedModelInterpretationContentHash: string;
-  readonly requireMultimodalV3?: boolean;
 }
 
 export interface F6OptimizationResult {
   readonly featureId: "F6";
-  readonly status: "completed" | "partially_completed" | "calculation_failed" | "failed";
+  readonly status: "completed" | "clarification_required" | "failed";
   readonly reasonCode?: string;
   readonly outputDirectory: string;
   readonly optimizationJsonPath?: string;
@@ -200,14 +200,14 @@ export interface F6OptimizationResult {
   readonly finalReportMdPath?: string;
   readonly runSummaryPath?: string;
   readonly manifestPath?: string;
-  readonly optimization?: F6OptimizationResultV2;
+  readonly optimization?: F6OptimizationResultV3;
   readonly finalReportProjection?: unknown;
   readonly inputDecisions?: {
     readonly analysisContext: F6InputDecision;
     readonly optimizationTargets: F6InputDecision;
     readonly modelInterpretation: F6InputDecision;
   };
-  readonly summary?: F6OptimizationResultV2["summary"];
+  readonly summary?: F6OptimizationResultV3["summary"];
 }
 
 export interface ExistingF6ValidationRequest {
