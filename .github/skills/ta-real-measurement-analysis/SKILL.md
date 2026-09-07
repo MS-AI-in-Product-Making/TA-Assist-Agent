@@ -1,6 +1,6 @@
 ---
 name: ta-real-measurement-analysis
-description: "Use when a user wants to analyze 真实量测 or actual measurement data for one or more TA, dimension, tolerance, or assembly Factors; enter measured values in an interactive Web UI; replace assumed distributions with measured samples; evaluate capability or distribution fit; or run Monte Carlo using measured Factor distributions. Also use for explicit F7 requests. Do not use for general Cpk explanations, generic measurement analysis, or Monte Carlo programming."
+description: "Use when a user wants to analyze 真实量测 or actual measurement data for one or more TA, dimension, tolerance, or assembly Factors; enter measured values in an interactive Web UI; replace assumed distributions with measured samples; evaluate capability or distribution fit; or run Monte Carlo using measured Factor distributions. Also use for explicit F7 requests. Do not use for general Cpk explanations, generic measurement analysis, Monte Carlo programming, or reviewed-feedback import into an existing analysis."
 user-invocable: true
 argument-hint: "[<ta-workbook-path>]"
 ---
@@ -9,7 +9,7 @@ argument-hint: "[<ta-workbook-path>]"
 
 ## Purpose
 
-Start the existing local F7 analysis stack and prefer its Web UI for entering real measurement values for multiple Factors. Users do not need to know the internal F7 codename. Keep analysis inside the existing F7 application; this skill only controls startup, readiness, browser navigation, and user guidance.
+Start the existing local F7 analysis stack and prefer its Web UI for entering real measurement values for multiple Factors. Users do not need to know the internal F7 codename. Keep analysis inside the existing F7 application; this skill only controls startup, readiness, browser navigation, and user guidance. This skill is for measured-data entry and measured-distribution analysis only; it does not apply reviewed feedback back onto an existing governed analysis.
 
 ## Entry Routing
 

@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAnalyzeIntent } from "./analyze-intent.js";
+import { classifyAnalyzeIntent, parseAnalyzeIntent } from "./analyze-intent.js";
 
 describe("parseAnalyzeIntent", () => {
   it.each([
     {
-      name: "recognizes a Chinese TA request without a path",
+      name: "does not treat a generic Chinese TA request as compatibility parsing",
       input: "帮我分析这份 TA 报告",
-      expected: { kind: "analyze_ta" },
+      expected: undefined,
     },
     {
-      name: "recognizes an English TA request without a path",
+      name: "does not treat a generic English TA request as compatibility parsing",
       input: "Please analyze this TA workbook.",
-      expected: { kind: "analyze_ta" },
+      expected: undefined,
     },
     {
       name: "extracts a quoted Windows absolute xlsx path",
@@ -84,5 +84,10 @@ describe("parseAnalyzeIntent", () => {
     "当前分析为什么被阻塞 report.xlsx",
   ])("keeps explicit current-session operations out of new analyze routing: %s", (input) => {
     expect(parseAnalyzeIntent(input)).toBeUndefined();
+  });
+
+  it("keeps generic TA requests out of the compatibility parser", () => {
+    expect(classifyAnalyzeIntent("帮我分析这份 TA 报告")).toBeUndefined();
+    expect(parseAnalyzeIntent("Please analyze this TA workbook.")).toBeUndefined();
   });
 });

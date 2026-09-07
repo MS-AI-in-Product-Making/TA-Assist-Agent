@@ -21,3 +21,5 @@ export {
 	inputMetadata,
 } from "./input-metadata.js";
 export { assertNoProhibitedProductIdentifiers, createProductRunReference, productSafeNameV1 } from "./product-identifiers.js";
+export { classifyTopLevelWorkflowIntent, PRODUCT_WORKFLOWS, productWorkflowLabel } from "./workflow-intent.js";
+export type { ProductWorkflowId, TopLevelWorkflowIntent } from "./workflow-intent.js";

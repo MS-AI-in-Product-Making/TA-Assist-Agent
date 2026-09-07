@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@ai-assist/product-language", async () => await import("../../../packages/product-language/src/index.ts"));
+
 import { handleParticipant } from "./participant.js";
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
@@ -48,6 +50,45 @@ describe("handleParticipant", () => {
     expect(handleAnalyzeIntent).toHaveBeenCalledWith({ kind: "analyze_ta", workbookPath: "C:\\TA Reports\\report.xlsx" });
     expect(handleTurn).not.toHaveBeenCalled();
     expect(stream.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+  });
+
+  it("routes explicit real-measurement requests away from workbook analysis", async () => {
+    const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
+    const handleAnalyzeIntent = vi.fn(async () => "should not run");
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+
+    await handleParticipant({ prompt: "Analyze actual measurements for these factors", command: undefined, model: {} }, {
+      history: [],
+    }, stream, { isCancellationRequested: false }, {
+      sessionId: SESSION_ID,
+      handleTurn,
+      handleAnalyzeIntent,
+      commandId: () => "participant-measured-analysis",
+    });
+
+    expect(handleAnalyzeIntent).not.toHaveBeenCalled();
+    expect(handleTurn).not.toHaveBeenCalled();
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("TA Real-Measurement Analysis"));
+    expect(stream.markdown).toHaveBeenCalledWith(expect.not.stringContaining("F7"));
+  });
+
+  it("returns clarification with full product names for ambiguous top-level requests", async () => {
+    const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+
+    await handleParticipant({ prompt: "Help me with this", command: undefined, model: {} }, {
+      history: [],
+    }, stream, { isCancellationRequested: false }, {
+      sessionId: SESSION_ID,
+      handleTurn,
+      commandId: () => "participant-clarification-required",
+    });
+
+    expect(handleTurn).not.toHaveBeenCalled();
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("Knowledge Library"));
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("Data Parsing"));
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("TA Real-Measurement Analysis"));
+    expect(stream.markdown).toHaveBeenCalledWith(expect.not.stringContaining("F7"));
   });
 
   it("prioritizes current-session continuation over natural-language analyze", async () => {

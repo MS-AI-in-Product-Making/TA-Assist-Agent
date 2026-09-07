@@ -54,4 +54,13 @@ describe("product Agent Skills", () => {
 
     expect(packageJson.scripts[productAlias]).toBe(packageJson.scripts[internalAlias]);
   });
+
+  it("keeps measured-data routing and reviewed feedback routing mutually exclusive", () => {
+    const measuredSkill = readFileSync(join(root, ".github", "skills", "ta-real-measurement-analysis", "SKILL.md"), "utf8");
+    const feedbackSkill = readFileSync(join(root, ".github", "skills", "feedback-application", "SKILL.md"), "utf8");
+
+    expect(measuredSkill).toMatch(/Do not use for general Cpk explanations.*Monte Carlo programming/i);
+    expect(feedbackSkill).toMatch(/reviewed feedback/i);
+    expect(feedbackSkill).toMatch(/Do not use for real measurement value entry, measured sample modeling, or starting the real-measurement analysis workflow/i);
+  });
 });

@@ -1,4 +1,10 @@
 import type { AgentTurnRequest, AgentTurnResult } from "@ai-assist/agent-runtime";
+import {
+  classifyTopLevelWorkflowIntent,
+  detectUserLanguage,
+  productWorkflowLabel,
+  type ProductWorkflowId,
+} from "@ai-assist/product-language";
 
 import { classifyAnalyzeIntent, type TaAnalyzeIntent } from "./analyze-intent.js";
 
@@ -67,9 +73,23 @@ async function handleAnalyzeIntent(
   cancellation: ParticipantCancellation,
   dependencies: ParticipantDependencies,
 ): Promise<boolean> {
+  const workflowIntent = classifyParticipantWorkflowIntent(request);
+  if (workflowIntent === undefined) return false;
+
+  if (workflowIntent.kind === "measured_analysis") {
+    stream.markdown(buildMeasuredAnalysisMessage(request.prompt));
+    return true;
+  }
+
+  if (workflowIntent.kind === "clarification_required") {
+    stream.markdown(buildClarificationMessage(request.prompt, workflowIntent.candidates));
+    return true;
+  }
+
+  if (workflowIntent.kind !== "workbook_analysis") return false;
+
   const classification = classifyParticipantAnalyzeIntent(request);
-  if (classification === undefined) return false;
-  if (classification.kind === "invalid_analyze_ta") {
+  if (classification?.kind === "invalid_analyze_ta") {
     stream.markdown(classification.reason === "multiple_paths"
       ? "Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench."
       : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, one exact .xlsx workbook file name, or no path.");
@@ -77,16 +97,37 @@ async function handleAnalyzeIntent(
   }
   if (dependencies.handleAnalyzeIntent === undefined) return false;
   stream.progress("正在准备 TA Assist Workbench...");
-  const response = await dependencies.handleAnalyzeIntent(classification);
+  const response = await dependencies.handleAnalyzeIntent(classification ?? { kind: "analyze_ta" });
   if (cancellation.isCancellationRequested) return true;
   stream.markdown(response);
   return true;
 }
 
+function classifyParticipantWorkflowIntent(request: ParticipantRequest) {
+  if (request.command === "analyze") return { kind: "workbook_analysis" } as const;
+  if (request.command !== undefined) return undefined;
+  return classifyTopLevelWorkflowIntent(request.prompt);
+}
+
 function classifyParticipantAnalyzeIntent(request: ParticipantRequest): ReturnType<typeof classifyAnalyzeIntent> {
   if (request.command === "analyze") {
     const prompt = request.prompt.trim();
-    return classifyAnalyzeIntent(prompt.length === 0 ? "analyze TA workbook" : `analyze TA workbook ${prompt}`);
+    return prompt.length === 0 ? undefined : classifyAnalyzeIntent(`analyze ${prompt}`);
   }
   return request.command === undefined ? classifyAnalyzeIntent(request.prompt) : undefined;
+}
+
+function buildMeasuredAnalysisMessage(prompt: string): string {
+  const language = detectUserLanguage(prompt);
+  return language === "zh"
+    ? "TA Real-Measurement Analysis 已识别为本次请求的正确入口。当前 participant 仅返回已存在能力入口的结构化路由结果，不会在这里直接启动真实量测栈；请使用现有 TA Real-Measurement Analysis 入口继续。"
+    : "TA Real-Measurement Analysis is the correct entry for this request. The participant currently returns a structured handoff to the existing capability boundary and does not launch the real-measurement stack here; continue through the existing TA Real-Measurement Analysis entry.";
+}
+
+function buildClarificationMessage(prompt: string, candidates: readonly ProductWorkflowId[]): string {
+  const language = detectUserLanguage(prompt);
+  const names = candidates.map((candidate) => productWorkflowLabel(candidate, language));
+  return language === "zh"
+    ? `当前请求还不足以确定顶层产品 workflow。请明确你要进入以下哪一个：${names.join("、")}。`
+    : `This request is not specific enough to choose a product workflow. Please clarify which one you want: ${names.join(", ")}.`;
 }
