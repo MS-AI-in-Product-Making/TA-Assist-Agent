@@ -46,7 +46,7 @@ import {
   f6OptimizationResultV2Schema,
   f6OptimizationResultV3Schema,
   f6ReadableOptimizationResultSchema,
-  f6OptimizationResultSchema,
+  f6OptimizationResultSchema as f6NewOptimizationResultSchema,
   f6OptimizationTargetsProposalSchema,
   f6OptimizationTargetsSchema,
   f6OptimizationTargetsV1Schema,
@@ -5139,6 +5139,7 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     describe("F6 optimization result v2", () => {
+      const f6OptimizationResultSchema = f6OptimizationResultV2Schema;
       const artifactReference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
       const baselineIdentity = {
         calculationVersion: "excel-ta-v1" as const,
@@ -5261,6 +5262,8 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultV2Schema.parse(resultV2)).toEqual(resultV2);
         expect(f6ReadableOptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
         expect(f6OptimizationResultV3Schema.parse(resultV3)).toEqual(resultV3);
+        expect(f6NewOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6NewOptimizationResultSchema.safeParse(resultV2).success).toBe(false);
         expect(f6ReadableOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
         expect(f6OptimizationResultV3Schema.safeParse(resultV2).success).toBe(false);
         for (const legacy of [
@@ -5268,6 +5271,7 @@ describe("F5.1 objective interpretation contracts", () => {
           { optionSource: "BUILT_IN_POLICY" },
           { policyContext: { reductionRatio: 0.25 } },
           { ratio: 0.25 },
+          { ratios: [0.25, 0.1, 0.1] },
           { optionName: "OP2" },
         ]) {
           expect(f6OptimizationResultV3Schema.safeParse({ ...resultV3, ...legacy }).success).toBe(false);

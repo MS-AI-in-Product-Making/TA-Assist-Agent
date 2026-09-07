@@ -8771,7 +8771,7 @@ function containsForbiddenF6V3Token(value: unknown): boolean {
   if (typeof value === "string") return /\bOP[123]\b|BUILT_IN_POLICY|f6-top3-tolerance-policy-v1/u.test(value);
   if (Array.isArray(value)) return value.some(containsForbiddenF6V3Token);
   if (typeof value !== "object" || value === null) return false;
-  return Object.entries(value).some(([key, child]) => /^(?:optionCode|optionSource|policyContext|ratio|reductionRatio|scale)$/iu.test(key)
+  return Object.entries(value).some(([key, child]) => /^(?:optionCodes?|optionSources?|policyContexts?|ratios?|reductionRatios?|reductions|scales?)$/iu.test(key)
     || containsForbiddenF6V3Token(child));
 }
 
@@ -8780,7 +8780,7 @@ export const f6ReadableOptimizationResultSchema = z.union([
   f6OptimizationResultV3Schema,
 ]);
 
-export const f6OptimizationResultSchema = f6OptimizationResultV2Schema;
+export const f6OptimizationResultSchema = f6OptimizationResultV3Schema;
 
 export type F6OptionKind = z.infer<typeof f6OptionKindSchema>;
 export type F6FactorIdentity = z.infer<typeof f6FactorIdentitySchema>;
@@ -8830,7 +8830,7 @@ export type F6LegacyOptimizationResult = z.infer<typeof f6LegacyOptimizationResu
 export type F6OptimizationResultV2 = z.infer<typeof f6OptimizationResultV2Schema>;
 export type F6OptimizationResultV3 = z.infer<typeof f6OptimizationResultV3Schema>;
 export type F6ReadableOptimizationResult = z.infer<typeof f6ReadableOptimizationResultSchema>;
-export type F6OptimizationResult = F6LegacyOptimizationResult;
+export type F6OptimizationResult = F6OptimizationResultV3;
 
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;
 export type CalculationRecommendation = z.infer<typeof calculationRecommendationSchema>;
