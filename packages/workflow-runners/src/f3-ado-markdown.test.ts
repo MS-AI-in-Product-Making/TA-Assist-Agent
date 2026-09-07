@@ -139,6 +139,8 @@ describe("renderF3AdoMarkdown", () => {
     expect(rendered.markdown).toContain("### Part / Subsystem: (missing Part / Subsystem) (1 factors)");
     expect(rendered.markdown).not.toContain("Worksheet:");
     expect(rendered.markdown).toContain(F3_ADO_MARKDOWN_TABLE_HEADER);
+    expect(F3_ADO_MARKDOWN_TABLE_HEADER).toMatch(/^\| Worksheet Source \|/);
+    expect(markdownColumnCount(F3_ADO_MARKDOWN_TABLE_HEADER)).toBe(12);
 
     expect(rendered.groups.map((group) => group.partSubsystem)).toEqual([
       "Bracket",
@@ -147,6 +149,10 @@ describe("renderF3AdoMarkdown", () => {
     ]);
     expect(rendered.groups.map((group) => group.factorCount)).toEqual([3, 1, 1]);
     expect(rendered.groups[0]?.rows.map((row) => row.factorDescription)).toEqual(["Factor-A1", "Factor-A3", "Factor-B1"]);
+    expect(rendered.groups[0]?.rows.map((row) => row.source.worksheetName)).toEqual(["Analysis-A", "Analysis-A", "Analysis-B"]);
+    expect(rendered.markdown).toMatch(/\| Analysis-B \| TP_Gap_X \|[^\n]+\| Factor-B1 \|/);
+    expect(markdownColumnCount(rendered.markdown.split("\n").find((line) => line.includes("Factor-B1"))!)).toBe(12);
+    expect(rendered.contentHash).toBe("ce90cc8288039cf3b716b848a3a7c1b976897c42cf68c4612bc1feb4d7371618");
     expect(rendered.groups[2]).toMatchObject({ missingDrawingNumberCount: 0, missingDimIdCount: 0 });
 
     const bracketIndex = rendered.markdown.indexOf("Factor-A1");
@@ -163,6 +169,7 @@ describe("renderF3AdoMarkdown", () => {
         toleranceLoopDescription: "Anonymous device gap A",
         rows: [
           worksheetRow("Analysis-A", "1".repeat(64), 11, "(missing)", "Factor|One\\Two\nThree", {
+            source: { ...baseRow().source, worksheetName: "Analysis|A\nSource", sourceRow: 11 },
             drawingDimensionKey: undefined,
             dimensionDescription: "Desc|Value\\Segment\nNext",
             drawingNumber: null,
@@ -176,6 +183,7 @@ describe("renderF3AdoMarkdown", () => {
 
     expect(rendered.markdown).toContain("Desc\\|Value\\\\Segment<br>Next");
     expect(rendered.markdown).toContain("Factor\\|One\\\\Two<br>Three");
+    expect(rendered.markdown).toContain("Analysis\\|A<br>Source");
     expect(rendered.markdown).toContain("| (missing) | (missing) |");
     expect(rendered.markdown).not.toContain("- Fill in");
     expect(rendered.markdown).not.toContain("<ul>");
@@ -269,3 +277,7 @@ describe("renderF3AdoReminder", () => {
     expect(renderF3AdoReminder(report)).toBe(renderF3AdoMarkdown(report).markdown);
   });
 });
+
+function markdownColumnCount(line: string): number {
+  return (line.match(/(?<!\\)\|/g)?.length ?? 0) - 1;
+}
