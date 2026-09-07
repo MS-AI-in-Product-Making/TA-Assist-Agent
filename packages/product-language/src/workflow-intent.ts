@@ -22,8 +22,8 @@ const WORKBOOK_CONTEXT = /(工作簿|\bworkbook\b|\bexcel\b|\.xlsx\b|[A-Za-z]:\\
 const SESSION_RESUME = /(继续|resume|continue|恢复|回到).*(session|会话|分析)|\bresume\b/i;
 const SESSION_STATUS = /(当前.*(状态|进度)|status|progress|blocker|阻塞|卡住)/i;
 const LANGUAGE_CHANGE = /(切换.*(中文|英文|英语|English|Chinese)|change\s+language|switch\s+to\s+(english|chinese))/i;
-const KNOWLEDGE_QUESTION = /(解释|说明|什么是|what\s+is|explain|how\s+does|how\s+to).*(cpk|能力指数|蒙特卡洛|monte\s+carlo|ta|公差)/i;
-const EXPLICIT_MEASURED = /(真实量测|实际量测|actual measurements?|real measurements?|measured (?:values|samples|data)|量测数据)/i;
+const KNOWLEDGE_QUESTION = /(解释|说明|什么是|what\s+is|explain|how\s+does|how\s+to).*(cpk|能力指数|蒙特卡洛|monte\s+carlo|ta|公差|tolerance(?:\s+(?:analysis|stack(?:-?up)?))?|capability|distribution)/i;
+const EXPLICIT_MEASURED = /(真实量测|实际量测|实测(?:数据|尺寸|结果|值|样本)?|actual measurements?|real measurements?|measured (?:values|samples|data|dimensions?)|measurement results?(?: from inspection)?|inspection measurements?|量测数据)/i;
 const MONTE_CARLO_PROGRAMMING = /(write|build|create|implement|program).*(monte\s+carlo)|(python|javascript|typescript|excel).*(monte\s+carlo)/i;
 const AMBIGUOUS_HELP = /^(?:help(?:\s+me)?(?:\s+with\s+this)?|帮帮我|帮我|需要帮助|hello|hi|你好)[.!?\s]*$/i;
 

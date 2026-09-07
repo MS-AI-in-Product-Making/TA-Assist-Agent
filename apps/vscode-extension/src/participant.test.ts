@@ -79,7 +79,7 @@ describe("handleParticipant", () => {
     const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
     const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
 
-    await handleParticipant({ prompt: "Explain what Cpk means", command: undefined, model: {} }, {
+    await handleParticipant({ prompt: "What is tolerance analysis?", command: undefined, model: {} }, {
       history: [],
     }, stream, { isCancellationRequested: false }, {
       handleTurn,

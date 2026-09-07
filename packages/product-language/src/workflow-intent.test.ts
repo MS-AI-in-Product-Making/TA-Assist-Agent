@@ -9,6 +9,11 @@ describe("classifyTopLevelWorkflowIntent", () => {
     ["Analyze TA.xlsx", { kind: "workbook_analysis" }],
     ["Explain what Cpk means", { kind: "knowledge_question" }],
     ["请解释一下 Cpk 是什么意思", { kind: "knowledge_question" }],
+    ["What is tolerance analysis?", { kind: "knowledge_question" }],
+    ["请解释公差堆叠", { kind: "knowledge_question" }],
+    ["Analyze the measured dimensions", { kind: "measured_analysis" }],
+    ["分析这些实测尺寸", { kind: "measured_analysis" }],
+    ["Analyze measurement results from inspection", { kind: "measured_analysis" }],
     ["Resume the current session", { kind: "session_operation", operation: "resume" }],
     ["切换到中文", { kind: "session_operation", operation: "change_language" }],
     ["Help me with this", {
