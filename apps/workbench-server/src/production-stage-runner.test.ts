@@ -29,6 +29,13 @@ const baseSnapshot = {
     confirmed: true,
     provenance: "user",
   },
+  interactionLanguage: {
+    languageTag: "en-US",
+    uiCatalogLanguage: "en",
+    lockedAtTurnId: "turn-1",
+    source: "workflow_start",
+    fallbackUsed: false,
+  },
 } as const satisfies Partial<F8SessionSnapshot>;
 
 function createEnvironment(stage: "f3_running" | "f5_running" | "f6_running"): ProductionStageEnvironment {
@@ -274,6 +281,7 @@ describe("runProductionStage output gating", () => {
       );
 
       expect(capturedRequest).toMatchObject({
+        interactionLanguage: baseSnapshot.interactionLanguage,
         analysisContextPath: "uploads/session/analysis-context-v2.json",
         expectedAnalysisContextContentHash: "a".repeat(64),
         optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",

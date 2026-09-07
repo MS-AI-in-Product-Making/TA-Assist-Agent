@@ -2,7 +2,7 @@ import type {
   F2UserReport,
   F4WorkflowCalculationResult,
   F5DataInterpretationResult,
-  F6OptimizationResultV2,
+  F6ReadableOptimizationResult,
 } from "@ai-assist/contracts";
 
 import type { WhatIfMetrics } from "./components/MetricComparison.js";
@@ -93,7 +93,7 @@ export interface EngineeringWorkspaceInput {
   readonly f2Report?: F2UserReport;
   readonly f4Report?: F4WorkflowCalculationResult;
   readonly f5Report?: F5DataInterpretationResult;
-  readonly f6Report?: F6OptimizationResultV2;
+  readonly f6Report?: F6ReadableOptimizationResult;
   readonly selectedWorksheetName?: string;
 }
 

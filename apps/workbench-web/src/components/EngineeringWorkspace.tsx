@@ -11,7 +11,7 @@ import type { WorkspaceIssue } from "../business-status.js";
 import { WorkspaceIssuePanel } from "./WorkspaceIssuePanel.js";
 import { WorkspacePreparation } from "./WorkspacePreparation.js";
 import { WorkspaceToolbar } from "./WorkspaceToolbar.js";
-import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6OptimizationResultV2, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
+import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6ReadableOptimizationResult, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
 import type { F8SessionSnapshot } from "@ai-assist/workbench";
 import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 import { F6Summary } from "./F6Summary.js";
@@ -46,7 +46,7 @@ export interface EngineeringWorkspaceProps {
   readonly onSelectWorksheet: (worksheetName: string) => void;
   readonly onSubmitConversation: (message: string, selection: TaConversationSelection) => Promise<void>;
   readonly onSubmitCommand?: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
-  readonly f6Report?: F6OptimizationResultV2;
+  readonly f6Report?: F6ReadableOptimizationResult;
   readonly f2Report?: F2UserReport;
   readonly f4Report?: F4WorkflowCalculationResult;
   readonly f3Report?: DrawingGovernanceResultV2;

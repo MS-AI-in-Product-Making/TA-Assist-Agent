@@ -114,6 +114,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
       f4ArtifactRoot: environment.roots.f4Root,
       f5ArtifactRoot: environment.roots.f5Root,
       selectedWorksheetNames: selected,
+      interactionLanguage: environment.snapshot.interactionLanguage,
       modelInterpretationPath: multimodal.path,
       expectedModelInterpretationContentHash: multimodal.contentHash,
       requireMultimodalV3: true,

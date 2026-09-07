@@ -7,7 +7,7 @@ import {
   type F2UserReport,
   type F4WorkflowCalculationResult,
   type F5DataInterpretationResult,
-  type F6OptimizationResultV2,
+  type F6ReadableOptimizationResult,
   type TypedError,
   type F8AdoProjection,
   type F8AdoWriteConfirmation,
@@ -29,7 +29,7 @@ export interface UseWorkbenchSessionResult {
   readonly f3Report?: DrawingGovernanceResultV2;
   readonly f4Report?: F4WorkflowCalculationResult;
   readonly f5Report?: F5DataInterpretationResult;
-  readonly f6Report?: F6OptimizationResultV2;
+  readonly f6Report?: F6ReadableOptimizationResult;
   readonly adoProjection?: F8AdoProjection;
   readonly loading: boolean;
   readonly connected: boolean;
@@ -64,7 +64,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
   const [f3Report, setF3Report] = useState<DrawingGovernanceResultV2>();
   const [f4Report, setF4Report] = useState<F4WorkflowCalculationResult>();
   const [f5Report, setF5Report] = useState<F5DataInterpretationResult>();
-  const [f6Report, setF6Report] = useState<F6OptimizationResultV2>();
+  const [f6Report, setF6Report] = useState<F6ReadableOptimizationResult>();
   const [adoProjection, setAdoProjection] = useState<F8AdoProjection>();
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -195,7 +195,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       setF3Report(nextF3 as DrawingGovernanceResultV2 | undefined);
       setF4Report(nextF4 as F4WorkflowCalculationResult | undefined);
       setF5Report(nextF5 as F5DataInterpretationResult | undefined);
-      setF6Report(nextF6 as F6OptimizationResultV2 | undefined);
+      setF6Report(nextF6 as F6ReadableOptimizationResult | undefined);
       const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
       if (failed !== undefined) setError(toTypedError(failed.reason, "Governed artifact read failed.", "Refresh the session snapshot and try again."));
       else setError((current) => current?.summary === "Governed artifact read failed." ? undefined : current);

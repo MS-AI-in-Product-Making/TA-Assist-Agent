@@ -4,7 +4,7 @@ import {
   drawingGovernanceResultV2Schema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
-  f6OptimizationResultSchema,
+  f6ReadableOptimizationResultSchema,
   f2UserReportSchema,
   f2FindingsDecisionProjectionSchema,
   f8SessionEventSchema,
@@ -16,7 +16,7 @@ import {
   type DrawingGovernanceResultV2,
   type F4WorkflowCalculationResult,
   type F5DataInterpretationResult,
-  type F6OptimizationResultV2,
+  type F6ReadableOptimizationResult,
   type F2UserReport,
   type F2FindingsDecisionProjection,
   type F8ScenarioDraft,
@@ -119,7 +119,7 @@ export interface WorkbenchApi {
     sessionId: string,
     artifactId: string,
     kind: "f2_report" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report",
-  ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6OptimizationResultV2 | undefined>;
+  ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6ReadableOptimizationResult | undefined>;
 }
 
 export interface TaConversationSelection { readonly worksheetName: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string }
@@ -356,7 +356,7 @@ export function createWorkbenchApi(): WorkbenchApi {
           return f5DataInterpretationResultSchema.parse(data);
         case "f6_optimization":
         case "f6_report":
-          return f6OptimizationResultSchema.parse(data);
+          return f6ReadableOptimizationResultSchema.parse(data);
         default:
           return undefined;
       }
