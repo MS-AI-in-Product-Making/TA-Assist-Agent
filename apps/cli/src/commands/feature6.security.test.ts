@@ -143,7 +143,7 @@ describe("Feature 6 CLI trust boundary", () => {
       { executeFile },
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nreport: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: partially_completed`);
     expect(calls).toHaveLength(1);
     expect(calls[0].file).toBe(process.execPath);
     expect(calls[0].args).toEqual([
@@ -213,7 +213,7 @@ describe("Feature 6 CLI trust boundary", () => {
     async (status) => {
       const setup = await fixture();
       await expect(run(setup, successfulExecutor(setup.outputRelative, status)))
-        .resolves.toBe(`Feature 6 workflow completed.\nreport: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: ${status}`);
+        .resolves.toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: ${status}`);
     },
   );
 
@@ -277,6 +277,24 @@ describe("Feature 6 CLI trust boundary", () => {
       }),
       stderr: "",
     }))).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
+  });
+
+  it("rejects a final report path that is a linked filesystem entry", async () => {
+    const setup = await fixture();
+    const reportPath = join(setup.outputDirectory, "Feature6-Report.md");
+    await rm(reportPath);
+    if (process.platform === "win32") {
+      const linkedTarget = join(setup.outputDirectory, "linked-report-target");
+      await mkdir(linkedTarget);
+      await symlink(linkedTarget, reportPath, "junction");
+    } else {
+      const realReportPath = join(setup.outputDirectory, "real-report.md");
+      await writeFile(realReportPath, "# report\n", "utf8");
+      await symlink(realReportPath, reportPath, "file");
+    }
+
+    await expect(run(setup, successfulExecutor(setup.outputRelative)))
+      .rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
   });
 
   it("rejects a linked root even when it resolves to the trusted repository", async () => {

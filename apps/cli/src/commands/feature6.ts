@@ -183,7 +183,7 @@ function formatFeature6Output(value: unknown): string {
   }
   return [
     "Feature 6 workflow completed.",
-    `report: ${realFinalReport}`,
+    `fullReportPath: ${realFinalReport}`,
     `status: ${output.status}`,
   ].join("\n");
 }

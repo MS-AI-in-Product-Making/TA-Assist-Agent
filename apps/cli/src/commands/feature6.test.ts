@@ -82,6 +82,18 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
 }
 
 describe("Feature 6 CLI command", () => {
+  it("labels the validated absolute report path explicitly", async () => {
+    const setup = await fixture();
+
+    const result = await runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Analysis-A"] },
+    );
+
+    expect(result).toContain(`fullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}`);
+    expect(result).not.toContain("\nreport: ");
+  });
+
   it("runs the repository runner with four roots, repeated worksheets, and optional evidence paths", async () => {
     const setup = await fixture(`
 import { writeFileSync } from "node:fs";
@@ -102,7 +114,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root, options,
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nreport: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nstatus: partially_completed`);
     expect(JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"))).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,

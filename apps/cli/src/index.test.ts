@@ -305,7 +305,7 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
   const calls: unknown[] = [];
   const runFeature6 = async (...args: unknown[]) => {
     calls.push(args);
-    return "Feature 6 workflow completed.\nreport: C:/repo/test/demo-output/f6-runs/demo/run-1/Feature6-Report.md\nstatus: completed";
+    return "Feature 6 workflow completed.\nfullReportPath: C:/repo/test/demo-output/f6-runs/demo/run-1/Feature6-Report.md\nstatus: completed";
   };
   const result = await executeCli([
     "feature6", "--root", " repo ",
@@ -378,7 +378,7 @@ rmSync(bundle.root, { recursive: true, force: true });
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("Feature 6 workflow completed.");
-    expect(result.stdout).toMatch(new RegExp(`report: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Feature6-Report\\.md`));
+    expect(result.stdout).toMatch(new RegExp(`fullReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Feature6-Report\\.md`));
     expect(result.stdout).not.toContain(tmpdir());
   } finally {
     vi.unstubAllEnvs();

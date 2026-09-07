@@ -284,8 +284,16 @@ describe("Design Optimization skill contract", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(internal).toContain("For every successful completion response");
     expect(internal).toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
+    expect(internal).toContain("完整报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.md");
+    expect(internal).toContain("must include both the clickable link and the complete absolute report path");
     expect(internal).toContain("use only the validated final report path");
     expect(internal).toContain("do not present any report link");
+    expect(internal.match(/\[Design Optimization Report\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.md\)/g)).toHaveLength(1);
+    expect(internal.match(/完整报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report\.md/g)).toHaveLength(1);
+    expectOrdered(internal, [
+      "[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)",
+      "完整报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.md",
+    ]);
   });
 
   it("documents final report scope from validated summary and manifest instead of Optimization alone", () => {
