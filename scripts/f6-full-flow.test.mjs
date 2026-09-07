@@ -22,7 +22,6 @@ import {
   fixtureFileSha256,
   installF5CurrentObservationLedger,
   installF6V2Evidence,
-  installF6ModelInterpretation,
   installRequiredMultimodalV3,
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
@@ -88,7 +87,27 @@ function setup({ status = "completed" } = {}) {
     workbookDisposition: status === "partially_completed" ? "CONDITIONAL_PASS" : "PASS",
     worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
   };
-  const finalReport = { markdown: "# F6 final report\n", reportSummary };
+  const finalReport = {
+    markdown: "# F6 final report\n",
+    reportSummary,
+    projection: {
+      schemaVersion: "ta-engineering-report-projection-v1",
+      title: "F6 final report",
+      workbookDisposition: reportSummary.workbookDisposition,
+      worksheetDispositions: reportSummary.worksheetDispositions,
+      workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Loop A",
+        disposition: "PASS",
+        requiredAction: "None",
+        findings: ["Validated multimodal context."],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: ["F4:Analysis-A", "F5-multimodal:Analysis-A"],
+      }],
+    },
+  };
   const renameCalls = [];
   const deps = {
     parseArgs: vi.fn(() => ({
@@ -282,6 +301,20 @@ describe("runF6FullValidation", () => {
       multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
       optimizationTargetsDecision: { outcome: "NOT_PROVIDED" },
     });
+  });
+
+  it("rejects a final report with a provenance display column before successful artifact writes", () => {
+    const context = setup();
+    context.deps.createFinalReport = vi.fn(() => ({
+      ...context.finalReport,
+      markdown: "# Report\n\n| Metric | Source |\n|---|---|\n| Cpk | F4 |\n",
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ artifacts: {} });
   });
 
   it("passes optional targets through the v3 gate and records identical input decisions in summary and manifest", () => {

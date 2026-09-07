@@ -89,4 +89,36 @@ describe("taEngineeringReportProjectionSchema", () => {
 
     expect(taEngineeringReportProjectionSchema.safeParse(candidate).success).toBe(false);
   });
+
+  it.each(["Source", "Evidence", "Provenance", "来源", "证据"])(
+    "rejects a %s Markdown display column",
+    (column) => {
+      const candidate = {
+        markdown: `# Report\n\n| Metric | ${column} |\n|---|---|\n| Cpk | F4 |\n`,
+        reportSummary: {
+          workbookDisposition: "PASS",
+          worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
+        },
+        projection: {
+          schemaVersion: "ta-engineering-report-projection-v1",
+          title: "Report",
+          workbookDisposition: "PASS",
+          worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
+          workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+          worksheets: [{
+            worksheetName: "Analysis-A",
+            toleranceLoopDescription: "Loop A",
+            disposition: "PASS",
+            requiredAction: "None",
+            findings: ["ok"],
+            assumptions: [],
+            clarifications: [],
+            gatingEvidenceReferences: ["F4:Analysis-A"],
+          }],
+        },
+      };
+
+      expect(taEngineeringReportProjectionSchema.safeParse(candidate).success).toBe(false);
+    },
+  );
 });

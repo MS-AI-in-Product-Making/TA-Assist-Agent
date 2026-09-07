@@ -1,4 +1,4 @@
-import { f6LegacyOptimizationResultSchema, f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
+import { f6LegacyOptimizationResultSchema, f6ReadableOptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { cell } from "./f6-markdown-sanitizer.mjs";
 import { evidenceLabel, formatEngineering, formatPercent } from "./engineering-format.mjs";
 
@@ -275,7 +275,7 @@ export function renderF6Report(result, options = {}) {
   void options;
   let parsed;
   try {
-    parsed = f6OptimizationResultSchema.parse(result);
+    parsed = f6ReadableOptimizationResultSchema.parse(result);
   } catch {
     throw new Error("Invalid F6 result.");
   }

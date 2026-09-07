@@ -1,5 +1,3 @@
-/* global structuredClone */
-
 import { isDeepStrictEqual } from "node:util";
 import {
   drawingGovernanceResultV2Schema,
@@ -897,7 +895,7 @@ function linkedFactorNames(f5Worksheet, signal) {
   ));
 }
 
-function renderSummaryBoundary(lines, worksheet, prefix) {
+function _renderSummaryBoundary(lines, worksheet, prefix) {
   lines.push(
     `### ${prefix}.1 输出边界`,
     "",
@@ -910,7 +908,7 @@ function renderSummaryBoundary(lines, worksheet, prefix) {
   }
 }
 
-function renderSummaryImageFacts(lines, worksheet, prefix) {
+function _renderSummaryImageFacts(lines, worksheet, prefix) {
   const facts = imageFacts(worksheet.f5Worksheet);
   lines.push("", `### ${prefix}.2 图片可见事实`, "");
   if (worksheet.f5Worksheet.observationVersion !== "f5-image-observation-v2") {
@@ -927,7 +925,7 @@ function renderSummaryImageFacts(lines, worksheet, prefix) {
   }
 }
 
-function renderSummaryCalculations(lines, worksheet, prefix) {
+function _renderSummaryCalculations(lines, worksheet, prefix) {
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
@@ -947,7 +945,7 @@ function renderSummaryCalculations(lines, worksheet, prefix) {
   );
 }
 
-function renderSummaryInference(lines, worksheet, prefix) {
+function _renderSummaryInference(lines, worksheet, prefix) {
   const sorted = [...worksheet.f4Calculation.factors].sort((left, right) => right.contribution - left.contribution);
   const leaders = sorted.slice(0, 3);
   const cumulative = leaders.reduce((sum, factor) => sum + factor.contribution, 0);
@@ -963,7 +961,7 @@ function renderSummaryInference(lines, worksheet, prefix) {
   );
 }
 
-function renderSummaryAnomalies(lines, worksheet, prefix) {
+function _renderSummaryAnomalies(lines, worksheet, prefix) {
   const conflicts = imageContextSignals(worksheet.f5Worksheet)
     .filter((signal) => signal.content.signalValue === "indicated_conflict");
   lines.push("", `### ${prefix}.5 图片与 Table 一致性异常`, "");
@@ -978,7 +976,7 @@ function renderSummaryAnomalies(lines, worksheet, prefix) {
   }
 }
 
-function renderSummaryClarifications(lines, worksheet, prefix) {
+function _renderSummaryClarifications(lines, worksheet, prefix) {
   const signals = imageContextSignals(worksheet.f5Worksheet)
     .filter((signal) => signal.content.signalValue !== "indicated_conflict")
     .map((signal) => `${signal.content.textBasis}（${signal.content.signalValue}）`);
@@ -995,7 +993,7 @@ function renderSummaryClarifications(lines, worksheet, prefix) {
   for (const question of questions) lines.push(`- ${clean(question)}`);
 }
 
-function renderSummaryJudgment(lines, worksheet, prefix) {
+function _renderSummaryJudgment(lines, worksheet, prefix) {
   const calculation = worksheet.f4Calculation;
   const top = topFactor(calculation);
   const capability = Number.isFinite(calculation.capability.cpk) && Number.isFinite(calculation.capability.targetCpk)

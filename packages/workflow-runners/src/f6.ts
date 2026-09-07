@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { createTypedError, f6OptimizationResultV3Schema } from "@ai-assist/contracts";
+import { createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
 import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
@@ -397,7 +397,7 @@ export function runF6Optimization(
     const optimization = parsedOptimization.data;
 
     failureStage = "report";
-    const finalReport = createFinalReport({
+    const finalReportCandidate = createFinalReport({
       f2Report: loaded.f2Report,
       f3Report: loaded.f3Report,
       f4Report: loaded.f4Report,
@@ -413,6 +413,7 @@ export function runF6Optimization(
       publishRoot: layout.publishRoot,
       requireMultimodalV3: true,
     });
+    const finalReport = taEngineeringReportProjectionSchema.parse(finalReportCandidate);
 
     const contents = {
       optimizationJson: json(optimization),
