@@ -127,6 +127,7 @@ export const f5MultimodalRowMappingV3Schema = z.object({
   sourceRow: z.number().int().positive(),
   factorOrdinal: f5MultimodalFactorOrdinalV3Schema,
   mappingStatus: z.literal("matched"),
+  visibleStatus: z.literal("visible"),
   interpretation: nonEmptyStringSchema,
 }).strict();
 

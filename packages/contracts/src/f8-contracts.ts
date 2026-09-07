@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { InteractionLanguage } from "@ai-assist/product-language";
 import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
+import { f5MultimodalWorksheetRequestV3Schema, f5MultimodalWorksheetResultV3Schema } from "./ta-multimodal-contracts.js";
 
 const nonEmptyStringSchema = z.string().min(1);
 const nonEmptyStringArraySchema = z.array(nonEmptyStringSchema);
@@ -951,7 +952,23 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     turnId: nonEmptyStringSchema,
     prompt: nonEmptyStringSchema,
   }).strict(),
-]);
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("vscode_worksheet_multimodal_request"),
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: z.literal("vscode-worksheet-multimodal-v3"),
+    request: f5MultimodalWorksheetRequestV3Schema,
+  }).strict(),
+]).superRefine((action, context) => {
+  if (action.kind === "vscode_worksheet_multimodal_request") {
+    if (action.confirmationHash !== action.request.requestHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "confirmationHash must bind the multimodal request", path: ["confirmationHash"] });
+    }
+    if (action.sessionId !== action.request.sessionId || action.expectedRevision !== action.request.revision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "host action scope must bind the multimodal request", path: ["request"] });
+    }
+  }
+});
 
 export const hostActionClaimSchema = z
   .object({
@@ -987,6 +1004,7 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
         state: z.literal("absent"),
       }).strict(),
       z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema, proposal: f6InputProposalSchema.optional() }).strict(),
+      z.object({ kind: z.literal("worksheet_multimodal_response"), result: f5MultimodalWorksheetResultV3Schema }).strict(),
     ]).optional(),
   }).strict(),
   z.object({

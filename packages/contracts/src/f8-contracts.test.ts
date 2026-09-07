@@ -17,6 +17,8 @@ import {
   f8AdoProjectionSchema,
   f8AdoWriteConfirmationSchema,
   taModelContextEnvelopeSchema,
+  createF5MultimodalFactorSetHash,
+  createF5MultimodalRequestHash,
   type TaModelContextEnvelope,
 } from "./index.js";
 
@@ -703,6 +705,81 @@ describe("F8 session and host contracts", () => {
         },
       },
     })).toThrow();
+  });
+
+  it("carries one governed worksheet multimodal request and validated result", () => {
+    const factorRows = [{
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 2,
+      factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
+      factorName: "Bracket height",
+      partName: "Bracket",
+      partCategory: "CNC",
+      drawingNumber: "DRAW-1",
+      dimId: "307",
+      nominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal",
+      sourceCells: { factorName: "Analysis-A!A2" },
+    }];
+    const multimodalRequest = {
+      contractVersion: "f5-multimodal-request-v3" as const,
+      inputClassification: "confidential" as const,
+      requestHash: "",
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 3,
+      workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      activeFactorCount: 1,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png" as const, contentHash: "b".repeat(64), byteLength: 128, artifactPath: "worksheets/Analysis-A/image.png" },
+      factorRows,
+    };
+    multimodalRequest.requestHash = createF5MultimodalRequestHash(multimodalRequest);
+    const multimodalResult = {
+      contractVersion: "f5-multimodal-result-v3" as const,
+      outputClassification: "confidential" as const,
+      requestHash: multimodalRequest.requestHash,
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 3,
+      workbookContentHash: WORKBOOK_HASH,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      imageContentHash: "b".repeat(64),
+      model: { modelId: "vision-model", supportsImage: true as const },
+      imageTableInterpretation: "The image and complete Factor table are consistent.",
+      rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-1", sourceRow: 2, factorOrdinal: factorRows[0]!.factorOrdinal, mappingStatus: "matched" as const, visibleStatus: "visible" as const, interpretation: "Ordinal A is visible." }],
+    };
+    const request = {
+      contractVersion: "f8-host-action-request-v1" as const,
+      actionId: "multimodal:Analysis-A",
+      sessionId: SESSION_ID,
+      expectedRevision: 4,
+      expiresAt: "2026-09-07T00:15:00.000Z",
+      kind: "vscode_worksheet_multimodal_request" as const,
+      confirmationHash: multimodalRequest.requestHash,
+      expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const,
+      request: multimodalRequest,
+    };
+    const result = {
+      contractVersion: "f8-host-action-result-v1" as const,
+      actionId: request.actionId,
+      hostInstanceId: "host-1",
+      leaseId: "lease-1",
+      status: "completed" as const,
+      resultHash: "c".repeat(64),
+      payload: { status: "completed" as const, outcome: { kind: "worksheet_multimodal_response" as const, result: multimodalResult } },
+    };
+
+    expect(hostActionRequestSchema.parse(request)).toEqual(request);
+    expect(hostActionResultSchema.parse(result)).toEqual(result);
   });
 
   it("requires an explicit existing Work Item reference and keeps Surface write acceptance internal", () => {

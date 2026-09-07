@@ -67,6 +67,7 @@ function result(input = request()) {
       sourceRow: row.sourceRow,
       factorOrdinal: row.factorOrdinal,
       mappingStatus: "matched",
+      visibleStatus: "visible",
       interpretation: `Factor ${row.factorOrdinal.value} is visible in the interpreted loop context.`,
     })),
   };
@@ -153,6 +154,7 @@ describe("F5 mandatory multimodal v3 contracts", () => {
 
   it.each([
     ["text-only model", (artifact: any) => { artifact.worksheets[0].result.model.supportsImage = false; }],
+    ["ordinal not visible", (artifact: any) => { artifact.worksheets[0].result.rowMappings[0].visibleStatus = "not_visible"; }],
     ["request hash mismatch", (artifact: any) => { artifact.worksheets[0].result.requestHash = sha("other-request"); }],
     ["image hash mismatch", (artifact: any) => { artifact.worksheets[0].result.imageContentHash = sha("other-image"); }],
     ["worksheet mismatch", (artifact: any) => { artifact.worksheets[0].result.worksheetName = "Analysis-B"; }],
