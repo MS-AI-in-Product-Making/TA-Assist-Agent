@@ -170,6 +170,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("ta-assist.analyze", openNew),
     vscode.commands.registerCommand("ta-assist.workbench", async () => activeWorkbenchUrl === undefined ? openPureWorkbench() : vscode.env.openExternal(vscode.Uri.parse(activeWorkbenchUrl))),
     vscode.commands.registerCommand("ta-assist.resume", resume),
+    vscode.commands.registerCommand("ta-assist.openKnowledgeLibrary", async () => {
+      await vscode.commands.executeCommand("workbench.action.chat.open", { query: "Use Knowledge Library to answer my TA question." });
+    }),
+    vscode.commands.registerCommand("ta-assist.openRealMeasurementAnalysis", async () => {
+      await vscode.commands.executeCommand("workbench.action.chat.open", { query: "Use TA Real-Measurement Analysis for my measured data." });
+    }),
     vscode.commands.registerCommand("ta-assist.openSessionRecord", async () => {
       const sessionId = activeSessionId ?? await vscode.window.showInputBox({ prompt: "TA Assist session ID", ignoreFocusOut: true });
       if (sessionId === undefined || sessionId.trim().length === 0) return;

@@ -30,4 +30,8 @@ describe("classifyTopLevelWorkflowIntent", () => {
   it("does not default unknown input to workbook analysis", () => {
     expect(classifyTopLevelWorkflowIntent("Hello there")).toEqual({ kind: "unsupported" });
   });
+
+  it("does not treat a generic TA report reference as workbook evidence", () => {
+    expect(classifyTopLevelWorkflowIntent("Analyze this TA report")).not.toEqual({ kind: "workbook_analysis" });
+  });
 });

@@ -161,7 +161,7 @@ describe("extension workbench binding", () => {
   it("creates and binds a real session for natural analyze without a path", async () => {
     const context = await activateExtension();
 
-    const response = await invokeParticipant({ prompt: "帮我分析这份 TA 报告" });
+    const response = await invokeParticipant({ prompt: "帮我分析这份 Excel 工作簿" });
 
     expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
     expect(importWorkbookMock).not.toHaveBeenCalled();
@@ -288,6 +288,23 @@ describe("extension workbench binding", () => {
     await registeredCommands.get("ta-assist.openAction")!("https://evil.test/path");
 
     expect(vscode.env.openExternal).not.toHaveBeenCalled();
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("opens explicit chat handoffs for knowledge and real-measurement workflows", async () => {
+    const context = await activateExtension();
+    const vscode = await import("vscode");
+    vi.mocked(vscode.commands.executeCommand).mockClear();
+
+    await registeredCommands.get("ta-assist.openKnowledgeLibrary")!();
+    await registeredCommands.get("ta-assist.openRealMeasurementAnalysis")!();
+
+    expect(vscode.commands.executeCommand).toHaveBeenNthCalledWith(1, "workbench.action.chat.open", {
+      query: "Use Knowledge Library to answer my TA question.",
+    });
+    expect(vscode.commands.executeCommand).toHaveBeenNthCalledWith(2, "workbench.action.chat.open", {
+      query: "Use TA Real-Measurement Analysis for my measured data.",
+    });
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 });

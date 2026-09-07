@@ -18,7 +18,7 @@ export type TopLevelWorkflowIntent =
   | { readonly kind: "unsupported" };
 
 const ANALYZE_VERB = /(分析|analy[sz]e)/i;
-const WORKBOOK_CONTEXT = /(\bta\b|报告|報告|\breport\b|\bworkbook\b|\.xlsx\b|[A-Za-z]:\\)/i;
+const WORKBOOK_CONTEXT = /(工作簿|\bworkbook\b|\bexcel\b|\.xlsx\b|[A-Za-z]:\\)/i;
 const SESSION_RESUME = /(继续|resume|continue|恢复|回到).*(session|会话|分析)|\bresume\b/i;
 const SESSION_STATUS = /(当前.*(状态|进度)|status|progress|blocker|阻塞|卡住)/i;
 const LANGUAGE_CHANGE = /(切换.*(中文|英文|英语|English|Chinese)|change\s+language|switch\s+to\s+(english|chinese))/i;

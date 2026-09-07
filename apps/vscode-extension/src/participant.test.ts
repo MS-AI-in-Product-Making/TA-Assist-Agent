@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@ai-assist/product-language", async () => await import("../../../packages/product-language/src/index.ts"));
-
 import { handleParticipant } from "./participant.js";
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
@@ -70,6 +68,30 @@ describe("handleParticipant", () => {
     expect(handleTurn).not.toHaveBeenCalled();
     expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("TA Real-Measurement Analysis"));
     expect(stream.markdown).toHaveBeenCalledWith(expect.not.stringContaining("F7"));
+    expect(stream.button).toHaveBeenCalledWith({
+      command: "ta-assist.openRealMeasurementAnalysis",
+      title: "TA Real-Measurement Analysis",
+      arguments: [],
+    });
+  });
+
+  it("offers an executable Knowledge Library handoff without a bound session", async () => {
+    const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+
+    await handleParticipant({ prompt: "Explain what Cpk means", command: undefined, model: {} }, {
+      history: [],
+    }, stream, { isCancellationRequested: false }, {
+      handleTurn,
+      commandId: () => "participant-knowledge-question",
+    });
+
+    expect(handleTurn).not.toHaveBeenCalled();
+    expect(stream.button).toHaveBeenCalledWith({
+      command: "ta-assist.openKnowledgeLibrary",
+      title: "Knowledge Library",
+      arguments: [],
+    });
   });
 
   it("returns clarification with full product names for ambiguous top-level requests", async () => {

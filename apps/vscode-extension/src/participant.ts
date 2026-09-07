@@ -78,6 +78,13 @@ async function handleAnalyzeIntent(
 
   if (workflowIntent.kind === "measured_analysis") {
     stream.markdown(buildMeasuredAnalysisMessage(request.prompt));
+    stream.button({ command: "ta-assist.openRealMeasurementAnalysis", title: "TA Real-Measurement Analysis", arguments: [] });
+    return true;
+  }
+
+  if (workflowIntent.kind === "knowledge_question") {
+    stream.markdown(buildKnowledgeLibraryMessage(request.prompt));
+    stream.button({ command: "ta-assist.openKnowledgeLibrary", title: "Knowledge Library", arguments: [] });
     return true;
   }
 
@@ -120,8 +127,14 @@ function classifyParticipantAnalyzeIntent(request: ParticipantRequest): ReturnTy
 function buildMeasuredAnalysisMessage(prompt: string): string {
   const language = detectUserLanguage(prompt);
   return language === "zh"
-    ? "TA Real-Measurement Analysis 已识别为本次请求的正确入口。当前 participant 仅返回已存在能力入口的结构化路由结果，不会在这里直接启动真实量测栈；请使用现有 TA Real-Measurement Analysis 入口继续。"
-    : "TA Real-Measurement Analysis is the correct entry for this request. The participant currently returns a structured handoff to the existing capability boundary and does not launch the real-measurement stack here; continue through the existing TA Real-Measurement Analysis entry.";
+    ? "TA Real-Measurement Analysis 已识别为本次请求的正确入口。"
+    : "TA Real-Measurement Analysis is the correct entry for this request.";
+}
+
+function buildKnowledgeLibraryMessage(prompt: string): string {
+  return detectUserLanguage(prompt) === "zh"
+    ? "Knowledge Library 已识别为本次请求的正确入口。"
+    : "Knowledge Library is the correct entry for this request.";
 }
 
 function buildClarificationMessage(prompt: string, candidates: readonly ProductWorkflowId[]): string {
