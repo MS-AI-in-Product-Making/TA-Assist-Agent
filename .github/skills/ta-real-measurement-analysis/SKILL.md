@@ -40,7 +40,7 @@ Guide the user through the UI without replacing their engineering judgment:
 5. Enter the Factor's measured values and choose the correct observation structure: unordered, ordered, or rational subgroup.
 6. Resolve validation and distribution-fit decisions for every measured Factor before continuing to Monte Carlo calculation and report generation.
 
-Baseline assumptions currently support Normal distributions only. Keep this limitation visible when a Factor remains in baseline mode.
+Baseline assumptions currently support Normal and Uniform distributions. Keep the selected baseline distribution visible when a Factor remains in baseline mode; other workbook distributions require measured data or a separately governed sampler.
 
 ## Allowed Command
 

@@ -26,6 +26,13 @@ const nearlyEqual = (left: number, right: number): boolean => {
     * Math.max(Math.abs(left), Math.abs(right), Number.MIN_VALUE);
 };
 
+const nearlyEqualAtScale = (left: number, right: number, scale: number): boolean => (
+  Number.isFinite(left)
+  && Number.isFinite(right)
+  && Math.abs(left - right) <= Number.EPSILON * 64
+    * Math.max(Math.abs(left), Math.abs(right), Math.abs(scale), 1)
+);
+
 export const F7_SELECTION_NORMAL_SKEWNESS_MAX = 0.5;
 export const F7_SELECTION_NORMAL_COEFFICIENT_OF_VARIATION_MAX = 0.10;
 export const F7_SELECTION_NORMAL_MEAN_MEDIAN_RELATIVE_DIFFERENCE_MAX = 0.02;
@@ -165,7 +172,7 @@ function normalizedPhysicalSpecificationLimits(
   };
 }
 
-export const f7BaselineSamplerSchema = z
+const f7NormalBaselineSamplerSchema = z
   .object({
     samplerId: z.literal("NORMAL_LOCATION_SCALE_V1"),
     physicalMean: finiteNumberSchema,
@@ -173,6 +180,51 @@ export const f7BaselineSamplerSchema = z
     support: z.literal("REAL"),
   })
   .strict();
+
+const f7UniformBaselineSamplerSchema = z
+  .object({
+    samplerId: z.literal("UNIFORM_BOUNDED_V1"),
+    physicalMean: finiteNumberSchema,
+    standardDeviation: finitePositiveNumberSchema,
+    minimum: finiteNumberSchema,
+    maximum: finiteNumberSchema,
+    support: z.literal("BOUNDED_REAL"),
+  })
+  .strict();
+
+export const f7BaselineSamplerSchema = z
+  .discriminatedUnion("samplerId", [
+    f7NormalBaselineSamplerSchema,
+    f7UniformBaselineSamplerSchema,
+  ])
+  .superRefine((sampler, context) => {
+    if (sampler.samplerId !== "UNIFORM_BOUNDED_V1") return;
+    if (!(sampler.minimum < sampler.maximum)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "minimum must be less than maximum",
+        path: ["minimum"],
+      });
+      return;
+    }
+    const halfRange = Math.sqrt(3) * sampler.standardDeviation;
+    const expectedMinimum = sampler.physicalMean - halfRange;
+    const expectedMaximum = sampler.physicalMean + halfRange;
+    if (!nearlyEqualAtScale(sampler.minimum, expectedMinimum, sampler.physicalMean)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "minimum must equal physicalMean minus sqrt(3) times standardDeviation",
+        path: ["minimum"],
+      });
+    }
+    if (!nearlyEqualAtScale(sampler.maximum, expectedMaximum, sampler.physicalMean)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "maximum must equal physicalMean plus sqrt(3) times standardDeviation",
+        path: ["maximum"],
+      });
+    }
+  });
 
 export const f7FactorCandidateSchema = z
   .object({
@@ -309,6 +361,18 @@ export const f7FactorEvidenceSchema = z
         code: z.ZodIssueCode.custom,
         message: "baselineSampler.physicalMean must equal physicalMean within 1e-12",
         path: ["baselineSampler", "physicalMean"],
+      });
+    }
+    const expectedBaselineSamplerId = evidence.distribution === "Normal"
+      ? "NORMAL_LOCATION_SCALE_V1"
+      : evidence.distribution === "Uniform"
+        ? "UNIFORM_BOUNDED_V1"
+        : undefined;
+    if (evidence.baselineSampler.samplerId !== expectedBaselineSamplerId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "distribution must have a matching governed baseline sampler",
+        path: ["distribution"],
       });
     }
   });

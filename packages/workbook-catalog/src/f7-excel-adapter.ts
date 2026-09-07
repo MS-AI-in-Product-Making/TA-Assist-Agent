@@ -344,6 +344,29 @@ function buildFactorId(candidateId: string, loopCoefficient: F7LoopCoefficient):
   ]);
 }
 
+function buildBaselineSampler(distribution: F7ToleranceDistribution, physicalMean: number, standardDeviation: number) {
+  if (distribution === "Normal") {
+    return {
+      samplerId: "NORMAL_LOCATION_SCALE_V1" as const,
+      physicalMean,
+      standardDeviation,
+      support: "REAL" as const,
+    };
+  }
+  if (distribution === "Uniform") {
+    const halfRange = Math.sqrt(3) * standardDeviation;
+    return {
+      samplerId: "UNIFORM_BOUNDED_V1" as const,
+      physicalMean,
+      standardDeviation,
+      minimum: physicalMean - halfRange,
+      maximum: physicalMean + halfRange,
+      support: "BOUNDED_REAL" as const,
+    };
+  }
+  throw adapterError(SETUP_SUMMARY, "validation_error", { reasonCode: "baseline_sampler_not_defined" });
+}
+
 export function createF7WorkbookImport(request: unknown): F7WorkbookImportResult {
   let classification: unknown;
   try {
@@ -472,7 +495,12 @@ export function extractF7FactorCandidates(request: {
     if (excelSignedMean === undefined || standardDeviation === undefined || standardDeviation <= 0 || !distributionCell) {
       throw adapterError(EXTRACTION_SUMMARY);
     }
-    if (distribution !== "normal") {
+    const candidateDistribution = distribution === "normal"
+      ? "Normal" as const
+      : distribution === "uniform"
+        ? "Uniform" as const
+        : undefined;
+    if (!candidateDistribution) {
       throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "baseline_sampler_not_defined" });
     }
 
@@ -527,7 +555,7 @@ export function extractF7FactorCandidates(request: {
         ? workbookLongTermSafetyFactor
         : 1,
       sigmaLevel: workbookSigmaLevel && workbookSigmaLevel > 0 ? workbookSigmaLevel : 4,
-      distribution: "Normal" as const,
+      distribution: candidateDistribution,
       lowerSpecLimit,
       upperSpecLimit,
     };
@@ -672,12 +700,11 @@ export function confirmF7FactorSetup(request: {
       loopCoefficient,
       physicalMean,
       signedContributionMean: calculatedFactor.calculatedMean,
-      baselineSampler: {
-        samplerId: "NORMAL_LOCATION_SCALE_V1" as const,
+      baselineSampler: buildBaselineSampler(
+        calculatedFactor.distribution,
         physicalMean,
-        standardDeviation: calculatedFactor.oneSigma,
-        support: "REAL" as const,
-      },
+        calculatedFactor.oneSigma,
+      ),
       lowerSpecLimit,
       upperSpecLimit,
     };

@@ -27,7 +27,7 @@ When invoked, the skill:
 
 ## Safety Boundaries
 
-The skill stays local and single-user. It does not upload data, modify the source workbook, publish to ADO, or invent measurement values. It presents the current F7 Phase 1 limitation that baseline assumptions support Normal distributions only.
+The skill stays local and single-user. It does not upload data, modify the source workbook, publish to ADO, or invent measurement values. It presents the current F7 Phase 1 limitation that baseline assumptions support Normal and Uniform distributions; other workbook distributions require measured data or a separately governed sampler.
 
 ## Verification
 
