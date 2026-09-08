@@ -261,8 +261,8 @@ describe("TAResultsInterpretation", () => {
             ...item,
             quantitativeEvidenceLabels: {
               contributorName: "Contributor",
-              contributorReference: "Contribution",
-              contributionPercent: "Contribution",
+                contributorReference: "Contributor reference",
+                contributionPercent: "Contribution (%)",
             },
           };
         }),
@@ -280,7 +280,8 @@ describe("TAResultsInterpretation", () => {
     expect(rootCauseText).toContain("Mean offset");
     expect(rootCauseText).toContain("Direction");
     expect(rootCauseText).toContain("Contributor");
-    expect(rootCauseText).toContain("Contribution");
+    expect(rootCauseText).toContain("Contributor reference");
+    expect(rootCauseText).toContain("Contribution (%)");
     expect(rootCauseText).not.toContain("cpTargetGap");
     expect(rootCauseText).not.toContain("cpCpkGap");
     expect(rootCauseText).not.toContain("specificationMidpoint");

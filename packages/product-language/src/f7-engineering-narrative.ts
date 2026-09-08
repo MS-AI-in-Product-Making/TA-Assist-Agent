@@ -103,8 +103,8 @@ const QUANTITATIVE_EVIDENCE_LABELS = Object.freeze({
   meanOffset: "Mean offset",
   direction: "Direction",
   contributorName: "Contributor",
-  contributorReference: "Contribution",
-  contributionPercent: "Contribution",
+  contributorReference: "Contributor reference",
+  contributionPercent: "Contribution (%)",
 } as const satisfies Record<string, string>);
 
 interface NarrativeDisplayPlan {

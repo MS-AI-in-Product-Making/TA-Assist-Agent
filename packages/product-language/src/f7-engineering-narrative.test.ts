@@ -568,8 +568,8 @@ describe("buildF7EngineeringNarrative", () => {
 
     expect(narrative.rootCauseAnalysis[2]?.quantitativeEvidenceLabels).toEqual({
       contributorName: "Contributor",
-      contributorReference: "Contribution",
-      contributionPercent: "Contribution",
+      contributorReference: "Contributor reference",
+      contributionPercent: "Contribution (%)",
     });
   });
 
