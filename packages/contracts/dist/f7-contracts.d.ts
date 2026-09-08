@@ -20,7 +20,7 @@ export declare const f7RationalSubgroupConfigSchema: z.ZodObject<{
 }>;
 export declare const f7MsaStatusSchema: z.ZodEnum<["available", "not_available", "unknown"]>;
 export declare const f7ToleranceDistributionSchema: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
-export declare const f7BaselineSamplerSchema: z.ZodObject<{
+export declare const f7BaselineSamplerSchema: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
     samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
     physicalMean: z.ZodNumber;
     standardDeviation: z.ZodNumber;
@@ -35,6 +35,51 @@ export declare const f7BaselineSamplerSchema: z.ZodObject<{
     samplerId: "NORMAL_LOCATION_SCALE_V1";
     physicalMean: number;
     support: "REAL";
+}>, z.ZodObject<{
+    samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+    physicalMean: z.ZodNumber;
+    standardDeviation: z.ZodNumber;
+    minimum: z.ZodNumber;
+    maximum: z.ZodNumber;
+    support: z.ZodLiteral<"BOUNDED_REAL">;
+}, "strict", z.ZodTypeAny, {
+    minimum: number;
+    maximum: number;
+    standardDeviation: number;
+    samplerId: "UNIFORM_BOUNDED_V1";
+    physicalMean: number;
+    support: "BOUNDED_REAL";
+}, {
+    minimum: number;
+    maximum: number;
+    standardDeviation: number;
+    samplerId: "UNIFORM_BOUNDED_V1";
+    physicalMean: number;
+    support: "BOUNDED_REAL";
+}>]>, {
+    standardDeviation: number;
+    samplerId: "NORMAL_LOCATION_SCALE_V1";
+    physicalMean: number;
+    support: "REAL";
+} | {
+    minimum: number;
+    maximum: number;
+    standardDeviation: number;
+    samplerId: "UNIFORM_BOUNDED_V1";
+    physicalMean: number;
+    support: "BOUNDED_REAL";
+}, {
+    standardDeviation: number;
+    samplerId: "NORMAL_LOCATION_SCALE_V1";
+    physicalMean: number;
+    support: "REAL";
+} | {
+    minimum: number;
+    maximum: number;
+    standardDeviation: number;
+    samplerId: "UNIFORM_BOUNDED_V1";
+    physicalMean: number;
+    support: "BOUNDED_REAL";
 }>;
 export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -198,7 +243,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
     physicalMean: z.ZodNumber;
     signedContributionMean: z.ZodNumber;
-    baselineSampler: z.ZodObject<{
+    baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
         samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
         physicalMean: z.ZodNumber;
         standardDeviation: z.ZodNumber;
@@ -213,6 +258,51 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    }>, z.ZodObject<{
+        samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+        physicalMean: z.ZodNumber;
+        standardDeviation: z.ZodNumber;
+        minimum: z.ZodNumber;
+        maximum: z.ZodNumber;
+        support: z.ZodLiteral<"BOUNDED_REAL">;
+    }, "strict", z.ZodTypeAny, {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }, {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }>]>, {
+        standardDeviation: number;
+        samplerId: "NORMAL_LOCATION_SCALE_V1";
+        physicalMean: number;
+        support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }, {
+        standardDeviation: number;
+        samplerId: "NORMAL_LOCATION_SCALE_V1";
+        physicalMean: number;
+        support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     }>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
@@ -267,6 +357,13 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
     calculatedMean: number;
     userAdded?: true | undefined;
@@ -300,6 +397,13 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
     calculatedMean: number;
     userAdded?: true | undefined;
@@ -333,6 +437,13 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
     calculatedMean: number;
     userAdded?: true | undefined;
@@ -366,6 +477,13 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
     calculatedMean: number;
     userAdded?: true | undefined;
@@ -1022,7 +1140,7 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
     } | undefined;
 }>, z.ZodObject<{
     mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
-    baselineSampler: z.ZodObject<{
+    baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
         samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
         physicalMean: z.ZodNumber;
         standardDeviation: z.ZodNumber;
@@ -1037,6 +1155,51 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    }>, z.ZodObject<{
+        samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+        physicalMean: z.ZodNumber;
+        standardDeviation: z.ZodNumber;
+        minimum: z.ZodNumber;
+        maximum: z.ZodNumber;
+        support: z.ZodLiteral<"BOUNDED_REAL">;
+    }, "strict", z.ZodTypeAny, {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }, {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }>]>, {
+        standardDeviation: number;
+        samplerId: "NORMAL_LOCATION_SCALE_V1";
+        physicalMean: number;
+        support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
+    }, {
+        standardDeviation: number;
+        samplerId: "NORMAL_LOCATION_SCALE_V1";
+        physicalMean: number;
+        support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     }>;
 }, "strict", z.ZodTypeAny, {
     mode: "BASELINE_ASSUMPTION";
@@ -1045,6 +1208,13 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
 }, {
     mode: "BASELINE_ASSUMPTION";
@@ -1053,6 +1223,13 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
         support: "REAL";
+    } | {
+        minimum: number;
+        maximum: number;
+        standardDeviation: number;
+        samplerId: "UNIFORM_BOUNDED_V1";
+        physicalMean: number;
+        support: "BOUNDED_REAL";
     };
 }>]>;
 export declare const f7DatasetValidationReasonSchema: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
@@ -6559,7 +6736,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             } | undefined;
         }>, z.ZodObject<{
             mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
-            baselineSampler: z.ZodObject<{
+            baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
                 samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
                 physicalMean: z.ZodNumber;
                 standardDeviation: z.ZodNumber;
@@ -6574,6 +6751,51 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            }>, z.ZodObject<{
+                samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+                physicalMean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                minimum: z.ZodNumber;
+                maximum: z.ZodNumber;
+                support: z.ZodLiteral<"BOUNDED_REAL">;
+            }, "strict", z.ZodTypeAny, {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }, {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }>]>, {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }, {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             }>;
         }, "strict", z.ZodTypeAny, {
             mode: "BASELINE_ASSUMPTION";
@@ -6582,6 +6804,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         }, {
             mode: "BASELINE_ASSUMPTION";
@@ -6590,13 +6819,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         }>]>>;
         evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
             loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
             physicalMean: z.ZodNumber;
             signedContributionMean: z.ZodNumber;
-            baselineSampler: z.ZodObject<{
+            baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
                 samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
                 physicalMean: z.ZodNumber;
                 standardDeviation: z.ZodNumber;
@@ -6611,6 +6847,51 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            }>, z.ZodObject<{
+                samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+                physicalMean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                minimum: z.ZodNumber;
+                maximum: z.ZodNumber;
+                support: z.ZodLiteral<"BOUNDED_REAL">;
+            }, "strict", z.ZodTypeAny, {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }, {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }>]>, {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
+            }, {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             }>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
@@ -6665,6 +6946,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -6698,6 +6986,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -6731,6 +7026,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -6764,6 +7066,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -8045,6 +8354,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -8077,6 +8393,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -8321,6 +8644,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -8353,6 +8683,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -8597,6 +8934,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -8629,6 +8973,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -8873,6 +9224,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -8905,6 +9263,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -9610,6 +9975,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -9642,6 +10014,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -10136,6 +10515,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -10168,6 +10554,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -10662,6 +11055,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -10694,6 +11094,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -11188,6 +11595,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
         } | undefined;
         evidence?: {
@@ -11220,6 +11634,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
                 support: "REAL";
+            } | {
+                minimum: number;
+                maximum: number;
+                standardDeviation: number;
+                samplerId: "UNIFORM_BOUNDED_V1";
+                physicalMean: number;
+                support: "BOUNDED_REAL";
             };
             calculatedMean: number;
             userAdded?: true | undefined;
@@ -13047,7 +13468,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 } | undefined;
             }>, z.ZodObject<{
                 mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
-                baselineSampler: z.ZodObject<{
+                baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
                     samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
                     physicalMean: z.ZodNumber;
                     standardDeviation: z.ZodNumber;
@@ -13062,6 +13483,51 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                }>, z.ZodObject<{
+                    samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+                    physicalMean: z.ZodNumber;
+                    standardDeviation: z.ZodNumber;
+                    minimum: z.ZodNumber;
+                    maximum: z.ZodNumber;
+                    support: z.ZodLiteral<"BOUNDED_REAL">;
+                }, "strict", z.ZodTypeAny, {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }, {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }>]>, {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }, {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 }>;
             }, "strict", z.ZodTypeAny, {
                 mode: "BASELINE_ASSUMPTION";
@@ -13070,6 +13536,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             }, {
                 mode: "BASELINE_ASSUMPTION";
@@ -13078,13 +13551,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             }>]>>;
             evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
                 loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
                 physicalMean: z.ZodNumber;
                 signedContributionMean: z.ZodNumber;
-                baselineSampler: z.ZodObject<{
+                baselineSampler: z.ZodEffects<z.ZodDiscriminatedUnion<"samplerId", [z.ZodObject<{
                     samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
                     physicalMean: z.ZodNumber;
                     standardDeviation: z.ZodNumber;
@@ -13099,6 +13579,51 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                }>, z.ZodObject<{
+                    samplerId: z.ZodLiteral<"UNIFORM_BOUNDED_V1">;
+                    physicalMean: z.ZodNumber;
+                    standardDeviation: z.ZodNumber;
+                    minimum: z.ZodNumber;
+                    maximum: z.ZodNumber;
+                    support: z.ZodLiteral<"BOUNDED_REAL">;
+                }, "strict", z.ZodTypeAny, {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }, {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }>]>, {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
+                }, {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 }>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
@@ -13153,6 +13678,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -13186,6 +13718,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -13219,6 +13758,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -13252,6 +13798,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -14533,6 +15086,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -14565,6 +15125,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -14809,6 +15376,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -14841,6 +15415,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -15085,6 +15666,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -15117,6 +15705,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -15361,6 +15956,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -15393,6 +15995,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -16098,6 +16707,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -16130,6 +16746,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -16624,6 +17247,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -16656,6 +17286,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -17150,6 +17787,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -17182,6 +17826,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -17676,6 +18327,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -17708,6 +18366,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -18206,6 +18871,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -18238,6 +18910,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
@@ -18736,6 +19415,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
             } | undefined;
             evidence?: {
@@ -18768,6 +19454,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
                     support: "REAL";
+                } | {
+                    minimum: number;
+                    maximum: number;
+                    standardDeviation: number;
+                    samplerId: "UNIFORM_BOUNDED_V1";
+                    physicalMean: number;
+                    support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
                 userAdded?: true | undefined;
