@@ -86,6 +86,14 @@ const INCOMPLETE_EVIDENCE_MESSAGE = "Evidence is incomplete for this matched hyp
 const BALANCED_DISTANCE_SCALE = Number.EPSILON * 32;
 const DEFAULT_DISPLAY_DECIMALS = 2;
 const MAX_ADAPTIVE_DISPLAY_DECIMALS = 6;
+const MAX_SHARED_FIXED_DISPLAY_DECIMALS = 7;
+const MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS = 12;
+
+interface NarrativeDisplayPlan {
+  readonly notation: "fixed" | "scientific";
+  readonly decimals?: number;
+  readonly significantDigits?: number;
+}
 
 function assertFiniteNumber(name: string, value: number): void {
   if (!Number.isFinite(value)) {
@@ -136,6 +144,10 @@ function roundToDisplayDecimals(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
+function roundToSignificantDigits(value: number, significantDigits: number): number {
+  return Number(value.toPrecision(significantDigits));
+}
+
 function resolveAdaptiveDisplayDecimals(values: readonly number[]): number {
   for (let decimals = DEFAULT_DISPLAY_DECIMALS; decimals <= MAX_ADAPTIVE_DISPLAY_DECIMALS; decimals += 1) {
     const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToDisplayDecimals(Math.abs(value), decimals) !== 0);
@@ -159,12 +171,65 @@ function resolveAdaptiveDisplayDecimals(values: readonly number[]): number {
   return MAX_ADAPTIVE_DISPLAY_DECIMALS;
 }
 
+function resolveNarrativeDisplayPlan(values: readonly number[]): NarrativeDisplayPlan {
+  for (let decimals = DEFAULT_DISPLAY_DECIMALS; decimals <= MAX_SHARED_FIXED_DISPLAY_DECIMALS; decimals += 1) {
+    const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToDisplayDecimals(Math.abs(value), decimals) !== 0);
+    if (!nonZeroRelationPreserved) {
+      continue;
+    }
+
+    const [left, right] = values;
+    if (
+      left !== undefined
+      && right !== undefined
+      && left !== right
+      && roundToDisplayDecimals(left, decimals) === roundToDisplayDecimals(right, decimals)
+    ) {
+      continue;
+    }
+
+    return { notation: "fixed", decimals };
+  }
+
+  for (let significantDigits = DEFAULT_DISPLAY_DECIMALS + 1; significantDigits <= MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS; significantDigits += 1) {
+    const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToSignificantDigits(Math.abs(value), significantDigits) !== 0);
+    if (!nonZeroRelationPreserved) {
+      continue;
+    }
+
+    const [left, right] = values;
+    if (
+      left !== undefined
+      && right !== undefined
+      && left !== right
+      && roundToSignificantDigits(left, significantDigits) === roundToSignificantDigits(right, significantDigits)
+    ) {
+      continue;
+    }
+
+    return { notation: "scientific", significantDigits };
+  }
+
+  return {
+    notation: "scientific",
+    significantDigits: MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS,
+  };
+}
+
 function formatDisplayNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
   if (decimals <= DEFAULT_DISPLAY_DECIMALS) {
     return formatNumber(value);
   }
 
   return value.toFixed(decimals);
+}
+
+function formatNarrativeNumber(value: number, plan: NarrativeDisplayPlan): string {
+  if (plan.notation === "fixed") {
+    return formatDisplayNumber(value, plan.decimals ?? DEFAULT_DISPLAY_DECIMALS);
+  }
+
+  return formatScientificNumber(Number(value.toPrecision(plan.significantDigits ?? MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS)));
 }
 
 function formatDeltaNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
@@ -239,10 +304,10 @@ function buildMeanShiftDirectionNarrative(
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
   const rawMargin = input.cpk - input.targetCpk;
   const margin = rawMargin;
-  const displayDecimals = resolveAdaptiveDisplayDecimals([input.cpk, input.targetCpk, rawMargin]);
+  const displayPlan = resolveNarrativeDisplayPlan([input.cpk, input.targetCpk, rawMargin]);
   const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
   const headline = rawMargin >= 0 ? "Capability meets target" : "Capability is below target";
-  const judgment = `Cpk ${formatDisplayNumber(input.cpk, displayDecimals)} is ${formatDeltaNumber(Math.abs(rawMargin), displayDecimals)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatDisplayNumber(input.targetCpk, displayDecimals)}.`;
+  const judgment = `Cpk ${formatNarrativeNumber(input.cpk, displayPlan)} is ${formatNarrativeNumber(Math.abs(rawMargin), displayPlan)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatNarrativeNumber(input.targetCpk, displayPlan)}.`;
   const nearerSpecificationSide = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   return nearerSpecificationSide === undefined ? {
     status,
@@ -415,22 +480,22 @@ function buildEngineeringSummary(
   resultJudgment: F7NarrativeResultJudgment,
   rootCauseAnalysis: readonly F7NarrativeRootCauseItem[],
 ): string {
-  const displayDecimals = resolveAdaptiveDisplayDecimals([
+  const displayPlan = resolveNarrativeDisplayPlan([
     resultJudgment.cpk,
     resultJudgment.targetCpk,
     resultJudgment.margin,
   ]);
 
   if (resultJudgment.status === "meets-target") {
-    return `Capability currently meets the resolved target with a margin of ${formatDeltaNumber(resultJudgment.margin, displayDecimals)}; continue stability verification with representative evidence and ME review.`;
+    return `Capability currently meets the resolved target with a margin of ${formatNarrativeNumber(resultJudgment.margin, displayPlan)}; continue stability verification with representative evidence and ME review.`;
   }
 
   const completeRules = rootCauseAnalysis.filter((item) => item.completeEvidence).map((item) => item.ruleId);
   if (completeRules.length === 0) {
-    return `Capability is below target by ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
+    return `Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
   }
 
-  return `Capability is below target by ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
+  return `Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
 }
 
 function buildEngineeringRisk(
@@ -442,12 +507,12 @@ function buildEngineeringRisk(
     return "The calculated result meets the resolved target and indicates a stable baseline only if representative evidence and ME review confirm the assumptions.";
   }
 
-  const displayDecimals = resolveAdaptiveDisplayDecimals([
+  const displayPlan = resolveNarrativeDisplayPlan([
     resultJudgment.cpk,
     resultJudgment.targetCpk,
     resultJudgment.margin,
   ]);
-  const clauses = [`The capability shortfall of ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)} indicates below-target performance`];
+  const clauses = [`The capability shortfall of ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)} indicates below-target performance`];
   if (resultJudgment.nearerSpecificationSide === "LSL" || resultJudgment.nearerSpecificationSide === "USL") {
     clauses.push(`the mean direction is consistent with nearer exposure toward ${resultJudgment.nearerSpecificationSide}`);
   } else if (resultJudgment.nearerSpecificationSide === "balanced") {

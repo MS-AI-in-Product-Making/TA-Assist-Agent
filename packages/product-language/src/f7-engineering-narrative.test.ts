@@ -82,7 +82,7 @@ function expectRecursivelyFrozen(value: unknown): void {
 }
 
 function expectNoZeroRepresentation(text: string): void {
-  expect(text).not.toMatch(/(^|\s|[;(])(?:[+-]?0(?:\.0+)?)(?=$|\s|[;).])/);
+  expect(text).not.toMatch(/(^|\s|[;(])(?:[+-]?0(?:\.0+)?)(?=$|\s|[;,])/);
 }
 
 describe("buildF7EngineeringNarrative", () => {
@@ -216,13 +216,33 @@ describe("buildF7EngineeringNarrative", () => {
 
     expect(narrative.resultJudgment.status).toBe("below-target");
     expect(narrative.resultJudgment.margin).toBeCloseTo(-1e-7, 12);
-    expect(narrative.resultJudgment.judgment).toContain("1e-7 below");
+    expect(narrative.resultJudgment.judgment).toContain("0.0000001 below");
     expect(narrative.resultJudgment.judgment).not.toContain("0 below");
-    expect(narrative.engineeringSummary).toContain("below target by 1e-7");
-    expect(narrative.engineeringRisk).toContain("shortfall of 1e-7 indicates below-target performance");
+    expect(narrative.engineeringSummary).toContain("below target by 0.0000001");
+    expect(narrative.engineeringRisk).toContain("shortfall of 0.0000001 indicates below-target performance");
     expectNoZeroRepresentation(narrative.resultJudgment.judgment);
     expectNoZeroRepresentation(narrative.engineeringSummary);
     expectNoZeroRepresentation(narrative.engineeringRisk);
+  });
+
+  it("keeps near-target negative endpoints distinguishable and relation-consistent in judgment summary and risk", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.3299999,
+      targetCpk: 1.33,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("below-target");
+    expect(narrative.resultJudgment.judgment).toBe("Cpk 1.3299999 is 0.0000001 below the resolved target of 1.3300000.");
+    expect(narrative.engineeringSummary).toBe(
+      "Capability is below target by 0.0000001, and enhanced root-cause explanation remains limited by incomplete evidence.",
+    );
+    expect(narrative.engineeringRisk).toBe(
+      "The capability shortfall of 0.0000001 indicates below-target performance; the mean direction is consistent with nearer exposure toward USL; all matched hypotheses require validation.",
+    );
   });
 
   it("renders subprecision positive margins without collapsing them to zero prose", () => {
@@ -239,12 +259,34 @@ describe("buildF7EngineeringNarrative", () => {
 
     expect(narrative.resultJudgment.status).toBe("meets-target");
     expect(narrative.resultJudgment.margin).toBeCloseTo(1e-7, 12);
-    expect(narrative.resultJudgment.judgment).toContain("1e-7 above");
+    expect(narrative.resultJudgment.judgment).toContain("0.0000001 above");
     expect(narrative.resultJudgment.judgment).not.toContain("0 above");
-    expect(narrative.engineeringSummary).toContain("margin of 1e-7");
+    expect(narrative.engineeringSummary).toContain("margin of 0.0000001");
     expectNoZeroRepresentation(narrative.resultJudgment.judgment);
     expectNoZeroRepresentation(narrative.engineeringSummary);
     expectNoZeroRepresentation(narrative.engineeringRisk);
+  });
+
+  it("keeps near-target positive endpoints distinguishable and relation-consistent in judgment summary and risk", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.3300001,
+      targetCpk: 1.33,
+      cp: 1.3300001,
+      mean: 0,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("meets-target");
+    expect(narrative.resultJudgment.judgment).toBe("Cpk 1.3300001 is 0.0000001 above the resolved target of 1.3300000.");
+    expect(narrative.engineeringSummary).toBe(
+      "Capability currently meets the resolved target with a margin of 0.0000001; continue stability verification with representative evidence and ME review.",
+    );
+    expect(narrative.engineeringRisk).toBe(
+      "The calculated result meets the resolved target and indicates a stable baseline only if representative evidence and ME review confirm the assumptions.",
+    );
   });
 
   it("treats equal mean-to-limit distances as balanced within scaled tolerance", () => {
