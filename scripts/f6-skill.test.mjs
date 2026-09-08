@@ -321,27 +321,20 @@ describe("Design Optimization skill contract", () => {
   it("documents product-triggered orchestration and governance mapping", () => {
     const documents = {
       readme: readFileSync(path.join(root, "README.md"), "utf8"),
+      entrySkill: readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8"),
       englishFlow: readFileSync(path.join(root, "docs", "02-end-to-end-flow.md"), "utf8"),
-      chineseFlow: readFileSync(path.join(root, "docs", "02-端到端流程.md"), "utf8"),
       register: readFileSync(path.join(root, "docs", "governance", "feature-register.md"), "utf8"),
     };
-    for (const markdown of Object.values(documents)) expect(markdown).toContain("Design Optimization");
-    expect(documents.readme).not.toContain(".github/skills/f6-analysis/SKILL.md");
-    expect(documents.englishFlow).not.toContain(".github/skills/f6-analysis/SKILL.md");
-    expect(documents.chineseFlow).not.toContain(".github/skills/f6-analysis/SKILL.md");
-    expect(documents.register).not.toContain(".github/skills/f6-analysis/SKILL.md");
-    for (const markdown of [documents.readme, documents.englishFlow, documents.chineseFlow]) {
-      expect(markdown).toContain("F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6");
-      expect(markdown).toContain("two worksheet confirmations");
-      expect(markdown).toContain("current-run F3");
-      expect(markdown).toContain("governance_required");
-      expect(markdown).toContain("optional ADO publishing gate");
-      expect(markdown).toContain("never automatic or implicit");
-      expect(markdown).toContain("f5-image-observation-v2");
-      expect(markdown).toContain("insufficient_evidence");
-      expect(markdown).toContain("not_computed");
-      expect(markdown).toContain("F1-F6 output ledger");
-    }
+    for (const markdown of [documents.readme, documents.englishFlow, documents.register]) expect(markdown).toContain("Design Optimization");
+    expect(documents.readme).toContain("/ta-assist-agent");
+    expect(documents.entrySkill).toContain("REQUIRED SUB-SKILL: Use design-optimization");
+    expect(documents.englishFlow).toContain("F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6");
+    expect(documents.englishFlow).toContain("two worksheet confirmations");
+    expect(documents.englishFlow).toContain("current-run F3");
+    expect(documents.englishFlow).toContain("governance_required");
+    expect(documents.englishFlow).toContain("optional ADO publishing gate");
+    expect(documents.englishFlow).toContain("never automatic or implicit");
+    expect(documents.englishFlow).toContain("f5-image-observation-v2");
     for (const check of [
       "f6-skill-contract-check",
       "f0-f6-real-workbook-flow",

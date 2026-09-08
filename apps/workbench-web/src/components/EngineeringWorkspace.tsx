@@ -139,8 +139,8 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
         </section>
       </div>
       {assistantOpen ? (
-        <aside className="assistant-drawer" aria-label="TA Assistant drawer">
-          <button type="button" className="assistant-drawer__close" aria-label="Close TA Assistant" onClick={() => setAssistantOpen(false)}>×</button>
+        <aside className="assistant-drawer" aria-label="TA Assist Agent drawer">
+          <button type="button" className="assistant-drawer__close" aria-label="Close TA Assist Agent" onClick={() => setAssistantOpen(false)}>×</button>
           <TaAssistantPanel worksheetName={worksheet?.worksheetName} factorName={selectedFactor?.factorName.displayText} turns={props.conversation} api={props.api} sessionId={props.sessionId} disabled={props.loading} onSubmit={(message) => props.onSubmitConversation(message, {
             ...(worksheet === undefined ? {} : { worksheetName: worksheet.worksheetName }),
             ...(selectedFactor === undefined ? {} : { tableId: selectedFactor.tableId, sourceRow: selectedFactor.sourceRow, factorName: selectedFactor.factorName.sourceText }),
@@ -153,7 +153,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
           />
         </aside>
       ) : null}
-      <button type="button" className="assistant-drawer__open icon-button" aria-label="Open TA Assistant" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(true)}>?</button>
+      <button type="button" className="assistant-drawer__open icon-button" aria-label="Open TA Assist Agent" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(true)}>?</button>
       <div className={`connection-indicator ${props.connected ? "connection-indicator--online" : ""}`}>{props.connected ? "Connected" : "Reconnecting"}</div>
     </main>
   );

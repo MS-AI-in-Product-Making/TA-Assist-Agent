@@ -44,7 +44,7 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
     ? { current: "当前上下文", waiting: "等待工作区", next: "下一请求上下文", suggested: "建议问题" }
     : { current: "Current context", waiting: "Waiting for workspace", next: "Next request context", suggested: "Suggested prompts" };
   return (
-    <section className="ta-assistant" aria-label="TA Assistant">
+    <section className="ta-assistant" aria-label="TA Assist Agent">
       <div className="assistant-context">
         <div className="assistant-context__current">
           <span>{copy.current}</span>

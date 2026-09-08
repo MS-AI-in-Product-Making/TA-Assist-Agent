@@ -50,7 +50,7 @@ describe("EngineeringWorkspace", () => {
     fireEvent.keyDown(picker, { key: "ArrowDown" });
     fireEvent.keyDown(picker, { key: "Enter" });
     expect(onSelectWorksheet).toHaveBeenCalledWith("Analysis-A");
-    expect(screen.getByRole("button", { name: "Open TA Assistant" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Open TA Assist Agent" })).toHaveAttribute("aria-expanded", "false");
   }, 15_000);
 
   it("explains why a selected worksheet has no F4 analysis", () => {
@@ -174,7 +174,7 @@ describe("EngineeringWorkspace", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Gap factor", description: "间隙因子" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assist Agent" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Conversation input" }), { target: { value: "Compare baseline and scenario." } });
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
@@ -288,20 +288,20 @@ describe("EngineeringWorkspace", () => {
     expect(firstStep?.querySelector(".analysis-progress__content")).not.toBeNull();
   }, 15_000);
 
-  it("keeps TA Assistant closed by default and toggles it from the floating control", () => {
+  it("keeps TA Assist Agent closed by default and toggles it from the floating control", () => {
     render(<EngineeringWorkspace {...handlers} model={readyModelWithFactor()} />);
 
-    const openButton = screen.getByRole("button", { name: "Open TA Assistant" });
+    const openButton = screen.getByRole("button", { name: "Open TA Assist Agent" });
     expect(openButton).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("region", { name: "TA Assistant" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "TA Assist Agent" })).not.toBeInTheDocument();
 
     fireEvent.click(openButton);
     expect(openButton).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("region", { name: "TA Assistant" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "TA Assist Agent" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close TA Assistant" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close TA Assist Agent" }));
     expect(openButton).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("region", { name: "TA Assistant" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "TA Assist Agent" })).not.toBeInTheDocument();
   }, 15_000);
 
   it("renders an analysis cockpit with factor table and a live analysis panel", () => {

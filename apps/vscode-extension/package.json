@@ -1,10 +1,10 @@
 {
-  "name": "ta-assist-workbook-analysis-beta",
+  "name": "ta-assist-agent",
   "private": true,
   "version": "0.1.0",
   "publisher": "ai-assist",
-  "displayName": "TA Assist Workbook Analysis Beta",
-  "description": "Resume and inspect governed TA workbook analysis.",
+  "displayName": "TA Assist Agent",
+  "description": "Run, resume, and inspect governed tolerance analysis.",
   "type": "module",
   "main": "./dist/extension.js",
   "scripts": {
@@ -23,39 +23,39 @@
     "commands": [
       {
         "command": "ta-assist.analyze",
-        "title": "TA Assist: Analyze Workbook"
+        "title": "TA Assist Agent: Analyze Workbook"
       },
       {
         "command": "ta-assist.resume",
-        "title": "TA Assist: Resume Session"
+        "title": "TA Assist Agent: Resume Session"
       },
       {
         "command": "ta-assist.workbench",
-        "title": "TA Assist: Open Workbench"
+        "title": "TA Assist Agent: Open Workbench"
       },
       {
         "command": "ta-assist.openKnowledgeLibrary",
-        "title": "TA Assist: Open Knowledge Library"
+        "title": "TA Assist Agent: Open Knowledge Library"
       },
       {
         "command": "ta-assist.openRealMeasurementAnalysis",
-        "title": "TA Assist: Open Real-Measurement Analysis"
+        "title": "TA Assist Agent: Open Real-Measurement Analysis"
       },
       {
         "command": "ta-assist.openSessionRecord",
-        "title": "TA Assist: Open Session Record"
+        "title": "TA Assist Agent: Open Session Record"
       },
       {
         "command": "ta-assist.executeHostAction",
-        "title": "TA Assist: Execute Surface Host Action"
+        "title": "TA Assist Agent: Execute Surface Host Action"
       }
     ],
     "chatParticipants": [
       {
         "id": "ta-assist",
         "name": "ta-assist",
-        "fullName": "TA Assist",
-        "description": "Resume and inspect governed TA workbook analysis.",
+        "fullName": "TA Assist Agent",
+        "description": "Run, resume, and inspect governed tolerance analysis.",
         "commands": [
           {
             "name": "analyze",

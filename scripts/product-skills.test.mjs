@@ -24,6 +24,22 @@ const executionAliases = [
 ];
 
 describe("product Agent Skills", () => {
+  it("provides TA Assist Agent as the primary complete-workbook entry", () => {
+    const skillPath = join(root, ".github", "skills", "ta-assist-agent", "SKILL.md");
+    expect(existsSync(skillPath)).toBe(true);
+    const skill = readFileSync(skillPath, "utf8");
+
+    expect(skill).toMatch(/^---\r?\nname: ta-assist-agent\r?$/m);
+    expect(skill).toContain("user-invocable: true");
+    expect(skill).toContain("# TA Assist Agent");
+    expect(skill).toContain("REQUIRED SUB-SKILL: Use design-optimization");
+    expect(skill).toMatch(/Do not use for generic spreadsheet editing/i);
+    expect(skill).toMatch(/generic Cpk questions/i);
+    expect(skill).toMatch(/Monte Carlo programming/i);
+    expect(skill).toMatch(/actual measurement|real measurement/i);
+    expect(skill).toMatch(/reviewed feedback/i);
+  });
+
   it.each(skills)("provides the standard %s skill", (name, title) => {
     const skill = readFileSync(join(root, ".github", "skills", name, "SKILL.md"), "utf8");
     const userFacingSkill = skill.split("## Internal executor contract")[0];

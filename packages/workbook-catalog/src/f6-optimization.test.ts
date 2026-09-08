@@ -1812,6 +1812,19 @@ describe("createF6Optimization V3", () => {
     expect(JSON.stringify(result)).not.toMatch(/OP[123]|BUILT_IN_POLICY|reductionRatio|policyContext|"ratio"/u);
   });
 
+  it("preserves the complete governed report scope including blocked worksheets", () => {
+    const input = request("Analysis-A");
+    input.reportScope = {
+      worksheetNames: ["Analysis-A", "Blocked-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    };
+
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+
+    expect(result.provenance.reportScope).toEqual(input.reportScope);
+    expect(result.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+  });
+
   it("reports an aligned center and routes both failed specification sides independently", () => {
     const input = request("Analysis-A", { lowerSpecLimit: -4.5, upperSpecLimit: 5.5, targetCpk: 1.33, targetSigmaLevel: 4 });
     const result = createF6OptimizationV3(input, v3Inputs(input));

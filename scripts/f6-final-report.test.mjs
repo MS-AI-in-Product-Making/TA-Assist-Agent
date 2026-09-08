@@ -947,6 +947,43 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
 });
 
 describe("createF6FinalReportProjection v3", () => {
+  it("shows exact row and image blockers for evidence-only worksheets", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+    const blockedWorksheet = inputs.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Blocked-A");
+    blockedWorksheet.missingFieldSummary = [{ field: "nominalValue", factorCount: 1, sourceRows: [20] }];
+
+    const { markdown, reportSummary } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(reportSummary.worksheetDispositions).toEqual([
+      { worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" },
+      { worksheetName: "Blocked-A", disposition: "FAIL" },
+    ]);
+    expect(reportSummary.workbookDisposition).toBe("FAIL");
+    expect(markdown).toContain("Worksheet: Blocked-A");
+    expect(markdown).toContain("Model interpretation unavailable");
+    expect(markdown).toContain("Row 20: Design Nominal is missing.");
+    expect(markdown).toContain("Tolerance path image is missing.");
+    expect(markdown).not.toContain("Required input, image, or calculation is missing");
+  });
+
+  it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.modelInterpretation.worksheets[0].request.factorRows[0].dimId = "101";
+    inputs.modelInterpretation.worksheets[0].request.factorSetHash = createF5MultimodalFactorSetHash(
+      inputs.modelInterpretation.worksheets[0].request.factorRows,
+    );
+    inputs.modelInterpretation.worksheets[0].request.requestHash = createF5MultimodalRequestHash(
+      inputs.modelInterpretation.worksheets[0].request,
+    );
+    inputs.modelInterpretation.worksheets[0].result.requestHash = inputs.modelInterpretation.worksheets[0].request.requestHash;
+    inputs.f2Report = JSON.parse(JSON.stringify(inputs.f2Report).replaceAll('"DIM-100"', "101"));
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).not.toThrow();
+  });
+
   it.each([1, 2, 3])("renders %i worksheets in governed ordinal order", (worksheetCount) => {
     const worksheetNames = Array.from({ length: worksheetCount }, (_, index) => `Analysis-${String.fromCharCode(65 + index)}`);
     const inputs = loadRealF6Inputs({ worksheetNames });
@@ -977,11 +1014,49 @@ describe("createF6FinalReportProjection v3", () => {
     expect(report.markdown).not.toContain("Workbook Summary");
   });
 
+  it("renders the complete governed report contract without provenance columns", () => {
+    const inputs = loadRealF6Inputs({
+      actualFieldOverrides: { nominalValue: 0.2, mean: 0.2, notes: "Review assembly stack." },
+    });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const markdown = report.markdown;
+
+    expect(markdown).toContain("## 1. Document Overview");
+    expect(markdown).toContain("## 2. Workbook Summary");
+    expect(markdown).toContain("| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability Library Result | Knowledge Library Recommendation |");
+    expect(markdown).toContain("| A | 2 | Factor Analysis-A | Part Analysis-A | DRAW-100 | DIM-100 | CNC |");
+    expect(markdown).toContain("Review assembly stack.");
+
+    expect(markdown).toContain("## 3-1.4 Requirements and Statistical Results");
+    for (const label of [
+      "Design Nominal", "LSL", "USL", "Target Cpk", "Evaluation Level",
+      "Statistical Range", "Worst-Case Range", "Predictive Cp", "Predictive CpkL",
+      "Predictive CpkU", "Predictive Cpk", "Predicted Yield", "Predicted DPM",
+      "Mean Response", "Mean Shift", "RSS One Sigma",
+    ]) expect(markdown).toContain(label);
+
+    expect(markdown).toContain("## 3-1.5 F0 Capability and Knowledge Guidance");
+    expect(markdown).toContain("| Factor | Capability Library Result | Recommended Tolerance Band or Range | Recommended Distribution | Knowledge Recommendation |");
+    expect(markdown).toContain(String.raw`non\_f0\_process\_category`);
+
+    expect(markdown).toContain("## 3-1.6 Adjusted Mean to Spec Center Shift");
+    expect(markdown).toContain("Adjusted Mean: 0.200 mm");
+    expect(markdown).toContain("Specification Center: 0.000 mm");
+    expect(markdown).toContain("Offset: 0.200 mm");
+    expect(markdown).toContain("optimize Factor nominal values");
+
+    expect(markdown).toContain("## 3-1.7 Contributor Priorities");
+    expect(markdown).toContain("| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |");
+    expect(markdown).toContain("Focus tolerance-range review on the first three priorities.");
+    expect(markdown).toContain("## 3-1.8 Specification Changes");
+    expect(markdown).not.toMatch(/^\|[^\n]*\|\s*(?:Source|Evidence|来源|证据)\s*\|[^\n]*$/imu);
+  });
+
   it("renders qualitative priorities without fixed percentages and suppresses an aligned-center warning", () => {
     const inputs = loadRealF6Inputs();
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toContain("| 1 | Factor Analysis-A | High | tighten\\_tolerance |");
+    expect(report.markdown).toContain("| 1 | Factor Analysis-A | 0.050000 mm | 100.0% | High | tighten\\_tolerance |");
     expect(report.markdown).toContain("- Status: aligned");
     expect(report.markdown).not.toMatch(/OP[123]|20%|30%|center warning/iu);
   });
@@ -1008,7 +1083,7 @@ describe("createF6FinalReportProjection v3", () => {
     const provenance = structuredClone(inputs.f6Optimization.provenance);
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).not.toMatch(/^\|[^\n]*(?:Source|Evidence|来源|证据)[^\n]*\|$/imu);
+    expect(report.markdown).not.toMatch(/^\|[^\n]*\|\s*(?:Source|Evidence|来源|证据)\s*\|[^\n]*$/imu);
     expect(JSON.stringify(report.projection)).not.toMatch(/"(?:source|evidence|来源|证据)"\s*:/iu);
     expect(inputs.f6Optimization.provenance).toEqual(provenance);
     expect(report.projection.worksheets[0].gatingEvidenceReferences).toHaveLength(2);

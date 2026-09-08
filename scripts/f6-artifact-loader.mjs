@@ -452,6 +452,11 @@ function f2WorksheetMatchesHandoff(worksheet, handoff, workbookContentHash) {
   }
 }
 
+function sameDimId(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  return String(left) === String(right);
+}
+
 export function loadF6ArtifactBundle({
   f2ArtifactRoot,
   f3ArtifactRoot,
@@ -946,7 +951,7 @@ export function loadF6ArtifactBundle({
         || row.partName !== f2Row.actualFields.partName
         || row.partCategory !== f2Row.actualFields.partCategory
         || row.drawingNumber !== f2Row.actualFields.drawingNumber
-        || row.dimId !== f2Row.actualFields.dimCharacteristicId
+        || !sameDimId(row.dimId, f2Row.actualFields.dimCharacteristicId)
         || row.nominal !== factor.input.nominalValue
         || row.upperTolerance !== factor.input.upperTolerance
         || row.lowerTolerance !== factor.input.lowerTolerance

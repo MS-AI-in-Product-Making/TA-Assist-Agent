@@ -13,12 +13,12 @@ export async function syncConversationUnread(input: {
   const cursor = await input.store.readCursor(input.sessionId, input.consumerId) ?? 0;
   const turns = await input.store.readTurns(input.sessionId, { afterSequence: cursor });
   const latest = turns.reduce((maximum, turn) => Math.max(maximum, turn.sequence), cursor);
-  input.status.text = turns.length === 0 ? "TA Assist" : `TA Assist (${turns.length})`;
+  input.status.text = turns.length === 0 ? "TA Assist Agent" : `TA Assist Agent (${turns.length})`;
   return {
     unreadCount: turns.length,
     async markRead() {
       if (latest > cursor) await input.store.advanceCursor(input.sessionId, input.consumerId, latest);
-      input.status.text = "TA Assist";
+      input.status.text = "TA Assist Agent";
     },
   };
 }

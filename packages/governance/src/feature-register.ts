@@ -366,7 +366,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
     "F8",
     {
       featureId: "F8",
-      title: "TA Assist Workbench",
+      title: "TA Assist Agent Workbench",
       status: "available",
       dependsOn: ["f8-session-command-v1", "f8-session-snapshot-v1", "ta-conversation-turn-v1", "surface-mcp-adapter-v1"],
       inputContractId: "f8-session-command-v1",

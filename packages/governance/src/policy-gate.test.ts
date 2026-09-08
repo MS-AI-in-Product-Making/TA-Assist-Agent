@@ -217,7 +217,7 @@ describe("policy gate", () => {
   it("registers confidential F8 Workbench while preserving the public smoke fixture", () => {
     expect(getFeatureStatus("F8")).toEqual({
       featureId: "F8",
-      title: "TA Assist Workbench",
+      title: "TA Assist Agent Workbench",
       status: "available",
       dependsOn: ["f8-session-command-v1", "f8-session-snapshot-v1", "ta-conversation-turn-v1", "surface-mcp-adapter-v1"],
       inputContractId: "f8-session-command-v1",

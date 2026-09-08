@@ -8710,8 +8710,25 @@ const f6ProvenanceV3Schema = z.object({
   f4Reference: f6ArtifactReferenceSchema,
   f5Reference: f6ArtifactReferenceSchema,
   multimodalReference: f6ArtifactReferenceSchema,
-  reportScope: z.object({ worksheetNames: z.array(z.string().min(1)).min(1) }).strict(),
-}).strict();
+  reportScope: z.object({
+    worksheetNames: z.array(z.string().min(1)).min(1),
+    blockedWorksheetNames: z.array(z.string().min(1)),
+  }).strict(),
+}).strict().superRefine((provenance, context) => {
+  const scopeNames = provenance.reportScope.worksheetNames;
+  const blockedScopeNames = provenance.reportScope.blockedWorksheetNames;
+  const scopeNameSet = new Set(scopeNames);
+  const blockedScopeNameSet = new Set(blockedScopeNames);
+  if (scopeNameSet.size !== scopeNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "report scope worksheet names must be unique", path: ["reportScope", "worksheetNames"] });
+  }
+  if (blockedScopeNameSet.size !== blockedScopeNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked report scope worksheet names must be unique", path: ["reportScope", "blockedWorksheetNames"] });
+  }
+  if (blockedScopeNames.some((name) => !scopeNameSet.has(name))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked report scope names must be a subset of worksheet names", path: ["reportScope", "blockedWorksheetNames"] });
+  }
+});
 
 export const f6OptimizationResultV3Schema = z.object({
   contractVersion: contractVersionSchema,
@@ -8730,9 +8747,11 @@ export const f6OptimizationResultV3Schema = z.object({
   if (new Set(worksheetNames).size !== worksheetNames.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
   }
-  if (result.provenance.reportScope.worksheetNames.length !== worksheetNames.length
-    || result.provenance.reportScope.worksheetNames.some((name, index) => name !== worksheetNames[index])) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "report scope must match worksheet order", path: ["provenance", "reportScope", "worksheetNames"] });
+  const blockedScopeNameSet = new Set(result.provenance.reportScope.blockedWorksheetNames);
+  const nonblockedScopeNames = result.provenance.reportScope.worksheetNames.filter((name) => !blockedScopeNameSet.has(name));
+  if (nonblockedScopeNames.length !== worksheetNames.length
+    || nonblockedScopeNames.some((name, index) => name !== worksheetNames[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization worksheets must match nonblocked report scope order", path: ["provenance", "reportScope"] });
   }
   result.worksheets.forEach((worksheet, index) => {
     if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {

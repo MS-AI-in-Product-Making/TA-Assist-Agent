@@ -33,7 +33,7 @@ describe("handleParticipant", () => {
 
   it("routes natural-language TA analyze before ordinary participant conversation", async () => {
     const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
-    const handleAnalyzeIntent = vi.fn(async () => "TA Assist Workbench is ready. Upload a workbook to begin.");
+    const handleAnalyzeIntent = vi.fn(async () => "TA Assist Agent Workbench is ready. Upload a workbook to begin.");
     const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
 
     await handleParticipant({ prompt: "帮我分析 \"C:\\TA Reports\\report.xlsx\"", command: undefined, model: {} }, {
@@ -47,7 +47,7 @@ describe("handleParticipant", () => {
 
     expect(handleAnalyzeIntent).toHaveBeenCalledWith({ kind: "analyze_ta", workbookPath: "C:\\TA Reports\\report.xlsx" }, "帮我分析 \"C:\\TA Reports\\report.xlsx\"");
     expect(handleTurn).not.toHaveBeenCalled();
-    expect(stream.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    expect(stream.markdown).toHaveBeenCalledWith("TA Assist Agent Workbench is ready. Upload a workbook to begin.");
   });
 
   it("routes explicit real-measurement requests away from workbook analysis", async () => {
@@ -163,7 +163,7 @@ describe("handleParticipant", () => {
     });
 
     expect(handleTurn).not.toHaveBeenCalled();
-    expect(stream.markdown).toHaveBeenCalledWith("Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench.");
+    expect(stream.markdown).toHaveBeenCalledWith("Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Agent Workbench.");
   });
 
   it("uses the current request model and returns without persistence when cancelled", async () => {

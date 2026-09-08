@@ -21,11 +21,11 @@ import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
 
 interface F6Layout {
+  readonly artifactSetVersion: "f6-artifact-set-v2";
   readonly runId: string;
   readonly runRoot: string;
   readonly publishRoot: string;
   readonly optimizationJsonName: string;
-  readonly optimizationMdName: string;
   readonly finalReportMdName: string;
   readonly runSummaryJsonName: string;
   readonly manifestName: string;
@@ -36,7 +36,6 @@ export interface F6Dependencies {
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
   readonly createOptimization?: typeof createF6OptimizationV3;
   readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
-  readonly renderOptimization?: (optimization: any, options: { outputRoot: string }) => string;
   readonly mkdir?: typeof mkdirSync;
   readonly randomUUID?: typeof randomUUID;
   readonly realpath?: typeof realpathSync;
@@ -231,7 +230,6 @@ function cleanupStaging(boundary: ReturnType<typeof captureBoundary>, staging: R
 function outputPaths(layout: F6Layout) {
   return {
     optimizationJson: path.join(layout.runRoot, layout.optimizationJsonName),
-    optimizationMarkdown: path.join(layout.runRoot, layout.optimizationMdName),
     finalReportMarkdown: path.join(layout.runRoot, layout.finalReportMdName),
     runSummary: path.join(layout.runRoot, layout.runSummaryJsonName),
     manifest: path.join(layout.runRoot, layout.manifestName),
@@ -255,6 +253,7 @@ function safeSources(sourceReferences: Record<string, { artifact: string; conten
 function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown) {
   return {
     contractVersion: "v1",
+    artifactSetVersion: layout.artifactSetVersion,
     featureId: "F6",
     status,
     runId: layout.runId,
@@ -327,7 +326,6 @@ export function runF6Optimization(
   const loadBundle = dependencies.loadBundle;
   const createOptimization = dependencies.createOptimization ?? createF6OptimizationV3;
   const createFinalReport = dependencies.createFinalReport;
-  const renderOptimization = dependencies.renderOptimization;
   const mkdir = dependencies.mkdir ?? mkdirSync;
   const randomUuid = dependencies.randomUUID ?? randomUUID;
   const realpath = dependencies.realpath ?? realpathSync;
@@ -341,7 +339,7 @@ export function runF6Optimization(
   const afterRename = dependencies.afterRename ?? (() => {});
   const rmdir = dependencies.rmdir ?? rmdirSync;
   const rm = dependencies.rm ?? rmSync;
-  if (!resolveOutputLayout || !loadBundle || !createFinalReport || !renderOptimization) {
+  if (!resolveOutputLayout || !loadBundle || !createFinalReport) {
     throw normalizeRunnerError(new Error("Feature 6 runner dependency is missing."), {
       fallbackRunId: context.attemptId,
       affectedInputReferences: ["f6"],
@@ -417,12 +415,12 @@ export function runF6Optimization(
 
     const contents = {
       optimizationJson: json(optimization),
-      optimizationMarkdown: renderOptimization(optimization, { outputRoot: layout.runRoot }),
       finalReportMarkdown: finalReport.markdown,
     };
     const workflowStatus = optimization.runStatus.toLowerCase() as F6OptimizationResult["status"];
     const summary = {
       contractVersion: "v1",
+      artifactSetVersion: layout.artifactSetVersion,
       featureId: "F6",
       status: workflowStatus,
       sources: safeSources(loaded.sourceReferences),
@@ -435,7 +433,7 @@ export function runF6Optimization(
 
     failureStage = "output";
     const writeDependencies = { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm };
-    for (const key of ["optimizationJson", "optimizationMarkdown", "finalReportMarkdown"] as const) {
+    for (const key of ["optimizationJson", "finalReportMarkdown"] as const) {
       atomicWrite(paths[key], contents[key], boundary, staging, writeDependencies);
       artifacts[key] = path.basename(paths[key]);
     }
@@ -448,7 +446,6 @@ export function runF6Optimization(
       status: workflowStatus,
       outputDirectory: layout.runRoot,
       optimizationJsonPath: paths.optimizationJson,
-      optimizationMdPath: paths.optimizationMarkdown,
       finalReportMdPath: paths.finalReportMarkdown,
       runSummaryPath: paths.runSummary,
       manifestPath: paths.manifest,

@@ -49,11 +49,11 @@ export async function handleParticipant(
   if (handledAnalyzeIntent) return;
   if (dependencies.sessionId === undefined) {
     stream.markdown(dependencies.uiCatalogLanguage === "zh"
-      ? "请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。"
-      : "Use `/analyze` or `/resume <session-id>` to bind a TA Assist session first.");
+      ? "请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist Agent session。"
+      : "Use `/analyze` or `/resume <session-id>` to bind a TA Assist Agent session first.");
     return;
   }
-  stream.progress(dependencies.uiCatalogLanguage === "zh" ? "正在读取 TA Assist session..." : "Reading the TA Assist session...");
+  stream.progress(dependencies.uiCatalogLanguage === "zh" ? "正在读取 TA Assist Agent session..." : "Reading the TA Assist Agent session...");
   const result = await dependencies.handleTurn({
     text: request.prompt,
     sessionId: dependencies.sessionId,
@@ -99,8 +99,8 @@ async function handleAnalyzeIntent(
 
   if (workflowIntent.kind === "unsupported") {
     stream.markdown(dependencies.uiCatalogLanguage === "zh"
-      ? "无法将此请求路由到受支持的 TA Assist 产品能力。请明确请求知识库、TA 工作簿分析、真实量测分析或反馈应用。"
-      : "TA Assist cannot route this request to a supported product capability. Ask for Knowledge Library, TA workbook analysis, real-measurement analysis, or feedback application.");
+      ? "无法将此请求路由到受支持的 TA Assist Agent 产品能力。请明确请求知识库、TA 工作簿分析、真实量测分析或反馈应用。"
+      : "TA Assist Agent cannot route this request to a supported product capability. Ask for Knowledge Library, TA workbook analysis, real-measurement analysis, or feedback application.");
     return true;
   }
 
@@ -109,12 +109,12 @@ async function handleAnalyzeIntent(
   const classification = classifyParticipantAnalyzeIntent(request);
   if (classification?.kind === "invalid_analyze_ta") {
     stream.markdown(classification.reason === "multiple_paths"
-      ? "Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench."
-      : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, one exact .xlsx workbook file name, or no path.");
+      ? "Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Agent Workbench."
+      : "TA Assist Agent analyze accepts one Windows absolute .xlsx workbook path, one exact .xlsx workbook file name, or no path.");
     return true;
   }
   if (dependencies.handleAnalyzeIntent === undefined) return false;
-  stream.progress("正在准备 TA Assist Workbench...");
+  stream.progress("正在准备 TA Assist Agent Workbench...");
   const response = await dependencies.handleAnalyzeIntent(classification ?? { kind: "analyze_ta" }, request.prompt);
   if (cancellation.isCancellationRequested) return true;
   stream.markdown(response);
