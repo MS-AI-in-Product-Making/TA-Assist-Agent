@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
+  installF5CurrentObservationLedger,
   installF6ModelInterpretation,
   installRequiredMultimodalV3,
   installF6V2Evidence,
@@ -280,9 +281,10 @@ function installAllOptionalInputs(bundle) {
   };
 }
 
-function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], optionalInputs = false } = {}) {
-  const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames: [] });
+function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], optionalInputs = false, currentObservation = false, currentV3Blocked = false } = {}) {
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames: currentV3Blocked ? blockedWorksheetNames : [] });
   const optionalArtifacts = optionalInputs ? installAllOptionalInputs(bundle) : {};
+  if (currentObservation) installF5CurrentObservationLedger(bundle);
   installRequiredMultimodalV3(bundle);
   optionalArtifacts.modelInterpretationArtifact = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
   const runId = `2026-08-20T06-00-00-000Z-${worksheetNames.join("-")}`;
@@ -312,7 +314,7 @@ function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNa
   });
 
   expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
-  if (optionalInputs || blockedWorksheetNames.length > 0) rewriteAsHistoricalV2(runRoot, optionalArtifacts, blockedWorksheetNames);
+  if (optionalInputs || (blockedWorksheetNames.length > 0 && !currentV3Blocked)) rewriteAsHistoricalV2(runRoot, optionalArtifacts, blockedWorksheetNames);
   return { runRoot, bundle };
 }
 
@@ -365,6 +367,32 @@ describe("validateExistingF6Artifact", () => {
       outputDirectory: runRoot,
       finalReportMarkdownPath: path.join(runRoot, "Feature6-Report.md"),
     });
+  });
+
+  it("accepts a current v3 run with an auto-inherited F5 image-observation source", () => {
+    const { runRoot, bundle } = createVerifiedRun({ currentObservation: true });
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+
+    expect(summary.sources.imageObservation).toBeDefined();
+    const result = validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot });
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.outputDirectory).toBe(runRoot);
+  });
+
+  it("accepts a current v3 report with a governed blocked FAIL worksheet", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+      currentV3Blocked: true,
+    });
+
+    const result = validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot });
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.reportSummary.worksheetDispositions).toEqual([
+      { worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" },
+      { worksheetName: "Blocked-A", disposition: "FAIL" },
+    ]);
   });
 
   it("rejects artifacts missing both required input decision ledgers", () => {

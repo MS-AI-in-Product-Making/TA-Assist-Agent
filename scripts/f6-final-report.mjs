@@ -91,18 +91,19 @@ function assertExactWorksheetSet(worksheetNames, readyNames, label) {
 
 function assertReportScope(f2Report, f6Optimization) {
   const reportScope = f6Optimization.provenance.reportScope;
-  const expectedWorksheetNames = f2Report.worksheets
+  const allWorksheetNames = f2Report.worksheets.map(({ worksheetName }) => worksheetName);
+  const readyWorksheetNames = f2Report.worksheets
     .filter(({ status }) => status === "ready")
     .map(({ worksheetName }) => worksheetName);
-  if (f2Report.worksheets.some(({ status }) => status !== "ready")) failInvalid("blocked worksheet");
   if (reportScope.blockedWorksheetNames === undefined) {
-    if (!isDeepStrictEqual(reportScope.worksheetNames, expectedWorksheetNames)) failInvalid("report scope");
+    if (allWorksheetNames.length !== readyWorksheetNames.length
+      || !isDeepStrictEqual(reportScope.worksheetNames, readyWorksheetNames)) failInvalid("report scope");
     return;
   }
   const expectedBlockedWorksheetNames = f2Report.worksheets
     .filter(({ status }) => status === "blocked")
     .map(({ worksheetName }) => worksheetName);
-  if (!isDeepStrictEqual(reportScope.worksheetNames, expectedWorksheetNames)
+  if (!isDeepStrictEqual(reportScope.worksheetNames, allWorksheetNames)
     || !isDeepStrictEqual(reportScope.blockedWorksheetNames, expectedBlockedWorksheetNames)) {
     failInvalid("report scope");
   }
@@ -119,7 +120,8 @@ const F6_V3_REPORT_CATALOG = {
     rank: "Rank", priority: "Priority", guidance: "Guidance", side: "Side", currentLimit: "Current Limit",
     proposedLimit: "Proposed Limit", targetCpk: "Target Cpk", approval: "Approval",
     approvalRequired: "Engineering approval required", noProposal: "No specification change is proposed.",
-    clarification: "Clarification required", high: "High", medium: "Medium", lower: "Lower",
+    clarification: "Clarification required", modelUnavailable: "Model interpretation unavailable",
+    high: "High", medium: "Medium", lower: "Lower",
   },
   zh: {
     title: "TA 工程分析报告", workbook: "工作簿摘要", worksheet: "工作表", image: "公差路径图片",
@@ -129,7 +131,8 @@ const F6_V3_REPORT_CATALOG = {
     lowerTolerance: "-公差", distribution: "分布", sigmaLevel: "Sigma Level", status: "状态", rank: "排序",
     priority: "优先级", guidance: "建议", side: "规格侧", currentLimit: "当前限值", proposedLimit: "建议限值",
     targetCpk: "目标 Cpk", approval: "审批", approvalRequired: "需要工程审批", noProposal: "无需提出规格变更。",
-    clarification: "需要澄清", high: "高", medium: "中", lower: "较低",
+    clarification: "需要澄清", modelUnavailable: "模型解读 unavailable",
+    high: "高", medium: "中", lower: "较低",
   },
 };
 
@@ -192,6 +195,18 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
   return lines;
 }
 
+function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog) {
+  const prefix = `3-${ordinal}`;
+  return [
+    `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`,
+    "",
+    `- Status: FAIL`,
+    `- ${clean(primaryFinding(worksheet))}`,
+    `- ${catalog.modelUnavailable}`,
+    `- Required Action: ${clean(requiredAction(worksheet))}`,
+  ];
+}
+
 function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, generatedAt }) {
   if (f6Optimization.runStatus !== "COMPLETED" || f6Optimization.worksheets.some(({ runStatus }) => runStatus !== "COMPLETED")) {
     failInvalid("incomplete F6 optimization");
@@ -203,22 +218,36 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = { workbookDisposition, worksheetDispositions };
   const markdown = [`# ${catalog.title}`, "", `## 1. ${catalog.workbook}`, "", `- Workbook: ${clean(f2Report.workbook.fileName)}`, `- Worksheets: ${worksheets.length}`, `- Generated At: ${reportTimestamp(generatedAt)}`];
-  worksheets.forEach((worksheet, index) => markdown.push("", ...renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog)));
+  worksheets.forEach((worksheet, index) => markdown.push(
+    "",
+    ...(worksheet.f2Worksheet.status === "ready"
+      ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog)
+      : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog)),
+  ));
   const projection = {
     schemaVersion: "ta-engineering-report-projection-v1", title: catalog.title, workbookDisposition, worksheetDispositions,
     workbook: { fileName: f2Report.workbook.fileName, ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }), contentHash: f2Report.workbook.contentHash },
     worksheets: worksheets.map((worksheet) => {
       const interpretation = interpretations.get(worksheet.worksheetName);
       const calculation = worksheet.f4Calculation;
-      return {
+      const base = {
         worksheetName: worksheet.worksheetName,
         toleranceLoopDescription: clean(worksheet.f2Worksheet.toleranceLoopDescription, NA),
         disposition: worksheet.disposition,
         requiredAction: requiredAction(worksheet),
-        findings: [clean(interpretation?.imageTableInterpretation)], assumptions: [],
+        findings: [primaryFinding(worksheet)],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: worksheet.f2Worksheet.status === "ready"
+          ? [`F4:${worksheet.worksheetName}`, `F5-multimodal:${worksheet.worksheetName}`]
+          : [`F2:${worksheet.worksheetName}`],
+      };
+      if (calculation === undefined || worksheet.f6Worksheet === undefined) return base;
+      return {
+        ...base,
+        findings: [clean(interpretation?.imageTableInterpretation)],
         clarifications: worksheet.f6Worksheet.steps.flatMap((step) => step.step === "centerAssessment" && step.status === "clarification_required"
           ? [step.reasonCode] : step.step === "specificationChanges" ? step.clarifications.map(({ reasonCode }) => reasonCode) : []),
-        gatingEvidenceReferences: [`F4:${worksheet.worksheetName}`, `F5-multimodal:${worksheet.worksheetName}`],
         metrics: { mean: calculation.system.mean, rssSigma: calculation.system.rssSigma,
           worstCaseLower: calculation.system.worstCaseLower, worstCaseUpper: calculation.system.worstCaseUpper,
           ...(calculation.capability.cp === undefined ? {} : { cp: calculation.capability.cp }),
@@ -291,6 +320,11 @@ function f2WorksheetMatchesHandoff(worksheet, handoff, workbookContentHash) {
   } catch {
     return false;
   }
+}
+
+function sameDimId(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  return String(left) === String(right);
 }
 
 function assertWorkbookIdentity({ f2Report, f3Report, f4Report, f5Report, f6Optimization }) {
@@ -1295,7 +1329,7 @@ function assertMultimodalV3Authority(artifact, { f2Report, f3Report, f4Report, f
         || factorRow.partName !== f2Row.actualFields.partName
         || factorRow.partCategory !== f2Row.actualFields.partCategory
         || factorRow.drawingNumber !== f2Row.actualFields.drawingNumber
-        || factorRow.dimId !== f2Row.actualFields.dimCharacteristicId
+        || !sameDimId(factorRow.dimId, f2Row.actualFields.dimCharacteristicId)
         || factorRow.nominal !== factor.input.nominalValue
         || factorRow.upperTolerance !== factor.input.upperTolerance
         || factorRow.lowerTolerance !== factor.input.lowerTolerance

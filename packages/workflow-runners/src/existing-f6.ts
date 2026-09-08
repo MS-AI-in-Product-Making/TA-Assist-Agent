@@ -198,7 +198,7 @@ function validateReportSummary(summary: any, optimization: any): boolean {
   if (!ALLOWED_DISPOSITIONS.has(reportSummary?.workbookDisposition) || !Array.isArray(worksheetDispositions)) return false;
   const reportScope = optimization.provenance?.reportScope;
   if (!Array.isArray(reportScope?.worksheetNames)) return false;
-  if (optimization.optimizationVersion === "f6-optimization-v2" && !Array.isArray(reportScope.blockedWorksheetNames)) return false;
+  if (!Array.isArray(reportScope.blockedWorksheetNames)) return false;
 
   const worksheetNames = worksheetDispositions.map(({ worksheetName }: any) => worksheetName);
   if (worksheetNames.some((worksheetName: any) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
@@ -209,7 +209,7 @@ function validateReportSummary(summary: any, optimization: any): boolean {
   const optimizationWorksheetNames = optimization.worksheets.map(({ worksheetName }: any) => worksheetName);
   if (optimizationWorksheetNames.some((worksheetName: any) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
   if (new Set(optimizationWorksheetNames).size !== optimizationWorksheetNames.length) return false;
-  const blockedNames = optimization.optimizationVersion === "f6-optimization-v2" ? reportScope.blockedWorksheetNames : [];
+  const blockedNames = reportScope.blockedWorksheetNames;
   const blockedNameSet = new Set(blockedNames);
   const expectedOptimizationNames = reportScope.worksheetNames.filter((worksheetName: string) => !blockedNameSet.has(worksheetName));
   if (!sameStringSet(optimizationWorksheetNames, expectedOptimizationNames)) return false;

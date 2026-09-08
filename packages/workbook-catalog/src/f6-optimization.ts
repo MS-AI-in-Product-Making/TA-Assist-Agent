@@ -1614,7 +1614,7 @@ export function createF6OptimizationV3(
       f4Reference: artifactReference(request.f4Reference),
       f5Reference: artifactReference(request.f5Reference),
       multimodalReference: artifactReference(inputs.multimodalReference),
-      reportScope: { worksheetNames: [...request.selectedWorksheetNames] },
+      reportScope: structuredClone(request.reportScope),
     },
   }));
 }

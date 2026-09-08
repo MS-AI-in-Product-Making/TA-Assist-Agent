@@ -85,6 +85,13 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameSourceMap(left, right) {
+  if (left === null || typeof left !== "object" || right === null || typeof right !== "object") return false;
+  const keys = Object.keys(left).sort();
+  const expectedKeys = Object.keys(right).sort();
+  return sameStrings(keys, expectedKeys) && keys.every((key) => sameJson(left[key], right[key]));
+}
+
 function inspectPhysicalPath(root, candidate) {
   try {
     const relation = path.relative(root, candidate);
@@ -201,7 +208,7 @@ function validateReportSummary(summary, optimization) {
   if (!ALLOWED_DISPOSITIONS.has(reportSummary?.workbookDisposition) || !Array.isArray(worksheetDispositions)) return false;
   const reportScope = optimization.provenance?.reportScope;
   if (!Array.isArray(reportScope?.worksheetNames)) return false;
-  if (optimization.optimizationVersion === "f6-optimization-v2" && !Array.isArray(reportScope.blockedWorksheetNames)) return false;
+  if (!Array.isArray(reportScope.blockedWorksheetNames)) return false;
 
   const worksheetNames = worksheetDispositions.map(({ worksheetName }) => worksheetName);
   if (worksheetNames.some((worksheetName) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
@@ -212,7 +219,7 @@ function validateReportSummary(summary, optimization) {
   const optimizationWorksheetNames = optimization.worksheets.map(({ worksheetName }) => worksheetName);
   if (optimizationWorksheetNames.some((worksheetName) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
   if (new Set(optimizationWorksheetNames).size !== optimizationWorksheetNames.length) return false;
-  const blockedNames = optimization.optimizationVersion === "f6-optimization-v2" ? reportScope.blockedWorksheetNames : [];
+  const blockedNames = reportScope.blockedWorksheetNames;
   const blockedNameSet = new Set(blockedNames);
   const expectedOptimizationNames = reportScope.worksheetNames.filter((worksheetName) => !blockedNameSet.has(worksheetName));
   if (!sameStringSet(optimizationWorksheetNames, expectedOptimizationNames)) return false;
@@ -238,8 +245,18 @@ function validateInputDecisions(summary, manifest, optimization) {
 }
 
 function validateRunSummary(summary, optimization) {
+  const expected = expectedSources(optimization);
+  if (optimization.optimizationVersion === "f6-optimization-v3" && summary?.sources?.imageObservation !== undefined) {
+    const imageObservation = safeArtifactReference(summary.sources.imageObservation);
+    if (imageObservation === undefined
+      || imageObservation.artifact !== "Feature5-Image-Observations.json"
+      || !/^[a-f0-9]{64}$/.test(imageObservation.contentHash)) {
+      return false;
+    }
+    expected.imageObservation = imageObservation;
+  }
   return sameJson(summary?.counts, optimization.summary)
-    && sameJson(summary?.sources, expectedSources(optimization));
+    && sameSourceMap(summary?.sources, expected);
 }
 
 export function validateExistingF6Artifact(entryPath, options = {}) {

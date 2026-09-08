@@ -947,6 +947,38 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
 });
 
 describe("createF6FinalReportProjection v3", () => {
+  it("keeps blocked worksheets evidence-only in a multimodal v3 report", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+
+    const { markdown, reportSummary } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(reportSummary.worksheetDispositions).toEqual([
+      { worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" },
+      { worksheetName: "Blocked-A", disposition: "FAIL" },
+    ]);
+    expect(reportSummary.workbookDisposition).toBe("FAIL");
+    expect(markdown).toContain("Worksheet: Blocked-A");
+    expect(markdown).toContain("Model interpretation unavailable");
+  });
+
+  it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.modelInterpretation.worksheets[0].request.factorRows[0].dimId = "101";
+    inputs.modelInterpretation.worksheets[0].request.factorSetHash = createF5MultimodalFactorSetHash(
+      inputs.modelInterpretation.worksheets[0].request.factorRows,
+    );
+    inputs.modelInterpretation.worksheets[0].request.requestHash = createF5MultimodalRequestHash(
+      inputs.modelInterpretation.worksheets[0].request,
+    );
+    inputs.modelInterpretation.worksheets[0].result.requestHash = inputs.modelInterpretation.worksheets[0].request.requestHash;
+    inputs.f2Report = JSON.parse(JSON.stringify(inputs.f2Report).replaceAll('"DIM-100"', "101"));
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).not.toThrow();
+  });
+
   it.each([1, 2, 3])("renders %i worksheets in governed ordinal order", (worksheetCount) => {
     const worksheetNames = Array.from({ length: worksheetCount }, (_, index) => `Analysis-${String.fromCharCode(65 + index)}`);
     const inputs = loadRealF6Inputs({ worksheetNames });

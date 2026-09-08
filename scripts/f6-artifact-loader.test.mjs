@@ -879,6 +879,27 @@ describe("F6 optional governed evidence", () => {
     expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "CALLER_AUTHORIZED" });
   });
 
+  it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {
+    const bundle = setupBundle();
+    installRequiredMultimodalV3(bundle);
+    writeJson(bundle.paths.f2, JSON.parse(JSON.stringify(readJson(bundle.paths.f2)).replaceAll('"DIM-100"', "101")));
+    writeJson(bundle.paths.f3, JSON.parse(JSON.stringify(readJson(bundle.paths.f3)).replaceAll('"DIM-100"', '"101"')));
+    writeJson(bundle.paths.f5, JSON.parse(JSON.stringify(readJson(bundle.paths.f5)).replaceAll('"DIM-100"', '"101"')));
+    const filePath = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    rewriteJson(filePath, (artifact) => {
+      const pair = artifact.worksheets[0];
+      pair.request.factorRows[0].dimId = "101";
+      pair.request.factorSetHash = createF5MultimodalFactorSetHash(pair.request.factorRows);
+      pair.request.requestHash = createF5MultimodalRequestHash(pair.request);
+      pair.result.requestHash = pair.request.requestHash;
+    });
+    bundle.expectedModelInterpretationContentHash = sha256(filePath);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+  });
+
   it("rejects multimodal v3 request workbook filename drift", () => {
     const bundle = setupBundle();
     installRequiredMultimodalV3(bundle);
