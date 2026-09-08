@@ -81,6 +81,10 @@ function expectRecursivelyFrozen(value: unknown): void {
   }
 }
 
+function expectNoZeroRepresentation(text: string): void {
+  expect(text).not.toMatch(/(^|\s|[;(])(?:[+-]?0(?:\.0+)?)(?=$|\s|[;).])/);
+}
+
 describe("buildF7EngineeringNarrative", () => {
   it("builds the complete combined-cause narrative in governed reading order", () => {
     const narrative = buildF7EngineeringNarrative(combinedCauseInput());
@@ -198,6 +202,49 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.engineeringSummary).toBe(
       "Capability currently meets the resolved target with a margin of 0.001; continue stability verification with representative evidence and ME review.",
     );
+  });
+
+  it("renders subprecision negative margins without collapsing them to zero prose", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.3299999,
+      targetCpk: 1.33,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("below-target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(-1e-7, 12);
+    expect(narrative.resultJudgment.judgment).toContain("1e-7 below");
+    expect(narrative.resultJudgment.judgment).not.toContain("0 below");
+    expect(narrative.engineeringSummary).toContain("below target by 1e-7");
+    expect(narrative.engineeringRisk).toContain("shortfall of 1e-7 indicates below-target performance");
+    expectNoZeroRepresentation(narrative.resultJudgment.judgment);
+    expectNoZeroRepresentation(narrative.engineeringSummary);
+    expectNoZeroRepresentation(narrative.engineeringRisk);
+  });
+
+  it("renders subprecision positive margins without collapsing them to zero prose", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.3300001,
+      targetCpk: 1.33,
+      cp: 1.3300001,
+      mean: 0,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("meets-target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(1e-7, 12);
+    expect(narrative.resultJudgment.judgment).toContain("1e-7 above");
+    expect(narrative.resultJudgment.judgment).not.toContain("0 above");
+    expect(narrative.engineeringSummary).toContain("margin of 1e-7");
+    expectNoZeroRepresentation(narrative.resultJudgment.judgment);
+    expectNoZeroRepresentation(narrative.engineeringSummary);
+    expectNoZeroRepresentation(narrative.engineeringRisk);
   });
 
   it("treats equal mean-to-limit distances as balanced within scaled tolerance", () => {

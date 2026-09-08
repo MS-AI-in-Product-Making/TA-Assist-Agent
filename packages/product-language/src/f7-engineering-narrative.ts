@@ -122,6 +122,15 @@ function formatNumber(value: number): string {
   return rounded.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
+function formatScientificNumber(value: number): string {
+  const normalized = Number(value.toPrecision(MAX_ADAPTIVE_DISPLAY_DECIMALS));
+  return normalized
+    .toExponential()
+    .replace(/\.0+e/, "e")
+    .replace(/(\.\d*?[1-9])0+e/, "$1e")
+    .replace(/e\+?(-?)0*(\d+)/, "e$1$2");
+}
+
 function roundToDisplayDecimals(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
@@ -158,8 +167,21 @@ function formatDisplayNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS)
   return value.toFixed(decimals);
 }
 
+function formatDeltaNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
+  if (!Number.isFinite(value) || value === 0) {
+    return formatDisplayNumber(value, decimals);
+  }
+
+  const boundedDecimals = Math.min(Math.max(decimals, DEFAULT_DISPLAY_DECIMALS), MAX_ADAPTIVE_DISPLAY_DECIMALS);
+  if (roundToDisplayDecimals(Math.abs(value), boundedDecimals) === 0) {
+    return formatScientificNumber(value);
+  }
+
+  return formatDisplayNumber(value, boundedDecimals);
+}
+
 function formatSignedNumber(value: number): string {
-  return `${value >= 0 ? "+" : "-"}${formatNumber(Math.abs(value))}`;
+  return `${value >= 0 ? "+" : "-"}${formatDeltaNumber(Math.abs(value))}`;
 }
 
 function dedupeStable(values: readonly string[]): string[] {
@@ -209,7 +231,7 @@ function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7Narrati
   const displayDecimals = resolveAdaptiveDisplayDecimals([input.cpk, input.targetCpk, rawMargin]);
   const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
   const headline = rawMargin >= 0 ? "Capability meets target" : "Capability is below target";
-  const judgment = `Cpk ${formatDisplayNumber(input.cpk, displayDecimals)} is ${formatDisplayNumber(Math.abs(rawMargin), displayDecimals)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatDisplayNumber(input.targetCpk, displayDecimals)}.`;
+  const judgment = `Cpk ${formatDisplayNumber(input.cpk, displayDecimals)} is ${formatDeltaNumber(Math.abs(rawMargin), displayDecimals)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatDisplayNumber(input.targetCpk, displayDecimals)}.`;
   const nearerSpecificationSide = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   return nearerSpecificationSide === undefined ? {
     status,
@@ -245,7 +267,7 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     ruleId: rule.ruleId,
     title: rule.title,
     hypothesisStatus: "hypothesis",
-    narrative: `Cp is ${formatNumber(input.cp)} versus the target Cpk of ${formatNumber(input.targetCpk)}, a ${formatNumber(Math.abs(cpTargetGap))} ${cpTargetGap >= 0 ? "surplus" : "shortfall"} that indicates variation-related exposure and requires validation.`,
+    narrative: `Cp is ${formatNumber(input.cp)} versus the target Cpk of ${formatNumber(input.targetCpk)}, a ${formatDeltaNumber(Math.abs(cpTargetGap))} ${cpTargetGap >= 0 ? "surplus" : "shortfall"} that indicates variation-related exposure and requires validation.`,
     completeEvidence: true,
     quantitativeEvidence: {
       cp: input.cp,
@@ -279,7 +301,7 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     ruleId: rule.ruleId,
     title: rule.title,
     hypothesisStatus: "hypothesis",
-    narrative: `Cp exceeds Cpk by ${formatNumber(cpCpkGap)} and the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint toward ${direction}, indicating a centering-loss hypothesis that requires validation.`,
+    narrative: `Cp exceeds Cpk by ${formatDeltaNumber(cpCpkGap)} and the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint toward ${direction}, indicating a centering-loss hypothesis that requires validation.`,
     completeEvidence: true,
     quantitativeEvidence: {
       cpCpkGap,
@@ -377,15 +399,15 @@ function buildEngineeringSummary(
   ]);
 
   if (resultJudgment.status === "meets-target") {
-    return `Capability currently meets the resolved target with a margin of ${formatDisplayNumber(resultJudgment.margin, displayDecimals)}; continue stability verification with representative evidence and ME review.`;
+    return `Capability currently meets the resolved target with a margin of ${formatDeltaNumber(resultJudgment.margin, displayDecimals)}; continue stability verification with representative evidence and ME review.`;
   }
 
   const completeRules = rootCauseAnalysis.filter((item) => item.completeEvidence).map((item) => item.ruleId);
   if (completeRules.length === 0) {
-    return `Capability is below target by ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
+    return `Capability is below target by ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
   }
 
-  return `Capability is below target by ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
+  return `Capability is below target by ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
 }
 
 function buildEngineeringRisk(
@@ -402,7 +424,7 @@ function buildEngineeringRisk(
     resultJudgment.targetCpk,
     resultJudgment.margin,
   ]);
-  const clauses = [`The capability shortfall of ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)} indicates below-target performance`];
+  const clauses = [`The capability shortfall of ${formatDeltaNumber(Math.abs(resultJudgment.margin), displayDecimals)} indicates below-target performance`];
   if (resultJudgment.nearerSpecificationSide === "LSL" || resultJudgment.nearerSpecificationSide === "USL") {
     clauses.push(`the mean direction is consistent with nearer exposure toward ${resultJudgment.nearerSpecificationSide}`);
   } else if (resultJudgment.nearerSpecificationSide === "balanced") {
