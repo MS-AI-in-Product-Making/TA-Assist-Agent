@@ -72,7 +72,6 @@ async function seedValidatedSession(
   const f6Report = await writeArtifact(rootDir, join(f6Root, "Feature6-Report.md"), selection.finalReportText ?? "# TA Engineering Analysis Report\n");
   const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
   const f6Projection = await writeArtifact(rootDir, join(projectionRoot, "revision-1.json"), `${JSON.stringify(projection, null, 2)}\n`);
-  await writeArtifact(rootDir, join(f6Root, "Feature6-Optimization.md"), "# TA Improvement Options\n");
   await writeArtifact(rootDir, join(f6Root, "Feature6-Run-Summary.json"), "{\"status\":\"completed\"}\n");
 
   const reviewContext = {

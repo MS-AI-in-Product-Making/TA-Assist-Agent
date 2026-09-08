@@ -24,12 +24,13 @@ describe("resolveFeature6OutputLayout", () => {
   it("builds the fixed default artifact layout", () => {
     const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow);
     expect(layout).toMatchObject({
+      artifactSetVersion: "f6-artifact-set-v2",
       optimizationJsonName: "Feature6-Optimization.json",
-      optimizationMdName: "Feature6-Optimization.md",
       finalReportMdName: "Feature6-Report.md",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     });
+    expect(layout).not.toHaveProperty("optimizationMdName");
     expect(layout).not.toHaveProperty("composedReportJsonName");
     expect(layout).not.toHaveProperty("composedReportMdName");
   });

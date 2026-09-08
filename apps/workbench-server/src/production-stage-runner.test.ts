@@ -200,13 +200,11 @@ describe("runProductionStage output gating", () => {
         mkdir(join(managedRoot, "f5"), { recursive: true }),
       ]);
       const optimizationJsonPath = join(outputDir, "Feature6-Optimization.json");
-      const optimizationMdPath = join(outputDir, "Feature6-Optimization.md");
       const finalReportMdPath = join(outputDir, "Feature6-Report.md");
       const runSummaryPath = join(outputDir, "Feature6-Run-Summary.json");
       const manifestPath = join(outputDir, "manifest.json");
       await Promise.all([
         writeFile(optimizationJsonPath, "{}\n", "utf8"),
-        writeFile(optimizationMdPath, "# optimization\n", "utf8"),
         writeFile(finalReportMdPath, "# report\n", "utf8"),
         writeFile(runSummaryPath, "{}\n", "utf8"),
         writeFile(manifestPath, "{}\n", "utf8"),
@@ -267,7 +265,6 @@ describe("runProductionStage output gating", () => {
                 status: "completed",
                 outputDirectory: outputDir,
                 optimizationJsonPath,
-                optimizationMdPath,
                 finalReportMdPath,
                 runSummaryPath,
                 manifestPath,
@@ -293,7 +290,6 @@ describe("runProductionStage output gating", () => {
       const artifactReferences = (result.result as { artifactReferences: Array<{ artifactId: string; relativePath: string }> }).artifactReferences;
       expect(artifactReferences.map((artifact) => artifact.artifactId)).toEqual([
         "f6-optimization:2",
-        "f6-optimization-markdown:2",
         "f6-report:2",
         "f6-run-summary:2",
         "f6-manifest:2",
@@ -301,7 +297,6 @@ describe("runProductionStage output gating", () => {
       ]);
       expect(artifactReferences.map((artifact) => ({ artifactId: artifact.artifactId, kind: (artifact as { kind: string }).kind }))).toEqual([
         { artifactId: "f6-optimization:2", kind: "f6_optimization" },
-        { artifactId: "f6-optimization-markdown:2", kind: "f6_optimization_markdown" },
         { artifactId: "f6-report:2", kind: "f6_report" },
         { artifactId: "f6-run-summary:2", kind: "f6_run_summary" },
         { artifactId: "f6-manifest:2", kind: "f6_manifest" },
@@ -310,7 +305,7 @@ describe("runProductionStage output gating", () => {
       expect(artifactReferences.filter((artifact) => (artifact as { kind: string }).kind === "f6_report")).toHaveLength(1);
       const normalizedPaths = artifactReferences.map((artifact) => artifact.relativePath.replace(/\\/g, "/"));
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.json"))).toBe(true);
-      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.md"))).toBe(true);
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.md"))).toBe(false);
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Report.md"))).toBe(true);
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Run-Summary.json"))).toBe(true);
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/manifest.json"))).toBe(true);

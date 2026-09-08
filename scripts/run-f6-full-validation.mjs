@@ -21,7 +21,6 @@ import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
-import { renderF6Report } from "./f6-report.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -72,7 +71,6 @@ function normalizeDependencies(overrides = {}) {
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
     createOptimization: overrides.createOptimization ?? createF6OptimizationV3,
     createFinalReport: overrides.createFinalReport ?? createF6FinalReportProjection,
-    renderOptimization: overrides.renderOptimization ?? renderF6Report,
     mkdir: overrides.mkdir ?? mkdirSync,
     randomUUID: overrides.randomUUID ?? randomUUID,
     realpath: overrides.realpath ?? realpathSync,
@@ -167,7 +165,6 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),
       createFinalReport: dependencies.createFinalReport,
-      renderOptimization: dependencies.renderOptimization,
       mkdir: dependencies.mkdir,
       randomUUID: dependencies.randomUUID,
       realpath: dependencies.realpath,

@@ -58,7 +58,6 @@ interface TrustedExportSource {
   readonly projection: TaEngineeringReportProjectionContent;
   readonly semanticDigest: string;
   readonly finalReport: string;
-  readonly improvementOptions: string;
   readonly runSummaryJson: string;
   readonly evidenceFiles: readonly {
     readonly relativePath: string;
@@ -103,7 +102,6 @@ export interface TaAnalysisExportSource {
   readonly executionStatus: "completed" | "failed" | "cancelled";
   readonly businessDisposition: "PASS" | "FAIL" | "CONDITIONAL_PASS" | "INCOMPLETE";
   readonly finalReport: string;
-  readonly improvementOptions: string;
   readonly runSummaryJson: string;
 }
 
@@ -456,7 +454,6 @@ function createExportRequest(source: TrustedExportSource, managedRoot: string): 
     exportId,
     files: [
       { relativePath: "TA-Engineering-Analysis-Report.md", content: source.finalReport },
-      { relativePath: "TA-Improvement-Options.md", content: source.improvementOptions },
       { relativePath: "TA-Analysis-Run-Summary.json", content: source.runSummaryJson },
       ...source.evidenceFiles.map((entry) => ({ relativePath: entry.relativePath, content: entry.content })),
     ],
@@ -476,7 +473,6 @@ function buildManifest(source: TrustedExportSource, request: ProductExportReques
     productRunReference: request.exportId,
     files: [
       toRecord(result, "TA Engineering Analysis Report", "TA-Engineering-Analysis-Report.md", "text/markdown"),
-      toRecord(result, "TA Improvement Options", "TA-Improvement-Options.md", "text/markdown"),
       toRecord(result, "TA Analysis Run Summary", "TA-Analysis-Run-Summary.json", "application/json"),
       ...source.evidenceFiles.map((entry) => toRecord(result, entry.displayName, entry.relativePath, entry.mediaType)),
     ],
@@ -570,10 +566,7 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
       evidenceMismatch("Final report does not satisfy the governed user-facing report contract.", command.sessionId);
     }
     const f6RootRelative = dirname(f6Report.reference.relativePath);
-    const [improvementOptions, runSummaryJson] = await Promise.all([
-      readManagedText(options.rootDir, join(f6RootRelative, "Feature6-Optimization.md"), undefined, "Feature6-Optimization.md"),
-      readManagedText(options.rootDir, join(f6RootRelative, "Feature6-Run-Summary.json"), undefined, "Feature6-Run-Summary.json"),
-    ]);
+    const runSummaryJson = await readManagedText(options.rootDir, join(f6RootRelative, "Feature6-Run-Summary.json"), undefined, "Feature6-Run-Summary.json");
 
     const evidenceFiles = buildEvidenceFiles(extractEvidenceFeatures(projection), {
       f3,
@@ -594,7 +587,6 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
       projection,
       semanticDigest: computeTaReportSemanticDigest(projection),
       finalReport: f6Report.text,
-      improvementOptions,
       runSummaryJson,
       evidenceFiles,
       sourceBinding: {
@@ -615,7 +607,6 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
           "f6-optimization": f6Optimization.reference.contentHash ?? contentSha256(f6Optimization.text),
           "f6-report": f6Report.reference.contentHash ?? contentSha256(f6Report.text),
           "engineering-summary-projection": projectionArtifact.reference.contentHash ?? contentSha256(projectionArtifact.text),
-          "f6-optimization-markdown": contentSha256(improvementOptions),
           "f6-run-summary": contentSha256(runSummaryJson),
         },
       },
@@ -635,7 +626,6 @@ function exportRequest(source: TaAnalysisExportSource, rootDir: string): Product
     exportId: productRunReference,
     files: [
       { relativePath: "TA-Engineering-Analysis-Report.md", content: source.finalReport },
-      { relativePath: "TA-Improvement-Options.md", content: source.improvementOptions },
       { relativePath: "TA-Analysis-Run-Summary.json", content: source.runSummaryJson },
     ],
   };
@@ -703,7 +693,6 @@ export async function exportTaAnalysis(source: TaAnalysisExportSource, options: 
     productRunReference,
     files: [
       toRecord(result, "TA Engineering Analysis Report", "TA-Engineering-Analysis-Report.md", "text/markdown"),
-      toRecord(result, "TA Improvement Options", "TA-Improvement-Options.md", "text/markdown"),
       toRecord(result, "TA Analysis Run Summary", "TA-Analysis-Run-Summary.json", "application/json"),
     ],
   });

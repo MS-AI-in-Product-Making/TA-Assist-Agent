@@ -100,11 +100,11 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   const runId = now().toISOString().replace(/[:.]/g, "-");
   const normalizedBase = normalizedResultPath(outputBase);
   return {
+    artifactSetVersion: "f6-artifact-set-v2",
     runId,
     runRoot: path.isAbsolute(normalizedBase) ? path.join(normalizedBase, runId) : path.posix.join(normalizedBase, runId),
     publishRoot: normalizedResultPath(controlledPublishRoot),
     optimizationJsonName: "Feature6-Optimization.json",
-    optimizationMdName: "Feature6-Optimization.md",
     finalReportMdName: "Feature6-Report.md",
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",

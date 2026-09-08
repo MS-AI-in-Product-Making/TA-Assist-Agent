@@ -196,7 +196,6 @@ export interface F6OptimizationResult {
   readonly reasonCode?: string;
   readonly outputDirectory: string;
   readonly optimizationJsonPath?: string;
-  readonly optimizationMdPath?: string;
   readonly finalReportMdPath?: string;
   readonly runSummaryPath?: string;
   readonly manifestPath?: string;

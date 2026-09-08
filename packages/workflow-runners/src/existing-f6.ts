@@ -14,7 +14,7 @@ import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
 
-const EXPECTED_FILES = Object.freeze([
+const LEGACY_FILES = Object.freeze([
   "Feature6-Optimization.json",
   "Feature6-Optimization.md",
   "Feature6-Report.md",
@@ -22,18 +22,31 @@ const EXPECTED_FILES = Object.freeze([
   "manifest.json",
 ]);
 
-const EXPECTED_ARTIFACTS = Object.freeze({
+const CURRENT_FILES = Object.freeze(LEGACY_FILES.filter((fileName) => fileName !== "Feature6-Optimization.md"));
+const LEGACY_ARTIFACTS = Object.freeze({
   optimizationJson: "Feature6-Optimization.json",
   optimizationMarkdown: "Feature6-Optimization.md",
   finalReportMarkdown: "Feature6-Report.md",
   runSummary: "Feature6-Run-Summary.json",
 });
 
-const HASHED_ARTIFACTS = Object.freeze([
+const CURRENT_ARTIFACTS = Object.freeze({
+  optimizationJson: "Feature6-Optimization.json",
+  finalReportMarkdown: "Feature6-Report.md",
+  runSummary: "Feature6-Run-Summary.json",
+});
+const LEGACY_HASHED_ARTIFACTS = Object.freeze([
   ["optimizationJsonSha256", "Feature6-Optimization.json"],
   ["optimizationMarkdownSha256", "Feature6-Optimization.md"],
   ["finalReportMarkdownSha256", "Feature6-Report.md"],
 ]);
+const CURRENT_HASHED_ARTIFACTS = Object.freeze(LEGACY_HASHED_ARTIFACTS.filter(([key]) => key !== "optimizationMarkdownSha256"));
+
+function artifactContract(manifest: any) {
+  if (manifest?.artifactSetVersion === "f6-artifact-set-v2") return { files: CURRENT_FILES, artifacts: CURRENT_ARTIFACTS, hashes: CURRENT_HASHED_ARTIFACTS, current: true };
+  if (manifest?.artifactSetVersion === undefined) return { files: LEGACY_FILES, artifacts: LEGACY_ARTIFACTS, hashes: LEGACY_HASHED_ARTIFACTS, current: false };
+  return undefined;
+}
 
 const ALLOWED_DISPOSITIONS = new Set(["FAIL", "INCOMPLETE", "CONDITIONAL_PASS", "PASS"]);
 const DECISION_PROVENANCE_FIELDS = Object.freeze({
@@ -127,10 +140,10 @@ function validateBoundary(runRoot: string, publishRoot: string): boolean {
   return isContained(realPublishRoot, realRunRoot);
 }
 
-function validateExactFiles(runRoot: string): boolean {
+function validateExactFiles(runRoot: string, expectedFiles: readonly string[]): boolean {
   const entries = readdirSync(runRoot, { withFileTypes: true });
-  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...EXPECTED_FILES].sort())) return false;
-  return EXPECTED_FILES.every((fileName) => {
+  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...expectedFiles].sort())) return false;
+  return expectedFiles.every((fileName) => {
     const filePath = path.join(runRoot, fileName);
     const stats = lstatSync(filePath);
     return stats.isFile() && !stats.isSymbolicLink();
@@ -141,15 +154,16 @@ function workflowStatus(optimization: any): string {
   return optimization.runStatus === undefined ? optimization.status : optimization.runStatus.toLowerCase();
 }
 
-function validateManifest(manifest: any, expectedStatus: string): boolean {
+function validateManifest(manifest: any, expectedStatus: string, contract: ReturnType<typeof artifactContract>): boolean {
+  if (contract === undefined) return false;
   const artifacts = manifest?.artifacts;
   const artifactKeys = artifacts === undefined || artifacts === null ? [] : Object.keys(artifacts).sort();
-  const expectedKeys = Object.keys(EXPECTED_ARTIFACTS).sort();
+  const expectedKeys = Object.keys(contract.artifacts).sort();
   return manifest?.contractVersion === "v1"
     && manifest?.featureId === "F6"
     && manifest?.status === expectedStatus
     && sameStrings(artifactKeys, expectedKeys)
-    && expectedKeys.every((key) => artifacts[key] === (EXPECTED_ARTIFACTS as any)[key]);
+    && expectedKeys.every((key) => artifacts[key] === (contract.artifacts as any)[key]);
 }
 
 function safeArtifactReference(reference: any): { artifact: string; contentHash: string } | undefined {
@@ -181,13 +195,13 @@ function expectedSources(optimization: any) {
   return Object.fromEntries([...directSources, ...decisionSources]);
 }
 
-function validateHashes(runRoot: string, summary: any): boolean {
+function validateHashes(runRoot: string, summary: any, hashedArtifacts: readonly (readonly string[])[]): boolean {
   const hashes = summary?.hashes;
   if (hashes === undefined || typeof hashes !== "object" || hashes === null) return false;
   const hashKeys = Object.keys(hashes).sort();
-  const expectedKeys = HASHED_ARTIFACTS.map(([key]) => String(key)).sort();
+  const expectedKeys = hashedArtifacts.map(([key]) => String(key)).sort();
   if (!sameStrings(hashKeys, expectedKeys)) return false;
-  return HASHED_ARTIFACTS.every(([hashKey, fileName]) => typeof hashKey === "string"
+  return hashedArtifacts.every(([hashKey, fileName]) => typeof hashKey === "string"
     && typeof fileName === "string"
     && (hashes as any)[hashKey] === sha256File(path.join(runRoot, fileName)));
 }
@@ -244,17 +258,17 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
     const runRoot = resolveRunRoot(entryPath);
     if (runRoot === undefined) return rejected("invalid_artifact_entry");
     if (!validateBoundary(runRoot, request.publishRoot)) return rejected("artifact_outside_publish_root");
-    if (!validateExactFiles(runRoot)) return rejected("artifact_file_set_invalid");
-
     const manifest = jsonFile(path.join(runRoot, "manifest.json"));
+    const contract = artifactContract(manifest);
+    if (contract === undefined || !validateExactFiles(runRoot, contract.files)) return rejected("artifact_file_set_invalid");
     const optimizationRaw = jsonFile(path.join(runRoot, "Feature6-Optimization.json"));
     const optimization = f6ReadableOptimizationResultSchema.parse(optimizationRaw);
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
-    if (!validateManifest(manifest, expectedStatus)) return rejected("manifest_invalid");
+    if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");
     if (summary?.status !== expectedStatus || !validateRunSummary(summary, optimization)) return rejected("run_summary_invalid");
 
-    if (!validateHashes(runRoot, summary)) return rejected("artifact_hash_mismatch");
+    if (!validateHashes(runRoot, summary, contract.hashes)) return rejected("artifact_hash_mismatch");
     if (!validateReportSummary(summary, optimization)) return rejected("report_summary_invalid");
     if (!validateInputDecisions(summary, manifest, optimization)) return rejected("input_decisions_invalid");
 
@@ -263,7 +277,7 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
       status: "accepted",
       outputDirectory: runRoot,
       optimizationJsonPath: path.join(runRoot, "Feature6-Optimization.json"),
-      optimizationMarkdownPath: path.join(runRoot, "Feature6-Optimization.md"),
+      ...(contract.current ? {} : { optimizationMarkdownPath: path.join(runRoot, "Feature6-Optimization.md") }),
       finalReportMarkdownPath,
       runSummaryPath: path.join(runRoot, "Feature6-Run-Summary.json"),
       manifestPath: path.join(runRoot, "manifest.json"),

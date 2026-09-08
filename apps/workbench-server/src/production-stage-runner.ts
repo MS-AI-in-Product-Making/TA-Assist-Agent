@@ -148,14 +148,12 @@ export async function runProductionStage(stage: string, environment: ProductionS
             expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
           } as never),
           createFinalReport: scripts.createF6FinalReportProjection,
-          renderOptimization: scripts.renderF6Report,
         },
       },
     }), "improvement-evaluation-v1") as {
       readonly status: string;
       readonly reasonCode?: string;
       readonly optimizationJsonPath?: string;
-      readonly optimizationMdPath?: string;
       readonly finalReportMdPath?: string;
       readonly runSummaryPath?: string;
       readonly manifestPath?: string;
@@ -164,7 +162,6 @@ export async function runProductionStage(stage: string, environment: ProductionS
     };
     if (result.status === "failed"
       || result.optimizationJsonPath === undefined
-      || result.optimizationMdPath === undefined
       || result.finalReportMdPath === undefined
       || result.runSummaryPath === undefined
       || result.manifestPath === undefined
@@ -178,7 +175,6 @@ export async function runProductionStage(stage: string, environment: ProductionS
         reviewContext: environment.reviewContext,
         artifactReferences: [
           await artifact(environment.serverRoot, `f6-optimization:${environment.snapshot.inputRevision}`, "f6_optimization", result.optimizationJsonPath),
-          await artifact(environment.serverRoot, `f6-optimization-markdown:${environment.snapshot.inputRevision}`, "f6_optimization_markdown", result.optimizationMdPath),
           await artifact(environment.serverRoot, `f6-report:${environment.snapshot.inputRevision}`, "f6_report", result.finalReportMdPath),
           await artifact(environment.serverRoot, `f6-run-summary:${environment.snapshot.inputRevision}`, "f6_run_summary", result.runSummaryPath),
           await artifact(environment.serverRoot, `f6-manifest:${environment.snapshot.inputRevision}`, "f6_manifest", result.manifestPath),

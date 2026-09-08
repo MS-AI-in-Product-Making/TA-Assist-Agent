@@ -36,6 +36,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
   const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
   const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
   const manifestPath = path.join(runRoot, "manifest.json");
+  const optimizationMarkdownPath = path.join(runRoot, "Feature6-Optimization.md");
   const current = readJson(optimizationPath);
   const baselineIdentity = current.worksheets[0].baselineIdentity;
   const metrics = { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 };
@@ -121,10 +122,14 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
     };
   }
   summary.hashes.optimizationJsonSha256 = fixtureFileSha256(optimizationPath);
+  writeFileSync(optimizationMarkdownPath, "# Historical F6 optimization\n", "utf8");
+  summary.hashes.optimizationMarkdownSha256 = fixtureFileSha256(optimizationMarkdownPath);
   writeJson(summaryPath, summary);
   const manifest = readJson(manifestPath);
+  delete manifest.artifactSetVersion;
   manifest.status = "completed";
   manifest.inputDecisions = inputDecisions;
+  manifest.artifacts.optimizationMarkdown = "Feature6-Optimization.md";
   writeJson(manifestPath, manifest);
 }
 
@@ -302,11 +307,11 @@ function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNa
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
     }),
     resolveLayout: () => ({
+      artifactSetVersion: "f6-artifact-set-v2",
       runId,
       runRoot,
       publishRoot: bundle.publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
-      optimizationMdName: "Feature6-Optimization.md",
       finalReportMdName: "Feature6-Report.md",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
