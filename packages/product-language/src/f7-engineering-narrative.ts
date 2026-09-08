@@ -95,6 +95,10 @@ interface NarrativeDisplayPlan {
   readonly significantDigits?: number;
 }
 
+function normalizeExponentialNotation(text: string): string {
+  return text.replace(/e\+?(-?)0*(\d+)/, "e$1$2");
+}
+
 function assertFiniteNumber(name: string, value: number): void {
   if (!Number.isFinite(value)) {
     throw new TypeError(`${name} must be a finite number.`);
@@ -133,26 +137,31 @@ function sortOptionsBySequence<T extends { readonly ruleId: string }>(items: rea
 }
 
 function formatNumber(value: number): string {
-  const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
-  return rounded.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  const rounded = assertFiniteDerivedNumber("formatter.formatNumberRounded", Number(value.toFixed(2)));
+  return normalizeExponentialNotation(rounded.toString()).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
 function formatScientificNumber(value: number, significantDigits = MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS): string {
-  const normalized = Number(value.toPrecision(significantDigits));
-  return normalized
+  const normalized = assertFiniteDerivedNumber(
+    "formatter.scientificNormalized",
+    Number(value.toPrecision(significantDigits)),
+  );
+  return normalizeExponentialNotation(normalized
     .toExponential()
     .replace(/\.0+e/, "e")
-    .replace(/(\.\d*?[1-9])0+e/, "$1e")
-    .replace(/e\+?(-?)0*(\d+)/, "e$1$2");
+    .replace(/(\.\d*?[1-9])0+e/, "$1e"));
 }
 
 function roundToDisplayDecimals(value: number, decimals: number): number {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+  const roundedString = value.toFixed(decimals);
+  return assertFiniteDerivedNumber(`formatter.roundToDisplayDecimals(${decimals})`, Number(roundedString));
 }
 
 function roundToSignificantDigits(value: number, significantDigits: number): number {
-  return Number(value.toPrecision(significantDigits));
+  return assertFiniteDerivedNumber(
+    `formatter.roundToSignificantDigits(${significantDigits})`,
+    Number(value.toPrecision(significantDigits)),
+  );
 }
 
 function resolveAdaptiveDisplayDecimals(values: readonly number[]): number {
@@ -224,11 +233,14 @@ function resolveNarrativeDisplayPlan(values: readonly number[]): NarrativeDispla
 }
 
 function formatDisplayNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
+  assertFiniteDerivedNumber("formatter.displayInput", value);
   if (decimals <= DEFAULT_DISPLAY_DECIMALS) {
     return formatNumber(value);
   }
 
-  return value.toFixed(decimals);
+  const fixedText = value.toFixed(decimals);
+  assertFiniteDerivedNumber(`formatter.displayFixed(${decimals})`, Number(fixedText));
+  return normalizeExponentialNotation(fixedText);
 }
 
 function formatNarrativeNumber(value: number, plan: NarrativeDisplayPlan): string {
@@ -294,7 +306,15 @@ function resolveNearestSpecificationSide(
     "resultJudgment.balanceTolerance",
     BALANCED_DISTANCE_SCALE * Math.max(1, Math.abs(mean), Math.abs(lowerSpecLimit), Math.abs(upperSpecLimit), Math.abs(lowerDistance), Math.abs(upperDistance)),
   );
-  if (Math.abs(lowerDistance - upperDistance) <= tolerance) {
+  const distanceDelta = assertFiniteDerivedNumber(
+    "resultJudgment.distanceDelta",
+    lowerDistance - upperDistance,
+  );
+  const absoluteDistanceDelta = assertFiniteDerivedNumber(
+    "resultJudgment.absoluteDistanceDelta",
+    Math.abs(distanceDelta),
+  );
+  if (absoluteDistanceDelta <= tolerance) {
     return "balanced";
   }
   return lowerDistance < upperDistance ? "LSL" : "USL";

@@ -454,6 +454,40 @@ describe("buildF7EngineeringNarrative", () => {
     })).toThrowError(new RangeError("Derived narrative value rootCauseAnalysis.cpCpkGap must be finite."));
   });
 
+  it("formats huge finite endpoints without emitting Infinity in public narrative output", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: Number.MAX_VALUE,
+      targetCpk: 1,
+      cp: Number.MAX_VALUE,
+      mean: 0,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("meets-target");
+    expect(narrative.resultJudgment.judgment).not.toContain("Infinity");
+    expect(narrative.engineeringSummary).not.toContain("Infinity");
+    expect(narrative.engineeringRisk).not.toContain("Infinity");
+    expect(narrative.resultJudgment.judgment).toContain("1.7976931348623157e308");
+  });
+
+  it("throws a deterministic RangeError when nearest-side distance delta overflows", () => {
+    expect(() => buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.2,
+      targetCpk: 1.33,
+      cp: 1.2,
+      mean: 0,
+      lowerSpecLimit: -Number.MAX_VALUE,
+      upperSpecLimit: -Number.MAX_VALUE,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    })).toThrowError(new RangeError("Derived narrative value resultJudgment.distanceDelta must be finite."));
+  });
+
   it("preserves raw quantitative values and keeps the output recursively frozen", () => {
     const input = combinedCauseInput();
     const snapshot = structuredClone(input);
