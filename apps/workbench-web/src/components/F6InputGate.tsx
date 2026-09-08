@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { F8PendingF6InputDraft } from "@ai-assist/contracts";
+import { inputMetadata, type UiCatalogLanguage, type UserInputId } from "@ai-assist/product-language/input-metadata";
 
 import type { F6InputDraftReadResult, WorkbenchApi } from "../api.js";
 import type { F8SessionSnapshot } from "../workbench-session.js";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 type GateKind = "analysis_context" | "optimization_targets";
 
@@ -13,11 +15,12 @@ export interface F6InputGateProps {
   readonly api?: WorkbenchApi;
   readonly sessionId?: string;
   readonly disabled?: boolean;
+  readonly language?: UiCatalogLanguage;
   readonly onSendMessage: (message: string) => Promise<void>;
   readonly onSubmitDecision: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
 }
 
-export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, onSendMessage, onSubmitDecision }: F6InputGateProps) {
+export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, language = "en", onSendMessage, onSubmitDecision }: F6InputGateProps) {
   const [draft, setDraft] = useState("");
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [preview, setPreview] = useState<F6InputDraftReadResult>();
@@ -63,18 +66,42 @@ export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, 
   const clarifications = preview?.materialization.proposal.clarifications ?? [];
   const rows = preview === undefined ? [] : extractPreviewRows(kind, preview.materialization.preview);
 
-  const gateTitle = kind === "analysis_context" ? "补充/确认分析背景" : "补充/确认优化方向";
-  const fieldLabel = kind === "analysis_context" ? "补充分析背景" : "补充优化方向";
-  const fieldHint = kind === "analysis_context"
-    ? "直接描述产品功能、装配关系、工况、功能边界或关注点"
-    : "描述希望优先评估 nominal、mean shift、specification 或 tolerance";
+  const inputId: UserInputId = kind === "analysis_context" ? "analysis_context" : "optimization_target";
+  const metadata = inputMetadata(language)[inputId];
+  const copy = language === "zh" ? {
+    gateTitle: kind === "analysis_context" ? "补充/确认分析背景" : "补充/确认优化方向",
+    eyebrow: "设计优化",
+    send: "发送补充说明",
+    confirm: kind === "analysis_context" ? "确认分析背景" : "确认优化方向",
+    decline: "拒绝",
+    skip: "暂不提供",
+    loading: "正在准备预览...",
+    clarifications: "待澄清事项",
+    preview: "预览",
+    system: "系统",
+    requirementChange: "要求变更",
+  } : {
+    gateTitle: kind === "analysis_context" ? "Add or confirm analysis context" : "Add or confirm optimization targets",
+    eyebrow: "Design Optimization",
+    send: "Send additional details",
+    confirm: kind === "analysis_context" ? "Confirm analysis context" : "Confirm optimization targets",
+    decline: "Decline",
+    skip: "Not now",
+    loading: "Preparing preview...",
+    clarifications: "Clarifications",
+    preview: "Preview",
+    system: "System",
+    requirementChange: "Requirement change",
+  };
+  const fieldLabel = metadata.title;
+  const fieldHint = metadata.validationHint;
 
   return (
-    <section className="panel f6-input-gate" aria-label={gateTitle}>
+    <section className="panel design-optimization-input-gate" aria-label={copy.gateTitle}>
       <div className="panel__header">
         <div>
-          <p className="eyebrow">Design Optimization</p>
-          <h2>{gateTitle}</h2>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h2>{copy.gateTitle}</h2>
         </div>
       </div>
       <form
@@ -94,32 +121,36 @@ export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, 
             rows={3}
             disabled={disabled}
             placeholder={fieldHint}
+            aria-label={metadata.title}
+            aria-describedby={inputGuidanceId(inputId)}
+            data-user-input-id={inputId}
           />
+          <InputGuidance inputId={inputId} language={language} />
         </label>
-        <button type="submit" className="button" disabled={disabled || draft.trim().length === 0}>发送补充说明</button>
+        <button type="submit" className="button" disabled={disabled || draft.trim().length === 0}>{copy.send}</button>
       </form>
-      {loadingPreview ? <p className="support-text">正在准备预览...</p> : null}
+      {loadingPreview ? <p className="support-text">{copy.loading}</p> : null}
       {clarifications.length === 0 ? null : (
-        <section aria-label="Clarifications">
-          <h3>Clarifications</h3>
+        <section aria-label={copy.clarifications}>
+          <h3>{copy.clarifications}</h3>
           <ul>
             {clarifications.map((item) => <li key={item.clarificationId}>{item.question}</li>)}
           </ul>
         </section>
       )}
       {rows.length === 0 ? null : (
-        <section aria-label="Preview">
-          <h3>Preview</h3>
+        <section aria-label={copy.preview}>
+          <h3>{copy.preview}</h3>
           <ul>
             {rows.map((row, index) => (
               <li key={`${row.worksheetName}-${row.factorName ?? "system"}-${index}`}>
-                {row.worksheetName} | {row.factorName ?? "System"} | Requirement change: {row.requirementChange} | {row.valueLabel}
+                {row.worksheetName} | {row.factorName ?? copy.system} | {copy.requirementChange}: {row.requirementChange} | {row.valueLabel}
               </li>
             ))}
           </ul>
         </section>
       )}
-      <div className="f6-input-gate__actions">
+      <div className="design-optimization-input-gate__actions">
         <button
           type="button"
           className="button button--primary"
@@ -133,7 +164,7 @@ export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, 
             });
           }}
         >
-          {kind === "analysis_context" ? "确认分析背景" : "确认优化方向"}
+          {copy.confirm}
         </button>
         <button
           type="button"
@@ -143,7 +174,7 @@ export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, 
             void onSubmitDecision(kind === "analysis_context" ? "confirm_analysis_context" : "confirm_optimization_targets", { decision: "decline" });
           }}
         >
-          拒绝
+          {copy.decline}
         </button>
         <button
           type="button"
@@ -153,7 +184,7 @@ export function F6InputGate({ kind, snapshot, api, sessionId, disabled = false, 
             void onSubmitDecision(kind === "analysis_context" ? "confirm_analysis_context" : "confirm_optimization_targets", { decision: "not_provided" });
           }}
         >
-          暂不提供
+          {copy.skip}
         </button>
       </div>
     </section>

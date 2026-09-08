@@ -11,7 +11,7 @@ import type { WorkspaceIssue } from "../business-status.js";
 import { WorkspaceIssuePanel } from "./WorkspaceIssuePanel.js";
 import { WorkspacePreparation } from "./WorkspacePreparation.js";
 import { WorkspaceToolbar } from "./WorkspaceToolbar.js";
-import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6OptimizationResultV2, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
+import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6ReadableOptimizationResult, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
 import type { F8SessionSnapshot } from "@ai-assist/workbench";
 import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 import { F6Summary } from "./F6Summary.js";
@@ -41,11 +41,12 @@ export interface EngineeringWorkspaceProps {
   readonly scenarioDrafts?: readonly F8ScenarioDraft[];
   readonly snapshot?: F8SessionSnapshot;
   readonly issue?: WorkspaceIssue;
+  readonly onIssueAction?: (action: NonNullable<WorkspaceIssue["action"]>) => void;
   readonly onUpload: (file: File) => Promise<void>;
   readonly onSelectWorksheet: (worksheetName: string) => void;
   readonly onSubmitConversation: (message: string, selection: TaConversationSelection) => Promise<void>;
   readonly onSubmitCommand?: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
-  readonly f6Report?: F6OptimizationResultV2;
+  readonly f6Report?: F6ReadableOptimizationResult;
   readonly f2Report?: F2UserReport;
   readonly f4Report?: F4WorkflowCalculationResult;
   readonly f3Report?: DrawingGovernanceResultV2;
@@ -62,6 +63,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selectedFactorKey, setSelectedFactorKey] = useState<string>();
   const worksheet = props.model.worksheets.find(({ worksheetName }) => worksheetName === props.model.selectedWorksheetName);
+  const language = props.snapshot?.interactionLanguage.uiCatalogLanguage ?? "en";
   const initialScenarioDraft = selectCurrentWorksheetScenarioDraft(props.scenarioDrafts, props.sessionId, props.inputRevision, worksheet?.worksheetName);
   const scenario = useScenarioWorkspace({ api: props.api ?? unavailableApi(), sessionId: props.sessionId, inputRevision: props.inputRevision, factors: worksheet?.factors ?? [], baselineSystem: worksheet?.metrics, initialScenarioDraft, onSave: props.onSaveScenario ?? (async () => undefined) });
   const selectedFactor = worksheet?.factors.find(({ key }) => key === selectedFactorKey);
@@ -99,9 +101,9 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
 
   return (
     <main className="engineering-shell">
-      <WorkspaceToolbar model={props.model} loading={props.loading} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
+      <WorkspaceToolbar model={props.model} loading={props.loading} language={language} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
       <AnalysisProgress stages={props.productStages} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.adoProjection === undefined ? {} : { adoProjection: props.adoProjection })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
-      <WorkspaceIssuePanel issue={props.issue} />
+      <WorkspaceIssuePanel issue={props.issue} onAction={props.onIssueAction} />
       <div className="engineering-layout">
         <section className="engineering-layout__workbench">
           {preparing ? <WorkspacePreparation message={props.model.preparationMessage} /> : worksheet === undefined ? (
@@ -131,7 +133,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
                   <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
                 </section>
               </div>
-              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReconcile={props.onAdoReconcile} onStartNewAdoWriteGeneration={props.onAdoStartNewWriteGeneration} onAdoReset={props.onAdoReset} />
+              <F3Governance report={props.f3Report} language={language} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReconcile={props.onAdoReconcile} onStartNewAdoWriteGeneration={props.onAdoStartNewWriteGeneration} onAdoReset={props.onAdoReset} />
             </>
           )}
         </section>
@@ -145,6 +147,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
             ...(savedScenario?.calculationReference === undefined ? {} : { calculationReference: savedScenario.calculationReference }),
           })}
           snapshot={props.snapshot}
+          language={language}
           onSubmitCommand={props.onSubmitCommand}
           requestContextChips={requestContextChips}
           />

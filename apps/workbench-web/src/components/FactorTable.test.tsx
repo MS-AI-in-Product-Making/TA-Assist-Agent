@@ -92,5 +92,10 @@ describe("FactorTable", () => {
     expect(nominal).toHaveAttribute("autocomplete", "off");
     expect(upper).toHaveAttribute("autocomplete", "off");
     expect(lower).toHaveAttribute("autocomplete", "off");
+    expect(nominal).toHaveAttribute("data-user-input-id", "factor_nominal_value");
+    expect(upper).toHaveAttribute("data-user-input-id", "factor_upper_tolerance");
+    expect(lower).toHaveAttribute("data-user-input-id", "factor_lower_tolerance");
+    expect(nominal).toHaveAttribute("aria-describedby", "factor_nominal_value-guidance");
+    expect(within(rendered.container).getByText(/Enter the proposed nominal value/)).toBeVisible();
   });
 });

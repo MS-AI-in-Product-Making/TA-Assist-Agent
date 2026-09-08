@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runAgentCommand, type AgentCliRequest, type AgentLauncher } from "./agent.js";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 
 export async function runDefaultAgentCommand(request: AgentCliRequest): Promise<string> {
   return runAgentCommand(request, createLauncher());
@@ -21,15 +22,15 @@ export function createLauncherForTest(dependencies: {
   readonly startWorkbenchServer: (options: StartWorkbenchServerOptions) => ReturnType<typeof startWorkbenchServer>;
   readonly openBrowser: (url: string) => void;
 }): AgentLauncher {
-  const start = async (rootDir: string) => {
-    const started = await dependencies.startWorkbenchServer({ rootDir, port: 0 });
+  const start = async (rootDir: string, interactionLanguage: InteractionLanguage) => {
+    const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, interactionLanguage });
     registerHostCredentialIpc(started.server);
     dependencies.openBrowser(started.url);
     return { sessionId: "pending", url: new URL(started.url).origin };
   };
-  const analyze = async (rootDir: string) => {
+  const analyze = async (rootDir: string, interactionLanguage: InteractionLanguage) => {
     const sessionId = randomUUID();
-    const store = await createSessionStore({ rootDir, sessionId });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage });
     await store.close();
     const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, resumeSessionId: sessionId });
     registerHostCredentialIpc(started.server);

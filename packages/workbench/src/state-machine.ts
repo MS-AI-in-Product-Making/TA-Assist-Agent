@@ -1,4 +1,9 @@
-import { createTypedError, f8SessionSnapshotSchema } from "@ai-assist/contracts";
+import {
+  createTypedError,
+  f8SessionCommandSchema,
+  f8SessionSnapshotSchema,
+} from "@ai-assist/contracts";
+import { changeInteractionLanguage } from "@ai-assist/product-language";
 
 import {
   annotateSnapshot,
@@ -12,8 +17,6 @@ import {
 import {
   assertCommandAllowed,
   isRunningState,
-  parseCommand,
-  parseSnapshot,
   type F8SessionCommand,
   type F8SessionSnapshot,
   type F8SessionState,
@@ -28,9 +31,11 @@ const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandInput: F8SessionCommand): F8SessionSnapshot {
-  const snapshot = parseSnapshot(snapshotInput);
-  const command = parseCommand(commandInput);
-  assertCommandAllowed(snapshot, command);
+  const snapshot = f8SessionSnapshotSchema.parse(snapshotInput);
+  const command = f8SessionCommandSchema.parse(commandInput);
+  if (command.command !== "set_interaction_language") {
+    assertCommandAllowed(snapshot, command);
+  }
 
   if (command.sessionId !== snapshot.sessionId) {
     throw createTypedError({
@@ -48,6 +53,10 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       suggestedAction: "Refresh the session snapshot before sending another command.",
       affectedInputReferences: [command.commandId, snapshot.sessionId],
     });
+  }
+
+  if (command.command === "set_interaction_language") {
+    return reduceSetInteractionLanguage(snapshot, command);
   }
 
   switch (command.command) {
@@ -126,7 +135,17 @@ function reduceConfirmDownstreamScope(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): F8SessionSnapshot {
-  const payload = command.payload as { workbookHash: string; worksheetNames: string[]; provenance?: "user" | "internal_fixture" };
+  const payload = command.payload as {
+    decision: "continue_ready";
+    workbookHash: string;
+    inputRevision: number;
+    worksheetNames: string[];
+    downstreamReadyWorksheetNames: string[];
+    f2ReportArtifactId: string;
+    f2ReportContentHash: string;
+    findingDigest: string;
+    provenance?: "user" | "internal_fixture";
+  };
   const initial = snapshot.initialScopeSelection;
   if (initial === undefined || initial.confirmed !== true) {
     throw createTypedError({
@@ -144,6 +163,14 @@ function reduceConfirmDownstreamScope(
       affectedInputReferences: [command.commandId, snapshot.sessionId],
     });
   }
+  if (payload.inputRevision !== snapshot.inputRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream worksheet confirmation does not match the current input revision.",
+      suggestedAction: "Refresh the session and confirm the findings for the current workbook revision.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
   const initialWorksheetSet = new Set(initial.selectedWorksheetNames);
   const outOfScope = payload.worksheetNames.filter((worksheetName) => !initialWorksheetSet.has(worksheetName));
   if (outOfScope.length > 0) {
@@ -154,18 +181,43 @@ function reduceConfirmDownstreamScope(
       affectedInputReferences: [command.commandId, ...outOfScope],
     });
   }
+  if (payload.worksheetNames.length !== payload.downstreamReadyWorksheetNames.length
+    || payload.worksheetNames.some((worksheetName, index) => worksheetName !== payload.downstreamReadyWorksheetNames[index])) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream confirmation must match the exact downstream-ready set.",
+      suggestedAction: "Refresh the current findings and continue with every downstream-ready worksheet in report order.",
+      affectedInputReferences: [command.commandId, payload.f2ReportArtifactId],
+    });
+  }
+  const currentF2References = (snapshot.artifactRefs ?? []).filter((reference) =>
+    reference.kind === "f2_report" && reference.validated && reference.revision === snapshot.inputRevision,
+  );
+  if (currentF2References.length !== 1 || currentF2References[0]!.artifactId !== payload.f2ReportArtifactId) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream worksheet confirmation does not match the current Data Cleaning report identity.",
+      suggestedAction: "Refresh the current Data Cleaning findings and confirm again.",
+      affectedInputReferences: [command.commandId, payload.f2ReportArtifactId],
+    });
+  }
   return transitionWithAttempt(snapshot, command, "f3_running", {
     downstreamScopeSelection: {
       workbookContentHash: payload.workbookHash,
       selectedWorksheetNames: payload.worksheetNames,
       confirmed: true,
       provenance: payload.provenance ?? "user",
+      decision: payload.decision,
+      inputRevision: payload.inputRevision,
+      f2ReportArtifactId: payload.f2ReportArtifactId,
+      f2ReportContentHash: payload.f2ReportContentHash,
+      findingDigest: payload.findingDigest,
     },
   });
 }
 
 export function acceptAttemptResult(snapshotInput: F8SessionSnapshot, result: SessionAttemptResult): F8SessionSnapshot {
-  const snapshot = parseSnapshot(snapshotInput);
+  const snapshot = f8SessionSnapshotSchema.parse(snapshotInput);
   if (!attemptMatchesActiveAttempt(snapshot, result.attemptId)) {
     return snapshot;
   }
@@ -178,6 +230,7 @@ export function acceptAttemptResult(snapshotInput: F8SessionSnapshot, result: Se
   const terminalStatus = result.status ?? "completed";
   switch (terminalStatus) {
     case "completed": {
+      if (activeAttempt.stage === "f5_running") assertCompletedF5MultimodalReference(snapshot, result.result);
       const nextState = resolveCompletionState(activeAttempt.stage, result.result);
       const transitioned = transitionAfterCompletion(snapshot, activeAttempt.stage, nextState, activeAttempt.commandId ?? result.attemptId);
       return annotateSnapshot(transitioned, undefined);
@@ -216,6 +269,29 @@ function startWorkbookValidation(
     priorRunReferences: snapshot.priorRunReferences,
     scenarioDrafts: preservedDrafts?.length ? preservedDrafts : undefined,
     ...(replacingWorkbook ? {} : {}),
+  });
+}
+
+function reduceSetInteractionLanguage(
+  snapshot: F8SessionSnapshot,
+  command: F8SessionCommand,
+): F8SessionSnapshot {
+  if (isRunningState(snapshot.state) || snapshot.activeAttempt !== null) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: "Interaction language can change only while the session is waiting for user input.",
+      suggestedAction: "Wait for the active run to finish before changing the interaction language.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
+
+  const payload = command.payload as { turnId: string; explicitLanguageTag: string };
+  return nextSnapshot(snapshot, {
+    interactionLanguage: changeInteractionLanguage(snapshot.interactionLanguage, {
+      text: "",
+      turnId: payload.turnId,
+      explicitLanguageTag: payload.explicitLanguageTag,
+    }),
   });
 }
 
@@ -454,4 +530,27 @@ function appendF6InputDecisionReference(
       ...(decisionReference === undefined ? {} : { runReference: decisionReference }),
     },
   ];
+}
+
+function assertCompletedF5MultimodalReference(snapshot: F8SessionSnapshot, result: unknown): void {
+  const expectedArtifactId = `f5-multimodal:${snapshot.inputRevision}`;
+  const authorized = snapshot.artifactRefs?.filter((reference) => reference.kind === "f5_multimodal"
+    && reference.artifactId === expectedArtifactId
+    && reference.revision === snapshot.inputRevision
+    && reference.validated) ?? [];
+  const authorizedReference = authorized[0];
+  const references = (result as { readonly artifactReferences?: readonly { readonly artifactId?: unknown; readonly kind?: unknown; readonly relativePath?: unknown; readonly contentHash?: unknown }[] } | undefined)?.artifactReferences ?? [];
+  const matches = references.filter((reference) => reference.kind === "f5_multimodal" && reference.artifactId === expectedArtifactId);
+  if (authorized.length !== 1
+    || authorizedReference?.kind !== "f5_multimodal"
+    || matches.length !== 1
+    || matches[0]!.relativePath !== authorizedReference.relativePath
+    || matches[0]!.contentHash !== authorizedReference.contentHash) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Result Interpretation cannot complete without the current governed multimodal artifact.",
+      suggestedAction: "Complete image and Factor-table interpretation for every selected worksheet.",
+      affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision)],
+    });
+  }
 }

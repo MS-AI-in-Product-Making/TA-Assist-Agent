@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectFactorActualFields } from "./f1-factor-actuals.mjs";
+import { projectFactorActualFields, projectFactorOrdinalEvidence } from "./f1-factor-actuals.mjs";
 
 describe("projectFactorActualFields", () => {
   it("projects actual values by semantic field regardless of source columns", () => {
@@ -56,6 +56,11 @@ describe("projectFactorActualFields", () => {
       percentContributionToSigma: null,
       notes: null,
     });
+  });
+
+  it("preserves Factor ordinal display evidence without deriving missing values", () => {
+    expect(projectFactorOrdinalEvidence({ value: "AA", rawText: " AA ", sourceCell: "Analysis-A!C12" })).toEqual({ value: "AA", rawText: " AA ", sourceCell: "Analysis-A!C12" });
+    expect(projectFactorOrdinalEvidence(undefined)).toEqual({ value: "", rawText: "" });
   });
 
 });

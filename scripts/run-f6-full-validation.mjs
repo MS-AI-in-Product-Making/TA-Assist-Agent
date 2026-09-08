@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -15,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runF6Optimization } from "../packages/workflow-runners/dist/index.js";
 import { createTypedError } from "../packages/contracts/dist/index.js";
-import { createF6Optimization } from "../packages/workbook-catalog/dist/index.js";
+import { createF6OptimizationV3 } from "../packages/workbook-catalog/dist/index.js";
 import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
@@ -69,7 +70,7 @@ function normalizeDependencies(overrides = {}) {
       process.env.AI_TVA_F6_PUBLISH_ROOT,
     )),
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
-    createOptimization: overrides.createOptimization ?? createF6Optimization,
+    createOptimization: overrides.createOptimization ?? createF6OptimizationV3,
     createFinalReport: overrides.createFinalReport ?? createF6FinalReportProjection,
     renderOptimization: overrides.renderOptimization ?? renderF6Report,
     mkdir: overrides.mkdir ?? mkdirSync,
@@ -128,6 +129,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       f4ArtifactRoot: parsed.f4ArtifactRoot,
       f5ArtifactRoot: parsed.f5ArtifactRoot,
       selectedWorksheetNames: parsed.selectedWorksheetNames,
+      interactionLanguage: parsed.interactionLanguage,
       supplierCapabilityPath: parsed.supplierCapabilityArtifact,
       datumStrategyPath: parsed.datumStrategyArtifact,
       costPath: parsed.costArtifact,
@@ -135,6 +137,9 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       analysisContextPath: parsed.analysisContextArtifact,
       optimizationTargetsPath: parsed.optimizationTargetsArtifact,
       modelInterpretationPath: parsed.modelInterpretationArtifact,
+      expectedModelInterpretationContentHash: parsed.expectedModelInterpretationContentHash ?? (typeof parsed.modelInterpretationArtifact === "string"
+        ? createHash("sha256").update(readFileSync(parsed.modelInterpretationArtifact)).digest("hex")
+        : undefined),
     }, {
       repositoryRoot: process.cwd(),
       managedOutputRoot: process.env.AI_TVA_F6_OUTPUT_ROOT ?? process.cwd(),
@@ -156,6 +161,8 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
         modelInterpretationArtifact: request.modelInterpretationPath,
+        expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
+        requireMultimodalV3: true,
         publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),

@@ -110,6 +110,7 @@ export function createF4Handoff(input: {
     factors: input.worksheet.rows.map((row) => ({
       tableId: row.tableId,
       sourceRow: row.sourceRow,
+      ...(row.factorOrdinal === undefined ? {} : { factorOrdinal: row.factorOrdinal }),
       unit: "mm",
       actualFields: row.actualFields,
       sourceCells: row.sourceCells,
@@ -151,6 +152,7 @@ export function createCalculationRequestFromF4Handoff(input: {
 
   const rows = handoff.factors.map((factor) => ({
     sourceRow: factor.sourceRow,
+    factorOrdinal: factor.factorOrdinal ?? { value: "", rawText: "" },
     fields: {
       factorName: textEvidence(factor, "factorName"),
       partName: textEvidence(factor, "partName"),

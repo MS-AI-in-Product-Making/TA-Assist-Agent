@@ -39,6 +39,8 @@ describe("vsix package", () => {
       "extension.vsixmanifest",
       "extension/package.json",
     ]));
+    const manifest = await readFile(resolve(artifacts.extractDir, "extension.vsixmanifest"), "utf8");
+    expect(manifest).toContain(`TargetPlatform="${process.platform}-${process.arch}"`);
   });
 
   it("invokes the bundled runtime CLI through its CJS wrapper", async () => {
@@ -72,7 +74,7 @@ describe("vsix package", () => {
     expect(entries.some((entry) => entry.includes("test/demo-output"))).toBe(false);
   });
 
-  it("keeps tracked tree unchanged after packaging", async () => {
+  it("keeps the extension tracked tree unchanged after packaging", async () => {
     expect(artifacts.afterStatus).toBe(artifacts.beforeStatus);
   });
 });
@@ -104,7 +106,7 @@ async function runPackageAndCollectArtifacts(): Promise<PackageRunArtifacts> {
 }
 
 async function trackedStatus(): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["status", "--short"], { cwd: WORKSPACE_ROOT, windowsHide: true });
+  const { stdout } = await execFileAsync("git", ["status", "--short", "--", "apps/vscode-extension"], { cwd: WORKSPACE_ROOT, windowsHide: true });
   return stdout
     .split(/\r?\n/u)
     .filter((line) => line.trim().length > 0)

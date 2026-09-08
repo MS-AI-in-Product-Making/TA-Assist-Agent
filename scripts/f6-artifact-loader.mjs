@@ -17,6 +17,7 @@ import {
   f6OptimizationTargetsSchema,
   f6SupplierCapabilityEvidenceSchema,
 } from "../packages/contracts/dist/contracts.js";
+import { f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import {
@@ -467,6 +468,8 @@ export function loadF6ArtifactBundle({
   optimizationTargetsArtifact,
   modelInterpretationArtifactRoot,
   modelInterpretationArtifact,
+  expectedModelInterpretationContentHash,
+  requireMultimodalV3 = false,
 }, hooks) {
   const governedRoots = [
     [f2ArtifactRoot, ARTIFACTS.f2],
@@ -904,7 +907,61 @@ export function loadF6ArtifactBundle({
     }
   }
 
-  if (modelInterpretationArtifactRoot !== undefined || modelInterpretationArtifact !== undefined) {
+  if (requireMultimodalV3 === true) {
+  if (typeof modelInterpretationArtifactRoot !== "string"
+    || typeof modelInterpretationArtifact !== "string"
+    || typeof expectedModelInterpretationContentHash !== "string") {
+    return inputRejected("model_interpretation_required", "modelInterpretationArtifact");
+  }
+  const validatedModelRoot = validatedGovernedRoot(modelInterpretationArtifactRoot, "modelInterpretationArtifactRoot", publishRoot);
+  if (validatedModelRoot.rejection) return validatedModelRoot.rejection;
+  const loadedModel = readOptionalArtifact(validatedModelRoot.filePath, modelInterpretationArtifact, f5MultimodalArtifactV3Schema, hooks);
+  if (loadedModel.rejection) return loadedModel.rejection;
+  if (loadedModel.reference.contentHash !== expectedModelInterpretationContentHash
+    || loadedModel.value.workbookContentHash !== workbook.contentHash
+    || !isDeepStrictEqual(loadedModel.value.selectedWorksheetNames, selection)) {
+    return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
+  }
+  for (const [index, pair] of loadedModel.value.worksheets.entries()) {
+    const requestWorksheet = requestWorksheets[index];
+    const f2Worksheet = f2ByName.get(pair.request.worksheetName);
+    const f3Worksheet = f3ByName.get(pair.request.worksheetName);
+    const f5Worksheet = f5ByName.get(pair.request.worksheetName);
+    if (requestWorksheet === undefined || f2Worksheet === undefined || f3Worksheet === undefined || f5Worksheet === undefined
+      || pair.request.workbook.fileName !== workbook.fileName
+      || pair.request.tableId !== requestWorksheet.baselineCalculation.worksheetSelection.tableId
+      || pair.request.image.contentHash !== f5Worksheet.imageReference.contentHash
+      || pair.request.image.artifactPath !== f5Worksheet.imageReference.relativePath
+      || pair.request.factorRows.length !== requestWorksheet.baselineCalculation.factors.length) {
+      return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
+    }
+    for (const row of pair.request.factorRows) {
+      const factor = requestWorksheet.baselineCalculation.factors.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
+      const f2Row = f2Worksheet.rows.find(({ sourceRow, tableId }) => sourceRow === row.sourceRow && tableId === row.tableId);
+      const f3Row = f3Worksheet.rows.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
+      if (factor === undefined || f2Row === undefined || f3Row === undefined
+        || !isDeepStrictEqual(row.factorOrdinal, f2Row.factorOrdinal)
+        || !isDeepStrictEqual(row.factorOrdinal, f3Row.factorOrdinal)
+        || row.factorName !== factor.factorName
+        || row.partName !== f2Row.actualFields.partName
+        || row.partCategory !== f2Row.actualFields.partCategory
+        || row.drawingNumber !== f2Row.actualFields.drawingNumber
+        || row.dimId !== f2Row.actualFields.dimCharacteristicId
+        || row.nominal !== factor.input.nominalValue
+        || row.upperTolerance !== factor.input.upperTolerance
+        || row.lowerTolerance !== factor.input.lowerTolerance
+        || row.longTermSafetyFactor !== factor.input.longTermSafetyFactor
+        || row.sigmaLevel !== factor.input.sigmaLevel
+        || row.distribution !== factor.input.distribution
+        || !isDeepStrictEqual(row.sourceCells, f2Row.sourceCells)) {
+        return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
+      }
+    }
+  }
+  modelInterpretation = loadedModel.value;
+  inputDecisions.modelInterpretation = { outcome: "CALLER_AUTHORIZED", artifactReference: loadedModel.reference };
+  sourceReferences.modelInterpretation = loadedModel.reference;
+  } else if (modelInterpretationArtifactRoot !== undefined || modelInterpretationArtifact !== undefined) {
     const validatedRoot = validatedGovernedRoot(
       modelInterpretationArtifactRoot,
       "modelInterpretationArtifactRoot",

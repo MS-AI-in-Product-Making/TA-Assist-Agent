@@ -7,6 +7,7 @@ import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./comma
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 import type { AgentCliRequest } from "./commands/agent.js";
 import { runDefaultAgentCommand } from "./commands/agent-launcher.js";
 
@@ -128,7 +129,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--session" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets") {
+    if (flag !== "--root" && flag !== "--session" && flag !== "--interaction-language" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -153,12 +154,18 @@ function parseArguments(argv: readonly string[]):
     const action = agentAction;
     if (action !== "analyze" && action !== "resume" && action !== "status" && action !== "workbench") throw new Error("validation_error: agent action is invalid");
     const sessionId = values.get("--session");
+    const serializedInteractionLanguage = values.get("--interaction-language");
     if (action === "resume" || action === "status") {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) throw new Error("validation_error: --session is required");
+      if (serializedInteractionLanguage !== undefined) throw new Error("validation_error: --interaction-language is not allowed for this agent action");
       return { command, request: { action, rootDir, sessionId: sessionId.trim() } };
     }
     if (sessionId !== undefined) throw new Error("validation_error: --session is not allowed for this agent action");
-    return { command, request: { action, rootDir } };
+    if (action === "analyze" || action === "workbench") {
+      if (typeof serializedInteractionLanguage !== "string") throw new Error("validation_error: --interaction-language is required");
+      return { command, request: { action, rootDir, interactionLanguage: parseInteractionLanguage(serializedInteractionLanguage) } };
+    }
+    throw new Error("validation_error: agent action is invalid");
   }
   if (command === "smoke") {
     rejectUnexpected(values, ["--root"]);
@@ -220,12 +227,14 @@ function parseArguments(argv: readonly string[]):
     rejectUnexpected(values, [
       "--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet",
       "--supplier-capability", "--datum-strategy", "--cost", "--image-observations",
-      "--analysis-context", "--optimization-targets",
+      "--analysis-context", "--optimization-targets", "--language", "--model-interpretation",
     ]);
     const f2ArtifactRoot = requiredString(values, "--f2-artifacts", "Feature 6");
     const f3ArtifactRoot = requiredString(values, "--f3-artifacts", "Feature 6");
     const f4ArtifactRoot = requiredString(values, "--f4-artifacts", "Feature 6");
     const f5ArtifactRoot = requiredString(values, "--f5-artifacts", "Feature 6");
+    const languageTag = requiredString(values, "--language", "Feature 6");
+    const modelInterpretationPath = requiredString(values, "--model-interpretation", "Feature 6");
     const selectedWorksheetNames = worksheetValues.map((name) => name.trim());
     if (selectedWorksheetNames.length === 0 || selectedWorksheetNames.some((name) => name.length === 0)
       || new Set(selectedWorksheetNames).size !== selectedWorksheetNames.length) {
@@ -239,6 +248,8 @@ function parseArguments(argv: readonly string[]):
     const optimizationTargetsPath = optionalPath(values, "--optimization-targets", "Feature 6");
     const options: Feature6CommandOptions = {
       selectedWorksheetNames,
+      languageTag,
+      modelInterpretationPath,
       ...(supplierCapabilityPath === undefined ? {} : { supplierCapabilityPath }),
       ...(datumStrategyPath === undefined ? {} : { datumStrategyPath }),
       ...(costPath === undefined ? {} : { costPath }),
@@ -346,4 +357,23 @@ if (invokedPath !== undefined && import.meta.url === new URL(`file://${invokedPa
   process.stdout.write(result.stdout);
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;
+}
+
+function parseInteractionLanguage(serialized: string): InteractionLanguage {
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized);
+  } catch {
+    throw new Error("validation_error: --interaction-language is invalid");
+  }
+  if (typeof value !== "object" || value === null) throw new Error("validation_error: --interaction-language is invalid");
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.languageTag !== "string"
+    || (candidate.uiCatalogLanguage !== "en" && candidate.uiCatalogLanguage !== "zh")
+    || typeof candidate.lockedAtTurnId !== "string"
+    || (candidate.source !== "workflow_start" && candidate.source !== "explicit_user_change" && candidate.source !== "legacy_fallback")
+    || typeof candidate.fallbackUsed !== "boolean") {
+    throw new Error("validation_error: --interaction-language is invalid");
+  }
+  return candidate as unknown as InteractionLanguage;
 }

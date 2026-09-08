@@ -19,13 +19,18 @@ describe("F6InputGate", () => {
           activeAttempt: null,
           priorRunReferences: [],
         } as never}
+        language="zh"
         onSendMessage={vi.fn(async () => undefined)}
         onSubmitDecision={vi.fn(async () => undefined)}
       />,
     );
 
     expect(screen.getByRole("heading", { name: "补充/确认分析背景" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "补充分析背景" })).toHaveAttribute("placeholder", "直接描述产品功能、装配关系、工况、功能边界或关注点");
+    const input = screen.getByRole("textbox", { name: "分析上下文" });
+    expect(input).toHaveAttribute("placeholder", "请用一两句话说明产品、场景或决策问题。");
+    expect(input).toHaveAttribute("data-user-input-id", "analysis_context");
+    expect(input).toHaveAttribute("aria-describedby", "analysis_context-guidance");
+    expect(screen.getByText("分析 2026 样机装配中的支架间隙堆栈。")).toBeVisible();
     expect(screen.queryByText(/json|artifact path|runtime\/workbench|sha256|C:\\/i)).not.toBeInTheDocument();
   });
 
@@ -89,6 +94,7 @@ describe("F6InputGate", () => {
       <>
         <F6InputGate
           kind="analysis_context"
+          language="zh"
           snapshot={snapshot}
           api={{ readF6InputDraft } as never}
           sessionId="session-1"
@@ -97,6 +103,7 @@ describe("F6InputGate", () => {
         />
         <F6InputGate
           kind="optimization_targets"
+          language="zh"
           snapshot={snapshot}
           api={{ readF6InputDraft } as never}
           sessionId="session-1"
@@ -116,7 +123,7 @@ describe("F6InputGate", () => {
     await waitFor(() => expect(confirmButton).toBeEnabled());
 
     expect(screen.getByText("Specify the target factor.")).toBeVisible();
-    expect(screen.getByText(/Analysis-A \| Gap \| Requirement change: factor_tolerance \| \[-0.03, 0.04\] mm/)).toBeVisible();
+    expect(screen.getByText(/Analysis-A \| Gap \| 要求变更: factor_tolerance \| \[-0.03, 0.04\] mm/)).toBeVisible();
 
     fireEvent.click(confirmButton);
     await waitFor(() => expect(onSubmitDecision).toHaveBeenCalledWith("confirm_optimization_targets", {

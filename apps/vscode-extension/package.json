@@ -34,6 +34,14 @@
         "title": "TA Assist: Open Workbench"
       },
       {
+        "command": "ta-assist.openKnowledgeLibrary",
+        "title": "TA Assist: Open Knowledge Library"
+      },
+      {
+        "command": "ta-assist.openRealMeasurementAnalysis",
+        "title": "TA Assist: Open Real-Measurement Analysis"
+      },
+      {
         "command": "ta-assist.openSessionRecord",
         "title": "TA Assist: Open Session Record"
       },
@@ -70,6 +78,7 @@
     "@ai-assist/agent-runtime": "0.1.0",
     "@ai-assist/contracts": "0.1.0",
     "@ai-assist/conversation": "0.1.0",
+    "@ai-assist/product-language": "0.1.0",
     "@ai-assist/workbench": "0.1.0"
   },
   "devDependencies": {

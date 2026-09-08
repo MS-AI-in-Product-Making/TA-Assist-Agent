@@ -1,5 +1,5 @@
 import { conversationTurnSchema, f6InputProposalSchema, type F6InputProposal, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
-import { detectUserLanguage, type UserLanguage } from "@ai-assist/product-language";
+import type { UserLanguage } from "@ai-assist/product-language";
 import { selectCompleteReviewContext } from "@ai-assist/workbench";
 
 import { buildAgentContext, projectPendingActions, type AgentContext } from "./context-builder.js";
@@ -92,7 +92,7 @@ export async function handleAgentTurn(
 	const snapshot = await dependencies.snapshotStore.readSnapshot(request.sessionId);
 	const existingTurns = await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 });
 	const intent = detectAgentIntent(request.text);
-	const language = detectUserLanguage(request.text);
+	const language = snapshot.interactionLanguage.uiCatalogLanguage;
 	const storedResult = readStoredResult(existingTurns, request.commandId, snapshot, intent.type, language);
 	if (storedResult !== undefined) {
 		return localizeAgentResult(storedResult, language);
@@ -149,7 +149,7 @@ async function handleAgentTurnOnce(
 	const context = buildAgentContext({ snapshot, turns: turnsAfterUser });
 	const policy = createToolPolicy({ state: snapshot.state, intent: intentType });
 
-	const language = detectUserLanguage(request.text);
+	const language = snapshot.interactionLanguage.uiCatalogLanguage;
 	const canonicalReport = selectCanonicalReportReference(snapshot);
 	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite, language, canonicalReport);
 	const modelResponse = await maybeCompleteWithModel(wantsWrite, dependencies.model, request.text, context, policy);

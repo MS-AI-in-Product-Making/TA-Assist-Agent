@@ -6,6 +6,13 @@ import * as workbench from "./index.js";
 const SESSION_ID = "session-task-4";
 const PREVIOUS_WORKBOOK_HASH = "b".repeat(64);
 const HISTORICAL_WORKBOOK_HASH = "c".repeat(64);
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-start-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 
 type WorkbenchExports = typeof import("./index.js") & {
   reduceSessionCommand?: (snapshot: SessionSnapshot, command: SessionCommand) => SessionSnapshot;
@@ -23,6 +30,7 @@ type SessionCommand = {
   command:
     | "upload_workbook"
     | "replace_workbook"
+    | "set_interaction_language"
     | "confirm_initial_scope"
     | "confirm_downstream_scope"
     | "confirm_ado_decision"
@@ -66,9 +74,28 @@ describe("workbench state machine", () => {
       completedAttemptResult(),
     ).state).toBe("image_decision_required");
 
-    expect(api.acceptAttemptResult(
+    expect(() => api.acceptAttemptResult(
       runningSnapshot("f5_running"),
       completedAttemptResult(),
+    )).toThrow(/multimodal/i);
+
+    const multimodalReference = {
+      artifactId: "f5-multimodal:2",
+      kind: "f5_multimodal" as const,
+      revision: 2,
+      validated: true,
+      reviewContextId: "c".repeat(64),
+      relativePath: "runtime/workbench/multimodal/session-task-4/5/artifact.json",
+      contentHash: "d".repeat(64),
+    };
+    expect(() => api.acceptAttemptResult(
+      runningSnapshot("f5_running", [multimodalReference]),
+      completedAttemptResult({ artifactReferences: [{ ...multimodalReference, contentHash: "e".repeat(64) }] }),
+    )).toThrow(/multimodal/i);
+
+    expect(api.acceptAttemptResult(
+      runningSnapshot("f5_running", [multimodalReference]),
+      completedAttemptResult({ artifactReferences: [multimodalReference] }),
     ).state).toBe("analysis_context_decision_required");
 
     expect(api.reduceSessionCommand(
@@ -85,7 +112,10 @@ describe("workbench state machine", () => {
   it("records two distinct worksheet confirmations with user provenance", () => {
     const api = requireApi();
     const initial = api.reduceSessionCommand(
-      baseSnapshot({ state: "initial_scope_required" }),
+      baseSnapshot({
+        state: "initial_scope_required",
+        artifactRefs: [{ artifactId: "f2-report-0", kind: "f2_report", revision: 0, validated: true }],
+      }),
       {
         contractVersion: "f8-session-command-v1",
         sessionId: SESSION_ID,
@@ -109,7 +139,7 @@ describe("workbench state machine", () => {
         commandId: "confirm-downstream-user",
         expectedRevision: ready.revision,
         command: "confirm_downstream_scope",
-        payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+        payload: downstreamPayload({ inputRevision: ready.inputRevision }),
       },
     );
 
@@ -124,7 +154,37 @@ describe("workbench state machine", () => {
       selectedWorksheetNames: ["Analysis-A"],
       confirmed: true,
       provenance: "user",
+      decision: "continue_ready",
+      inputRevision: ready.inputRevision,
+      f2ReportArtifactId: "f2-report-0",
+      f2ReportContentHash: "b".repeat(64),
+      findingDigest: "c".repeat(64),
     });
+  });
+
+  it("rejects downstream confirmation bound to a different input revision", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      inputRevision: 4,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+      artifactRefs: [{ artifactId: "f2-report-4", kind: "f2_report", revision: 4, validated: true }],
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-stale-input",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ inputRevision: 3, f2ReportArtifactId: "f2-report-4" }),
+    })).toThrow(/input revision/i);
   });
 
   it("records fixture provenance for auto initial confirmation", () => {
@@ -168,7 +228,7 @@ describe("workbench state machine", () => {
       commandId: "confirm-downstream-hash-drift",
       expectedRevision: 2,
       command: "confirm_downstream_scope",
-      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-A"] },
+      payload: downstreamPayload({ workbookHash: "b".repeat(64) }),
     })).toThrow(/workbook hash/i);
   });
 
@@ -191,8 +251,34 @@ describe("workbench state machine", () => {
       commandId: "confirm-downstream-out-of-scope",
       expectedRevision: 2,
       command: "confirm_downstream_scope",
-      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-B"] },
+      payload: downstreamPayload({ worksheetNames: ["Analysis-B"] }),
     })).toThrow(/outside the confirmed initial scope/i);
+  });
+
+  it("rejects downstream confirmation that differs from the materialized exact ready set", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A", "Analysis-B"], confirmed: true, provenance: "user" },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-forged-subset",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ worksheetNames: ["Analysis-A"], downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"] }),
+    })).toThrow(/exact downstream-ready set/i);
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-reordered",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ worksheetNames: ["Analysis-B", "Analysis-A"], downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"] }),
+    })).toThrow(/exact downstream-ready set/i);
   });
 
   it("saves one What-if draft and requires a separate promotion confirmation", () => {
@@ -323,6 +409,7 @@ describe("workbench state machine", () => {
 
     expect(replaced.inputRevision).toBe(3);
     expect(replaced.state).toBe("f0_validating");
+    expect(replaced.interactionLanguage).toEqual(ENGLISH_LOCK);
     expect(replaced.initialScopeSelection).toBeUndefined();
     expect(replaced.downstreamScopeSelection).toBeUndefined();
     expect(replaced.activeAttempt).toMatchObject({
@@ -361,6 +448,34 @@ describe("workbench state machine", () => {
       expect.objectContaining({ featureId: "F4", referenceId: "f4-old", workbookHash: HISTORICAL_WORKBOOK_HASH }),
       expect.objectContaining({ featureId: "F5", referenceId: "f5-current", workbookHash: PREVIOUS_WORKBOOK_HASH }),
     ]);
+  });
+
+  it("changes interaction language only through the dedicated revision-bound command", () => {
+    const api = requireApi();
+    const changed = api.reduceSessionCommand(
+      baseSnapshot({ state: "review_required", revision: 9 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "set-language-zh",
+        expectedRevision: 9,
+        command: "set_interaction_language",
+        payload: {
+          turnId: "turn-language-zh",
+          explicitLanguageTag: "zh-CN",
+        },
+      },
+    );
+
+    expect(changed.interactionLanguage).toEqual({
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-language-zh",
+      source: "explicit_user_change",
+      fallbackUsed: false,
+    });
+    expect(changed.state).toBe("review_required");
+    expect(changed.activeAttempt).toBeNull();
   });
 
   it("keeps failed attempts retryable only when the typed error allows retry", () => {
@@ -620,6 +735,7 @@ function baseSnapshotShape() {
     inputRevision: 0,
     state: "created",
     activeAttempt: null,
+    interactionLanguage: ENGLISH_LOCK,
     priorRunReferences: [] as Array<{
       featureId: "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
       referenceId: string;
@@ -631,7 +747,7 @@ function baseSnapshotShape() {
   };
 }
 
-function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6_running") {
+function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6_running", artifactRefs?: unknown[]) {
   return baseSnapshot({
     revision: 5,
     inputRevision: 2,
@@ -643,6 +759,7 @@ function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6
       commandId: "command-running",
       startedAt: "2026-08-24T00:00:00.000Z",
     },
+    ...(artifactRefs === undefined ? {} : { artifactRefs }),
   });
 }
 
@@ -826,4 +943,18 @@ async function importStateMachineWithGovernanceStatus(status: string): Promise<R
   }
 
   return api as Required<WorkbenchExports>;
+}
+
+function downstreamPayload(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    decision: "continue_ready",
+    workbookHash: "a".repeat(64),
+    inputRevision: 0,
+    worksheetNames: ["Analysis-A"],
+    downstreamReadyWorksheetNames: ["Analysis-A"],
+    f2ReportArtifactId: "f2-report-0",
+    f2ReportContentHash: "b".repeat(64),
+    findingDigest: "c".repeat(64),
+    ...overrides,
+  };
 }

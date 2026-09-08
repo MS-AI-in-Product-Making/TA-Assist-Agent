@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { buildWorkbenchServer } from "../server.js";
 
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
 }
@@ -14,7 +16,7 @@ describe("product export route", () => {
   it("rejects client-forged source/provenance/hash fields in request body", async () => {
     const rootDir = testRoot("workbench-server-product-export-forgery");
     await rm(rootDir, { recursive: true, force: true });
-    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true, interactionLanguage: ENGLISH_LOCK });
     try {
       const browser = await server.testAuthenticate();
       const response = await server.inject({

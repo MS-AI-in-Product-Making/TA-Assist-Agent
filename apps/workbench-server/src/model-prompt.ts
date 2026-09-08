@@ -1,13 +1,13 @@
 import type { TaModelContextEnvelope } from "@ai-assist/contracts";
-import { detectUserLanguage, productCapabilityLabel, projectProductCapabilityReferences, type UserLanguage } from "@ai-assist/product-language";
+import { productCapabilityLabel, projectProductCapabilityReferences, type InteractionLanguage, type UserLanguage } from "@ai-assist/product-language";
 
 import { isSupportedGovernedImageMediaType, sanitizePromptVisibleText } from "./prompt-sanitizer.js";
 
 const MAX_F0_EXCERPTS = 6;
 const MAX_FACTOR_EXCERPTS = 8;
 
-export function buildEvidenceLabeledModelPrompt(userText: string, context: TaModelContextEnvelope): string {
-  const language = detectUserLanguage(userText);
+export function buildEvidenceLabeledModelPrompt(userText: string, context: TaModelContextEnvelope, interactionLanguage: InteractionLanguage): string {
+  const language = interactionLanguage.uiCatalogLanguage;
   const projectedUserText = projectProductCapabilityReferences(userText, language);
   const capability = (internalId: "F0" | "F1" | "F2" | "F4") => productCapabilityLabel(internalId, language);
   const supportedToleranceLoopImage = context.toleranceLoopImage !== undefined && isSupportedGovernedImageMediaType(context.toleranceLoopImage.mediaType)

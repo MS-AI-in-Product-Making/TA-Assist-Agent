@@ -10,6 +10,7 @@ const extensionRoot = resolve(dirname(dirname(fileURLToPath(import.meta.url))));
 const workspaceRoot = resolve(extensionRoot, "..", "..");
 const vsixOutDir = join(extensionRoot, "dist");
 const vsixPath = join(vsixOutDir, "ta-assist-workbook-analysis-beta.vsix");
+const targetPlatform = `${process.platform}-${process.arch}`;
 const require = createRequire(import.meta.url);
 const vsceCli = require.resolve("@vscode/vsce/vsce");
 
@@ -18,7 +19,7 @@ await execFileAsync(process.execPath, [join(extensionRoot, "scripts", "build.mjs
 await mkdir(vsixOutDir, { recursive: true });
 await rm(vsixPath, { force: true });
 
-await execFileAsync(process.execPath, [vsceCli, "package", "--no-dependencies", "--allow-missing-repository", "--out", vsixPath], {
+await execFileAsync(process.execPath, [vsceCli, "package", "--target", targetPlatform, "--no-dependencies", "--allow-missing-repository", "--out", vsixPath], {
   cwd: extensionRoot,
   windowsHide: true,
 });

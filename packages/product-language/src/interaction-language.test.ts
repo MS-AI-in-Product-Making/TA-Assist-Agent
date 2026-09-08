@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+import { changeInteractionLanguage, detectExplicitLanguageTag, resolveInteractionLanguage } from "./interaction-language.js";
+
+describe("interaction language", () => {
+  it("detects only explicit Chinese and English output-language requests", () => {
+    expect(detectExplicitLanguageTag("请用中文分析 report.xlsx")).toBe("zh-CN");
+    expect(detectExplicitLanguageTag("Respond in English with the result")).toBe("en-US");
+    expect(detectExplicitLanguageTag("请分析这个工作簿")).toBeUndefined();
+  });
+
+  it("locks a Japanese request while falling fixed UI back to English", () => {
+    expect(resolveInteractionLanguage({ text: "公差解析を開始", turnId: "turn-1", explicitLanguageTag: "ja-JP" })).toEqual({
+      languageTag: "ja-JP",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "turn-1",
+      source: "workflow_start",
+      fallbackUsed: true,
+    });
+  });
+
+  it("keeps a legacy fallback when no reliable language signal exists", () => {
+    expect(resolveInteractionLanguage({ text: "Analyze this workbook", turnId: "turn-2" })).toEqual({
+      languageTag: "und",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "turn-2",
+      source: "legacy_fallback",
+      fallbackUsed: true,
+    });
+  });
+
+  it("changes the interaction language on explicit user request", () => {
+    const current = resolveInteractionLanguage({ text: "公差解析を開始", turnId: "turn-1", explicitLanguageTag: "ja-JP" });
+
+    expect(changeInteractionLanguage(current, { text: "请切换到中文", turnId: "turn-3", explicitLanguageTag: "zh-CN" })).toEqual({
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-3",
+      source: "explicit_user_change",
+      fallbackUsed: false,
+    });
+  });
+
+  it("keeps the current lock unchanged when no explicit language tag is provided", () => {
+    const current = resolveInteractionLanguage({ text: "请分析这个工作簿", turnId: "turn-1", explicitLanguageTag: "zh-CN" });
+
+    expect(
+      changeInteractionLanguage(current, {
+        text: "Analyze this workbook",
+        turnId: "turn-2",
+        hostLocale: "zh-CN",
+      }),
+    ).toBe(current);
+  });
+});

@@ -5,6 +5,9 @@
     "rootDir": "src",
     "outDir": "dist"
   },
+  "references": [
+    { "path": "../product-language" }
+  ],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

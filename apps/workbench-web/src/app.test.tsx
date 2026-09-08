@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { DrawingGovernanceResultV2, F8AdoProjection, F8AdoWriteConfirmation } from "@ai-assist/contracts";
 import type { ConversationTurn } from "@ai-assist/conversation";
+import { inputMetadata, type UserInputId } from "@ai-assist/product-language";
 import type { WorkbenchApi } from "./api.js";
 import { App } from "./app.js";
 import type { F8SessionSnapshot } from "./workbench-session.js";
@@ -40,6 +41,35 @@ const PRODUCT_STAGE_LABELS = [
 afterEach(cleanup);
 
 describe("App", () => {
+  it("mounts exactly the applicable registered inputs using the locked catalog language", () => {
+    const chineseLock = {
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-zh",
+      source: "workflow_start",
+      fallbackUsed: false,
+    } as const;
+    const { container } = render(
+      <App
+        preloadedState={{
+          snapshot: snapshot("initial_scope_required", { interactionLanguage: chineseLock }),
+          pendingWorkbookHash: "a".repeat(64),
+          conversation: [],
+          loading: false,
+          connected: true,
+        }}
+        initialWorksheetOptions={[{ worksheetName: "AJ_GAP", status: "available" }]}
+      />,
+    );
+
+    const mountedIds = [...container.querySelectorAll<HTMLElement>("[data-user-input-id]")].map((element) => element.dataset.userInputId);
+    const applicableIds = (["workbook_file", "worksheet_scope", "worksheet_search"] satisfies UserInputId[])
+      .filter((inputId) => inputId in inputMetadata("zh"));
+    expect(mountedIds.sort()).toEqual(applicableIds.sort());
+    expect(screen.getByText("选择 TA.xlsx 或对应该工作流的 .xlsx 文件。")).toBeInTheDocument();
+    expect(screen.getByText("gap wo rubber_static")).toBeInTheDocument();
+  });
+
   it("keeps the two worksheet confirmations separate", async () => {
     const commands: Array<{ command: string; worksheetNames: string[]; workbookHash: string | undefined }> = [];
     const submitCommand = async (command: string, payload: Record<string, unknown>) => {
@@ -86,23 +116,23 @@ describe("App", () => {
             },
           }),
           submitCommand,
+          f2Findings: findingsProjection(["AJ_GAP", "B_STACK"]),
           conversation: [],
           loading: false,
           connected: true,
         }}
-        downstreamWorksheetOptions={[
-          { worksheetName: "AJ_GAP", status: "ready" },
-          { worksheetName: "B_STACK", status: "ready" },
-        ]}
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "B_STACK" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm engineering scope" }));
+    expect(screen.queryByRole("checkbox", { name: "B_STACK" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review workbook findings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue with ready worksheets" }));
 
     expect(commands).toEqual([
       { command: "confirm_initial_scope", worksheetNames: ["AJ_GAP"], workbookHash: "a".repeat(64) },
-      { command: "confirm_downstream_scope", worksheetNames: ["B_STACK"], workbookHash: "b".repeat(64) },
+      { command: "confirm_downstream_scope", worksheetNames: ["AJ_GAP", "B_STACK"], workbookHash: "b".repeat(64) },
     ]);
   }, 15_000);
 
@@ -523,7 +553,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Gap", description: "中心间隙" }));
   fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), { target: { value: "Explain the current tolerance risk." } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Conversation input" }), { target: { value: "Explain the current tolerance risk." } });
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => expect(submitted).toHaveLength(1));
@@ -901,11 +931,27 @@ function snapshot(state: F8SessionSnapshot["state"], overrides: Partial<F8Sessio
     state,
     activeAttempt: state === "f1_f2_running" ? { attemptId: "attempt-1", stage: "f1_f2_running", status: "running", startedAt: "2026-08-26T00:00:00.000Z" } : null,
     priorRunReferences: [],
+    interactionLanguage: {
+      languageTag: "en-US",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "turn-en",
+      source: "workflow_start",
+      fallbackUsed: false,
+    },
     worksheetCapabilities: [
       { worksheetName: "AJ_GAP", whatIfAvailable: false },
       { worksheetName: "B_STACK", whatIfAvailable: false },
     ],
     ...overrides,
+  };
+}
+
+function findingsProjection(worksheetNames: string[]) {
+  return {
+    contractVersion: "f2-findings-decision-projection-v1" as const,
+    workbookHash: "b".repeat(64), inputRevision: 1, f2ReportArtifactId: "f2-current", f2ReportContentHash: "c".repeat(64), findingDigest: "d".repeat(64),
+    worksheetFindings: worksheetNames.map((worksheetName) => ({ contractVersion: "f2-worksheet-finding-projection-v1" as const, worksheetName, readiness: "downstream_ready" as const, identifierWarnings: [], blockers: [], sourceRows: [] })),
+    downstreamReadyWorksheetNames: worksheetNames,
   };
 }
 

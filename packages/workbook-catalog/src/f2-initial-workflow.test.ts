@@ -17,6 +17,7 @@ function row(worksheetName: string, overrides: Record<string, unknown> = {}) {
   const sourceRow = 2;
   return {
     sourceRow,
+    factorOrdinal: { value: "F1", rawText: "F1", sourceCell: `${worksheetName}!Z${sourceRow}` },
     fields: {
       factorName: available(worksheetName, "A", sourceRow, "bracket arm"),
       partName: available(worksheetName, "B", sourceRow, "component"),

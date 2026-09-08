@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConversationStore } from "@ai-assist/conversation";
 import { handleAgentTurn } from "@ai-assist/agent-runtime";
 import { openSessionStore } from "@ai-assist/workbench";
+import { detectExplicitLanguageTag, inputMetadata, resolveInteractionLanguage, type InteractionLanguage, type UiCatalogLanguage } from "@ai-assist/product-language";
 import * as vscode from "vscode";
 
 import { syncConversationUnread } from "./conversation-sync.js";
@@ -18,6 +19,7 @@ import { createSurfaceHostClient, reconcileSurfaceWrite } from "./surface-host-c
 import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 import { executeSurfaceValidation } from "./surface-validation.js";
 import { resolveWorkspaceWorkbook } from "./workspace-workbook-resolver.js";
+import { executeWorksheetMultimodalModel } from "./worksheet-multimodal-model.js";
 
 let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
@@ -41,7 +43,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activeSessionId = restoredBinding.sessionId;
     activeWorkbenchUrl = restoredBinding.workbenchUrl;
   }
+  let activeInteractionLanguage: InteractionLanguage | undefined;
   let hostPumpRunning = false;
+
+  const sessionRecoveryInputOptions = () => {
+    const hostCatalogLanguage: UiCatalogLanguage = vscode.env.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    const metadata = inputMetadata(activeInteractionLanguage?.uiCatalogLanguage ?? hostCatalogLanguage).session_recovery;
+    return {
+      title: metadata.title,
+      prompt: `${metadata.whatToEnter} ${metadata.purpose}`,
+      placeHolder: metadata.example,
+      ignoreFocusOut: true,
+    };
+  };
+
+  const readSessionLanguage = async (sessionId: string): Promise<InteractionLanguage> => {
+    const store = await openSessionStore({ rootDir: workspaceRoot, sessionId });
+    const snapshot = await store.readSnapshot().finally(async () => store.close());
+    return snapshot.interactionLanguage;
+  };
 
   const executeHostAction = async (actionId: string) => {
     if (activeSessionId === undefined || activeWorkbenchUrl === undefined) return;
@@ -108,6 +128,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           for await (const chunk of response.text) responseText += chunk;
           return responseText.trim().length === 0 ? { status: "failed", error: new Error("VS Code model returned an empty response.") } : { status: "completed", outcome: { kind: "model_response", turnId: claim.request.turnId, responseText } };
         }
+        if (claim.request.kind === "vscode_worksheet_multimodal_request") {
+          const imageBearer = await processLauncher.issueHostBearer!({ sessionId, actionId, hostInstanceId, scopes: ["host-actions:image:read"] });
+          const models = await vscode.lm.selectChatModels();
+          return executeWorksheetMultimodalModel({
+            request: claim.request.request,
+            fetchImage: () => fetchClaimedWorksheetImage(workbenchUrl, sessionId, actionId, claim.leaseId, imageBearer),
+            models: models.map((model) => {
+              const supportsImage = (model as unknown as { readonly capabilities?: { readonly imageInput?: boolean } }).capabilities?.imageInput;
+              return {
+                id: model.id,
+                ...(supportsImage === undefined ? {} : { supportsImage }),
+                sendRequest: async (messages: readonly unknown[]) => model.sendRequest(messages as vscode.LanguageModelChatMessage[]),
+              };
+            }),
+            createImagePart: (bytes, mediaType) => vscode.LanguageModelDataPart.image(bytes, mediaType),
+            createTextPart: (text) => new vscode.LanguageModelTextPart(text),
+            createUserMessage: (content) => vscode.LanguageModelChatMessage.User(content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelDataPart>),
+          });
+        }
         return { status: "blocked", reason: "Unsupported HostAction kind." };
       },
       submit: async (result) => { await hostRequest<void>(workbenchUrl, sessionId, actionId, "result", resultBearer, { contractVersion: "f8-host-action-result-v1", ...result }); },
@@ -130,37 +169,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const hostPumpHandle = setInterval(() => { void pollHostActions(); }, 1_000);
   context.subscriptions.push({ dispose: () => clearInterval(hostPumpHandle) });
 
-  const bindNewSession = async () => {
-    const launched = await launchNewWorkbench(workspaceRoot, processLauncher);
+  const bindNewSession = async (requestedLanguage?: ReturnType<typeof resolveInteractionLanguage>) => {
+    const interactionLanguage = requestedLanguage ?? resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
+    const launched = await launchNewWorkbench(workspaceRoot, processLauncher, interactionLanguage);
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
+    activeInteractionLanguage = interactionLanguage;
     await context.globalState.update(HOST_BINDING_KEY, { sessionId: launched.sessionId, workbenchUrl: launched.url });
     return launched;
   };
   const openNew = async () => {
     await bindNewSession();
   };
-  const handleAnalyzeIntent = async (intent: TaAnalyzeIntent): Promise<string> => {
-    const launched = await bindNewSession();
-    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent);
-    if (resolvedWorkbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
+  const handleAnalyzeIntent = async (intent: TaAnalyzeIntent, requestText: string): Promise<string> => {
+    const explicitLanguageTag = detectExplicitLanguageTag(requestText);
+    const interactionLanguage = resolveInteractionLanguage({
+      text: requestText,
+      turnId: randomUUID(),
+      hostLocale: vscode.env.language,
+      ...(explicitLanguageTag === undefined ? {} : { explicitLanguageTag }),
+    });
+    const launched = await bindNewSession(interactionLanguage);
+    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent, interactionLanguage.uiCatalogLanguage);
+    const copy = interactionLanguage.uiCatalogLanguage === "zh"
+      ? { ready: "TA Assist Workbench 已就绪。请上传工作簿以开始分析。", accepted: "工作簿已接受" }
+      : { ready: "TA Assist Workbench is ready. Upload a workbook to begin.", accepted: "Workbook accepted" };
+    if (resolvedWorkbookPath === undefined) return copy.ready;
     try {
       await importWorkbook({ sessionId: launched.sessionId, workbookPath: resolvedWorkbookPath }, processLauncher);
-      return `Workbook accepted. Session ${launched.sessionId} is running in TA Assist Workbench.`;
+      return interactionLanguage.uiCatalogLanguage === "zh"
+        ? `${copy.accepted}。Session ${launched.sessionId} 正在 TA Assist Workbench 中运行。`
+        : `${copy.accepted}. Session ${launched.sessionId} is running in TA Assist Workbench.`;
     } catch (error) {
-      return formatWorkbookImportFailure(error);
+      return formatWorkbookImportFailure(error, interactionLanguage.uiCatalogLanguage);
     }
   };
   const openPureWorkbench = async () => {
-    const launched = await launchWorkbench(workspaceRoot, processLauncher);
+    const interactionLanguage = resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
+    const launched = await launchWorkbench(workspaceRoot, processLauncher, interactionLanguage);
     activeWorkbenchUrl = launched.url;
   };
   const resume = async (sessionId?: string) => {
-    const selected = sessionId ?? await vscode.window.showInputBox({ prompt: "TA Assist session ID", ignoreFocusOut: true });
+    const selected = sessionId ?? await vscode.window.showInputBox(sessionRecoveryInputOptions());
     if (selected === undefined || selected.trim().length === 0) return;
     const launched = await resumeWorkbench(workspaceRoot, selected.trim(), processLauncher);
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
+    activeInteractionLanguage = await readSessionLanguage(launched.sessionId);
     await context.globalState.update(HOST_BINDING_KEY, { sessionId: launched.sessionId, workbenchUrl: launched.url });
     const sync = await syncConversationUnread({ sessionId: launched.sessionId, consumerId: `vscode:${vscode.env.machineId}`, store: conversation, status });
     await sync.markRead();
@@ -170,8 +225,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("ta-assist.analyze", openNew),
     vscode.commands.registerCommand("ta-assist.workbench", async () => activeWorkbenchUrl === undefined ? openPureWorkbench() : vscode.env.openExternal(vscode.Uri.parse(activeWorkbenchUrl))),
     vscode.commands.registerCommand("ta-assist.resume", resume),
+    vscode.commands.registerCommand("ta-assist.openKnowledgeLibrary", async () => {
+      await vscode.commands.executeCommand("workbench.action.chat.open", { query: "Use Knowledge Library to answer my TA question." });
+    }),
+    vscode.commands.registerCommand("ta-assist.openRealMeasurementAnalysis", async () => {
+      await vscode.commands.executeCommand("workbench.action.chat.open", { query: "Use TA Real-Measurement Analysis for my measured data." });
+    }),
     vscode.commands.registerCommand("ta-assist.openSessionRecord", async () => {
-      const sessionId = activeSessionId ?? await vscode.window.showInputBox({ prompt: "TA Assist session ID", ignoreFocusOut: true });
+      const sessionId = activeSessionId ?? await vscode.window.showInputBox(sessionRecoveryInputOptions());
       if (sessionId === undefined || sessionId.trim().length === 0) return;
       const recordUri = vscode.Uri.file(join(workspaceRoot, "runtime", "workbench", "session-records", sessionId.trim()));
       await vscode.commands.executeCommand("revealFileInOS", recordUri);
@@ -190,13 +251,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       url.hash = "/report/current";
       await vscode.env.openExternal(vscode.Uri.parse(url.toString()));
     }),
-    vscode.commands.registerCommand("ta-assist.executeHostAction", async () => {
+    vscode.commands.registerCommand("ta-assist.executeHostAction", async (actionId?: string) => {
       if (activeSessionId === undefined || activeWorkbenchUrl === undefined) {
         await vscode.window.showErrorMessage("请先绑定 TA Assist session。");
         return;
       }
-      const actionId = await vscode.window.showInputBox({ prompt: "Host action ID", ignoreFocusOut: true });
-      if (actionId === undefined || actionId.trim().length === 0) return;
+      if (actionId === undefined || actionId.trim().length === 0) {
+        await vscode.window.showInformationMessage("Host actions run automatically from the bound Web session. Return to TA Assist Workbench to continue.", { modal: false });
+        return;
+      }
       await executeHostAction(actionId.trim());
       await vscode.window.showInformationMessage("Surface HostAction 已提交。后续确认与结果请返回 Web 查看。", { modal: false });
     }),
@@ -205,26 +268,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const participant = vscode.chat.createChatParticipant("ta-assist", async (request, chatContext, response, token) => {
     if (request.command === "workbench") {
       await openNew();
-      response.markdown("TA Assist Workbench is ready. Upload a workbook to begin.");
+      response.markdown(activeInteractionLanguage?.uiCatalogLanguage === "zh"
+        ? "TA Assist Workbench 已就绪。请上传工作簿以开始分析。"
+        : "TA Assist Workbench is ready. Upload a workbook to begin.");
       return;
     }
     if (request.command === "resume") {
       await resume(request.prompt.trim() || undefined);
-      response.markdown(activeSessionId === undefined ? "未绑定 session。" : `已绑定 TA Assist session ${activeSessionId}。`);
+      response.markdown(activeSessionId === undefined
+        ? (vscode.env.language.toLowerCase().startsWith("zh") ? "未绑定 session。" : "No session is bound.")
+        : activeInteractionLanguage?.uiCatalogLanguage === "zh" ? `已绑定 TA Assist session ${activeSessionId}。` : `TA Assist session ${activeSessionId} is bound.`);
       return;
+    }
+    if (activeSessionId !== undefined && activeInteractionLanguage === undefined) {
+      activeInteractionLanguage = await readSessionLanguage(activeSessionId);
     }
     await handleParticipant(request, chatContext, response, token, {
       commandId: randomUUID,
       handleAnalyzeIntent,
+      uiCatalogLanguage: activeInteractionLanguage?.uiCatalogLanguage ?? (vscode.env.language.toLowerCase().startsWith("zh") ? "zh" : "en"),
       ...(activeSessionId === undefined ? {} : { sessionId: activeSessionId }),
-      handleTurn: async (turn) => handleAgentTurn(turn, {
-        snapshotStore: { async readSnapshot(sessionId) {
-          const store = await openSessionStore({ rootDir: workspaceRoot, sessionId: sessionId ?? activeSessionId! });
-          try { return await store.readSnapshot(); } finally { await store.close(); }
-        } },
-        conversationStore: conversation,
-        ...(request.model === undefined ? {} : { model: createVsCodeLanguageModelAdapter({ model: request.model, token, createUserMessage: vscode.LanguageModelChatMessage.User }) }),
-      }),
+      handleTurn: async (turn) => {
+        const store = await openSessionStore({ rootDir: workspaceRoot, sessionId: turn.sessionId });
+        const snapshot = await store.readSnapshot().finally(async () => store.close());
+        return handleAgentTurn(turn, {
+          snapshotStore: { async readSnapshot() { return snapshot; } },
+          conversationStore: conversation,
+          ...(request.model === undefined ? {} : { model: createVsCodeLanguageModelAdapter({ model: request.model, token, createUserMessage: vscode.LanguageModelChatMessage.User, interactionLanguage: snapshot.interactionLanguage }) }),
+        });
+      },
     });
   });
   context.subscriptions.push(participant);
@@ -262,15 +334,17 @@ function isAllowedWorkbenchRoute(target: string): boolean {
 
 export function deactivate(): void {}
 
-async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<string | undefined> {
+async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent, language: UiCatalogLanguage): Promise<string | undefined> {
   if (intent.workbookPath !== undefined) return intent.workbookPath;
   if (intent.workbookFileName === undefined) return undefined;
 
   const resolution = await resolveWorkspaceWorkbook(intent.workbookFileName, (pattern) => vscode.workspace.findFiles(pattern));
+  const metadata = inputMetadata(language).workbook_file;
   if (resolution.kind === "unique") return resolution.uri.fsPath;
   if (resolution.kind === "ambiguous") {
     const picked = await vscode.window.showQuickPick(resolution.candidates.map((candidate) => ({ label: candidate.fsPath, uri: candidate })), {
-      title: `Select workbook for ${intent.workbookFileName}`,
+      title: metadata.title,
+      placeHolder: `${metadata.whatToEnter} ${metadata.example}`,
       ignoreFocusOut: true,
       canPickMany: false,
     });
@@ -279,17 +353,17 @@ async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<stri
 
   const selected = await vscode.window.showOpenDialog({
     canSelectMany: false,
-    openLabel: "Select Workbook",
-    title: `Workbook ${intent.workbookFileName} was not found. Select one workbook to continue`,
+    openLabel: metadata.title,
+    title: `${metadata.whatToEnter} ${metadata.validationHint}`,
     filters: { "Excel Workbook": ["xlsx"] },
   });
   return selected?.[0]?.fsPath;
 }
 
-function formatWorkbookImportFailure(error: unknown): string {
+function formatWorkbookImportFailure(error: unknown, language: UiCatalogLanguage): string {
   const typed = error as { readonly summary?: unknown; readonly suggestedAction?: unknown };
-  const summary = safeChatFailureText(typed.summary, "Workbook import failed.");
-  const suggestedAction = safeChatFailureText(typed.suggestedAction, "Open TA Assist Workbench and upload the workbook again.");
+  const summary = safeChatFailureText(typed.summary, language === "zh" ? "工作簿导入失败。" : "Workbook import failed.");
+  const suggestedAction = safeChatFailureText(typed.suggestedAction, language === "zh" ? "请打开 TA Assist Workbench 并重新上传工作簿。" : "Open TA Assist Workbench and upload the workbook again.");
   return `${trimTerminalPeriod(summary)}. ${trimTerminalPeriod(suggestedAction)}.`;
 }
 
@@ -405,12 +479,26 @@ async function hostRequest<Result>(originValue: string, sessionId: string, actio
   return (response.status === 204 ? undefined : await response.json()) as Result;
 }
 
-async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" } | undefined> {
+async function fetchClaimedWorksheetImage(originValue: string, sessionId: string, actionId: string, leaseId: string, bearer: string): Promise<{ readonly bytes: Uint8Array; readonly mediaType: string }> {
   const origin = new URL(originValue).origin;
+  const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/host-actions/${encodeURIComponent(actionId)}/leases/${encodeURIComponent(leaseId)}/image`, {
+    headers: { authorization: `Bearer ${bearer}` },
+  });
+  if (!response.ok) throw new Error(`Worksheet image read was rejected (${response.status}).`);
+  const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+  if (mediaType !== "image/png" && mediaType !== "image/jpeg") throw new Error("Worksheet image response media type is invalid.");
+  return { bytes: new Uint8Array(await response.arrayBuffer()), mediaType };
+}
+
+async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" | "vscode_worksheet_multimodal_request" } | undefined> {
+  const origin = new URL(originValue).origin;
+  const multimodal = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/host-actions/pending`, { headers: { authorization: `Bearer ${bearer}` } });
+  if (!multimodal.ok) throw new Error(`Pending multimodal HostAction discovery was rejected (${multimodal.status}).`);
+  if (multimodal.status !== 204) return await multimodal.json() as { readonly actionId: string; readonly kind: "vscode_worksheet_multimodal_request" };
   const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/ado/pending`, { headers: { authorization: `Bearer ${bearer}` } });
   if (response.status === 204) return undefined;
   if (!response.ok) throw new Error(`Pending ADO HostAction discovery was rejected (${response.status}).`);
-  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" };
+  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" | "vscode_worksheet_multimodal_request" };
 }
 
 function outputUrl(stdout: string): string {

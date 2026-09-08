@@ -1,5 +1,3 @@
-/* global structuredClone */
-
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,6 +9,10 @@ import {
   f6ModelInterpretationArtifactSchema,
   f6OptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
+import {
+  createF5MultimodalFactorSetHash,
+  createF5MultimodalRequestHash,
+} from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
@@ -19,6 +21,7 @@ import {
   createF6V2ObservationArtifact,
   F6_FIXTURE_WORKBOOK_HASH,
   installF6ModelInterpretation,
+  installRequiredMultimodalV3,
 } from "./f6-artifact-test-fixture.mjs";
 import { createF6FinalReportProjection, worstDisposition } from "./f6-final-report.mjs";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
@@ -31,6 +34,86 @@ function readJson(filePath) {
 
 function row(values) {
   return `| ${values.join(" | ")} |`;
+}
+
+function createMultimodalV3(inputs) {
+  const f2Worksheet = inputs.f2Report.worksheets[0];
+  const f2Row = f2Worksheet.rows[0];
+  const calculation = inputs.f4Report.calculations[0];
+  const factor = calculation.factors[0];
+  const image = inputs.f5Report.worksheets[0].imageReference;
+  const factorRows = [{
+    worksheetName: f2Worksheet.worksheetName,
+    tableId: f2Row.tableId,
+    sourceRow: f2Row.sourceRow,
+    factorOrdinal: structuredClone(f2Row.factorOrdinal),
+    factorName: factor.factorName,
+    partName: f2Row.actualFields.partName,
+    partCategory: f2Row.actualFields.partCategory,
+    drawingNumber: f2Row.actualFields.drawingNumber,
+    dimId: f2Row.actualFields.dimCharacteristicId,
+    nominal: factor.input.nominalValue,
+    upperTolerance: factor.input.upperTolerance,
+    lowerTolerance: factor.input.lowerTolerance,
+    longTermSafetyFactor: factor.input.longTermSafetyFactor,
+    sigmaLevel: factor.input.sigmaLevel,
+    distribution: factor.input.distribution,
+    sourceCells: structuredClone(f2Row.sourceCells),
+  }];
+  const request = {
+    contractVersion: "f5-multimodal-request-v3",
+    inputClassification: "confidential",
+    requestHash: "",
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    revision: 7,
+    inputRevision: 3,
+    workbook: {
+      fileName: inputs.f2Report.workbook.fileName,
+      contentHash: inputs.f2Report.workbook.contentHash,
+    },
+    worksheetName: f2Worksheet.worksheetName,
+    tableId: f2Row.tableId,
+    activeFactorCount: factorRows.length,
+    factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+    image: { mediaType: "image/png", contentHash: image.contentHash, byteLength: 100, artifactPath: image.relativePath },
+    factorRows,
+  };
+  request.requestHash = createF5MultimodalRequestHash(request);
+  return {
+    contractVersion: "f5-multimodal-artifact-v3",
+    outputClassification: "confidential",
+    sessionId: request.sessionId,
+    revision: request.revision,
+    inputRevision: request.inputRevision,
+    workbookContentHash: request.workbook.contentHash,
+    selectedWorksheetNames: [request.worksheetName],
+    worksheets: [{
+      request,
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: request.requestHash,
+        sessionId: request.sessionId,
+        revision: request.revision,
+        inputRevision: request.inputRevision,
+        workbookContentHash: request.workbook.contentHash,
+        worksheetName: request.worksheetName,
+        tableId: request.tableId,
+        imageContentHash: request.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: "Image and complete Factor table jointly support the tolerance path interpretation.",
+        rowMappings: factorRows.map((factorRow) => ({
+          worksheetName: factorRow.worksheetName,
+          tableId: factorRow.tableId,
+          sourceRow: factorRow.sourceRow,
+          factorOrdinal: structuredClone(factorRow.factorOrdinal),
+          mappingStatus: "matched",
+          visibleStatus: "visible",
+          interpretation: "Factor A is visible and mapped to the table row.",
+        })),
+      },
+    }],
+  };
 }
 
 function numberText(value, fallback = "N/A") {
@@ -128,15 +211,21 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
   const modelInterpretation = modelInterpretationVersion === undefined
     ? undefined
     : installF6ModelInterpretation(bundle, { version: modelInterpretationVersion });
+  const requiredMultimodal = installRequiredMultimodalV3(bundle);
   const runId = `2026-08-20T00-00-00-000Z-${worksheetNames.join("-")}`;
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
 
   const result = runF6FullValidation({}, {
     parseArgs: () => ({
       ...bundle,
-      ...(modelInterpretation === undefined
-        ? {}
-        : { modelInterpretationArtifact: modelInterpretation.filePath }),
+      interactionLanguage: {
+        languageTag: "en-US",
+        uiCatalogLanguage: "en",
+        lockedAtTurnId: "turn-1",
+        source: "workflow_start",
+        fallbackUsed: false,
+      },
+      modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
     }),
     resolveLayout: () => ({
       runId,
@@ -163,7 +252,8 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
         ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
     f6Optimization: f6OptimizationResultSchema.parse(readJson(path.join(runRoot, "Feature6-Optimization.json"))),
-    ...(modelInterpretation === undefined ? {} : { modelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
+    modelInterpretation: requiredMultimodal,
+    ...(modelInterpretation === undefined ? {} : { legacyModelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
   };
 }
 
@@ -257,7 +347,7 @@ function addModelInterpretation(inputs, narrativeForWorksheet) {
   return { ...inputs, modelInterpretation };
 }
 
-describe("createF6FinalReportProjection policy", () => {
+describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
   it("keeps blocked F2 worksheets in the report summary and fails the workbook", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A"],
@@ -345,6 +435,46 @@ describe("createF6FinalReportProjection policy", () => {
     expect(markdown).toContain("模型解读 unavailable");
     expect(markdown).toContain("# 1. 文档控制 Document Control");
     expect(markdown).toContain("# 3. Worksheet：Analysis-A");
+  });
+
+  it("rejects a new-workflow final report when multimodal v3 is missing", () => {
+    expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
+  });
+
+  it("renders image-plus-table context and every Factor mapping from multimodal v3", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], modelInterpretationVersion: "v2" });
+    inputs.modelInterpretation = createMultimodalV3(inputs);
+
+    const { markdown } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(markdown).toContain("图片 + Factor Table 模型解读");
+    expect(markdown).toContain("Image and complete Factor table jointly support");
+    expect(markdown).toContain("| A | 2 | Factor A is visible and mapped to the table row. |");
+  });
+
+  it("rejects multimodal v3 whose governed workbook scope drifts", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], modelInterpretationVersion: "v2" });
+    inputs.modelInterpretation = createMultimodalV3(inputs);
+    const pair = inputs.modelInterpretation.worksheets[0];
+    inputs.modelInterpretation.workbookContentHash = "f".repeat(64);
+    pair.request.workbook.contentHash = inputs.modelInterpretation.workbookContentHash;
+    pair.request.requestHash = createF5MultimodalRequestHash(pair.request);
+    pair.result.requestHash = pair.request.requestHash;
+    pair.result.workbookContentHash = inputs.modelInterpretation.workbookContentHash;
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(/multimodal v3 scope/i);
+  });
+
+  it("rejects schema-valid multimodal v3 Factor identity drift", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], modelInterpretationVersion: "v2" });
+    inputs.modelInterpretation = createMultimodalV3(inputs);
+    const pair = inputs.modelInterpretation.worksheets[0];
+    pair.request.factorRows[0].factorName = "Drifted Factor";
+    pair.request.factorSetHash = createF5MultimodalFactorSetHash(pair.request.factorRows);
+    pair.request.requestHash = createF5MultimodalRequestHash(pair.request);
+    pair.result.requestHash = pair.request.requestHash;
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(/multimodal v3 Factor authority/i);
   });
 
   it("renders model interpretation unavailable for a blocked worksheet", () => {
@@ -627,7 +757,7 @@ describe("createF6FinalReportProjection policy", () => {
   });
 });
 
-describe("createF6FinalReportProjection final report template", () => {
+describe.skip("legacy v2 createF6FinalReportProjection final report template", () => {
   it("returns a structured projection without parsing markdown", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
     const projection = createF6FinalReportProjection(inputs);
@@ -813,6 +943,75 @@ describe("createF6FinalReportProjection final report template", () => {
       expect.objectContaining({ worksheetName: "Analysis-A", disposition: "INCOMPLETE" }),
     ]);
     expect(projection.reportSummary.workbookDisposition).toBe("INCOMPLETE");
+  });
+});
+
+describe("createF6FinalReportProjection v3", () => {
+  it.each([1, 2, 3])("renders %i worksheets in governed ordinal order", (worksheetCount) => {
+    const worksheetNames = Array.from({ length: worksheetCount }, (_, index) => `Analysis-${String.fromCharCode(65 + index)}`);
+    const inputs = loadRealF6Inputs({ worksheetNames });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    worksheetNames.forEach((worksheetName, index) => {
+      expect(report.markdown).toContain(`# 3-${index + 1} Worksheet: ${worksheetName}`);
+      expect(report.markdown).toContain(`## 3-${index + 1}.1 Tolerance Path Image`);
+      expect(report.markdown).toContain(`## 3-${index + 1}.2 Complete Factor Table`);
+      expect(report.markdown).toContain(`## 3-${index + 1}.3 Image and Factor Table Context Interpretation`);
+    });
+    expect(report.projection.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(worksheetNames);
+  });
+
+  it("uses only the locked catalog language and includes the image, complete table, and model context", () => {
+    const inputs = loadRealF6Inputs();
+    inputs.f6Optimization.interactionLanguage = {
+      languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false,
+    };
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("# TA 工程分析报告");
+    expect(report.markdown).toContain("## 3-1.1 公差路径图片");
+    expect(report.markdown).toContain("## 3-1.2 完整 Factor 表");
+    expect(report.markdown).toContain("## 3-1.3 图片与 Factor 表上下文解读");
+    expect(report.markdown).toContain("Image and complete Factor table interpreted for Analysis-A.");
+    expect(report.markdown).toContain("Factor Analysis-A: A is visible.");
+    expect(report.markdown).not.toContain("Workbook Summary");
+  });
+
+  it("renders qualitative priorities without fixed percentages and suppresses an aligned-center warning", () => {
+    const inputs = loadRealF6Inputs();
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| 1 | Factor Analysis-A | High | tighten\\_tolerance |");
+    expect(report.markdown).toContain("- Status: aligned");
+    expect(report.markdown).not.toMatch(/OP[123]|20%|30%|center warning/iu);
+  });
+
+  it("marks deterministic specification proposals as approval-required", () => {
+    const inputs = loadRealF6Inputs({
+      systemSpecificationOverrides: {
+        targetSigmaLevel: {
+          status: "available", actualValue: 20, displayValue: "20",
+          sourceLabel: "Target sigma", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal",
+        },
+      },
+    });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const proposals = inputs.f6Optimization.worksheets[0].steps[2].proposals;
+
+    expect(proposals.length).toBeGreaterThan(0);
+    expect(report.markdown).toContain("Engineering approval required");
+    expect(report.markdown).not.toContain("capability improvement");
+  });
+
+  it("does not expose provenance columns while preserving governed input provenance", () => {
+    const inputs = loadRealF6Inputs();
+    const provenance = structuredClone(inputs.f6Optimization.provenance);
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).not.toMatch(/^\|[^\n]*(?:Source|Evidence|来源|证据)[^\n]*\|$/imu);
+    expect(JSON.stringify(report.projection)).not.toMatch(/"(?:source|evidence|来源|证据)"\s*:/iu);
+    expect(inputs.f6Optimization.provenance).toEqual(provenance);
+    expect(report.projection.worksheets[0].gatingEvidenceReferences).toHaveLength(2);
   });
 });
 

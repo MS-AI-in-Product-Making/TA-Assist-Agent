@@ -11,6 +11,19 @@ import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
 
 const execFileAsync = promisify(execFile);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
+
+it("parses the internal interaction language for a new Agent session", async () => {
+  const runAgent = vi.fn(async () => "started");
+  const result = await executeCli(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)], {
+    cwd: () => "ignored",
+    runFeature2: async () => "unused",
+    runAgent,
+  });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(runAgent).toHaveBeenCalledWith({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK });
+});
 
 it("routes the CLI Agent to the same workbench session", async () => {
   const resume = vi.fn(async () => "resumed");
@@ -315,6 +328,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
     "--f5-artifacts", " f5 ",
     "--worksheet", " Overview ",
     "--worksheet", " Details ",
+    "--language", " en-US ",
+    "--model-interpretation", " model.json ",
     "--supplier-capability", " supplier.json ",
     "--datum-strategy", " datum.json ",
     "--cost", " cost.json ",
@@ -326,6 +341,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
   expect(result).toMatchObject({ exitCode: 0, stderr: "" });
   expect(calls).toEqual([["repo", "f2", "f3", "f4", "f5", {
     selectedWorksheetNames: ["Overview", "Details"],
+    languageTag: "en-US",
+    modelInterpretationPath: "model.json",
     supplierCapabilityPath: "supplier.json",
     datumStrategyPath: "datum.json",
     costPath: "cost.json",
@@ -346,15 +363,17 @@ it("runs Feature 6 through the default wrapper and fixed repository runner", asy
   const setupCode = `
 import { cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { createF6ArtifactBundleFixture } from ${JSON.stringify(fixtureModule)};
+import { createF6ArtifactBundleFixture, installRequiredMultimodalV3 } from ${JSON.stringify(fixtureModule)};
 const [targetRoot, f5Stem] = process.argv.slice(1);
 const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
+installRequiredMultimodalV3(bundle);
 for (const [source, target] of [
   [bundle.f2ArtifactRoot, join(targetRoot, "f2")],
   [bundle.f3ArtifactRoot, join(targetRoot, "f3")],
   [bundle.f4ArtifactRoot, join(targetRoot, "f4")],
   [bundle.f5ArtifactRoot, join(targetRoot, f5Stem)],
 ]) cpSync(source, target, { recursive: true });
+cpSync(join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact), join(targetRoot, "model-interpretation.json"));
 rmSync(bundle.root, { recursive: true, force: true });
 `;
 
@@ -374,6 +393,8 @@ rmSync(bundle.root, { recursive: true, force: true });
       "--f4-artifacts", join(inputsRoot, "f4"),
       "--f5-artifacts", join(inputsRoot, f5Stem),
       "--worksheet", "Analysis-A",
+      "--language", "en-US",
+      "--model-interpretation", join(inputsRoot, "model-interpretation.json"),
     ]);
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
@@ -394,6 +415,7 @@ it("requires exactly four Feature 6 artifact flags and at least one worksheet", 
     "feature6", "--root", "repo",
     "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
     "--worksheet", "Overview",
+    "--language", "en-US", "--model-interpretation", "model.json",
   ];
 
   for (const flag of ["--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {
@@ -411,6 +433,7 @@ it("rejects blank, missing, and duplicate-after-trim Feature 6 values", async ()
     "feature6", "--root", "repo",
     "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
     "--worksheet", "Overview",
+    "--language", "en-US", "--model-interpretation", "model.json",
   ];
 
   for (const flag of ["--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {

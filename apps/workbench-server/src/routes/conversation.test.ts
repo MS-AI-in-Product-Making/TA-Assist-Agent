@@ -12,6 +12,8 @@ import { buildEvidenceLabeledModelPrompt } from "../model-prompt.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 const SESSION_ID = "68686868-6868-4868-8868-686868686868";
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const CHINESE_LOCK = { languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false } as const;
 const REVIEW_CONTEXT_ID = "c".repeat(64);
 
 describe("conversation routes", () => {
@@ -58,7 +60,7 @@ describe("conversation routes", () => {
       });
 
       expect(response.statusCode).toBe(201);
-      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext));
+      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext, ENGLISH_LOCK));
       expect(app.capturedPrompt()).toContain("Governed evidence");
       expect(app.capturedPrompt()).toContain("Open interpretation");
       expect(app.capturedPrompt()).toContain("Missing evidence");
@@ -80,7 +82,7 @@ describe("conversation routes", () => {
       });
 
       expect(response.statusCode).toBe(201);
-      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext));
+      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext, ENGLISH_LOCK));
       expect(response.json()).toMatchObject({ role: "assistant", relatedArtifactIds: ["f2-current", "f4-current", "f1-current-image"] });
       expect(app.turns()).toMatchObject([
         { turnId: "turn-route-1", role: "user", relatedArtifactIds: ["f2-current", "f4-current", "f1-current-image"] },
@@ -275,7 +277,7 @@ describe("conversation routes", () => {
 
       const modelPayload = {
         status: "completed" as const,
-        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Review complete." },
+        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "F6 review complete." },
       };
       const resultResponse = await app.inject({
         method: "POST",
@@ -299,6 +301,7 @@ describe("conversation routes", () => {
         role: "assistant",
         relatedArtifactIds: ["f6-report:7"],
       });
+      expect(modelTurn?.content).toContainEqual({ kind: "text", text: "设计优化 review complete." });
       expect(modelTurn?.content).toContainEqual({
         kind: "artifact_reference",
         artifactId: "f6-report:7",
@@ -309,6 +312,46 @@ describe("conversation routes", () => {
         actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
         commands: [],
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects a model result before completion when the authoritative session snapshot disappears", async () => {
+    const app = await routeHarness(minimalContext());
+    try {
+      expect((await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      })).statusCode).toBe(201);
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      app.dropSession();
+      const modelPayload = { status: "completed" as const, outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "F6 review complete." } };
+
+      const resultResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      });
+
+      expect(resultResponse.statusCode).toBe(409);
+      expect(resultResponse.json()).toEqual({ error: "host_action_session_stale" });
+      expect(app.turns().some((entry) => entry.turnId === "turn-route-1:model")).toBe(false);
     } finally {
       await app.close();
     }
@@ -333,6 +376,7 @@ describe("conversation routes", () => {
         state: "analysis_context_decision_required",
         activeAttempt: null,
         priorRunReferences: [],
+        interactionLanguage: ENGLISH_LOCK,
       },
     });
     try {
@@ -579,6 +623,7 @@ async function routeHarness(
   options: { readonly turns?: readonly unknown[]; readonly snapshot?: Record<string, unknown>; readonly materializationFailure?: boolean; readonly hostAppendFailureCount?: number } = {},
 ) {
   let prompt = "";
+  let sessionAvailable = true;
   const turns: unknown[] = [...(options.turns ?? [])];
   const actions = new Map<string, {
     readonly actionId: string;
@@ -595,17 +640,20 @@ async function routeHarness(
   const materializedProposals: Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }> = [];
   let hostAppendFailuresRemaining = options.hostAppendFailureCount ?? 0;
   const buildConversationContext = vi.fn(async () => modelContext);
-  const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required" };
+  const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required", interactionLanguage: ENGLISH_LOCK };
   const app = Fastify({ logger: false }) as ReturnType<typeof Fastify> & {
     capturedPrompt(): string;
     turns(): unknown[];
     createdActions(): Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }>;
     materializedProposals(): Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }>;
+    dropSession(): void;
   };
   app.decorate("capturedPrompt", () => prompt);
   app.decorate("turns", () => turns.map((value) => conversationTurnSchema.parse(value)));
   app.decorate("createdActions", () => createdActions);
   app.decorate("materializedProposals", () => materializedProposals);
+  app.decorate("dropSession", () => { sessionAvailable = false; });
+  const readSession = async () => sessionAvailable ? sessionSnapshot : undefined;
   const authenticateHost = (request: { headers: Record<string, string | undefined> }) => {
     switch (request.headers.authorization) {
       case "Bearer host-read":
@@ -623,7 +671,7 @@ async function routeHarness(
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => {
         const parsed = conversationTurnSchema.parse(value);
@@ -654,7 +702,7 @@ async function routeHarness(
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => conversationTurnSchema.parse(value),
       read: readConversation,
@@ -669,7 +717,7 @@ async function routeHarness(
   await app.register(hostActionsRoutes, { context: {
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => {
         if (hostAppendFailuresRemaining > 0) {
@@ -865,6 +913,7 @@ function reviewReadySnapshot() {
       { artifactId: "f6-report:7", kind: "f6_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
     ],
     worksheetCapabilities: [],
+    interactionLanguage: CHINESE_LOCK,
   };
 }
 
@@ -899,5 +948,6 @@ function reviewSnapshotVariant(options: {
       },
     ],
     worksheetCapabilities: [],
+    interactionLanguage: ENGLISH_LOCK,
   };
 }

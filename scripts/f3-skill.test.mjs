@@ -427,7 +427,7 @@ describe("Drawing Governance skill contract", () => {
     const skill = readUtf8(skillPath);
 
     expect(skill).toContain("deterministic English preview");
-    expect(skill).toContain("exact 11 columns");
+    expect(skill).toContain("exact 12 columns");
     expect(skill).toContain("no model rewriting records");
 
     expect(skill).toContain("inspect real Surface tool schema");
@@ -487,7 +487,7 @@ describe("Drawing Governance skill contract", () => {
     expect(reference).toContain("capability");
     expect(reference).toContain("English payload contract");
 
-    expect(reference).toContain("| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |");
+    expect(reference).toContain("| Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |");
 
     expect(reference).toContain("drawing_number_missing -> Drawing Number missing");
     expect(reference).toContain("dim_id_missing -> DIM ID missing");
@@ -644,10 +644,12 @@ describe("Drawing Governance skill contract", () => {
       expect(contract).toContain("comment format `html`");
       expect(contract).toContain("ADO-safe canonical HTML");
       expect(contract).toContain("canonical HTML text and SHA-256");
-      expect(contract).toContain("11 headers and the expected marked factor row count");
+      expect(contract).toContain("12 headers with `Worksheet Source` first and the expected marked factor row count");
+      expect(contract).toContain("pending preview produced from an 11-column body is stale and must be regenerated");
+      expect(contract).toContain("action revision and body hash validation must reject");
       expect(contract).toContain("data-f3-factor-row=true");
       expect(contract).toContain("data-f3-group-row=true");
-      expect(contract).toContain("colspan=11");
+      expect(contract).toContain("colspan=12");
       expect(contract).toContain("exactly one new comment");
       expect(contract).toContain("SHA-256");
       expect(contract).toContain("write_verification_failed");
@@ -877,9 +879,9 @@ describe("Drawing Governance skill contract", () => {
         "评论模板文本固定为英文",
       ], "missing fixed English comment/template rule");
       expectContainsAny(flowSection, [
-        "Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue",
-        "Device Level Dim｜Dimension Description｜Part / Subsystem｜Drawing Number｜Dim ID｜Factor Description｜Nominal｜Upper Tolerance (+)｜Lower Tolerance (-)｜σ Level｜Governance issue",
-      ], "missing exact fixed 11-column header");
+        "Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue",
+        "Worksheet Source｜Device Level Dim｜Dimension Description｜Part / Subsystem｜Drawing Number｜Dim ID｜Factor Description｜Nominal｜Upper Tolerance (+)｜Lower Tolerance (-)｜σ Level｜Governance issue",
+      ], "missing exact fixed 12-column header");
 
       const reasonCodeLine = flowSection
         .split(/\r?\n/)

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, realpath, stat } from "node:fs/promises";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,16 +10,17 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
-import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, worksheetSelectionPromptSchema, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createReviewContextId, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
 import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
-  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection";
+  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_multimodal" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection";
   readonly relativePath: string;
   readonly contentHash: string;
 }
@@ -50,8 +51,8 @@ function classifyScopeDiscoveryWarningStatus(error: unknown): F1ScopeDiscoveryWa
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
 import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary, safeErrorResponse } from "./security.js";
-import { artifactsRoutes } from "./routes/artifacts.js";
-import { commandsRoutes } from "./routes/commands.js";
+import { artifactsRoutes, readManagedArtifact, resolveF1ImageArtifact } from "./routes/artifacts.js";
+import { commandsRoutes, materializeDownstreamScopeDecision } from "./routes/commands.js";
 import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
@@ -64,6 +65,7 @@ import { createPersistentWorkerQueue, type PersistentWorkerQueue, type Persisten
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
 import { buildConversationContext, type ConversationContextSelection } from "./conversation-context.js";
+import { assertCurrentWorksheetInterpretationRequest, buildSelectedWorksheetInterpretationContexts, detectDecodableImageMediaType, readClaimedWorksheetImage, type WorksheetInterpretationArtifactReader } from "./worksheet-interpretation-context.js";
 import { reviewContextFor, runProductionStage, type ProductionRoots } from "./production-stage-runner.js";
 import { createTaRuntimeSkillFacades } from "./ta-runtime-skill-facades.js";
 import { writeSessionRecord } from "./session-records.js";
@@ -75,6 +77,7 @@ type HostActionResult = ReturnType<typeof hostActionResultSchema.parse>;
 
 export interface StartWorkbenchServerOptions {
   readonly rootDir: string;
+  readonly interactionLanguage?: InteractionLanguage;
   readonly port?: number;
   readonly webAssetsRoot?: string;
   readonly skipWebAssets?: boolean;
@@ -127,6 +130,7 @@ export type ArtifactClassification = "public" | "confidential";
 export interface ArtifactRegistry {
   authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string): void;
   read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined;
+  revokeUnboundWorkbook(sessionId: string, artifactId: string): void;
 }
 
 export interface SessionRegistry {
@@ -189,11 +193,15 @@ export interface WorkbenchServerContext {
   recoverCommittedCommand(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   buildConversationContext(sessionId: string, selection: ConversationContextSelection): ReturnType<typeof buildConversationContext>;
   validateConversationContext(sessionId: string, input: { readonly worksheetName?: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string; readonly relatedArtifactIds: readonly string[] }): Promise<boolean>;
+  buildWorksheetInterpretationRequests(sessionId: string): Promise<readonly F5MultimodalWorksheetRequestV3[]>;
+  validateWorksheetInterpretationRequest(sessionId: string, request: F5MultimodalWorksheetRequestV3): Promise<boolean>;
+  readClaimedWorksheetImage(input: { readonly sessionId: string; readonly actionId: string; readonly hostInstanceId: string; readonly leaseId: string }): Promise<{ readonly bytes: Uint8Array; readonly mediaType: "image/png" | "image/jpeg" }>;
   createAdoPreview(sessionId: string, prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]): Promise<AdoPreviewIdentity>;
   materializeF6InputDraftFromProposal(sessionId: string, input: { readonly expectedRevision: number; readonly proposal: F6InputProposal }): Promise<{ readonly status: string; readonly pendingDraft?: unknown; readonly preview?: unknown; readonly snapshotRevision?: number; readonly clarifications?: readonly { readonly clarificationId: string; readonly reasonCode: string; readonly question: string; readonly requiredFields: readonly string[] }[] }>;
   syncSessionRecord(sessionId: string): Promise<void>;
   createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
+  failActiveMultimodalAttempt(snapshot: F8SessionSnapshot, reason: string): Promise<void>;
   requireAuthenticated(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
   requireBrowserSession(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
   requireBrowserMutation(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
@@ -212,6 +220,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     options.surfacePrepareService,
     options.orchestrator,
     options.allowInternalFixtureAutoConfirmation === true,
+    options.interactionLanguage,
   );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
@@ -307,8 +316,8 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
-  const sessions = new StoreBackedSessionRegistry(rootDir);
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined): Promise<WorkbenchServerContext> {
+  const sessions = new StoreBackedSessionRegistry(rootDir, interactionLanguage);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
   const orchestrator = orchestratorOverride ?? createTaWorkbookOrchestrator(createTaRuntimeSkillFacades());
@@ -321,11 +330,6 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
   } satisfies PersistentWorkerQueueOptions;
   const queue = await (queueFactory ?? createPersistentWorkerQueue)(queueOptions);
   const inflightHostImports = new Map<string, Promise<HostWorkbookImportReceipt>>();
-  queueSessionStore.setFollowUp(async (snapshot) => {
-    await enqueueSnapshotAttempt(rootDir, queue, snapshot, true);
-  });
-  await queue.reconcile();
-  await recoverActiveAttempts(rootDir, sessions, artifacts, queue);
   const context: WorkbenchServerContext = {
     rootDir,
     auth,
@@ -360,6 +364,32 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       return { draft, promotionPreview: await effectiveWhatIfService.createPromotionPreview(snapshot, draft) };
     },
     async createPendingHostAction(snapshot, command) {
+      if (command.command === "confirm_image_decision") {
+        if (snapshot.state !== "f5_running") {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Image confirmation did not enter Result Interpretation.", suggestedAction: "Refresh the session and confirm the current image decision.", affectedInputReferences: [snapshot.sessionId, snapshot.state] });
+        }
+        const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+        if (requests.length === 0) {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Result Interpretation has no governed worksheet requests.", suggestedAction: "Reconfirm the current downstream worksheet scope.", affectedInputReferences: [snapshot.sessionId] });
+        }
+        const expiresAt = new Date(Date.parse(snapshot.activeAttempt?.startedAt ?? new Date().toISOString()) + 24 * 60 * 60_000).toISOString();
+        for (const request of requests) {
+          const actionId = `multimodal:${request.requestHash}`;
+          const created = await context.hostActions.create({
+            contractVersion: "f8-host-action-request-v1",
+            actionId,
+            sessionId: snapshot.sessionId,
+            expectedRevision: snapshot.revision,
+            expiresAt,
+            kind: "vscode_worksheet_multimodal_request",
+            confirmationHash: request.requestHash,
+            expectedTargetVersion: "vscode-worksheet-multimodal-v3",
+            request,
+          });
+          if (created === undefined) throw createTypedError({ code: "dependency_error", summary: "Unable to create the required worksheet interpretation action.", suggestedAction: "Retry Result Interpretation for the current workbook.", affectedInputReferences: [actionId] });
+        }
+        return;
+      }
       if (snapshot.state !== "ado_action_pending" || command.command !== "confirm_ado_decision") return;
       const decision = (command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" }).decision;
       if (decision === "local_only") return;
@@ -384,7 +414,11 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       }
     },
     async enqueueActiveAttempt(snapshot) {
+      if (snapshot.state === "f5_running" && !await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
       await enqueueSnapshotAttempt(rootDir, queue, snapshot);
+    },
+    async failActiveMultimodalAttempt(snapshot, reason) {
+      await queueSessionStore.failActiveMultimodalAttempt(snapshot, reason);
     },
     async resolveManagedWorkbook(sessionId, artifactId) {
       const artifact = artifacts.read(sessionId, artifactId);
@@ -408,7 +442,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       writeRegistry(rootDir, "active-workbooks", sessionId, { artifactId });
     },
     async recoverCommittedCommand(snapshot, command) {
-      if (command.command === "upload_workbook" && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
+      if ((command.command === "upload_workbook" || command.command === "replace_workbook") && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
         await context.resolveManagedWorkbook(command.sessionId, command.payload.managedArtifactId);
         context.bindManagedWorkbook(command.sessionId, command.payload.managedArtifactId);
       }
@@ -454,6 +488,46 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (factor === undefined) return false;
       if (input.calculationReference === undefined) return true;
       return snapshot.scenarioDrafts?.some((draft) => draft.worksheetName === input.worksheetName && draft.calculationReference === input.calculationReference) ?? false;
+    },
+    async buildWorksheetInterpretationRequests(sessionId) {
+      const snapshot = await context.sessions.read(sessionId);
+      if (snapshot === undefined) {
+        throw createTypedError({ code: "validation_error", summary: "Session is unavailable for worksheet interpretation.", suggestedAction: "Refresh the workbench and retry.", affectedInputReferences: [sessionId] });
+      }
+      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, sessionId));
+    },
+    async validateWorksheetInterpretationRequest(sessionId, request) {
+      const snapshot = await context.sessions.read(sessionId);
+      if (snapshot === undefined) return false;
+      try {
+        await assertCurrentWorksheetInterpretationRequest(snapshot, request, worksheetInterpretationArtifactReader(rootDir, sessionId));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async readClaimedWorksheetImage(input) {
+      const record = await context.hostActions.readRecord(input.sessionId, input.actionId);
+      return readClaimedWorksheetImage(record, { ...input, now: new Date() }, async (descriptor) => {
+        const artifact = await resolveF1ImageArtifact(
+          rootDir,
+          input.sessionId,
+          descriptor.contentHash,
+          record?.request.kind === "vscode_worksheet_multimodal_request" ? record.request.request.worksheetName : undefined,
+          descriptor.artifactPath,
+        );
+        if (artifact === undefined || artifact.mimeType !== descriptor.mediaType) {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Governed worksheet image artifact is unavailable.", suggestedAction: "Regenerate Data Parsing artifacts before interpretation.", affectedInputReferences: [input.actionId] });
+        }
+        const bytes = await readManagedArtifact(rootDir, resolve(rootDir, artifact.relativePath));
+        if (bytes === undefined) {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Governed worksheet image bytes are unavailable.", suggestedAction: "Regenerate Data Parsing artifacts before interpretation.", affectedInputReferences: [input.actionId] });
+        }
+        return { bytes, mediaType: artifact.mimeType };
+      }, async () => ({
+        record: await context.hostActions.readRecord(input.sessionId, input.actionId),
+        now: new Date(),
+      }));
     },
     async createAdoPreview(sessionId, prepareRequest) {
       const snapshot = await sessions.read(sessionId);
@@ -535,6 +609,19 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       return authenticated;
     },
   };
+  queueSessionStore.setFollowUp(async (snapshot) => {
+    if (snapshot.state === "f5_running" && !await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+    await enqueueSnapshotAttempt(rootDir, queue, snapshot, true);
+  });
+  try {
+    await recoverActiveAttempts(rootDir, sessions, artifacts, queue, context);
+    await queue.assertNoUnreconciledExternalGateJobs();
+    await queue.reconcile();
+  } catch (error) {
+    events.close();
+    await context.conversation.close();
+    throw error;
+  }
   return context;
 }
 
@@ -605,7 +692,13 @@ function isAcceptedHostWorkbookFileName(fileName: string): boolean {
 async function enqueueSnapshotAttempt(rootDir: string, queue: PersistentWorkerQueue, snapshot: F8SessionSnapshot, deferDrain = false): Promise<void> {
   const job = await stageJobForSnapshot(rootDir, snapshot);
   if (job === undefined) return;
-  await queue.enqueue(job, deferDrain ? { deferStart: true } : undefined);
+  try {
+    await queue.enqueue(job, deferDrain ? { deferStart: true } : undefined);
+  } catch (error) {
+    if ((error as { readonly code?: unknown }).code === "validation_error"
+      && (error as Error).message === "Duplicate worker job rejected.") return;
+    throw error;
+  }
 }
 
 async function stageJobForSnapshot(rootDir: string, snapshot: F8SessionSnapshot): Promise<StageJob | undefined> {
@@ -630,41 +723,62 @@ async function stageJobForSnapshot(rootDir: string, snapshot: F8SessionSnapshot)
   };
 }
 
-async function recoverActiveAttempts(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, queue: PersistentWorkerQueue): Promise<void> {
+async function recoverActiveAttempts(
+  rootDir: string,
+  sessions: SessionRegistry,
+  artifacts: ArtifactRegistry,
+  queue: PersistentWorkerQueue,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">,
+): Promise<void> {
   let database: DatabaseSync | undefined;
   try {
     database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+    const hasSessionsTable = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get() !== undefined;
+    if (!hasSessionsTable) {
+      const queuePath = join(rootDir, "runtime", "workbench", "worker-queue.sqlite");
+      if (!existsSync(queuePath)) return;
+      const queueDatabase = new DatabaseSync(queuePath, { readOnly: true });
+      try {
+        const pending = queueDatabase.prepare("SELECT COUNT(*) AS count FROM worker_jobs WHERE status IN ('pending', 'queued', 'running')").get() as { readonly count: number };
+        if (pending.count > 0) throw new Error("Persisted worker jobs have no recoverable session registry.");
+        return;
+      } finally {
+        queueDatabase.close();
+      }
+    }
     const rows = database.prepare("SELECT session_id, snapshot_json FROM sessions").all() as unknown as Array<{ readonly session_id: string; readonly snapshot_json: string }>;
     for (const row of rows) {
       const parsed = f8SessionSnapshotSchema.safeParse(JSON.parse(row.snapshot_json) as unknown);
-      if (!parsed.success || parsed.data.sessionId !== row.session_id) continue;
+      if (!parsed.success || parsed.data.sessionId !== row.session_id) throw new Error(`Persisted session snapshot is invalid for ${row.session_id}.`);
       await writeSessionRecord(rootDir, parsed.data);
       if (parsed.data.activeAttempt === null) continue;
       const current = await sessions.read(row.session_id);
       if (current?.activeAttempt === null || current === undefined) continue;
       if (current.activeAttempt.commandId !== undefined) {
         const command = await sessions.readCommittedCommand(row.session_id, current.activeAttempt.commandId);
-        if (command?.command === "upload_workbook" && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
+        if ((command?.command === "upload_workbook" || command?.command === "replace_workbook") && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
           const artifact = artifacts.read(row.session_id, command.payload.managedArtifactId);
           if (artifact === undefined) continue;
           writeRegistry(rootDir, "active-workbooks", row.session_id, { artifactId: command.payload.managedArtifactId });
         }
       }
+      if (current.state === "f5_running") {
+        await queue.discardForExternalGate(current.activeAttempt.attemptId);
+        if (!await reconcileActiveMultimodalAttempt(rootDir, current, context)) continue;
+      }
       const job = await stageJobForSnapshot(rootDir, current);
       if (job !== undefined) await queue.recover(job);
     }
-  } catch {
-    return;
   } finally {
     database?.close();
   }
 }
 
 class StoreBackedSessionRegistry implements SessionRegistry {
-  constructor(private readonly rootDir: string) {}
+  constructor(private readonly rootDir: string, private readonly interactionLanguage: InteractionLanguage | undefined) {}
 
   async create(sessionId: string): Promise<F8SessionSnapshot> {
-    const store = await createSessionStore({ rootDir: this.rootDir, sessionId });
+    const store = await createSessionStore({ rootDir: this.rootDir, sessionId, ...(this.interactionLanguage === undefined ? {} : { interactionLanguage: this.interactionLanguage }) });
     try {
       return await store.readSnapshot();
     } finally {
@@ -811,6 +925,17 @@ class FileBackedArtifactRegistry implements ArtifactRegistry {
     const artifact = readRegistry<Record<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>>(this.rootDir, "artifacts", sessionId)?.[artifactId];
     return artifact?.sessionId === sessionId ? artifact : undefined;
   }
+
+  revokeUnboundWorkbook(sessionId: string, artifactId: string): void {
+    const active = readRegistry<{ readonly artifactId: string }>(this.rootDir, "active-workbooks", sessionId);
+    if (active?.artifactId === artifactId) return;
+    const artifacts = readRegistry<Record<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>>(this.rootDir, "artifacts", sessionId) ?? {};
+    const artifact = artifacts[artifactId];
+    if (artifact === undefined || artifact.sessionId !== sessionId || artifact.relativePath !== `uploads/${sessionId}/workbook/${artifactId}-${artifact.fileName}`) return;
+    const { [artifactId]: _removed, ...remaining } = artifacts;
+    writeRegistry(this.rootDir, "artifacts", sessionId, remaining);
+    rmSync(resolve(this.rootDir, artifact.relativePath), { force: true });
+  }
 }
 
 function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, orchestrator: TaWorkbookOrchestrator): (job: StageJob) => Promise<unknown> {
@@ -945,6 +1070,9 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       const callerAuthorizedF6Inputs = job.stage === "f6_running"
         ? await resolveCallerAuthorizedF6Inputs(rootDir, snapshot)
         : undefined;
+      const multimodalArtifact = ["f5_running", "f6_running"].includes(job.stage)
+        ? readRegistry<{ readonly path: string; readonly contentHash: string }>(rootDir, "multimodal-artifacts", sessionId)
+        : undefined;
       const execution = await runProductionStage(job.stage, {
         repositoryRoot: process.cwd(),
         serverRoot: rootDir,
@@ -956,6 +1084,7 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
         baselineRunReference,
         ...(reviewContext === undefined ? {} : { reviewContext }),
         ...(callerAuthorizedF6Inputs === undefined ? {} : { callerAuthorizedF6Inputs }),
+        ...(multimodalArtifact === undefined ? {} : { multimodalArtifact }),
       }, orchestrator);
       writeRegistry(rootDir, "production-roots", sessionId, execution.roots);
       return JSON.parse(JSON.stringify(execution.result)) as unknown;
@@ -1216,6 +1345,14 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     });
   }
 
+  async failActiveMultimodalAttempt(snapshot: F8SessionSnapshot, reason: string): Promise<void> {
+    if (snapshot.state !== "f5_running" || snapshot.activeAttempt === null) return;
+    await this.record(snapshot, {
+      status: "failed",
+      result: { error: createTypedError({ code: "dependency_error", summary: reason, retryable: true, suggestedAction: "Restore an image-capable model and retry Result Interpretation.", affectedInputReferences: [snapshot.activeAttempt.attemptId] }) },
+    });
+  }
+
   private async record(snapshot: F8SessionSnapshot, result: { readonly status: "completed" | "failed"; readonly result: unknown }): Promise<boolean> {
     const store = await openSessionStore({ rootDir: this.rootDir, sessionId: snapshot.sessionId });
     try {
@@ -1231,11 +1368,12 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
         ...(worksheetCapabilities === undefined ? {} : { worksheetCapabilities }),
         ...(f2Projection === undefined ? {} : { priorRunReferences: [...snapshot.priorRunReferences, f2Projection.runReference] }),
       };
+      const transitionSnapshot = projectMultimodalReference(projectedSnapshot, artifactReferenceOps);
       const receipt = await store.recordAttemptResult({
         attemptId: snapshot.activeAttempt!.attemptId,
         status: result.status,
         result: result.result,
-        snapshot: acceptAttemptResult(projectedSnapshot, { attemptId: snapshot.activeAttempt!.attemptId, status: result.status, result: result.result }),
+        snapshot: acceptAttemptResult(transitionSnapshot, { attemptId: snapshot.activeAttempt!.attemptId, status: result.status, result: result.result }),
         ...(artifactReferenceOps === undefined ? {} : { artifactReferenceOps }),
       });
       if (receipt.accepted && result.status === "completed") {
@@ -1278,7 +1416,9 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     if (!report.success || report.data.status === "inputRejected") return;
     const worksheetNames = report.data.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName);
     if (worksheetNames.length === 0 || snapshot.initialScopeSelection === undefined) return;
-    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames, provenance: "internal_fixture" } });
+    const command = { contractVersion: "f8-session-command-v1" as const, sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope" as const, payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames } };
+    const payload = await materializeDownstreamScopeDecision(command, { rootDir: this.rootDir, sessions: this.sessions });
+    const next = await this.sessions.applyCommand({ ...command, payload: { ...(payload as Record<string, unknown>), provenance: "internal_fixture" } });
     await this.followUp?.(next);
   }
 
@@ -1493,6 +1633,9 @@ async function artifactReferenceOpsFromRunnerResult(
       throw reviewContextMismatch(snapshot, "Runner review context does not match the F4 baseline lineage.");
     }
   }
+  if (snapshot.activeAttempt?.stage === "f5_running") {
+    assertF5MultimodalRunnerReference(rootDir, snapshot, artifactReferences);
+  }
   return {
     upsert: artifactReferences.map((artifact) => ({
       artifactId: artifact.artifactId,
@@ -1505,6 +1648,27 @@ async function artifactReferenceOpsFromRunnerResult(
       ...(artifact.kind === "engineering_summary_projection" ? { metadata: { reviewContext } } : {}),
     })),
   };
+}
+
+export function assertF5MultimodalRunnerReference(
+  rootDir: string,
+  snapshot: F8SessionSnapshot,
+  artifactReferences: readonly RunnerArtifactReference[],
+): void {
+  const expected = readRegistry<{ readonly path: string; readonly contentHash: string }>(rootDir, "multimodal-artifacts", snapshot.sessionId);
+  const matches = artifactReferences.filter(({ kind }) => kind === "f5_multimodal");
+  if (expected === undefined
+    || matches.length !== 1
+    || matches[0]!.artifactId !== `f5-multimodal:${snapshot.inputRevision}`
+    || matches[0]!.contentHash !== expected.contentHash
+    || resolve(rootDir, matches[0]!.relativePath) !== resolve(expected.path)) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "F5 multimodal artifact reference does not match the server-owned aggregate identity.",
+      suggestedAction: "Complete the current worksheet model interpretations and retry Result Interpretation.",
+      affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision)],
+    });
+  }
 }
 
 async function resolveCallerAuthorizedF6Inputs(rootDir: string, snapshot: F8SessionSnapshot): Promise<{
@@ -1855,4 +2019,126 @@ function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, s
     });
   }
   return result.output;
+}
+
+function worksheetInterpretationArtifactReader(rootDir: string, sessionId: string): WorksheetInterpretationArtifactReader {
+  return {
+    async readReference(artifactId) {
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        return await store.readArtifactReference(artifactId);
+      } finally {
+        await store.close();
+      }
+    },
+    async readJson(artifactId) {
+      return readSessionArtifactJson(rootDir, sessionId, artifactId);
+    },
+    async inspectWorksheetImage(input) {
+      const artifact = await resolveF1ImageArtifact(rootDir, sessionId, input.expectedContentHash, input.worksheetName, input.artifactPath);
+      if (artifact === undefined || (artifact.mimeType !== "image/png" && artifact.mimeType !== "image/jpeg")) throw new Error("worksheet image identity mismatch");
+      const bytes = await readManagedArtifact(rootDir, resolve(rootDir, artifact.relativePath));
+      if (bytes === undefined) throw new Error("worksheet image bytes unavailable");
+      if (createHash("sha256").update(bytes).digest("hex") !== input.expectedContentHash) throw new Error("worksheet image content hash mismatch");
+      if (await detectDecodableImageMediaType(bytes) !== artifact.mimeType) throw new Error("worksheet image media type mismatch");
+      return { mediaType: artifact.mimeType, contentHash: input.expectedContentHash, byteLength: bytes.byteLength, artifactPath: input.artifactPath };
+    },
+  };
+}
+
+export async function materializeCompletedMultimodalArtifact(
+  rootDir: string,
+  snapshot: F8SessionSnapshot,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions">,
+): Promise<boolean> {
+  const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+  const worksheets = [];
+  for (const request of requests) {
+    const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
+    const outcome = record?.result?.payload.status === "completed" ? record.result.payload.outcome : undefined;
+    if (record?.status !== "completed" || record.request.kind !== "vscode_worksheet_multimodal_request" || outcome?.kind !== "worksheet_multimodal_response") return false;
+    const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request: record.request.request, result: outcome.result });
+    if (!pair.success || pair.data.request.requestHash !== request.requestHash) return false;
+    worksheets.push(pair.data);
+  }
+  const artifact = f5MultimodalArtifactV3Schema.parse({
+    contractVersion: "f5-multimodal-artifact-v3",
+    outputClassification: "confidential",
+    sessionId: snapshot.sessionId,
+    revision: snapshot.revision,
+    inputRevision: snapshot.inputRevision,
+    workbookContentHash: requests[0]?.workbook.contentHash,
+    selectedWorksheetNames: requests.map(({ worksheetName }) => worksheetName),
+    worksheets,
+  });
+  const validated = validateF5MultimodalArtifactV3(artifact, {
+    sessionId: snapshot.sessionId,
+    revision: snapshot.revision,
+    inputRevision: snapshot.inputRevision,
+    workbookContentHash: artifact.workbookContentHash,
+    worksheets: requests.map(({ worksheetName, tableId, activeFactorCount, factorSetHash }) => ({ worksheetName, tableId, activeFactorCount, factorSetHash })),
+  });
+  if (!validated.success) return false;
+
+  const bytes = Buffer.from(`${JSON.stringify(validated.data, null, 2)}\n`, "utf8");
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const directory = resolve(rootDir, "runtime", "workbench", "multimodal", snapshot.sessionId, String(snapshot.revision));
+  const path = join(directory, `${contentHash}.json`);
+  await mkdir(directory, { recursive: true });
+  try {
+    const handle = await open(path, "wx");
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existing = await readManagedArtifact(rootDir, path);
+    if (existing === undefined || !Buffer.from(existing).equals(bytes)) throw createTypedError({ code: "evidence_mismatch", summary: "Immutable multimodal interpretation artifact identity mismatch.", suggestedAction: "Restart Result Interpretation for the current workbook.", affectedInputReferences: [snapshot.sessionId] });
+  }
+  writeRegistry(rootDir, "multimodal-artifacts", snapshot.sessionId, { path, contentHash });
+  return true;
+}
+
+export async function reconcileActiveMultimodalAttempt(
+  rootDir: string,
+  snapshot: F8SessionSnapshot,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">,
+): Promise<boolean> {
+  const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+  for (const request of requests) {
+    const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
+    if (record?.request.kind !== "vscode_worksheet_multimodal_request"
+      || record.request.request.requestHash !== request.requestHash) continue;
+    const payload = record.result?.payload;
+    if (payload?.status === "blocked") {
+      await context.failActiveMultimodalAttempt(snapshot, payload.reason ?? "Worksheet multimodal interpretation is blocked.");
+      return false;
+    }
+    if (payload?.status === "failed") {
+      await context.failActiveMultimodalAttempt(snapshot, payload.error.summary);
+      return false;
+    }
+  }
+  return materializeCompletedMultimodalArtifact(rootDir, snapshot, context);
+}
+
+function projectMultimodalReference(snapshot: F8SessionSnapshot, operations: SessionDeltaOperations<SessionArtifactReference> | undefined): F8SessionSnapshot {
+  const reference = operations?.upsert?.find((candidate) => candidate.kind === "f5_multimodal");
+  if (reference === undefined || reference.contentHash === undefined || reference.reviewContext === undefined) return snapshot;
+  const projected = {
+    artifactId: reference.artifactId,
+    kind: "f5_multimodal" as const,
+    revision: snapshot.inputRevision,
+    validated: true as const,
+    reviewContextId: createReviewContextId(reference.reviewContext),
+    relativePath: reference.relativePath,
+    contentHash: reference.contentHash,
+  };
+  return {
+    ...snapshot,
+    artifactRefs: [...(snapshot.artifactRefs ?? []).filter(({ artifactId }) => artifactId !== projected.artifactId), projected],
+  };
 }

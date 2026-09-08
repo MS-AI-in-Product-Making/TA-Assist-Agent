@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  createF5MultimodalFactorSetHash,
+  createF5MultimodalRequestHash,
+  f5MultimodalArtifactV3Schema,
+} from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
@@ -84,6 +89,7 @@ function systemSpecification(worksheetName, overrides = {}) {
 }
 
 function readyWorksheet(worksheetName, tableId, sourceRow, options = {}) {
+  const factorOrdinal = { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z${sourceRow}` };
   return {
     worksheetName,
     toleranceLoopDescription: `Loop ${worksheetName}`,
@@ -95,6 +101,7 @@ function readyWorksheet(worksheetName, tableId, sourceRow, options = {}) {
       worksheetName,
       tableId,
       sourceRow,
+      factorOrdinal,
       actualFields: actualFields(worksheetName, options.actualFieldOverrides),
       sourceCells: sourceCells(worksheetName, sourceRow),
       missingRequiredFields: [],
@@ -116,6 +123,7 @@ function governanceRows(worksheetName, calculation) {
   };
   return calculation.factors.map((factor, index) => ({
     factorInstanceId: String(index + 1).padStart(64, "0"),
+    factorOrdinal: { value: String.fromCharCode(65 + index), rawText: String.fromCharCode(65 + index), sourceCell: `${worksheetName}!Z${factor.source.sourceRow}` },
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-${index + 1}`,
     dimensionDescription: `Loop ${worksheetName}`,
@@ -310,6 +318,7 @@ export function createF6V2ObservationArtifact(bundle) {
             return {
               tableId: row.source.tableId,
               sourceRow: row.source.sourceRow,
+              factorOrdinal: row.factorOrdinal,
               partName: f2Row.actualFields.partName,
               partSubsystem: row.partSubsystem,
               partCategory: row.partCategory,
@@ -691,4 +700,88 @@ export function installF6ModelInterpretation(bundle, { version = "v1" } = {}) {
   writeFixtureJson(filePath, artifact);
   Object.assign(bundle, { modelInterpretationArtifactRoot, modelInterpretationArtifact });
   return { artifact, filePath, modelInterpretationArtifactRoot, modelInterpretationArtifact };
+}
+
+export function installRequiredMultimodalV3(bundle) {
+  const f2 = readFixtureJson(bundle.paths.f2);
+  const f5 = readFixtureJson(bundle.paths.f5);
+  const worksheets = bundle.selectedWorksheetNames.map((worksheetName, index) => {
+    const calculation = bundle.calculations[index];
+    const f2Row = f2.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).rows[0];
+    const image = f5.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).imageReference;
+    const factor = calculation.factors[0];
+    const factorRows = [{
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      sourceRow: factor.source.sourceRow,
+      factorOrdinal: structuredClone(f2Row.factorOrdinal),
+      factorName: factor.factorName,
+      partName: f2Row.actualFields.partName,
+      partCategory: f2Row.actualFields.partCategory,
+      drawingNumber: f2Row.actualFields.drawingNumber,
+      dimId: f2Row.actualFields.dimCharacteristicId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: f2Row.sourceCells,
+    }];
+    const request = {
+      contractVersion: "f5-multimodal-request-v3",
+      inputClassification: "confidential",
+      requestHash: "",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      revision: 7,
+      inputRevision: 3,
+      workbook: { fileName: f2.workbook.fileName, contentHash: f2.workbook.contentHash },
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png", contentHash: image.contentHash, byteLength: 100, artifactPath: image.relativePath },
+      factorRows,
+    };
+    request.requestHash = createF5MultimodalRequestHash(request);
+    return {
+      request,
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: request.requestHash,
+        sessionId: request.sessionId,
+        revision: request.revision,
+        inputRevision: request.inputRevision,
+        workbookContentHash: request.workbook.contentHash,
+        worksheetName,
+        tableId: request.tableId,
+        imageContentHash: request.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: `Image and complete Factor table interpreted for ${worksheetName}.`,
+        rowMappings: factorRows.map((row) => ({ worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value} is visible.` })),
+      },
+    };
+  });
+  const artifact = f5MultimodalArtifactV3Schema.parse({
+    contractVersion: "f5-multimodal-artifact-v3",
+    outputClassification: "confidential",
+    sessionId: worksheets[0].request.sessionId,
+    revision: 7,
+    inputRevision: 3,
+    workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
+    selectedWorksheetNames: [...bundle.selectedWorksheetNames],
+    worksheets,
+  });
+  const modelInterpretationArtifactRoot = path.join(bundle.publishRoot, "multimodal");
+  const modelInterpretationArtifact = "interpretation-v3.json";
+  const filePath = path.join(modelInterpretationArtifactRoot, modelInterpretationArtifact);
+  writeFixtureJson(filePath, artifact);
+  Object.assign(bundle, {
+    requireMultimodalV3: true,
+    modelInterpretationArtifactRoot,
+    modelInterpretationArtifact,
+    expectedModelInterpretationContentHash: fixtureFileSha256(filePath),
+  });
+  return artifact;
 }

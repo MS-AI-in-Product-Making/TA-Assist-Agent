@@ -35,6 +35,7 @@ function baselineRequest(): CalculationRequest {
           ],
           rows: [{
             sourceRow: 2,
+            factorOrdinal: { value: "F1", rawText: "F1", sourceCell: "Analysis-A!I2" },
             fields: {
               factorName: text("factor-1", "Analysis-A!A2"),
               nominalValue: number("0", "Analysis-A!B2", 0),
@@ -47,6 +48,7 @@ function baselineRequest(): CalculationRequest {
             },
           }, {
             sourceRow: 3,
+            factorOrdinal: { value: "F2", rawText: "F2", sourceCell: "Analysis-A!I3" },
             fields: {
               factorName: text("factor-2", "Analysis-A!A3"), nominalValue: number("0", "Analysis-A!B3", 0), upperTolerance: number("0.5", "Analysis-A!C3", 0.5), lowerTolerance: number("-0.5", "Analysis-A!D3", -0.5), longTermSafetyFactor: number("1", "Analysis-A!E3", 1), standardDeviation: number("1", "Analysis-A!F3", 1), distribution: text("normal", "Analysis-A!G3"), unit: text("mm", "Analysis-A!H3"),
             },

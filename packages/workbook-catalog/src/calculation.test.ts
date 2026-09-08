@@ -44,6 +44,7 @@ function factorFields(index: number) {
 function factorRow(index: number) {
   return {
     sourceRow: index + 2,
+    factorOrdinal: { value: `F${index + 1}`, rawText: `F${index + 1}`, sourceCell: `Analysis-A!I${index + 2}` },
     fields: factorFields(index),
   };
 }
@@ -1392,6 +1393,7 @@ describe("createCalculation", () => {
     unselectedWorksheet.factorTables[0]!.tableId = "table-b";
     unselectedWorksheet.factorTables[0]!.rows = Array.from({ length: 101 }, (_, index) => ({
       sourceRow: index + 2,
+      factorOrdinal: { value: `F${index + 1}`, rawText: `F${index + 1}` },
       fields: factorFields(index),
     }));
     request.worksheetAnalysisAssets.worksheets.push(unselectedWorksheet);

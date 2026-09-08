@@ -63,10 +63,11 @@ For either channel, call `mcp_surface_mcp_p_list_work_item_comments` once before
 - Output must be deterministic English preview.
 - Do not rewrite governance records with model paraphrasing.
 - Every governance row must be preserved.
+- Any pending preview produced from an 11-column body is stale and must be regenerated. Existing action revision and body hash validation must reject that preview; do not reuse its confirmation.
 
 Exact table header:
 
-| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |
+| Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |
 
 Group the complete payload globally by `Part / Subsystem` across all selected worksheets. Do not emit worksheet-level groups. Rows from different worksheets with the same normalized Part / Subsystem belong to one group; preserve their worksheet identity in the fixed table columns and source-bound records. Use `(missing Part / Subsystem)` for missing or blank values.
 
@@ -91,7 +92,7 @@ const requestBody = [{
 }];
 ```
 
-Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once using `top: 200`. Never pass a `top` value greater than `200`. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected marked factor row count (`data-f3-factor-row=true`), excluding group rows (`data-f3-group-row=true`). The renderer must emit ADO-stable unquoted attributes for both row markers and group-cell `colspan=11`; verification must not repair attribute quoting. Compare ADO-safe canonical HTML by applying `normalizeAdoHistoryHtmlForVerification` to the confirmed and readback bodies; canonical HTML text and SHA-256 must match. This canonicalizer may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. Any other write error, structure difference, text difference, or hash mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
+Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once using `top: 200`. Never pass a `top` value greater than `200`. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 12 headers with `Worksheet Source` first and the expected marked factor row count (`data-f3-factor-row=true`), excluding group rows (`data-f3-group-row=true`). The renderer must emit ADO-stable unquoted attributes for both row markers and group-cell `colspan=12`; verification must not repair attribute quoting. Compare ADO-safe canonical HTML by applying `normalizeAdoHistoryHtmlForVerification` to the confirmed and readback bodies; canonical HTML text and SHA-256 must match. This canonicalizer may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. Any other write error, structure difference, text difference, or hash mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
 
 ## Confirmation and write policy
 

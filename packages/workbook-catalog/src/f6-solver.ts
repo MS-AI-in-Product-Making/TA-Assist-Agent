@@ -94,6 +94,61 @@ export interface TopNSolveInput {
 
 export type CreateReverseSolveResultInput = F6ReverseSolveResult;
 
+export interface OneSidedSpecificationSolveInput {
+  readonly mean: number;
+  readonly rssSigma: number;
+  readonly targetCpk: number;
+  readonly lowerSpecLimit: number;
+  readonly upperSpecLimit: number;
+  readonly failedSides: readonly ("lower" | "upper")[];
+}
+
+export type F6SpecificationSolveResult =
+  | { readonly status: "completed"; readonly lowerSpecLimit: number; readonly upperSpecLimit: number; readonly changedSides: readonly ("lower" | "upper")[] }
+  | { readonly status: "clarification_required"; readonly reasonCode: "invalid_numeric_input" | "invalid_specification_interval" | "target_unrepresentable" };
+
+export function solveOneSidedSpecificationLimits(input: OneSidedSpecificationSolveInput): F6SpecificationSolveResult {
+  const numericValues = [input.mean, input.rssSigma, input.targetCpk, input.lowerSpecLimit, input.upperSpecLimit];
+  if (numericValues.some((value) => !Number.isFinite(value)) || input.rssSigma <= 0 || input.targetCpk <= 0
+    || new Set(input.failedSides).size !== input.failedSides.length
+    || input.failedSides.some((side) => side !== "lower" && side !== "upper")) {
+    return { status: "clarification_required", reasonCode: "invalid_numeric_input" };
+  }
+  if (input.lowerSpecLimit >= input.upperSpecLimit) {
+    return { status: "clarification_required", reasonCode: "invalid_specification_interval" };
+  }
+  let capabilityDistance: number;
+  try {
+    capabilityDistance = safePositiveProductQuotient([3, input.rssSigma, input.targetCpk], [], "one-sided specification distance");
+  } catch {
+    return { status: "clarification_required", reasonCode: "target_unrepresentable" };
+  }
+  if (!Number.isFinite(capabilityDistance) || capabilityDistance <= 0) {
+    return { status: "clarification_required", reasonCode: "target_unrepresentable" };
+  }
+  const lowerSpecLimit = input.failedSides.includes("lower") ? input.mean - capabilityDistance : input.lowerSpecLimit;
+  const upperSpecLimit = input.failedSides.includes("upper") ? input.mean + capabilityDistance : input.upperSpecLimit;
+  if (!Number.isFinite(lowerSpecLimit) || !Number.isFinite(upperSpecLimit)) {
+    return { status: "clarification_required", reasonCode: "target_unrepresentable" };
+  }
+  if ((input.failedSides.includes("lower") && lowerSpecLimit >= input.mean)
+    || (input.failedSides.includes("upper") && upperSpecLimit <= input.mean)) {
+    return { status: "clarification_required", reasonCode: "target_unrepresentable" };
+  }
+  const representedDistances = [
+    ...(input.failedSides.includes("lower") ? [input.mean - lowerSpecLimit] : []),
+    ...(input.failedSides.includes("upper") ? [upperSpecLimit - input.mean] : []),
+  ];
+  if (representedDistances.some((distance) => !Number.isFinite(distance)
+    || distance + 8 * Number.EPSILON * Math.max(distance, capabilityDistance) < capabilityDistance)) {
+    return { status: "clarification_required", reasonCode: "target_unrepresentable" };
+  }
+  if (lowerSpecLimit >= upperSpecLimit) {
+    return { status: "clarification_required", reasonCode: "invalid_specification_interval" };
+  }
+  return { status: "completed", lowerSpecLimit, upperSpecLimit, changedSides: [...input.failedSides] };
+}
+
 function fail(code: F6SolverErrorCode, summary: string): never {
   throw new F6SolverError(code, summary);
 }

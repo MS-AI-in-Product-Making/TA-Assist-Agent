@@ -43,7 +43,10 @@ import {
   f6ModelInterpretationArtifactSchema,
   f6ModelInterpretationV2ArtifactSchema,
   f6OptimizationRequestSchema,
-  f6OptimizationResultSchema,
+  f6OptimizationResultV2Schema,
+  f6OptimizationResultV3Schema,
+  f6ReadableOptimizationResultSchema,
+  f6OptimizationResultSchema as f6NewOptimizationResultSchema,
   f6OptimizationTargetsProposalSchema,
   f6OptimizationTargetsSchema,
   f6OptimizationTargetsV1Schema,
@@ -57,6 +60,8 @@ import {
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
+  f2FindingsDecisionProjectionSchema,
+  f2WorksheetFindingProjectionSchema,
   f4HandoffReadySchema,
   f2UserReportSchema,
   f8AdoProjectionSchema,
@@ -185,6 +190,85 @@ describe("F8 Web ADO contracts", () => {
   });
 });
 
+describe("F2 findings decision projection contracts", () => {
+  const workbookHash = "a".repeat(64);
+  const reportContentHash = "b".repeat(64);
+  const findingDigest = "c".repeat(64);
+
+  it("accepts Drawing Number and DIM ID warnings without blocking", () => {
+    const finding = {
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "downstream_ready",
+      identifierWarnings: ["drawing_number_missing", "dim_id_missing"],
+      blockers: [],
+      sourceRows: [12],
+    } as const;
+
+    expect(f2WorksheetFindingProjectionSchema.parse(finding)).toEqual(finding);
+  });
+
+  it.each(["drawing_number_missing", "dim_id_missing"])("rejects warning-only identifier code %s as a blocker", (blocker) => {
+    expect(f2WorksheetFindingProjectionSchema.safeParse({
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "blocked",
+      identifierWarnings: [],
+      blockers: [blocker],
+      sourceRows: [12],
+    }).success).toBe(false);
+  });
+
+  it("uses current identifier semantics for new projections while the historical report reader accepts partNumber", () => {
+    const legacyWarning = {
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "downstream_ready",
+      identifierWarnings: ["part_number_missing"],
+      blockers: [],
+      sourceRows: [12],
+    };
+
+    expect(f2WorksheetFindingProjectionSchema.safeParse(legacyWarning).success).toBe(false);
+  });
+
+  it("binds the exact downstream-ready worksheet set to report order and evidence", () => {
+    const projection = {
+      contractVersion: "f2-findings-decision-projection-v1",
+      workbookHash,
+      inputRevision: 3,
+      f2ReportArtifactId: "f2-report-3",
+      f2ReportContentHash: reportContentHash,
+      findingDigest,
+      worksheetFindings: [
+        {
+          contractVersion: "f2-worksheet-finding-projection-v1",
+          worksheetName: "Gap-B",
+          readiness: "downstream_ready",
+          identifierWarnings: ["drawing_number_missing"],
+          blockers: [],
+          sourceRows: [22],
+        },
+        {
+          contractVersion: "f2-worksheet-finding-projection-v1",
+          worksheetName: "Gap-A",
+          readiness: "blocked",
+          identifierWarnings: [],
+          blockers: ["tolerance_path_image_missing"],
+          sourceRows: [],
+        },
+      ],
+      downstreamReadyWorksheetNames: ["Gap-B"],
+    } as const;
+
+    expect(f2FindingsDecisionProjectionSchema.parse(projection)).toEqual(projection);
+    expect(() => f2FindingsDecisionProjectionSchema.parse({
+      ...projection,
+      downstreamReadyWorksheetNames: [],
+    })).toThrow(/exact downstream-ready worksheet set/i);
+  });
+});
+
 describe("F2 artifact user report contracts", () => {
   const contentHash = "a".repeat(64);
   const systemSpecification = {
@@ -247,7 +331,7 @@ describe("F2 artifact user report contracts", () => {
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [],
-        rows: [{ sourceRow: 2, fields: {}, actualFields }],
+        rows: [{ sourceRow: 2, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!A2" }, fields: {}, actualFields }],
       }],
     }],
   };
@@ -326,6 +410,25 @@ describe("F2 artifact user report contracts", () => {
       ...completedReport,
       worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, displayedFields: { factorName: "display" } }] }],
     }).success).toBe(false);
+  });
+
+  it("normalizes historical partNumber field keys at the F2 report reader boundary", () => {
+    const legacyActualFields = { ...actualFields, partNumber: actualFields.drawingNumber } as Record<string, unknown>;
+    const legacyDisplayFields = { ...displayFields, partNumber: displayFields.drawingNumber } as Record<string, unknown>;
+    delete legacyActualFields.drawingNumber;
+    delete legacyDisplayFields.drawingNumber;
+    const legacyReport = structuredClone(completedReport);
+    legacyReport.worksheets[0]!.rows[0]!.actualFields = legacyActualFields as typeof actualFields;
+    legacyReport.worksheets[0]!.rows[0]!.displayFields = legacyDisplayFields as typeof displayFields;
+    legacyReport.f4Handoffs[0]!.factors[0]!.actualFields = legacyActualFields as typeof actualFields;
+
+    const parsed = f2UserReportSchema.parse(legacyReport);
+
+    if (parsed.status === "inputRejected") throw new Error("expected accepted F2 report");
+    expect(parsed.worksheets[0]?.rows[0]?.actualFields).toHaveProperty("drawingNumber", null);
+    expect(parsed.worksheets[0]?.rows[0]?.actualFields).not.toHaveProperty("partNumber");
+    expect(parsed.worksheets[0]?.rows[0]?.displayFields).toHaveProperty("drawingNumber", null);
+    expect(parsed.f4Handoffs[0]?.factors[0]?.actualFields).toHaveProperty("drawingNumber", null);
   });
 
   it("accepts an optional tolerance loop description during F2 migration", () => {
@@ -660,6 +763,7 @@ describe("F4 calculation contracts", () => {
         columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
         rows: [{
           sourceRow: 2,
+          factorOrdinal: { value: "", rawText: "" },
           fields: {
             factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!A2" },
           },
@@ -1593,6 +1697,7 @@ describe("F3 drawing governance v2 contracts", () => {
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow: 14,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!D14" },
     actualFields,
     sourceCells,
     imageReference,
@@ -1616,6 +1721,7 @@ describe("F3 drawing governance v2 contracts", () => {
   };
   const governanceRow = {
     factorInstanceId,
+    factorOrdinal: enhancedRow.factorOrdinal,
     drawingDimensionKey,
     deviceLevelDim: "Analysis-A",
     dimensionDescription: "Anonymous device gap",
@@ -2583,6 +2689,7 @@ describe("F5.1 objective interpretation contracts", () => {
           rows: [{
             tableId: "table-a",
             sourceRow: 14,
+            factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!F14" },
             partName: "Bracket",
             partSubsystem: "Bracket",
             partCategory: "CNC",
@@ -2616,6 +2723,7 @@ describe("F5.1 objective interpretation contracts", () => {
     };
     const governanceRow = {
       factorInstanceId: "e".repeat(64),
+      factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!F2" },
       drawingDimensionKey: "f".repeat(64),
       deviceLevelDim: "Analysis-A",
       dimensionDescription: "Anonymous device gap",
@@ -2695,6 +2803,7 @@ describe("F5.1 objective interpretation contracts", () => {
       Object.assign(snapshotRow, {
         tableId: row.source.tableId,
         sourceRow: row.source.sourceRow,
+        factorOrdinal: structuredClone(row.factorOrdinal),
         partName: row.partSubsystem,
         partSubsystem: row.partSubsystem,
         partCategory: row.partCategory,
@@ -3502,6 +3611,7 @@ describe("F5.1 objective interpretation contracts", () => {
           rows: worksheet.governanceRows.map((row) => ({
             tableId: row.source.tableId,
             sourceRow: row.source.sourceRow,
+            factorOrdinal: structuredClone(row.factorOrdinal!),
             partName: row.partSubsystem,
             partSubsystem: row.partSubsystem,
             partCategory: row.partCategory,
@@ -5029,6 +5139,7 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     describe("F6 optimization result v2", () => {
+      const f6OptimizationResultSchema = f6OptimizationResultV2Schema;
       const artifactReference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
       const baselineIdentity = {
         calculationVersion: "excel-ta-v1" as const,
@@ -5114,6 +5225,79 @@ describe("F5.1 objective interpretation contracts", () => {
       it("accepts a candidate-only completed V2 result and rejects V1", () => {
         expect(f6OptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
         expect(f6OptimizationResultSchema.safeParse({ ...resultV2, optimizationVersion: "f6-optimization-v1" }).success).toBe(false);
+      });
+
+      it("keeps V2 readable while accepting strict sequential V3 without legacy options", () => {
+        const resultV3 = {
+          contractVersion: "v1" as const,
+          outputClassification: "confidential" as const,
+          featureId: "F6" as const,
+          optimizationVersion: "f6-optimization-v3" as const,
+          sequentialPolicyId: "f6-sequential-optimization-policy-v1" as const,
+          interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en" as const, lockedAtTurnId: "turn-1", source: "workflow_start" as const, fallbackUsed: false },
+          runStatus: "COMPLETED" as const,
+          workbook: { fileName: "Demo.xlsx", contentHash: "b".repeat(64) },
+          worksheets: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            runStatus: "COMPLETED" as const,
+            baselineIdentity,
+            steps: [
+              { step: "centerAssessment" as const, status: "aligned" as const, adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
+              { step: "contributorPriorities" as const, priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" as const }] },
+              { step: "specificationChanges" as const, proposals: [], clarifications: [] },
+            ],
+          }],
+          summary: { worksheetCount: 1, completedWorksheetCount: 1, clarificationRequiredWorksheetCount: 0 },
+          provenance: {
+            f2Reference: artifactReference("Feature2-Report.json"),
+            f3Reference: artifactReference("Feature3-Report.json"),
+            f4Reference: artifactReference("Feature4-Calculation.json"),
+            f5Reference: artifactReference("Feature5-Report.json"),
+            multimodalReference: artifactReference("Feature5-Multimodal.json"),
+            reportScope: { worksheetNames: ["Analysis-A"] },
+          },
+        };
+
+        expect(f6OptimizationResultV2Schema.parse(resultV2)).toEqual(resultV2);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
+        expect(f6OptimizationResultV3Schema.parse(resultV3)).toEqual(resultV3);
+        expect(f6NewOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6NewOptimizationResultSchema.safeParse(resultV2).success).toBe(false);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6OptimizationResultV3Schema.safeParse(resultV2).success).toBe(false);
+        for (const legacy of [
+          { optionCode: "OP1" },
+          { optionSource: "BUILT_IN_POLICY" },
+          { policyContext: { reductionRatio: 0.25 } },
+          { ratio: 0.25 },
+          { ratios: [0.25, 0.1, 0.1] },
+          { optionName: "OP2" },
+        ]) {
+          expect(f6OptimizationResultV3Schema.safeParse({ ...resultV3, ...legacy }).success).toBe(false);
+        }
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [{ ...resultV3.worksheets[0].steps[0], adjustedMean: 1 }, resultV3.worksheets[0].steps[1], resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        const lowerRankedFactor = { ...factor, sourceRow: factor.sourceRow + 1, factorName: "Factor B" };
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.1, guidance: "tighten_tolerance" }, { rank: 2, factor: lowerRankedFactor, contribution: 0.9, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" }, { rank: 2, factor, contribution: 0.6, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        const invalidProposal = { side: "lower" as const, currentLimit: -1, proposedLimit: 0, targetCpk: 1.33, currentSideCpk: 0.8, verifiedSideCpk: 1.33, verificationStatus: "target_met" as const, approvalRequired: true as const, capabilityImprovementClaim: false as const, calculationReference: artifactReference("F4-Proposal.json") };
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], resultV3.worksheets[0].steps[1], { step: "specificationChanges", proposals: [invalidProposal], clarifications: [] }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { ...resultV3.worksheets[0].steps[1], priorities: [{ ...resultV3.worksheets[0].steps[1].priorities[0], rationale: "Use OP1" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
       });
 
       it("accepts governed observation and model-ledger rejected reason codes in provenance decisions", () => {
@@ -5371,7 +5555,7 @@ describe("F5.1 objective interpretation contracts", () => {
                 { semanticField: "distribution" as const, headerText: "Distribution", sourceColumn: "P" },
                 { semanticField: "unit" as const, headerText: "Unit", sourceColumn: "Q" },
               ],
-              rows: [{ sourceRow: 2, fields: {
+              rows: [{ sourceRow: 2, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!I2" }, fields: {
                 factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!J2" },
                 nominalValue: { status: "available" as const, rawText: "12.45", sourceCell: "Analysis-A!K2", numericValue: 12.45, unit: "mm" },
                 upperTolerance: { status: "available" as const, rawText: "0.2", sourceCell: "Analysis-A!L2", numericValue: 0.2, unit: "mm" },
@@ -7762,6 +7946,7 @@ describe("worksheet analysis asset contracts", () => {
             rows: [
               {
                 sourceRow: 13,
+                factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis!A13" },
                 fields: {
                   factorName: {
                     status: "available",
@@ -7804,6 +7989,12 @@ describe("worksheet analysis asset contracts", () => {
     expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "all" } }).worksheetSelection).toEqual({ mode: "all" });
     expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] } }).worksheetSelection).toEqual({ mode: "selected", worksheetNames: ["Analysis"] });
     expect(worksheetAnalysisAssetsResultSchema.parse(result)).toEqual(result);
+    const rowWithoutOrdinal = { ...result.worksheets[0].factorTables[0].rows[0] };
+    delete (rowWithoutOrdinal as { factorOrdinal?: unknown }).factorOrdinal;
+    expect(worksheetAnalysisAssetsResultSchema.safeParse({
+      ...result,
+      worksheets: [{ ...result.worksheets[0], factorTables: [{ ...result.worksheets[0].factorTables[0], rows: [rowWithoutOrdinal] }] }],
+    }).success).toBe(false);
     expect(
       worksheetImageReadRequestSchema.parse({
         contractVersion: "v1",

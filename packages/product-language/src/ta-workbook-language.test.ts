@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   detectUserLanguage,
+  TA_PRODUCT_CAPABILITY_CATALOG,
   productCapabilityLabel,
   projectProductCapabilityReferences,
   resolveProductCapabilityReference,
@@ -32,7 +33,7 @@ describe("TA product capabilities", () => {
       { internalId: "F1", skillName: "data-parsing", englishLabel: "Data Parsing", chineseLabel: "数据解析" },
       { internalId: "F2", skillName: "data-cleaning", englishLabel: "Data Cleaning", chineseLabel: "数据清洗" },
       { internalId: "F3", skillName: "drawing-governance", englishLabel: "Drawing Governance", chineseLabel: "图纸治理" },
-      { internalId: "F4", skillName: "ta-calculation", englishLabel: "TA Calculation", chineseLabel: "TA 计算" },
+      { internalId: "F4", skillName: "ta-calculation", englishLabel: "TA Calculation", chineseLabel: "公差分析计算" },
       { internalId: "F5", skillName: "result-interpretation", englishLabel: "Result Interpretation", chineseLabel: "结果解读" },
       { internalId: "F6", skillName: "design-optimization", englishLabel: "Design Optimization", chineseLabel: "设计优化" },
       { internalId: "F7", skillName: "feedback-application", englishLabel: "Feedback Application", chineseLabel: "反馈应用" },
@@ -40,6 +41,18 @@ describe("TA product capabilities", () => {
 
     expect(productCapabilityLabel("F3", "en")).toBe("Drawing Governance");
     expect(productCapabilityLabel("F3", "zh")).toBe("图纸治理");
+    expect(productCapabilityLabel("ta_calculation", "zh")).toBe("公差分析计算");
+    expect(Object.keys(TA_PRODUCT_CAPABILITY_CATALOG)).toEqual([
+      "knowledge-library",
+      "data-parsing",
+      "data-cleaning",
+      "drawing-governance",
+      "ta-calculation",
+      "result-interpretation",
+      "design-optimization",
+      "feedback-application",
+    ]);
+    expect(TA_PRODUCT_CAPABILITY_CATALOG.ta_calculation).toBeUndefined();
   });
 
   it("uses Chinese for messages containing Han characters and English otherwise", () => {

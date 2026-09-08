@@ -201,16 +201,16 @@ body {
 }
 
 .ta-assistant > .panel { border: 0; padding: 0; box-shadow: none; background: transparent; }
-.f6-input-gate {
+.design-optimization-input-gate {
   margin: 10px 0 14px;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-low);
 }
-.f6-input-gate .conversation-form {
+.design-optimization-input-gate .conversation-form {
   margin-bottom: 8px;
 }
-.f6-input-gate__actions {
+.design-optimization-input-gate__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1302,6 +1302,49 @@ textarea:focus-visible {
   .analysis-progress__track {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.decision-dialog-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(25, 28, 27, .56); }
+.decision-dialog { width: min(880px, 100%); max-height: min(860px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--panel); box-shadow: 0 18px 48px rgba(18, 27, 23, .24); }
+.decision-dialog__header { display: grid; grid-template-columns: minmax(0, 1fr) 88px; gap: 24px; align-items: start; padding: 24px 28px 18px; border-bottom: 1px solid var(--line); }
+.decision-dialog__header h2 { margin: 2px 0 8px; font-size: 1.55rem; letter-spacing: 0; }
+.decision-dialog__header p { margin: 0; }
+.decision-dialog__count { display: grid; justify-items: center; gap: 2px; padding: 10px 4px; border-left: 3px solid var(--ok); }
+.decision-dialog__count strong { font-size: 1.55rem; }
+.decision-dialog__count span { color: var(--muted); font-size: .78rem; text-transform: uppercase; }
+.decision-dialog > .input-guidance { margin: 18px 28px 0; }
+.findings-ledger { padding: 6px 28px 12px; }
+.finding-row { position: relative; display: grid; gap: 12px; padding: 18px 8px 18px 20px; border-bottom: 1px solid var(--line); }
+.finding-row::before { position: absolute; inset: 18px auto 18px 0; width: 4px; content: ""; background: var(--ok); }
+.finding-row--blocked::before { background: var(--md-sys-color-error); }
+.finding-row__heading { display: grid; grid-template-columns: minmax(180px, .75fr) minmax(260px, 1.25fr); gap: 20px; align-items: start; }
+.finding-row__heading h3 { margin: 0 0 4px; overflow-wrap: anywhere; font-size: 1rem; letter-spacing: 0; }
+.finding-row__heading p, .finding-row__guidance p, .finding-row__evidence p { margin: 0; }
+.finding-row__status { color: var(--ok); font-size: .76rem; font-weight: 700; text-transform: uppercase; }
+.finding-row--blocked .finding-row__status { color: var(--md-sys-color-error); }
+.finding-row__messages { display: grid; gap: 5px; margin: 0; padding-left: 20px; }
+.finding-row__guidance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; color: var(--muted); font-size: .88rem; }
+.finding-row__evidence { color: var(--muted); font-size: .84rem; }
+.finding-row__evidence summary { width: max-content; cursor: pointer; font-weight: 650; }
+.finding-row__evidence p { padding-top: 5px; }
+.decision-dialog__actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(12px); }
+.decision-dialog__replace { position: relative; overflow: hidden; }
+.decision-dialog__replace input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.findings-reopen { position: fixed; z-index: 45; right: 24px; bottom: 24px; }
+
+@media (max-width: 640px) {
+  .decision-dialog-backdrop { align-items: end; padding: 0; }
+  .decision-dialog { width: 100%; max-height: 94vh; border-width: 1px 0 0; border-radius: var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0; }
+  .decision-dialog__header { grid-template-columns: minmax(0, 1fr); padding: 20px; }
+  .decision-dialog__count { grid-template-columns: max-content max-content; justify-content: start; justify-items: start; align-items: baseline; gap: 8px; border-left-width: 4px; }
+  .decision-dialog > .input-guidance { margin: 16px 20px 0; }
+  .findings-ledger { padding-inline: 20px; }
+  .finding-row__heading, .finding-row__guidance { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .decision-dialog__actions { display: grid; grid-template-columns: 1fr 1fr; padding: 14px 20px; }
+  .decision-dialog__actions .button--primary { grid-column: 1 / -1; grid-row: 1; }
+  .decision-dialog__actions .button, .decision-dialog__replace { justify-content: center; width: 100%; }
+  .findings-reopen { right: 16px; bottom: 16px; left: 16px; }
+  .findings-reopen .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

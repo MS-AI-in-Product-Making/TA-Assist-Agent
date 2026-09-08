@@ -51,7 +51,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 };
 
 const ALLOWED_MIME_TYPES = new Set(["text/plain", "text/markdown; charset=utf-8", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
-const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "engineering_summary_projection"]);
+const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f5_multimodal", "f6_optimization", "engineering_summary_projection"]);
 
 async function readPersistedArtifact(
   rootDir: string,
@@ -60,7 +60,7 @@ async function readPersistedArtifact(
   query: { readonly worksheet?: unknown; readonly path?: unknown },
 ) {
   if (artifactId.startsWith("f1-image:")) {
-    return readF1ImageArtifact(
+    return resolveF1ImageArtifact(
       rootDir,
       sessionId,
       artifactId.slice("f1-image:".length),
@@ -70,7 +70,15 @@ async function readPersistedArtifact(
   }
   const store = await openSessionStore({ rootDir, sessionId });
   try {
-    const reference = await store.readArtifactReference(artifactId);
+    const persistedReference = await store.readArtifactReference(artifactId);
+    const snapshotReference = artifactId.startsWith("f5-multimodal:")
+      ? (await store.readSnapshot()).artifactRefs?.find((candidate) => candidate.artifactId === artifactId
+        && candidate.kind === "f5_multimodal"
+        && candidate.validated
+        && "relativePath" in candidate
+        && "contentHash" in candidate)
+      : undefined;
+    const reference = persistedReference ?? snapshotReference as typeof persistedReference;
     if (reference === undefined) return undefined;
     if (reference.kind === "f6_report") {
       const snapshot = await store.readSnapshot();
@@ -93,6 +101,7 @@ async function readPersistedArtifact(
       fileName,
       classification: "confidential" as const,
       mimeType: "application/json",
+      ...(reference.kind === "f5_multimodal" && reference.contentHash !== undefined ? { contentHash: reference.contentHash } : {}),
     };
   } finally {
     await store.close();
@@ -120,9 +129,10 @@ async function isSafeManagedPath(rootDir: string, targetPath: string): Promise<b
   }
 }
 
-async function readManagedArtifact(rootDir: string, targetPath: string): Promise<Buffer | undefined> {
+export async function readManagedArtifact(rootDir: string, targetPath: string): Promise<Buffer | undefined> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
+    if (!await isSafeManagedPath(rootDir, targetPath)) return undefined;
     handle = await open(targetPath, "r");
     const handleStat = await handle.stat();
     if (!handleStat.isFile() || handleStat.isBlockDevice() || handleStat.isCharacterDevice() || !await isSafeManagedPath(rootDir, targetPath)) return undefined;
@@ -136,7 +146,7 @@ async function readManagedArtifact(rootDir: string, targetPath: string): Promise
   }
 }
 
-async function readF1ImageArtifact(
+export async function resolveF1ImageArtifact(
   rootDir: string,
   sessionId: string,
   contentHash: string,

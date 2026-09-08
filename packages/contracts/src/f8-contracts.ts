@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
+import { f5MultimodalWorksheetRequestV3Schema, f5MultimodalWorksheetResultV3Schema } from "./ta-multimodal-contracts.js";
 
 const nonEmptyStringSchema = z.string().min(1);
 const nonEmptyStringArraySchema = z.array(nonEmptyStringSchema);
@@ -429,6 +431,18 @@ const f8ReviewArtifactRefSchema = z
   })
   .strict();
 
+const f8MultimodalArtifactRefSchema = z
+  .object({
+    artifactId: boundedContextIdSchema,
+    kind: z.literal("f5_multimodal"),
+    revision: z.number().int().nonnegative(),
+    validated: z.literal(true),
+    reviewContextId: sha256Schema,
+    relativePath: nonEmptyStringSchema,
+    contentHash: sha256Schema,
+  })
+  .strict();
+
 const f8NonReviewArtifactRefSchema = z
   .object({
     artifactId: boundedContextIdSchema,
@@ -439,7 +453,7 @@ const f8NonReviewArtifactRefSchema = z
   })
   .strict();
 
-const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8NonReviewArtifactRefSchema]);
+const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8MultimodalArtifactRefSchema, f8NonReviewArtifactRefSchema]);
 
 const f8WorksheetCapabilitySchema = z
   .object({
@@ -482,6 +496,10 @@ const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
   previousWorkbookHash: sha256Schema,
 }).strict();
 
+const managedWorkbookReplacePayloadSchema = managedWorkbookUploadPayloadSchema.extend({
+  previousWorkbookHash: sha256Schema,
+}).strict();
+
 const worksheetScopePayloadBaseSchema = z
   .object({
     workbookHash: sha256Schema,
@@ -503,6 +521,13 @@ const worksheetScopePayloadSchema = withUniqueWorksheetNames(worksheetScopePaylo
 
 const worksheetDecisionProvenanceSchema = z.enum(["user", "internal_fixture"]);
 const worksheetSnapshotProvenanceSchema = z.enum(["user", "internal_fixture", "legacy_unverified"]);
+const interactionLanguageSchema: z.ZodType<InteractionLanguage> = z.object({
+  languageTag: nonEmptyStringSchema,
+  uiCatalogLanguage: z.enum(["en", "zh"]),
+  lockedAtTurnId: promptVisibleIdentitySchema,
+  source: z.enum(["workflow_start", "explicit_user_change", "legacy_fallback"]),
+  fallbackUsed: z.boolean(),
+}).strict();
 
 const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema
   .extend({
@@ -510,19 +535,62 @@ const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetSc
   })
   .strict());
 
-const worksheetSelectionDecisionSchema = z
+export interface ConfirmDownstreamScopeInternalPayload {
+  readonly decision: "continue_ready";
+  readonly workbookHash: string;
+  readonly inputRevision: number;
+  readonly worksheetNames: readonly string[];
+  readonly downstreamReadyWorksheetNames: readonly string[];
+  readonly f2ReportArtifactId: string;
+  readonly f2ReportContentHash: string;
+  readonly findingDigest: string;
+  readonly provenance?: "user" | "internal_fixture";
+}
+
+export const confirmDownstreamScopeInternalPayloadSchema = withUniqueWorksheetNames(z.object({
+  decision: z.literal("continue_ready"),
+  workbookHash: sha256Schema,
+  inputRevision: z.number().int().nonnegative(),
+  worksheetNames: z.array(boundedContextNameSchema).min(1),
+  downstreamReadyWorksheetNames: z.array(boundedContextNameSchema).min(1),
+  f2ReportArtifactId: boundedContextIdSchema,
+  f2ReportContentHash: sha256Schema,
+  findingDigest: sha256Schema,
+  provenance: worksheetDecisionProvenanceSchema.optional(),
+}).strict());
+
+const worksheetSelectionDecisionBaseSchema = z
   .object({
     workbookContentHash: sha256Schema,
     selectedWorksheetNames: z.array(nonEmptyStringSchema),
     confirmed: z.literal(true),
     provenance: worksheetSnapshotProvenanceSchema.optional(),
   })
-  .strict()
-  .superRefine((selection, context) => {
+  .strict();
+
+function requireUniqueSelectedWorksheetNames<Schema extends z.ZodTypeAny>(schema: Schema): z.ZodEffects<Schema> {
+  return schema.superRefine((selection: { selectedWorksheetNames?: unknown }, context) => {
+    if (!Array.isArray(selection.selectedWorksheetNames)) return;
     if (new Set(selection.selectedWorksheetNames).size !== selection.selectedWorksheetNames.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["selectedWorksheetNames"] });
     }
   });
+}
+
+const worksheetSelectionDecisionSchema = requireUniqueSelectedWorksheetNames(worksheetSelectionDecisionBaseSchema);
+
+const governedDownstreamSelectionDecisionSchema = requireUniqueSelectedWorksheetNames(worksheetSelectionDecisionBaseSchema.extend({
+  decision: z.literal("continue_ready"),
+  inputRevision: z.number().int().nonnegative(),
+  f2ReportArtifactId: boundedContextIdSchema,
+  f2ReportContentHash: sha256Schema,
+  findingDigest: sha256Schema,
+}).strict());
+
+const downstreamSelectionDecisionSchema = z.union([
+  governedDownstreamSelectionDecisionSchema,
+  worksheetSelectionDecisionSchema,
+]);
 
 const confirmationDecisionPayloadSchema = z
   .object({
@@ -615,6 +683,11 @@ const confirmWhatIfPromotionInternalPayloadSchema = z.object({
   promotionPreview: f6OptimizationTargetsSchema,
 }).strict();
 
+const setInteractionLanguagePayloadSchema = z.object({
+  turnId: promptVisibleIdentitySchema,
+  explicitLanguageTag: nonEmptyStringSchema,
+}).strict();
+
 const commandEnvelopeSchema = <Command extends string, T extends z.ZodTypeAny>(command: Command, payloadSchema: T) => z
   .object({
     contractVersion: z.literal("f8-session-command-v1"),
@@ -629,9 +702,10 @@ const commandEnvelopeSchema = <Command extends string, T extends z.ZodTypeAny>(c
 export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopeInternalPayloadSchema),
-  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("confirm_downstream_scope", confirmDownstreamScopeInternalPayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
@@ -647,7 +721,8 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
 
 export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", managedWorkbookUploadPayloadSchema),
-  commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("replace_workbook", managedWorkbookReplacePayloadSchema),
+  commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
@@ -889,7 +964,23 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     turnId: nonEmptyStringSchema,
     prompt: nonEmptyStringSchema,
   }).strict(),
-]);
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("vscode_worksheet_multimodal_request"),
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: z.literal("vscode-worksheet-multimodal-v3"),
+    request: f5MultimodalWorksheetRequestV3Schema,
+  }).strict(),
+]).superRefine((action, context) => {
+  if (action.kind === "vscode_worksheet_multimodal_request") {
+    if (action.confirmationHash !== action.request.requestHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "confirmationHash must bind the multimodal request", path: ["confirmationHash"] });
+    }
+    if (action.sessionId !== action.request.sessionId || action.expectedRevision !== action.request.revision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "host action scope must bind the multimodal request", path: ["request"] });
+    }
+  }
+});
 
 export const hostActionClaimSchema = z
   .object({
@@ -925,6 +1016,7 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
         state: z.literal("absent"),
       }).strict(),
       z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema, proposal: f6InputProposalSchema.optional() }).strict(),
+      z.object({ kind: z.literal("worksheet_multimodal_response"), result: f5MultimodalWorksheetResultV3Schema }).strict(),
     ]).optional(),
   }).strict(),
   z.object({
@@ -1089,11 +1181,12 @@ export const f8SessionSnapshotSchema = z
     inputRevision: z.number().int().nonnegative(),
     state: f8SessionStateSchema,
     activeAttempt: f8StageAttemptSchema.nullable(),
+    interactionLanguage: interactionLanguageSchema,
     priorRunReferences: z.array(f8PriorRunReferenceSchema),
     artifactRefs: z.array(f8ArtifactRefSchema).optional(),
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
     initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
-    downstreamScopeSelection: worksheetSelectionDecisionSchema.optional(),
+    downstreamScopeSelection: downstreamSelectionDecisionSchema.optional(),
     pendingAnalysisContextDraft: f8PendingF6InputDraftSchema.optional(),
     pendingOptimizationTargetsDraft: f8PendingF6InputDraftSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),

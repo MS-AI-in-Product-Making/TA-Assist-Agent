@@ -4,8 +4,8 @@ import {
   renderF3AdoHistoryHtml as renderCanonicalF3AdoHistoryHtml,
 } from "../packages/workflow-runners/dist/index.js";
 
-export const ADO_TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |";
-const ADO_TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
+export const ADO_TABLE_HEADER = "| Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |";
+const ADO_TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
 export const ADO_HTML_TABLE_HEADERS = F3_ADO_HTML_TABLE_HEADERS;
 
 const QUALITY_SIGNAL_MESSAGES = {
@@ -111,7 +111,7 @@ export function renderF3AdoReminder(report) {
     lines.push(ADO_TABLE_HEADER);
     lines.push(ADO_TABLE_SEPARATOR);
     for (const row of group.rows) {
-      lines.push(`| ${cell(row.deviceLevelDim)} | ${cell(row.dimensionDescription)} | ${cell(partSubsystemLabel(row.partSubsystem))} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(governanceIssue(row))} |`);
+      lines.push(`| ${cell(row.source.worksheetName)} | ${cell(row.deviceLevelDim)} | ${cell(row.dimensionDescription)} | ${cell(partSubsystemLabel(row.partSubsystem))} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(governanceIssue(row))} |`);
     }
     lines.push("");
   }

@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash, f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import {
@@ -68,6 +69,78 @@ function setupBundle({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = 
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames });
   roots.push(bundle.root);
   return bundle;
+}
+
+function installRequiredMultimodalV3(bundle) {
+  const f2 = readJson(bundle.paths.f2);
+  const f5 = readJson(bundle.paths.f5);
+  const worksheets = bundle.selectedWorksheetNames.map((worksheetName, index) => {
+    const calculation = bundle.calculations[index];
+    const factor = calculation.factors[0];
+    const sourceRow = factor.source.sourceRow;
+    const f2Row = f2.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).rows[0];
+    const image = f5.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).imageReference;
+    const factorRows = [{
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      sourceRow,
+      factorOrdinal: structuredClone(f2Row.factorOrdinal),
+      factorName: factor.factorName,
+      partName: f2Row.actualFields.partName,
+      partCategory: f2Row.actualFields.partCategory,
+      drawingNumber: f2Row.actualFields.drawingNumber,
+      dimId: f2Row.actualFields.dimCharacteristicId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: f2Row.sourceCells,
+    }];
+    const request = {
+      contractVersion: "f5-multimodal-request-v3",
+      inputClassification: "confidential",
+      requestHash: "",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      revision: 7,
+      inputRevision: 3,
+      workbook: { fileName: f2.workbook.fileName, contentHash: f2.workbook.contentHash },
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png", contentHash: image.contentHash, byteLength: 100, artifactPath: image.relativePath },
+      factorRows,
+    };
+    request.requestHash = createF5MultimodalRequestHash(request);
+    return {
+      request,
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: request.requestHash,
+        sessionId: request.sessionId,
+        revision: request.revision,
+        inputRevision: request.inputRevision,
+        workbookContentHash: request.workbook.contentHash,
+        worksheetName,
+        tableId: request.tableId,
+        imageContentHash: request.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: `Image and complete Factor table interpreted for ${worksheetName}.`,
+        rowMappings: factorRows.map((row) => ({ worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value} is visible.` })),
+      },
+    };
+  });
+  const artifact = { contractVersion: "f5-multimodal-artifact-v3", outputClassification: "confidential", sessionId: worksheets[0].request.sessionId, revision: 7, inputRevision: 3, workbookContentHash: WORKBOOK_HASH, selectedWorksheetNames: [...bundle.selectedWorksheetNames], worksheets };
+  f5MultimodalArtifactV3Schema.parse(artifact);
+  const modelInterpretationArtifactRoot = path.join(bundle.publishRoot, "multimodal");
+  const modelInterpretationArtifact = "interpretation-v3.json";
+  const filePath = path.join(modelInterpretationArtifactRoot, modelInterpretationArtifact);
+  writeJson(filePath, artifact);
+  Object.assign(bundle, { requireMultimodalV3: true, modelInterpretationArtifactRoot, modelInterpretationArtifact, expectedModelInterpretationContentHash: sha256(filePath) });
+  return artifact;
 }
 
 describe("loadF6ArtifactBundle", () => {
@@ -702,6 +775,7 @@ function createV2ObservationArtifact(bundle) {
             return {
               tableId: row.source.tableId,
               sourceRow: row.source.sourceRow,
+              factorOrdinal: row.factorOrdinal,
               partName: f2Row.actualFields.partName,
               partSubsystem: row.partSubsystem,
               partCategory: row.partCategory,
@@ -778,16 +852,45 @@ function writeOptional(bundle, fileName, value) {
 }
 
 describe("F6 optional governed evidence", () => {
-  it("accepts missing optional evidence as absent", () => {
-    const result = loadF6ArtifactBundle(setupBundle());
+  it("hard-rejects a new run when multimodal interpretation is missing", () => {
+    const bundle = setupBundle();
+    bundle.requireMultimodalV3 = true;
+    const result = loadF6ArtifactBundle(bundle);
 
-    expect(result.status).toBe("accepted");
-    expect(result.inputDecisions.modelInterpretation).toEqual({ outcome: "NOT_PROVIDED" });
-    expect(result.modelInterpretation).toBeUndefined();
-    expect(result.request).not.toHaveProperty("imageObservationReference");
-    expect(result.request).not.toHaveProperty("supplierCapabilityEvidence");
-    expect(result.request).not.toHaveProperty("datumEvidence");
-    expect(result.request).not.toHaveProperty("costEvidence");
+    expectRejected(result, "model_interpretation_required", "modelInterpretationArtifact");
+  });
+
+  it("hard-rejects legacy model interpretation on a new run", () => {
+    const bundle = setupBundle();
+    bundle.requireMultimodalV3 = true;
+    const installed = installF6ModelInterpretation(bundle, { version: "v2" });
+    bundle.expectedModelInterpretationContentHash = sha256(installed.filePath);
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", "Feature6-Model-Interpretation.json");
+  });
+
+  it("accepts the required exact-set multimodal v3 artifact", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
+    const artifact = installRequiredMultimodalV3(bundle);
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toEqual(artifact);
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "CALLER_AUTHORIZED" });
+  });
+
+  it("rejects multimodal v3 request workbook filename drift", () => {
+    const bundle = setupBundle();
+    installRequiredMultimodalV3(bundle);
+    const filePath = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    rewriteJson(filePath, (artifact) => {
+      artifact.worksheets[0].request.workbook.fileName = "Other.xlsx";
+      artifact.worksheets[0].request.requestHash = createF5MultimodalRequestHash(artifact.worksheets[0].request);
+      artifact.worksheets[0].result.requestHash = artifact.worksheets[0].request.requestHash;
+    });
+    bundle.expectedModelInterpretationContentHash = sha256(filePath);
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", bundle.modelInterpretationArtifact);
   });
 
   it("auto-inherits current F5 observation copy without explicit compatibility input", () => {

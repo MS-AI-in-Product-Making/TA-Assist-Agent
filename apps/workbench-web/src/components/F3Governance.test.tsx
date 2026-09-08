@@ -9,6 +9,8 @@ afterEach(cleanup);
 describe("F3Governance", () => {
   it("groups rows by Part / Subsystem with counts that match the F3 report rows exactly", () => {
     const report = governanceReport();
+    report.worksheets[0]!.rows[0] = { ...report.worksheets[0]!.rows[0]!, source: { ...report.worksheets[0]!.rows[0]!.source, worksheetName: "Source-A" } };
+    report.worksheets[1]!.rows[0] = { ...report.worksheets[1]!.rows[0]!, source: { ...report.worksheets[1]!.rows[0]!.source, worksheetName: "Source-B" } };
 
     expect(projectGovernanceGroups(report)).toEqual([
       expect.objectContaining({ partSubsystem: "Bracket", factorCount: 2, rows: expect.arrayContaining([expect.objectContaining({ factorDescription: "Gap factor" }), expect.objectContaining({ factorDescription: "Stack factor" })]), missingDrawingNumberCount: 1, missingDimIdCount: 1 }),
@@ -24,6 +26,10 @@ describe("F3Governance", () => {
     const bracketGroup = [...section.querySelectorAll("details")].find((details) => details.querySelector("summary strong")?.textContent === "Bracket");
     expect(bracketGroup).not.toBeNull();
     fireEvent.click(bracketGroup!.querySelector("summary")!);
+    expect(within(bracketGroup!).getAllByRole("columnheader")).toHaveLength(12);
+    expect(within(bracketGroup!).getAllByRole("columnheader")[0]).toHaveTextContent("Worksheet Source");
+    expect(within(within(bracketGroup!).getByText("Gap factor").closest("tr")!).getByText("Source-A")).toBeVisible();
+    expect(within(within(bracketGroup!).getByText("Stack factor").closest("tr")!).getByText("Source-B")).toBeVisible();
     expect(within(bracketGroup!).getByText("2 Factors")).toBeVisible();
     expect(within(bracketGroup!).getByText("Drawing missing 1")).toBeVisible();
     expect(within(bracketGroup!).getByText("DIM ID missing 1")).toBeVisible();
@@ -87,7 +93,7 @@ describe("F3Governance", () => {
 
     fireEvent.click(localOnly);
     fireEvent.click(create);
-    fireEvent.change(within(section).getByRole("textbox", { name: "Existing work item URL" }), { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });
+    fireEvent.change(within(section).getByRole("textbox", { name: "Existing work item" }), { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });
     fireEvent.click(update);
 
     expect(onSubmit).toHaveBeenCalledWith("local_only");

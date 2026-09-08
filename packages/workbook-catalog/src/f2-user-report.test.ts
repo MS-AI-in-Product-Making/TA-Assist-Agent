@@ -70,7 +70,7 @@ function input(fields: Record<string, unknown>, imageStatus: "available" | "unav
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [],
-        rows: [{ sourceRow: 2, fields, actualFields }],
+        rows: [{ sourceRow: 2, factorOrdinal: { value: "A", rawText: " A ", sourceCell: "Analysis-A!AA2" }, fields, actualFields }],
       }],
     }],
     knowledgeBaseVersions: ["v1", "internal-v1"],
@@ -95,6 +95,72 @@ function completeFields() {
 }
 
 describe("createF2UserReport", () => {
+  it("preserves Factor ordinal evidence in F2 rows and ready handoffs", () => {
+    const result = createF2UserReport(input(completeFields()));
+
+    expect(result.worksheets[0]?.rows[0]?.factorOrdinal).toEqual({
+      value: "A",
+      rawText: " A ",
+      sourceCell: "Analysis-A!AA2",
+    });
+    expect(result.f4Handoffs[0]?.factors[0]?.factorOrdinal).toEqual({
+      value: "A",
+      rawText: " A ",
+      sourceCell: "Analysis-A!AA2",
+    });
+  });
+
+  it("blocks blank and duplicate Factor ordinals before downstream handoff", () => {
+    const blankRequest = input(completeFields());
+    blankRequest.worksheets[0]!.factorTables[0]!.rows[0]!.factorOrdinal = { value: "", rawText: "" };
+    const blankResult = createF2UserReport(blankRequest);
+
+    expect(blankResult.worksheets[0]).toMatchObject({
+      status: "blocked",
+      f4CalculabilityIssues: [{ reasonCode: "factor_ordinal_missing", tableId: "table-a", sourceRow: 2 }],
+    });
+    expect(blankResult.f4Handoffs).toHaveLength(0);
+
+    const duplicateRequest = input(completeFields());
+    duplicateRequest.worksheets[0]!.factorTables[0]!.dataRange.endRow = 3;
+    duplicateRequest.worksheets[0]!.factorTables[0]!.rows.push({
+      ...structuredClone(duplicateRequest.worksheets[0]!.factorTables[0]!.rows[0]!),
+      sourceRow: 3,
+      factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!AA3" },
+    });
+    const duplicateResult = createF2UserReport(duplicateRequest);
+
+    expect(duplicateResult.worksheets[0]).toMatchObject({
+      status: "blocked",
+      f4CalculabilityIssues: [
+        { reasonCode: "factor_ordinal_duplicate", tableId: "table-a", sourceRow: 2 },
+        { reasonCode: "factor_ordinal_duplicate", tableId: "table-a", sourceRow: 3 },
+      ],
+    });
+    expect(duplicateResult.f4Handoffs).toHaveLength(0);
+  });
+
+  it("blocks duplicate Factor ordinals across tables in the same worksheet", () => {
+    const request = input(completeFields());
+    const secondTable = structuredClone(request.worksheets[0]!.factorTables[0]!);
+    secondTable.tableId = "table-b";
+    secondTable.headerRow = 2;
+    secondTable.dataRange = { startRow: 3, endRow: 3 };
+    secondTable.rows[0]!.sourceRow = 3;
+    secondTable.rows[0]!.factorOrdinal = { value: "a", rawText: "a", sourceCell: "Analysis-A!AA3" };
+    request.worksheets[0]!.factorTables.push(secondTable);
+
+    const result = createF2UserReport(request);
+
+    expect(result.worksheets[0]).toMatchObject({
+      status: "blocked",
+      f4CalculabilityIssues: [
+        { reasonCode: "factor_ordinal_duplicate", tableId: "table-a", sourceRow: 2 },
+        { reasonCode: "factor_ordinal_duplicate", tableId: "table-b", sourceRow: 3 },
+      ],
+    });
+  });
+
   it.each([
     ["designNominal", "response_summary_value_missing"],
     ["designNominal", "response_summary_value_invalid"],
@@ -126,7 +192,7 @@ describe("createF2UserReport", () => {
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
       actualFields: completeActualFields(),
       imageReference: { artifact: "f1", relativePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
-      missingIdentifiers: ["dimCharacteristicId", "partNumber"],
+      missingIdentifiers: ["dimCharacteristicId", "drawingNumber"],
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
       f0KnowledgeBaseVersion: "v1",
@@ -137,13 +203,27 @@ describe("createF2UserReport", () => {
     expect(result.adoEvents).toEqual([expect.objectContaining({
       eventType: "adoReminderRequested",
       category: "demo-bracket",
-      missingFields: ["dimCharacteristicId", "partNumber"],
+      missingFields: ["dimCharacteristicId", "drawingNumber"],
       factorRows: [2],
     })]);
     expect(result.worksheets[0]?.rows[0]?.actualFields.drawingNumber).toBeNull();
     expect(result.worksheets[0]?.rows[0]?.missingRequiredFields).not.toContain("drawingNumber");
     expect(result.worksheets[0]?.rows[0]?.adoReminderRequested).toBe(true);
     expect(result.f4Handoffs).toHaveLength(1);
+  });
+
+  it("emits Drawing Number and DIM ID reminders from current identifier fields without blocking", () => {
+    const fields = completeFields();
+    fields.partNumber = available("Analysis-A!C2", "LEGACY-PART-123");
+
+    const result = createF2UserReport(input(fields));
+
+    expect(result.worksheets[0]?.status).toBe("ready");
+    expect(result.worksheets[0]?.rows[0]?.missingIdentifiers).toEqual(["dimCharacteristicId", "drawingNumber"]);
+    expect(result.adoEvents[0]).toMatchObject({
+      missingFields: ["dimCharacteristicId", "drawingNumber"],
+      factorRows: [2],
+    });
   });
 
   it("projects Excel display fields while preserving actual numeric values", () => {

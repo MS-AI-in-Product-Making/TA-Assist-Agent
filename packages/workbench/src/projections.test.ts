@@ -12,6 +12,25 @@ type WorkbenchExports = typeof import("./index.js") & {
     progress?: { readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written"; readonly featureId: string },
   ) => ProductStageEntry[];
   acceptAttemptResult?: (snapshot: SessionSnapshot, result: AttemptResult) => SessionSnapshot;
+  projectF2FindingsDecision?: (report: F2Report, evidence: F2Evidence) => F2Decision;
+};
+
+type F2Report = Parameters<NonNullable<WorkbenchExports["projectF2FindingsDecision"]>>[0];
+type F2Evidence = {
+  readonly inputRevision: number;
+  readonly f2ReportArtifactId: string;
+  readonly f2ReportContentHash: string;
+};
+type F2Decision = {
+  readonly findingDigest: string;
+  readonly worksheetFindings: readonly {
+    readonly worksheetName: string;
+    readonly readiness: "downstream_ready" | "blocked";
+    readonly identifierWarnings: readonly string[];
+    readonly blockers: readonly string[];
+    readonly sourceRows: readonly number[];
+  }[];
+  readonly downstreamReadyWorksheetNames: readonly string[];
 };
 
 type SessionSnapshot = ReturnType<typeof baseSnapshot>;
@@ -49,6 +68,130 @@ describe("workbench projections", () => {
     expect(typeof api.projectActionQueue).toBe("function");
     expect(typeof api.projectFeatureLedger).toBe("function");
     expect(typeof api.projectTaProductStages).toBe("function");
+    expect(typeof api.projectF2FindingsDecision).toBe("function");
+  });
+
+  it("keeps identifier-only worksheets downstream-ready using current warning codes", () => {
+    const decision = requireApi().projectF2FindingsDecision(f2Report([
+      worksheet("Identifier Only", {
+        missingIdentifiers: ["partNumber", "dimCharacteristicId"],
+        sourceRow: 12,
+      }),
+    ]), f2Evidence());
+
+    expect(decision.worksheetFindings).toEqual([expect.objectContaining({
+      worksheetName: "Identifier Only",
+      readiness: "downstream_ready",
+      identifierWarnings: ["dim_id_missing", "drawing_number_missing"],
+      blockers: [],
+      sourceRows: [12],
+    })]);
+    expect(decision.downstreamReadyWorksheetNames).toEqual(["Identifier Only"]);
+  });
+
+  it("maps a missing tolerance stack image to a worksheet blocker", () => {
+    const decision = requireApi().projectF2FindingsDecision(f2Report([
+      worksheet("Missing Image", { imageAvailable: false }),
+    ]), f2Evidence());
+
+    expect(decision.worksheetFindings[0]).toMatchObject({
+      readiness: "blocked",
+      blockers: ["tolerance_path_image_missing"],
+      sourceRows: [],
+    });
+    expect(decision.downstreamReadyWorksheetNames).toEqual([]);
+  });
+
+  it("projects multiple calculation-required fields as stable machine blockers", () => {
+    const decision = requireApi().projectF2FindingsDecision(f2Report([
+      worksheet("Missing Fields", {
+        missingRequiredFields: ["partName", "nominalValue", "upperTolerance"],
+        sourceRow: 9,
+      }),
+    ]), f2Evidence());
+
+    expect(decision.worksheetFindings[0]).toMatchObject({
+      readiness: "blocked",
+      blockers: [
+        "required_field_missing:nominalValue",
+        "required_field_missing:partName",
+        "required_field_missing:upperTolerance",
+      ],
+      sourceRows: [9],
+    });
+  });
+
+  it("preserves report order for the exact downstream-ready set in a mixed report", () => {
+    const decision = requireApi().projectF2FindingsDecision(f2Report([
+      worksheet("Zulu Ready"),
+      worksheet("Blocked Middle", { imageAvailable: false }),
+      worksheet("Alpha Ready"),
+    ]), f2Evidence());
+
+    expect(decision.worksheetFindings.map((finding) => finding.readiness)).toEqual([
+      "downstream_ready",
+      "blocked",
+      "downstream_ready",
+    ]);
+    expect(decision.downstreamReadyWorksheetNames).toEqual(["Zulu Ready", "Alpha Ready"]);
+  });
+
+  it("returns an empty downstream-ready set when every worksheet is blocked", () => {
+    const decision = requireApi().projectF2FindingsDecision(f2Report([
+      worksheet("First", { imageAvailable: false }),
+      worksheet("Second", { missingRequiredFields: ["factorName"], sourceRow: 4 }),
+    ]), f2Evidence());
+
+    expect(decision.worksheetFindings.every((finding) => finding.readiness === "blocked")).toBe(true);
+    expect(decision.downstreamReadyWorksheetNames).toEqual([]);
+  });
+
+  it("computes the same digest when localized display labels change", () => {
+    const report = f2Report([worksheet("Stable", { missingRequiredFields: ["factorName"], sourceRow: 4 })]);
+    const relabeled = structuredClone(report) as F2Report & { localizedLabels?: Record<string, string> };
+    relabeled.localizedLabels = { factorName: "因子描述", blocked: "已阻止" };
+
+    const first = requireApi().projectF2FindingsDecision(report, f2Evidence());
+    const second = requireApi().projectF2FindingsDecision(relabeled, f2Evidence());
+
+    expect(first.findingDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(second.findingDigest).toBe(first.findingDigest);
+  });
+
+  it("derives required-field blockers from rows instead of the summary cache", () => {
+    const report = f2Report([worksheet("Row Authority", { missingRequiredFields: ["nominalValue"], sourceRow: 7 })]);
+    report.worksheets[0]!.missingFieldSummary = [];
+
+    const decision = requireApi().projectF2FindingsDecision(report, f2Evidence());
+
+    expect(decision.worksheetFindings[0]).toMatchObject({
+      readiness: "blocked",
+      blockers: ["required_field_missing:nominalValue"],
+      sourceRows: [7],
+    });
+  });
+
+  it("keeps the digest stable when unordered machine findings are permuted", () => {
+    const firstReport = f2Report([worksheet("Stable", {
+      missingRequiredFields: ["upperTolerance", "nominalValue"],
+      missingIdentifiers: ["dimCharacteristicId", "drawingNumber"],
+      sourceRow: 8,
+    })]);
+    firstReport.worksheets[0]!.rows.push({
+      ...structuredClone(firstReport.worksheets[0]!.rows[0]!),
+      sourceRow: 3,
+      missingRequiredFields: ["partName"],
+      missingIdentifiers: [],
+    });
+    const secondReport = structuredClone(firstReport);
+    secondReport.worksheets[0]!.rows.reverse();
+    secondReport.worksheets[0]!.rows[1]!.missingRequiredFields.reverse();
+    secondReport.worksheets[0]!.rows[1]!.missingIdentifiers.reverse();
+
+    const first = requireApi().projectF2FindingsDecision(firstReport, f2Evidence());
+    const second = requireApi().projectF2FindingsDecision(secondReport, f2Evidence());
+
+    expect(second.findingDigest).toBe(first.findingDigest);
   });
 
   it("projects internal workflow into five product stages", () => {
@@ -333,6 +476,13 @@ function baseSnapshotShape() {
       endedAt?: string;
     } | null,
     priorRunReferences: [] as Array<unknown>,
+    interactionLanguage: {
+      languageTag: "en",
+      uiCatalogLanguage: "en" as const,
+      lockedAtTurnId: "turn-1",
+      source: "workflow_start" as const,
+      fallbackUsed: false,
+    },
   };
 }
 
@@ -380,6 +530,53 @@ function cancelledAttemptResult(): AttemptResult {
 
 function completedStatuses(ledger: FeatureLedgerEntry[]): string[] {
   return ledger.filter((entry) => entry.status === "completed").map((entry) => entry.featureId);
+}
+
+function f2Evidence(): F2Evidence {
+  return {
+    inputRevision: 3,
+    f2ReportArtifactId: "f2-report-3",
+    f2ReportContentHash: "b".repeat(64),
+  };
+}
+
+function f2Report(worksheets: readonly ReturnType<typeof worksheet>[]) {
+  return {
+    status: worksheets.every((item) => item.status === "ready")
+      ? "completed"
+      : worksheets.every((item) => item.status === "blocked") ? "blocked" : "partiallyBlocked",
+    workbook: { contentHash: "a".repeat(64) },
+    worksheets,
+  } as unknown as F2Report;
+}
+
+function worksheet(
+  worksheetName: string,
+  options: {
+    readonly imageAvailable?: boolean;
+    readonly missingRequiredFields?: readonly string[];
+    readonly missingIdentifiers?: readonly ("partNumber" | "drawingNumber" | "dimCharacteristicId")[];
+    readonly sourceRow?: number;
+  } = {},
+) {
+  const imageAvailable = options.imageAvailable ?? true;
+  const missingRequiredFields = options.missingRequiredFields ?? [];
+  const missingIdentifiers = options.missingIdentifiers ?? [];
+  const blocked = !imageAvailable || missingRequiredFields.length > 0;
+  return {
+    worksheetName,
+    status: blocked ? "blocked" as const : "ready" as const,
+    tolerancePathImageStatus: imageAvailable ? "available" as const : "unavailable" as const,
+    systemSpecificationIssues: [],
+    f4CalculabilityIssues: [],
+    missingFieldSummary: [
+      ...missingRequiredFields.map((field) => ({ field, factorCount: 1, sourceRows: [options.sourceRow ?? 2] })),
+      ...(imageAvailable ? [] : [{ field: "tolerancePathImage", factorCount: 0, sourceRows: [] }]),
+    ],
+    rows: missingRequiredFields.length > 0 || missingIdentifiers.length > 0
+      ? [{ sourceRow: options.sourceRow ?? 2, missingRequiredFields, missingIdentifiers }]
+      : [],
+  };
 }
 
 async function importWorkbenchWithGovernanceStatus(status: string): Promise<Required<WorkbenchExports>> {

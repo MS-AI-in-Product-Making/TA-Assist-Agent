@@ -5,7 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,6 +15,8 @@
     }
   },
   "dependencies": {
+    "@ai-assist/product-language": "0.1.0",
+    "@noble/hashes": "^1.8.0",
     "zod": "^3.24.0"
   }
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as R
 import { xPosition, type SpecificationPlotModel } from "../chart-model.js";
 import { clampSpecDraft, specValueFromPointer, stepSpecValue, type SpecificationDraftClampResult } from "../specification-drag.js";
 import type { WhatIfMetrics } from "./MetricComparison.js";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 type SpecField = "lowerSpecLimit" | "upperSpecLimit";
 
@@ -95,9 +96,10 @@ export function SpecificationPlot({ model, draft, systemValues, onSystemEdit, on
   return (
     <div className="spec-plot">
       <div className="spec-inputs">
-        <label>LSL<input aria-label="Lower Spec Limit" type="number" step="0.001" value={systemValues?.lowerSpecLimit ?? formatValue(model.lsl)} onChange={(event) => { setInlineReason(undefined); onSystemEdit?.("lowerSpecLimit", event.target.value); }} onBlur={() => commitField("lowerSpecLimit")} onKeyDown={(event) => handleInputKeyDown(event, "lowerSpecLimit", commitField)} /></label>
-        <label>USL<input aria-label="Upper Spec Limit" type="number" step="0.001" value={systemValues?.upperSpecLimit ?? formatValue(model.usl)} onChange={(event) => { setInlineReason(undefined); onSystemEdit?.("upperSpecLimit", event.target.value); }} onBlur={() => commitField("upperSpecLimit")} onKeyDown={(event) => handleInputKeyDown(event, "upperSpecLimit", commitField)} /></label>
+        <label>LSL<input aria-label="Lower Spec Limit" aria-describedby={inputGuidanceId("lower_spec_limit")} data-user-input-id="lower_spec_limit" type="number" step="0.001" value={systemValues?.lowerSpecLimit ?? formatValue(model.lsl)} onChange={(event) => { setInlineReason(undefined); onSystemEdit?.("lowerSpecLimit", event.target.value); }} onBlur={() => commitField("lowerSpecLimit")} onKeyDown={(event) => handleInputKeyDown(event, "lowerSpecLimit", commitField)} /></label>
+        <label>USL<input aria-label="Upper Spec Limit" aria-describedby={inputGuidanceId("upper_spec_limit")} data-user-input-id="upper_spec_limit" type="number" step="0.001" value={systemValues?.upperSpecLimit ?? formatValue(model.usl)} onChange={(event) => { setInlineReason(undefined); onSystemEdit?.("upperSpecLimit", event.target.value); }} onBlur={() => commitField("upperSpecLimit")} onKeyDown={(event) => handleInputKeyDown(event, "upperSpecLimit", commitField)} /></label>
       </div>
+      <div className="input-guidance-group"><InputGuidance inputId="lower_spec_limit" /><InputGuidance inputId="upper_spec_limit" /></div>
       {alert === undefined ? null : <p className="spec-plot__reason" role="alert">{alert}</p>}
       <div className="spec-plot__stage">
         <svg ref={plotRef} data-testid="specification-plot" role="img" aria-label="Baseline and scenario specification distribution" viewBox="0 0 600 210">
@@ -113,8 +115,8 @@ export function SpecificationPlot({ model, draft, systemValues, onSystemEdit, on
           <text className="spec-limit-label" x={lslPosition + labelLayout.lslOffset} y={labelLayout.lslY} textAnchor={labelLayout.lslAnchor}>LSL {formatValue(safeLsl)}</text>
           <text className="spec-limit-label" x={uslPosition + labelLayout.uslOffset} y={labelLayout.uslY} textAnchor={labelLayout.uslAnchor}>USL {formatValue(safeUsl)}</text>
         </svg>
-        <button type="button" role="slider" aria-label="Lower Spec Limit line" aria-valuemin={domainMinimum} aria-valuemax={domainMaximum} aria-valuenow={safeLsl} className="spec-slider spec-slider--lsl" style={{ left: `${sliderPercent(safeLsl)}%` }} onPointerDown={(event) => beginPointerDrag(event, "lowerSpecLimit")} onPointerMove={(event) => handlePointerDrag(event)} onPointerUp={finishDrag} onPointerCancel={finishDrag} onMouseDown={() => beginMouseDrag("lowerSpecLimit")} onKeyDown={(event) => handleSliderKeyDown(event, { lowerSpecLimit: safeLsl, upperSpecLimit: safeUsl, activeField: "lowerSpecLimit" }, previewClamped, commitField)} />
-        <button type="button" role="slider" aria-label="Upper Spec Limit line" aria-valuemin={domainMinimum} aria-valuemax={domainMaximum} aria-valuenow={safeUsl} className="spec-slider spec-slider--usl" style={{ left: `${sliderPercent(safeUsl)}%` }} onPointerDown={(event) => beginPointerDrag(event, "upperSpecLimit")} onPointerMove={(event) => handlePointerDrag(event)} onPointerUp={finishDrag} onPointerCancel={finishDrag} onMouseDown={() => beginMouseDrag("upperSpecLimit")} onKeyDown={(event) => handleSliderKeyDown(event, { lowerSpecLimit: safeLsl, upperSpecLimit: safeUsl, activeField: "upperSpecLimit" }, previewClamped, commitField)} />
+        <button type="button" role="slider" aria-label="Lower Spec Limit line" aria-describedby={inputGuidanceId("lower_spec_limit")} data-user-input-id="lower_spec_limit" aria-valuemin={domainMinimum} aria-valuemax={domainMaximum} aria-valuenow={safeLsl} className="spec-slider spec-slider--lsl" style={{ left: `${sliderPercent(safeLsl)}%` }} onPointerDown={(event) => beginPointerDrag(event, "lowerSpecLimit")} onPointerMove={(event) => handlePointerDrag(event)} onPointerUp={finishDrag} onPointerCancel={finishDrag} onMouseDown={() => beginMouseDrag("lowerSpecLimit")} onKeyDown={(event) => handleSliderKeyDown(event, { lowerSpecLimit: safeLsl, upperSpecLimit: safeUsl, activeField: "lowerSpecLimit" }, previewClamped, commitField)} />
+        <button type="button" role="slider" aria-label="Upper Spec Limit line" aria-describedby={inputGuidanceId("upper_spec_limit")} data-user-input-id="upper_spec_limit" aria-valuemin={domainMinimum} aria-valuemax={domainMaximum} aria-valuenow={safeUsl} className="spec-slider spec-slider--usl" style={{ left: `${sliderPercent(safeUsl)}%` }} onPointerDown={(event) => beginPointerDrag(event, "upperSpecLimit")} onPointerMove={(event) => handlePointerDrag(event)} onPointerUp={finishDrag} onPointerCancel={finishDrag} onMouseDown={() => beginMouseDrag("upperSpecLimit")} onKeyDown={(event) => handleSliderKeyDown(event, { lowerSpecLimit: safeLsl, upperSpecLimit: safeUsl, activeField: "upperSpecLimit" }, previewClamped, commitField)} />
       </div>
       <div className="spec-plot__summary" aria-label="Specification plot summary">
         <span>Baseline mean {formatValue(model.baselineMean)} · statistical range {formatValue(model.baselineLower)} to {formatValue(model.baselineUpper)}</span>

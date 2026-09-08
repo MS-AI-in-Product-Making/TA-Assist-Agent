@@ -1,22 +1,26 @@
 import {
   calculationRequestSchema,
+  f5MultimodalArtifactV3Schema,
   f6AnalysisContextSchema,
   f6LegacyOptimizationResultSchema,
   f6ModelInterpretationArtifactSchema,
   f6OptimizationRequestSchema,
-  f6OptimizationResultSchema,
+  f6OptimizationResultV2Schema,
+  f6OptimizationResultV3Schema,
   f6OptimizationTargetsSchema,
   type CalculationCompletedResult,
   type CalculationFactorResult,
   type CalculationRequest,
+  type F5MultimodalArtifactV3,
   type F6ControlledScenario,
   type F6AnalysisContext,
   type F6FactorIdentity,
   type F6InputDecision,
   type F6ModelInterpretationArtifact,
   type F6OptimizationRequest,
-  type F6OptimizationResult,
+  type F6LegacyOptimizationResult,
   type F6OptimizationResultV2,
+  type F6OptimizationResultV3,
   type F6OptimizationTargets,
   type F6Option,
   type F6OptionV2,
@@ -26,6 +30,7 @@ import {
   type F6SupplierCapabilityEvidence,
   type F6ToleranceChange,
 } from "@ai-assist/contracts";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 import { createCalculation } from "./calculation.js";
 import { apportionRssTolerance } from "./f6-apportionment.js";
 import {
@@ -41,16 +46,25 @@ import {
   selectTopContributors,
   solveCenteringShift,
   solveSingleFactorTolerance,
+  solveOneSidedSpecificationLimits,
   solveTargetRssSigma,
   solveTopNCombinedTolerance,
 } from "./f6-solver.js";
 
 type CompletedOption = Extract<F6Option, { status: "completed" }>;
 type FailedOption = Extract<F6Option, { status: "calculation_failed" }>;
-type ReadyWorksheet = Extract<F6OptimizationResult["worksheets"][number], { status: "completed" | "partially_completed" | "calculation_failed" }>;
+type ReadyWorksheet = Extract<F6LegacyOptimizationResult["worksheets"][number], { status: "completed" | "partially_completed" | "calculation_failed" }>;
 
 interface OptimizationDependencies {
   readonly calculateScenario?: typeof calculateF6Scenario;
+}
+
+export interface F6OptimizationV3Inputs {
+  readonly interactionLanguage: InteractionLanguage;
+  readonly multimodalInterpretation: F5MultimodalArtifactV3;
+  readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
+  readonly optimizationTargets?: F6OptimizationTargets;
+  readonly optimizationTargetsDecision?: F6InputDecision;
 }
 
 const NUMERIC_OPTION_KINDS = [
@@ -447,7 +461,7 @@ function optimizeWorksheet(
   worksheet: F6OptimizationRequest["worksheets"][number],
   baselineRequest: CalculationRequest,
   calculateScenario: typeof calculateF6Scenario,
-): F6OptimizationResult["worksheets"][number] {
+): F6LegacyOptimizationResult["worksheets"][number] {
   const baseline = worksheet.baselineCalculation;
   const top = selectTopContributors(baseline.factors, Math.min(3, baseline.factors.length));
   const targetCapability = baseline.capability.targetCpk > 0 && baseline.capability.targetSigmaLevel > 0
@@ -636,7 +650,7 @@ function optimizeWorksheet(
   return result;
 }
 
-export function createLegacyF6Optimization(input: unknown, dependencies: OptimizationDependencies = {}): F6OptimizationResult {
+export function createLegacyF6Optimization(input: unknown, dependencies: OptimizationDependencies = {}): F6LegacyOptimizationResult {
   const request = f6OptimizationRequestSchema.parse(input);
   const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
   const baselineRequests = request.worksheets.map((worksheet) =>
@@ -691,7 +705,7 @@ export function createLegacyF6Optimization(input: unknown, dependencies: Optimiz
 interface F6OptimizationV2Inputs {
   readonly analysisContext?: F6AnalysisContext;
   readonly optimizationTargets?: F6OptimizationTargets;
-  readonly modelInterpretation?: F6ModelInterpretationArtifact;
+  readonly modelInterpretation?: F6ModelInterpretationArtifact | F5MultimodalArtifactV3;
   readonly inputDecisions: {
     readonly analysisContext: F6InputDecision;
     readonly optimizationTargets: F6InputDecision;
@@ -1089,10 +1103,12 @@ function targetClass(target: F6OptimizationTargetV2): ModelAdjustmentClass {
 }
 
 function modelAssessmentWorksheet(
-  modelInterpretation: F6ModelInterpretationArtifact | undefined,
+  modelInterpretation: F6ModelInterpretationArtifact | F5MultimodalArtifactV3 | undefined,
   worksheet: F6OptimizationRequest["worksheets"][number],
 ) {
-  if (modelInterpretation === undefined || modelInterpretation.interpretationVersion !== "f6-model-interpretation-v2") {
+  if (modelInterpretation === undefined
+    || !("interpretationVersion" in modelInterpretation)
+    || modelInterpretation.interpretationVersion !== "f6-model-interpretation-v2") {
     return undefined;
   }
   return modelInterpretation.worksheets.find((candidate) =>
@@ -1165,7 +1181,9 @@ export function createF6Optimization(
   const optimizationTargets = inputs.optimizationTargets === undefined ? undefined : f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
   const modelInterpretation = inputs.modelInterpretation === undefined
     ? undefined
-    : f6ModelInterpretationArtifactSchema.parse(inputs.modelInterpretation);
+    : "contractVersion" in inputs.modelInterpretation && inputs.modelInterpretation.contractVersion === "f5-multimodal-artifact-v3"
+      ? f5MultimodalArtifactV3Schema.parse(inputs.modelInterpretation)
+      : f6ModelInterpretationArtifactSchema.parse(inputs.modelInterpretation);
   if ((analysisContext !== undefined) !== authorizedDecision(inputs.inputDecisions.analysisContext)) {
     throw new Error("Analysis Context decision does not match the provided artifact.");
   }
@@ -1352,7 +1370,7 @@ export function createF6Optimization(
     insufficientEvidenceOptionCount: options.filter(({ status }) => status === "insufficient_evidence").length,
     calculationFailedOptionCount: options.filter(({ status }) => status === "calculation_failed").length,
   };
-  return immutable(f6OptimizationResultSchema.parse({
+  return immutable(f6OptimizationResultV2Schema.parse({
     contractVersion: request.contractVersion,
     outputClassification: "confidential",
     featureId: "F6",
@@ -1378,5 +1396,225 @@ export function createF6Optimization(
     },
     worksheets,
     summary,
+  }));
+}
+
+function verifiedMultimodalWorksheets(
+  request: F6OptimizationRequest,
+  value: F5MultimodalArtifactV3,
+): F5MultimodalArtifactV3["worksheets"] {
+  let artifact: F5MultimodalArtifactV3;
+  try {
+    artifact = f5MultimodalArtifactV3Schema.parse(value);
+  } catch {
+    throw new Error("Multimodal interpretation must be a valid governed v3 artifact.");
+  }
+  if (artifact.workbookContentHash !== request.workbook.contentHash
+    || !equivalent(artifact.selectedWorksheetNames, request.selectedWorksheetNames)
+    || artifact.worksheets.length !== request.worksheets.length) {
+    throw new Error("Multimodal interpretation scope does not match the governed F6 request.");
+  }
+  request.worksheets.forEach((worksheet, index) => {
+    const pair = artifact.worksheets[index];
+    const baseline = worksheet.baselineCalculation;
+    if (pair === undefined
+      || pair.request.worksheetName !== worksheet.worksheetName
+      || pair.request.tableId !== baseline.worksheetSelection.tableId
+      || pair.request.factorRows.length !== baseline.factors.length) {
+      throw new Error("Multimodal interpretation worksheet scope does not match the governed F4 baseline.");
+    }
+    pair.request.factorRows.forEach((row, factorIndex) => {
+      const factor = baseline.factors[factorIndex];
+      if (factor === undefined
+        || row.worksheetName !== factor.source.worksheetName
+        || row.tableId !== factor.source.tableId
+        || row.sourceRow !== factor.source.sourceRow
+        || row.factorName !== factor.factorName
+        || !equivalent(row.nominal, factor.input.nominalValue)
+        || !equivalent(row.lowerTolerance, factor.input.lowerTolerance)
+        || !equivalent(row.upperTolerance, factor.input.upperTolerance)) {
+        throw new Error("Multimodal interpretation Factor set does not match the governed F4 baseline.");
+      }
+    });
+  });
+  return artifact.worksheets;
+}
+
+function verifyV3OptimizationTargets(request: F6OptimizationRequest, inputs: F6OptimizationV3Inputs): void {
+  const decision = inputs.optimizationTargetsDecision ?? { outcome: "NOT_PROVIDED" };
+  if ((inputs.optimizationTargets !== undefined) !== authorizedDecision(decision)) {
+    throw new Error("Optimization Targets decision does not match the provided artifact.");
+  }
+  if (inputs.optimizationTargets === undefined) return;
+  const targets = f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
+  if (targets.workbookContentHash !== request.workbook.contentHash) {
+    throw new Error("Optimization Targets workbook identity does not match the F6 request.");
+  }
+  targets.worksheets.forEach((targetWorksheet) => {
+    const worksheet = request.worksheets.find((candidate) => candidate.worksheetName === targetWorksheet.worksheetName
+      && candidate.baselineCalculation.worksheetSelection.tableId === targetWorksheet.tableId);
+    if (worksheet === undefined || !equivalent(targetWorksheet.baselineIdentity, inputBaselineIdentity(worksheet.baselineCalculation))) {
+      throw new Error("Optimization Targets baseline identity does not match the governed F4 baseline.");
+    }
+  });
+  if (targets.worksheets.some((worksheet) => worksheet.targets.length > 0)) {
+    throw new Error("F6 v3 concrete Optimization Targets require a separately versioned F4-backed target scenario output.");
+  }
+}
+
+function centerAssessmentV3(
+  baseline: CalculationCompletedResult,
+  interpretation: string,
+): F6OptimizationResultV3["worksheets"][number]["steps"][0] {
+  try {
+    const centering = solveCenteringShift({
+      lowerSpecLimit: baseline.capability.lowerSpecLimit,
+      upperSpecLimit: baseline.capability.upperSpecLimit,
+      factorMeans: [baseline.system.mean],
+    });
+    const offset = baseline.system.mean - centering.targetMean;
+    return equivalent(baseline.system.mean, centering.targetMean)
+      ? { step: "centerAssessment", status: "aligned", adjustedMean: baseline.system.mean, specificationMidpoint: centering.targetMean, offset: 0 }
+      : {
+          step: "centerAssessment",
+          status: "offset",
+          adjustedMean: baseline.system.mean,
+          specificationMidpoint: centering.targetMean,
+          offset,
+          interpretation,
+        };
+  } catch {
+    return {
+      step: "centerAssessment",
+      status: "clarification_required",
+      reasonCode: "center_assessment_unavailable",
+      requiredInputs: ["valid_f4_center_inputs"],
+    };
+  }
+}
+
+function specificationChangesV3(
+  request: F6OptimizationRequest,
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
+  calculateScenario: typeof calculateF6Scenario,
+): F6OptimizationResultV3["worksheets"][number]["steps"][2] {
+  const baseline = worksheet.baselineCalculation;
+  const failedSides = [
+    ...(baseline.capability.lowerCpk < baseline.capability.targetCpk ? ["lower" as const] : []),
+    ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upper" as const] : []),
+  ];
+  const proposals: F6OptimizationResultV3["worksheets"][number]["steps"][2]["proposals"] = [];
+  const clarifications: F6OptimizationResultV3["worksheets"][number]["steps"][2]["clarifications"] = [];
+  for (const side of failedSides) {
+    const solved = solveOneSidedSpecificationLimits({
+      mean: baseline.system.mean,
+      rssSigma: baseline.system.rssSigma,
+      targetCpk: baseline.capability.targetCpk,
+      lowerSpecLimit: baseline.capability.lowerSpecLimit,
+      upperSpecLimit: baseline.capability.upperSpecLimit,
+      failedSides: [side],
+    });
+    if (solved.status === "clarification_required") {
+      clarifications.push({ reasonCode: solved.reasonCode, requiredInputs: ["valid_specification_solver_inputs"] });
+      continue;
+    }
+    const proposedLimit = side === "lower" ? solved.lowerSpecLimit : solved.upperSpecLimit;
+    const specificationOverride = side === "lower"
+      ? { lowerSpecLimit: proposedLimit }
+      : { upperSpecLimit: proposedLimit };
+    try {
+      const scenarioId = `${worksheet.worksheetName}:specification-${side}`;
+      const calculation = calculateScenario({
+        baselineRequest,
+        scenario: { scenarioId, optionKind: "requirement_change", factorOverrides: [], systemSpecification: specificationOverride },
+      });
+      const scenarioResult = calculation.scenarios.find((scenario) => scenario.scenarioId === scenarioId)?.calculation;
+      const verifiedSideCpk = side === "lower" ? scenarioResult?.capability.lowerCpk : scenarioResult?.capability.upperCpk;
+      if (scenarioResult === undefined || verifiedSideCpk === undefined
+        || (verifiedSideCpk < baseline.capability.targetCpk && !equivalent(verifiedSideCpk, baseline.capability.targetCpk))) {
+        throw new Error("F4 target verification failed.");
+      }
+      proposals.push({
+        side,
+        currentLimit: side === "lower" ? baseline.capability.lowerSpecLimit : baseline.capability.upperSpecLimit,
+        proposedLimit,
+        targetCpk: baseline.capability.targetCpk,
+        currentSideCpk: side === "lower" ? baseline.capability.lowerCpk : baseline.capability.upperCpk,
+        approvalRequired: true,
+        capabilityImprovementClaim: false,
+        scenarioEvidence: {
+          featureId: "F4",
+          calculationVersion: calculation.calculationVersion,
+          baselineIdentity: inputBaselineIdentity(baseline),
+          specificationOverride,
+          result: { lowerCpk: scenarioResult.capability.lowerCpk, upperCpk: scenarioResult.capability.upperCpk },
+          calculationReference: artifactReference(request.f4Reference),
+        },
+      });
+    } catch {
+      clarifications.push({ reasonCode: "f4_specification_verification_failed", requiredInputs: ["valid_f4_scenario_calculation"] });
+    }
+  }
+  return { step: "specificationChanges", proposals, clarifications };
+}
+
+export function createF6OptimizationV3(
+  input: unknown,
+  inputs: F6OptimizationV3Inputs,
+  dependencies: OptimizationDependencies = {},
+): F6OptimizationResultV3 {
+  const request = f6OptimizationRequestSchema.parse(input);
+  const multimodalWorksheets = verifiedMultimodalWorksheets(request, inputs.multimodalInterpretation);
+  verifyV3OptimizationTargets(request, inputs);
+  const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
+  const baselineRequests = request.worksheets.map((worksheet) => verifiedBaselineRequest(worksheet.baselineCalculationRequest, worksheet.baselineCalculation));
+  const worksheets = request.worksheets.map((worksheet, index) => {
+    const baseline = worksheet.baselineCalculation;
+    const multimodal = multimodalWorksheets[index]!;
+    const centerAssessment = centerAssessmentV3(baseline, multimodal.result.imageTableInterpretation);
+    const priorities = selectTopContributors(baseline.factors, baseline.factors.length).map((factor, priorityIndex) => ({
+      rank: priorityIndex + 1,
+      factor: factorIdentity(factor),
+      contribution: factor.contribution,
+      guidance: "tighten_tolerance" as const,
+    }));
+    const specificationChanges = specificationChangesV3(request, worksheet, baselineRequests[index]!, calculateScenario);
+    const runStatus = centerAssessment.status === "clarification_required" || specificationChanges.clarifications.length > 0
+      ? "CLARIFICATION_REQUIRED" as const
+      : "COMPLETED" as const;
+    return {
+      worksheetName: worksheet.worksheetName,
+      tableId: baseline.worksheetSelection.tableId,
+      runStatus,
+      baselineIdentity: inputBaselineIdentity(baseline),
+      steps: [centerAssessment, { step: "contributorPriorities" as const, priorities }, specificationChanges] as const,
+    };
+  });
+  const completedWorksheetCount = worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length;
+  const summary = {
+    worksheetCount: worksheets.length,
+    completedWorksheetCount,
+    clarificationRequiredWorksheetCount: worksheets.length - completedWorksheetCount,
+  };
+  return immutable(f6OptimizationResultV3Schema.parse({
+    contractVersion: request.contractVersion,
+    outputClassification: "confidential",
+    featureId: "F6",
+    optimizationVersion: "f6-optimization-v3",
+    sequentialPolicyId: "f6-sequential-optimization-policy-v1",
+    interactionLanguage: inputs.interactionLanguage,
+    runStatus: summary.clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED",
+    workbook: request.workbook,
+    worksheets,
+    summary,
+    provenance: {
+      f2Reference: artifactReference(request.f2Reference),
+      f3Reference: artifactReference(request.f3Reference),
+      f4Reference: artifactReference(request.f4Reference),
+      f5Reference: artifactReference(request.f5Reference),
+      multimodalReference: artifactReference(inputs.multimodalReference),
+      reportScope: { worksheetNames: [...request.selectedWorksheetNames] },
+    },
   }));
 }

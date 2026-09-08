@@ -21,7 +21,10 @@ export { createF3DrawingGovernance } from "./f3-drawing-governance.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
 export { calculateF6Scenario } from "./f6-scenario-adapter.js";
-export { createF6Optimization } from "./f6-optimization.js";
+export { solveOneSidedSpecificationLimits } from "./f6-solver.js";
+export type { F6SpecificationSolveResult, OneSidedSpecificationSolveInput } from "./f6-solver.js";
+export { createF6Optimization, createF6OptimizationV3 } from "./f6-optimization.js";
+export type { F6OptimizationV3Inputs } from "./f6-optimization.js";
 export { createF6ReportProjection } from "./f6-report-projection.js";
 export { F6_DISPOSITION_RANK, worstDisposition } from "./f6-report-policy.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
@@ -61,6 +64,8 @@ export type {
 	F2ArtifactInput,
 	F2UserReport,
 	F2ReadyWorksheet,
+	F2WorksheetFindingProjection,
+	F2FindingsDecisionProjection,
 	F2SystemSpecificationIssue,
 	F4HandoffReady,
 	RequiredFieldCheckRequest,

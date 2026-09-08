@@ -6,6 +6,9 @@ const ADO_SELECTION_SESSION_ID = "50505050-5050-4505-8505-505050505050";
 const ADO_CREATE_PREVIEW_SESSION_ID = "60606060-6060-4606-8606-606060606060";
 const ADO_UPDATE_PREVIEW_SESSION_ID = "70707070-7070-4707-8707-707070707070";
 const F6_CHAT_INPUT_SESSION_ID = "90909090-9090-4909-8909-909090909090";
+const MULTIMODAL_SESSION_ID = "31313131-3131-4313-8313-313131313131";
+const MODEL_UNAVAILABLE_SESSION_ID = "32323232-3232-4323-8323-323232323232";
+const AMBIGUOUS_MAPPING_SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const LONG_WORKBOOK_FILE_NAME = "anonymous-ta-workbook-very-long-governed-ui-filename-for-layout-overlap-validation-2026-09-01.xlsx";
 const CANONICAL_FACTOR_HEADERS = [
   "Loop Label",
@@ -193,8 +196,8 @@ test("creates a governed model HostAction prompt from the selected worksheet con
 
   const postedSelectionPromise = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
   const postedResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
-  await page.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }).fill("Explain the current tolerance risk and identify missing evidence.");
-  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("textbox", { name: "Conversation input" }).fill("Explain the current tolerance risk and identify missing evidence.");
+  await page.getByRole("button", { name: "Send request" }).click();
   const postedJson = (await postedSelectionPromise).postDataJSON();
   expect(postedJson.selection).toEqual({
     worksheetName: "AJ_GAP",
@@ -230,7 +233,11 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   expect(prompt).toContain("Worksheet: AJ_GAP");
   expect(prompt).toContain("Selected factor identity: table-a / row 2 / 中心间隙");
   expect(prompt).toContain("Scenario identity: what-if:e2e-draft");
-  expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-calculation:1:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
+  const imageArtifactId = prompt.match(/f1-image:([a-f0-9]{64})/)?.[0];
+  expect(imageArtifactId).toBeDefined();
+  expect(imageArtifactId).not.toBe(`f1-image:${"f".repeat(64)}`);
+  expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-calculation:1:${workbench.sessionId}, ${imageArtifactId}`);
+  expect(prompt.match(new RegExp(imageArtifactId!, "g"))?.length).toBeGreaterThanOrEqual(2);
   expect(prompt).toContain('"capabilityStatus":"internal_within_guidance"');
   expect(prompt).toContain('"f0KnowledgeBaseVersion":"internal-v1"');
   expect(prompt).toContain("Data Parsing managed image reference");
@@ -309,6 +316,166 @@ test("creates a governed model HostAction prompt from the selected worksheet con
 
   const currentSystemSpecification = await page.getByLabel("Analysis target details").innerText();
   expect(currentSystemSpecification).toBe(baselineSystemSpecification);
+});
+
+test("keeps two reverse-selected worksheet multimodal contexts isolated", async ({ page, workbench }) => {
+  await installSessionCookie(page.context(), workbench.origin, workbench.child, MULTIMODAL_SESSION_ID);
+  const hostInstanceId = "playwright-multimodal-host";
+  const claims = [];
+
+  for (let index = 0; index < 2; index += 1) {
+    const pendingToken = await workbench.issueHostBearer({ sessionId: MULTIMODAL_SESSION_ID, scopes: ["sessions:read"] });
+    const pendingResponse = await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}/host-actions/pending`, {
+      headers: { authorization: `Bearer ${pendingToken}` },
+    });
+    expect(pendingResponse.status(), await pendingResponse.text()).toBe(200);
+    const pending = await pendingResponse.json();
+    const claimToken = await workbench.issueHostBearer({ sessionId: MULTIMODAL_SESSION_ID, scopes: ["host-actions:claim"], actionId: pending.actionId, hostInstanceId });
+    const claimResponse = await page.request.post(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}/host-actions/${encodeURIComponent(pending.actionId)}/claim`, {
+      headers: { authorization: `Bearer ${claimToken}` },
+      data: { hostInstanceId },
+    });
+    expect(claimResponse.status()).toBe(200);
+    claims.push({ actionId: pending.actionId, claim: await claimResponse.json() });
+  }
+
+  expect(claims.map(({ claim }) => claim.request.request.worksheetName)).toEqual(["B_STACK", "AJ_GAP"]);
+  expect(new Set(claims.map(({ claim }) => claim.request.request.image.contentHash)).size).toBe(2);
+  expect(claims.map(({ claim }) => claim.request.request.factorRows.map((row) => [row.worksheetName, row.tableId, row.sourceRow, row.factorOrdinal.value, row.factorName]))).toEqual([
+    [["B_STACK", "table-b", 8, "C", "B bracket stack"]],
+    [["AJ_GAP", "table-a", 2, "A", "AJ center to C-bucket"]],
+  ]);
+
+  for (const [index, { actionId, claim }] of claims.entries()) {
+    const request = claim.request.request;
+    const imageToken = await workbench.issueHostBearer({ sessionId: MULTIMODAL_SESSION_ID, scopes: ["host-actions:image:read"], actionId, hostInstanceId });
+    const imageResponse = await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}/host-actions/${encodeURIComponent(actionId)}/leases/${encodeURIComponent(claim.leaseId)}/image`, {
+      headers: { authorization: `Bearer ${imageToken}` },
+    });
+    expect(imageResponse.status()).toBe(200);
+    expect(createHash("sha256").update(await imageResponse.body()).digest("hex")).toBe(request.image.contentHash);
+
+    const result = {
+      contractVersion: "f5-multimodal-result-v3",
+      outputClassification: "confidential",
+      requestHash: request.requestHash,
+      sessionId: request.sessionId,
+      revision: request.revision,
+      inputRevision: request.inputRevision,
+      workbookContentHash: request.workbook.contentHash,
+      worksheetName: request.worksheetName,
+      tableId: request.tableId,
+      imageContentHash: request.image.contentHash,
+      model: { modelId: "playwright-vision", supportsImage: true },
+      imageTableInterpretation: `Only ${request.worksheetName} image and Factor table were interpreted.`,
+      rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value}:${row.factorName}` })),
+    };
+    const payload = { status: "completed", outcome: { kind: "worksheet_multimodal_response", result } };
+    const resultToken = await workbench.issueHostBearer({ sessionId: MULTIMODAL_SESSION_ID, scopes: ["host-actions:result"], actionId, hostInstanceId });
+    const resultResponse = await page.request.post(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}/host-actions/${encodeURIComponent(actionId)}/result`, {
+      headers: { authorization: `Bearer ${resultToken}` },
+      data: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId, leaseId: claim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"), payload },
+    });
+    expect(resultResponse.status()).toBe(204);
+    if (index === 0) {
+      const partialSnapshot = await (await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}`)).json();
+      expect(partialSnapshot).toMatchObject({ state: "f5_running" });
+      expect(partialSnapshot.artifactRefs?.some((reference) => reference.kind === "f5_multimodal") ?? false).toBe(false);
+    }
+  }
+
+  await expect.poll(async () => (await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}`)).json()).toMatchObject({ state: "analysis_context_decision_required" });
+  const snapshot = await (await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}`)).json();
+  const aggregateRef = snapshot.artifactRefs.find((reference) => reference.kind === "f5_multimodal");
+  expect(aggregateRef).toBeDefined();
+  const aggregateResponse = await page.request.get(`${workbench.origin}/api/sessions/${MULTIMODAL_SESSION_ID}/artifacts/${encodeURIComponent(aggregateRef.artifactId)}`);
+  expect(aggregateResponse.status()).toBe(200);
+  const aggregate = await aggregateResponse.json();
+  expect(aggregate.selectedWorksheetNames).toEqual(["B_STACK", "AJ_GAP"]);
+  expect(aggregate.worksheets.map((pair) => pair.result.imageTableInterpretation)).toEqual([
+    "Only B_STACK image and Factor table were interpreted.",
+    "Only AJ_GAP image and Factor table were interpreted.",
+  ]);
+  expect(aggregate.worksheets.map((pair) => pair.result.rowMappings.map((row) => [row.worksheetName, row.tableId, row.sourceRow, row.factorOrdinal.value]))).toEqual([
+    [["B_STACK", "table-b", 8, "C"]],
+    [["AJ_GAP", "table-a", 2, "A"]],
+  ]);
+});
+
+test("blocks Result Interpretation when an image-capable model is unavailable", async ({ page, workbench }) => {
+  const sessionId = MODEL_UNAVAILABLE_SESSION_ID;
+  await installSessionCookie(page.context(), workbench.origin, workbench.child, sessionId);
+  const hostInstanceId = "playwright-model-unavailable";
+  const pendingToken = await workbench.issueHostBearer({ sessionId, scopes: ["sessions:read"] });
+  const pending = await (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/host-actions/pending`, { headers: { authorization: `Bearer ${pendingToken}` } })).json();
+  const claimToken = await workbench.issueHostBearer({ sessionId, scopes: ["host-actions:claim"], actionId: pending.actionId, hostInstanceId });
+  const claim = await (await page.request.post(`${workbench.origin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/claim`, { headers: { authorization: `Bearer ${claimToken}` }, data: { hostInstanceId } })).json();
+  const payload = { status: "blocked", reason: "No image-capable model is available." };
+  const resultToken = await workbench.issueHostBearer({ sessionId, scopes: ["host-actions:result"], actionId: pending.actionId, hostInstanceId });
+  const response = await page.request.post(`${workbench.origin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/result`, {
+    headers: { authorization: `Bearer ${resultToken}` },
+    data: { contractVersion: "f8-host-action-result-v1", actionId: pending.actionId, hostInstanceId, leaseId: claim.leaseId, status: "blocked", resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"), payload },
+  });
+  expect(response.status()).toBe(204);
+  await expect.poll(async () => (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}`)).json()).toMatchObject({ state: "failed" });
+  const snapshot = await (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}`)).json();
+  expect(snapshot.artifactRefs.some((reference) => reference.kind === "f5_multimodal" || reference.kind === "f6_report")).toBe(false);
+  const reportResponse = await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/artifacts/${encodeURIComponent(reviewArtifactId("f6-report-e2e", sessionId))}`);
+  expect(reportResponse.status()).toBe(404);
+
+  await page.goto(`${workbench.origin}/?session=${sessionId}`);
+  await expect(page.getByRole("alert")).toContainText("Workspace setup failed");
+  const retryResponsePromise = page.waitForResponse((candidate) => candidate.request().method() === "POST" && candidate.url().endsWith(`/api/sessions/${sessionId}/commands`));
+  await page.getByRole("button", { name: "Retry" }).click();
+  const retryResponse = await retryResponsePromise;
+  expect(retryResponse.status(), await retryResponse.text()).toBe(202);
+  await expect.poll(async () => (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}`)).json()).toMatchObject({ state: "f5_running" });
+  const retriedPendingResponse = await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/host-actions/pending`, { headers: { authorization: `Bearer ${pendingToken}` } });
+  expect(retriedPendingResponse.status(), await retriedPendingResponse.text()).toBe(200);
+  expect((await retriedPendingResponse.json()).actionId).not.toBe(pending.actionId);
+});
+
+test("rejects an ambiguous ordinal mapping before creating governed interpretation", async ({ page, workbench }) => {
+  const sessionId = AMBIGUOUS_MAPPING_SESSION_ID;
+  await installSessionCookie(page.context(), workbench.origin, workbench.child, sessionId);
+  const hostInstanceId = "playwright-ambiguous-mapping";
+  const pendingToken = await workbench.issueHostBearer({ sessionId, scopes: ["sessions:read"] });
+  const pending = await (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/host-actions/pending`, { headers: { authorization: `Bearer ${pendingToken}` } })).json();
+  const claimToken = await workbench.issueHostBearer({ sessionId, scopes: ["host-actions:claim"], actionId: pending.actionId, hostInstanceId });
+  const claim = await (await page.request.post(`${workbench.origin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/claim`, { headers: { authorization: `Bearer ${claimToken}` }, data: { hostInstanceId } })).json();
+  const request = claim.request.request;
+  const result = {
+    contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential", requestHash: request.requestHash, sessionId, revision: request.revision, inputRevision: request.inputRevision,
+    workbookContentHash: request.workbook.contentHash, worksheetName: request.worksheetName, tableId: request.tableId, imageContentHash: request.image.contentHash,
+    model: { modelId: "playwright-vision", supportsImage: true }, imageTableInterpretation: "Ambiguous ordinal mapping must be rejected.",
+    rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: { ...row.factorOrdinal, value: "AMBIGUOUS" }, mappingStatus: "matched", visibleStatus: "visible", interpretation: "Ambiguous." })),
+  };
+  const payload = { status: "completed", outcome: { kind: "worksheet_multimodal_response", result } };
+  const resultToken = await workbench.issueHostBearer({ sessionId, scopes: ["host-actions:result"], actionId: pending.actionId, hostInstanceId });
+  const response = await page.request.post(`${workbench.origin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/result`, {
+    headers: { authorization: `Bearer ${resultToken}` },
+    data: { contractVersion: "f8-host-action-result-v1", actionId: pending.actionId, hostInstanceId, leaseId: claim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"), payload },
+  });
+  expect(response.status()).toBe(400);
+  const snapshot = await (await page.request.get(`${workbench.origin}/api/sessions/${sessionId}`)).json();
+  expect(snapshot.state).toBe("f5_running");
+  expect(snapshot.artifactRefs.some((reference) => reference.kind === "f5_multimodal" || reference.kind === "f6_report")).toBe(false);
+  expect((await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/artifacts/${encodeURIComponent(reviewArtifactId("f6-report-e2e", sessionId))}`)).status()).toBe(404);
+
+  const correctedResult = {
+    ...result,
+    imageTableInterpretation: "Corrected exact ordinal mapping.",
+    rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value}:${row.factorName}` })),
+  };
+  const correctedPayload = { status: "completed", outcome: { kind: "worksheet_multimodal_response", result: correctedResult } };
+  const correctedResponse = await page.request.post(`${workbench.origin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/result`, {
+    headers: { authorization: `Bearer ${resultToken}` },
+    data: { contractVersion: "f8-host-action-result-v1", actionId: pending.actionId, hostInstanceId, leaseId: claim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(correctedPayload)).digest("hex"), payload: correctedPayload },
+  });
+  expect(correctedResponse.status(), await correctedResponse.text()).toBe(204);
+  const nextPendingResponse = await page.request.get(`${workbench.origin}/api/sessions/${sessionId}/host-actions/pending`, { headers: { authorization: `Bearer ${pendingToken}` } });
+  expect(nextPendingResponse.status(), await nextPendingResponse.text()).toBe(200);
+  expect((await nextPendingResponse.json()).actionId).not.toBe(pending.actionId);
 });
 
 test("materializes F6 chat inputs and opens the final report", async ({ browser, workbench }) => {
@@ -400,13 +567,13 @@ test("materializes F6 chat inputs and opens the final report", async ({ browser,
             {
               adjustmentClass: "factor_tolerance",
               worksheetSelector: "AJ_GAP",
-              factorSelector: "AJ center to C-bucket",
+              factorSelector: "中心间隙",
               numericTarget: { field: "lower_tolerance", value: -0.04, unit: "mm" },
             },
             {
               adjustmentClass: "factor_tolerance",
               worksheetSelector: "AJ_GAP",
-              factorSelector: "AJ center to C-bucket",
+              factorSelector: "中心间隙",
               numericTarget: { field: "upper_tolerance", value: 0.04, unit: "mm" },
             },
           ],

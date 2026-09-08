@@ -6,6 +6,7 @@ import {
 } from "@ai-assist/contracts";
 
 export const F3_ADO_HTML_TABLE_HEADERS = [
+  "Worksheet Source",
   "Device Level Dim",
   "Dimension Description",
   "Part / Subsystem",
@@ -57,8 +58,9 @@ export function renderF3AdoHistoryHtml(report: DrawingGovernanceResultV2): strin
   const groups = projectF3AdoGovernanceGroups(parsed);
   const header = `<thead><tr>${F3_ADO_HTML_TABLE_HEADERS.map((name) => `<th>${htmlCell(name)}</th>`).join("")}</tr></thead>`;
   const bodyRows = groups.flatMap((group) => [
-    `<tr data-f3-group-row=true><td colspan=11>${htmlCell(`Part / Subsystem: ${group.partSubsystem} (${group.factorCount} factors)`)}</td></tr>`,
+    `<tr data-f3-group-row=true><td colspan=12>${htmlCell(`Part / Subsystem: ${group.partSubsystem} (${group.factorCount} factors)`)}</td></tr>`,
     ...group.rows.map((row) => `<tr data-f3-factor-row=true>${[
+      row.source.worksheetName,
       row.deviceLevelDim,
       row.dimensionDescription,
       group.partSubsystem,

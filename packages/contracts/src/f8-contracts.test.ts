@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 import {
+  confirmDownstreamScopeInternalPayloadSchema,
   f8SessionCommandSchema,
   f8PublicSessionCommandSchema,
   f8SessionSnapshotSchema,
@@ -16,12 +17,21 @@ import {
   f8AdoProjectionSchema,
   f8AdoWriteConfirmationSchema,
   taModelContextEnvelopeSchema,
+  createF5MultimodalFactorSetHash,
+  createF5MultimodalRequestHash,
   type TaModelContextEnvelope,
 } from "./index.js";
 
 const SESSION_ID = "session-8d2a2d73-7f55-4f7d-8fa1-b4f6d2f66d31";
 const COMMAND_ID = "command-5a9fba33-2c18-4a74-9d4d-6f8b21efc01d";
 const WORKBOOK_HASH = "a".repeat(64);
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-start-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 const CANONICAL_NAVIGATE_ACTIONS = [
   { type: "navigate", target: "/scope", label: "选择 Worksheets" },
   { type: "navigate", target: "/scope/downstream", label: "确认下游 Worksheets" },
@@ -543,6 +553,29 @@ describe("F8 session and host contracts", () => {
     expect(() => f8SessionCommandSchema.parse({ ...command, outputRoot: "C:/arbitrary" })).toThrow();
   });
 
+  it("accepts an explicit interaction language change command with revision and turn binding", () => {
+    const command = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "set-language-1",
+      expectedRevision: 3,
+      command: "set_interaction_language",
+      payload: {
+        turnId: "turn-language-2",
+        explicitLanguageTag: "zh-CN",
+      },
+    } as const;
+
+    expect(f8SessionCommandSchema.parse(command)).toEqual(command);
+    expect(f8PublicSessionCommandSchema.parse(command)).toEqual(command);
+    expect(() => f8SessionCommandSchema.parse({
+      ...command,
+      payload: {
+        explicitLanguageTag: "zh-CN",
+      },
+    })).toThrow();
+  });
+
   it("accepts pending F6 context draft snapshots and rejects client-governed fields", () => {
     const pendingAnalysisContextDraft = {
       draftId: "f6-context-draft-1",
@@ -674,6 +707,81 @@ describe("F8 session and host contracts", () => {
     })).toThrow();
   });
 
+  it("carries one governed worksheet multimodal request and validated result", () => {
+    const factorRows = [{
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 2,
+      factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
+      factorName: "Bracket height",
+      partName: "Bracket",
+      partCategory: "CNC",
+      drawingNumber: "DRAW-1",
+      dimId: "307",
+      nominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal",
+      sourceCells: { factorName: "Analysis-A!A2" },
+    }];
+    const multimodalRequest = {
+      contractVersion: "f5-multimodal-request-v3" as const,
+      inputClassification: "confidential" as const,
+      requestHash: "",
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 3,
+      workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      activeFactorCount: 1,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png" as const, contentHash: "b".repeat(64), byteLength: 128, artifactPath: "worksheets/Analysis-A/image.png" },
+      factorRows,
+    };
+    multimodalRequest.requestHash = createF5MultimodalRequestHash(multimodalRequest);
+    const multimodalResult = {
+      contractVersion: "f5-multimodal-result-v3" as const,
+      outputClassification: "confidential" as const,
+      requestHash: multimodalRequest.requestHash,
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 3,
+      workbookContentHash: WORKBOOK_HASH,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      imageContentHash: "b".repeat(64),
+      model: { modelId: "vision-model", supportsImage: true as const },
+      imageTableInterpretation: "The image and complete Factor table are consistent.",
+      rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-1", sourceRow: 2, factorOrdinal: factorRows[0]!.factorOrdinal, mappingStatus: "matched" as const, visibleStatus: "visible" as const, interpretation: "Ordinal A is visible." }],
+    };
+    const request = {
+      contractVersion: "f8-host-action-request-v1" as const,
+      actionId: "multimodal:Analysis-A",
+      sessionId: SESSION_ID,
+      expectedRevision: 4,
+      expiresAt: "2026-09-07T00:15:00.000Z",
+      kind: "vscode_worksheet_multimodal_request" as const,
+      confirmationHash: multimodalRequest.requestHash,
+      expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const,
+      request: multimodalRequest,
+    };
+    const result = {
+      contractVersion: "f8-host-action-result-v1" as const,
+      actionId: request.actionId,
+      hostInstanceId: "host-1",
+      leaseId: "lease-1",
+      status: "completed" as const,
+      resultHash: "c".repeat(64),
+      payload: { status: "completed" as const, outcome: { kind: "worksheet_multimodal_response" as const, result: multimodalResult } },
+    };
+
+    expect(hostActionRequestSchema.parse(request)).toEqual(request);
+    expect(hostActionResultSchema.parse(result)).toEqual(result);
+  });
+
   it("requires an explicit existing Work Item reference and keeps Surface write acceptance internal", () => {
     const existing = { contractVersion: "f8-session-command-v1", sessionId: SESSION_ID, commandId: COMMAND_ID, expectedRevision: 3, command: "confirm_ado_decision", payload: { decision: "use_existing", workItemReference: "WI-123" } };
     expect(f8SessionCommandSchema.parse(existing)).toEqual(existing);
@@ -697,8 +805,14 @@ describe("F8 session and host contracts", () => {
       expectedRevision: 4,
       command: "confirm_downstream_scope",
       payload: {
+        decision: "continue_ready",
         worksheetNames: ["AJ_GAP"],
+        downstreamReadyWorksheetNames: ["AJ_GAP"],
         workbookHash: WORKBOOK_HASH,
+        inputRevision: 2,
+        f2ReportArtifactId: "f2-report-2",
+        f2ReportContentHash: "b".repeat(64),
+        findingDigest: "c".repeat(64),
         provenance: "internal_fixture",
       },
     } as const;
@@ -711,6 +825,12 @@ describe("F8 session and host contracts", () => {
     })).toThrow();
   });
 
+  it("rejects a downstream internal decision without revision-bound evidence", () => {
+    expect(() => confirmDownstreamScopeInternalPayloadSchema.parse({
+      decision: "continue_ready",
+    })).toThrow();
+  });
+
   it("keeps the session snapshot and event surfaces strict", () => {
     const snapshot = {
       contractVersion: "f8-session-snapshot-v1",
@@ -719,6 +839,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {
@@ -762,6 +883,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "downstream_scope_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       initialScopeSelection: {
         workbookContentHash: WORKBOOK_HASH,
@@ -796,6 +918,38 @@ describe("F8 session and host contracts", () => {
     expect(() => f8PublicSessionCommandSchema.parse(command)).toThrow();
   });
 
+  it("persists revision-bound evidence on governed downstream selections", () => {
+    const snapshot = f8SessionSnapshotSchema.parse({
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 5,
+      inputRevision: 2,
+      state: "f3_running",
+      activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
+      priorRunReferences: [],
+      downstreamScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "user",
+        decision: "continue_ready",
+        inputRevision: 2,
+        f2ReportArtifactId: "f2-report-2",
+        f2ReportContentHash: "b".repeat(64),
+        findingDigest: "c".repeat(64),
+      },
+    });
+
+    expect(snapshot.downstreamScopeSelection).toMatchObject({
+      decision: "continue_ready",
+      inputRevision: 2,
+      f2ReportArtifactId: "f2-report-2",
+      f2ReportContentHash: "b".repeat(64),
+      findingDigest: "c".repeat(64),
+    });
+  });
+
   it("allows only one active WHAT_IF draft in a session snapshot", () => {
     const draft = {
       contractVersion: "f8-scenario-draft-v1",
@@ -814,6 +968,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       scenarioDrafts: [draft, { ...draft, draftId: "draft-b", worksheetName: "B_STACK" }],
     };
@@ -833,6 +988,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {
@@ -928,6 +1084,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {

@@ -72,6 +72,13 @@ await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", 
 await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", "workbench.js"), join(runtimeRoot, "assets", "workbench", "workbench.js"), { force: true });
 await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", "workbench.css"), join(runtimeRoot, "assets", "workbench", "workbench.css"), { force: true });
 
+const sharpRuntimeRoot = resolve(dirname(require.resolve("sharp")), "..", "..", "@img", `sharp-${process.platform}-${process.arch}`);
+await cp(
+  sharpRuntimeRoot,
+  join(runtimeRoot, "cli", "node_modules", "@img", `sharp-${process.platform}-${process.arch}`),
+  { recursive: true, force: true },
+);
+
 async function runNode(args, cwd) {
   await execFileAsync(process.execPath, args, { cwd, windowsHide: true });
 }

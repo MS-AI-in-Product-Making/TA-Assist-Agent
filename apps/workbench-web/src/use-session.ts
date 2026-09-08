@@ -3,10 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createTypedError,
   type DrawingGovernanceResultV2,
+  type F2FindingsDecisionProjection,
   type F2UserReport,
   type F4WorkflowCalculationResult,
   type F5DataInterpretationResult,
-  type F6OptimizationResultV2,
+  type F6ReadableOptimizationResult,
   type TypedError,
   type F8AdoProjection,
   type F8AdoWriteConfirmation,
@@ -24,10 +25,11 @@ export interface UseWorkbenchSessionResult {
   readonly conversation: readonly ConversationTurn[];
   readonly pendingWorkbookHash?: string;
   readonly f2Report?: F2UserReport;
+  readonly f2Findings?: F2FindingsDecisionProjection;
   readonly f3Report?: DrawingGovernanceResultV2;
   readonly f4Report?: F4WorkflowCalculationResult;
   readonly f5Report?: F5DataInterpretationResult;
-  readonly f6Report?: F6OptimizationResultV2;
+  readonly f6Report?: F6ReadableOptimizationResult;
   readonly adoProjection?: F8AdoProjection;
   readonly loading: boolean;
   readonly connected: boolean;
@@ -37,6 +39,7 @@ export interface UseWorkbenchSessionResult {
   readonly featureLedger: ReturnType<typeof projectFeatureLedger>;
   readonly productStages: ReturnType<typeof projectTaProductStages>;
   readonly uploadWorkbook: (file: File) => Promise<void>;
+  readonly replaceWorkbook: (file: File) => Promise<void>;
   readonly submitCommand: (command: F8CommandKind, payload: Record<string, unknown>) => Promise<void>;
   readonly appendConversation: (message: string, context?: TaConversationContext) => Promise<void>;
   readonly confirmAdoWrite: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
@@ -57,10 +60,11 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
   const [conversation, setConversation] = useState<readonly ConversationTurn[]>([]);
   const [pendingWorkbookHash, setPendingWorkbookHash] = useState<string>();
   const [f2Report, setF2Report] = useState<F2UserReport>();
+  const [f2Findings, setF2Findings] = useState<F2FindingsDecisionProjection>();
   const [f3Report, setF3Report] = useState<DrawingGovernanceResultV2>();
   const [f4Report, setF4Report] = useState<F4WorkflowCalculationResult>();
   const [f5Report, setF5Report] = useState<F5DataInterpretationResult>();
-  const [f6Report, setF6Report] = useState<F6OptimizationResultV2>();
+  const [f6Report, setF6Report] = useState<F6ReadableOptimizationResult>();
   const [adoProjection, setAdoProjection] = useState<F8AdoProjection>();
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -169,7 +173,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       }
 
       const refs = snapshot.artifactRefs ?? [];
-      const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
+      const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated && artifact.revision === snapshot.inputRevision);
       const reviewContext = selectCompleteReviewContext(snapshot);
       const f3Artifact = reviewContext?.artifacts.get("f3_report")
         ?? [...refs].reverse().find((artifact) => artifact.kind === "f3_report" && artifact.validated && artifact.revision === snapshot.inputRevision);
@@ -191,7 +195,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       setF3Report(nextF3 as DrawingGovernanceResultV2 | undefined);
       setF4Report(nextF4 as F4WorkflowCalculationResult | undefined);
       setF5Report(nextF5 as F5DataInterpretationResult | undefined);
-      setF6Report(nextF6 as F6OptimizationResultV2 | undefined);
+      setF6Report(nextF6 as F6ReadableOptimizationResult | undefined);
       const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
       if (failed !== undefined) setError(toTypedError(failed.reason, "Governed artifact read failed.", "Refresh the session snapshot and try again."));
       else setError((current) => current?.summary === "Governed artifact read failed." ? undefined : current);
@@ -202,6 +206,19 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       cancelled = true;
     };
   }, [api, enabled, snapshot]);
+
+  useEffect(() => {
+    if (!enabled || sessionId === undefined || snapshot?.state !== "downstream_scope_required") {
+      setF2Findings(undefined);
+      return () => undefined;
+    }
+    let cancelled = false;
+    void api.readF2Findings(sessionId).then(
+      (projection) => { if (!cancelled) setF2Findings(projection); },
+      (findingsError) => { if (!cancelled) setError(toTypedError(findingsError, "Workbook findings read failed.", "Refresh the current findings and try again.")); },
+    );
+    return () => { cancelled = true; };
+  }, [api, enabled, sessionId, snapshot?.revision, snapshot?.state]);
 
   useEffect(() => {
     if (!enabled || sessionId === undefined || snapshot?.state !== "ado_action_pending") {
@@ -242,6 +259,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     conversation,
     pendingWorkbookHash,
     f2Report,
+    f2Findings,
     f3Report,
     f4Report,
     f5Report,
@@ -272,6 +290,21 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
         setError(undefined);
       } catch (uploadError) {
         setError(toTypedError(uploadError, "Workbook upload failed.", "Confirm the file is valid and try again."));
+      }
+    },
+    async replaceWorkbook(file) {
+      const previousWorkbookHash = snapshot?.initialScopeSelection?.workbookContentHash;
+      if (snapshot === undefined || sessionId === undefined || previousWorkbookHash === undefined) {
+        setError(createTypedError({ code: "prerequisite_not_ready", summary: "The current workbook identity is unavailable for replacement.", suggestedAction: "Refresh the workspace and try again.", affectedInputReferences: ["workbook"] }));
+        return;
+      }
+      try {
+        const result = await api.replaceWorkbook(sessionId, snapshot.revision, previousWorkbookHash, file);
+        setSnapshot(result.snapshot);
+        setPendingWorkbookHash(result.workbookHash);
+        setError(undefined);
+      } catch (replaceError) {
+        setError(toTypedError(replaceError, "Workbook replacement failed.", "Confirm the file is valid and try again."));
       }
     },
     async submitCommand(command, payload) {

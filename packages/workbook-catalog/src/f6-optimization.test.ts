@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createF5MultimodalFactorSetHash,
+  createF5MultimodalRequestHash,
+  f6OptimizationResultV3Schema,
   f6LegacyOptimizationResultSchema as f6OptimizationResultSchema,
   type CalculationRequest,
+  type F5MultimodalArtifactV3,
   type F6OptimizationRequest,
 } from "@ai-assist/contracts";
 import * as packageRoot from "./index.js";
@@ -10,6 +14,7 @@ import { createF5DataInterpretation } from "./f5-data-interpretation.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import {
   createF6Optimization as createF6OptimizationV2,
+  createF6OptimizationV3,
   createLegacyF6Optimization as createF6Optimization,
   rankCompletedOptions,
   selectHighestSupportedCompletedOption,
@@ -40,6 +45,7 @@ function calculationRequest(
     const row = index + 2;
     return {
       sourceRow: row,
+      factorOrdinal: { value: String.fromCharCode(65 + index), rawText: String.fromCharCode(65 + index), sourceCell: `${worksheetName}!Z${row}` },
       fields: {
         factorName: text(`factor-${index + 1}`, `${worksheetName}!A${row}`),
         nominalValue: number("0", `${worksheetName}!B${row}`, 0),
@@ -132,6 +138,7 @@ function request(
   };
   const governanceRows = calculation.factors.map((factor, index) => ({
     factorInstanceId: String(index + 1).padStart(64, "0"),
+    factorOrdinal: { value: String.fromCharCode(65 + index), rawText: String.fromCharCode(65 + index), sourceCell: `${worksheetName}!Z${factor.source.sourceRow}` },
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-${index + 1}`,
     dimensionDescription: `dimension-${index + 1}`,
@@ -239,6 +246,88 @@ function refreshGovernedBaseline(input: F6OptimizationRequest): void {
   worksheet.f3GovernanceRows = governanceRows;
   worksheet.f5Worksheet = f5Worksheet;
 }
+
+function multimodalArtifact(input: F6OptimizationRequest): F5MultimodalArtifactV3 {
+  const worksheets = input.worksheets.map((worksheet) => {
+    const factorRows = worksheet.baselineCalculation.factors.map((factor, index) => ({
+      worksheetName: worksheet.worksheetName,
+      tableId: factor.source.tableId,
+      sourceRow: factor.source.sourceRow,
+      factorOrdinal: structuredClone(worksheet.f3GovernanceRows[index]!.factorOrdinal),
+      factorName: factor.factorName,
+      partName: worksheet.f3GovernanceRows[index]!.partSubsystem,
+      partCategory: worksheet.f3GovernanceRows[index]!.partCategory,
+      drawingNumber: worksheet.f3GovernanceRows[index]!.drawingNumber,
+      dimId: worksheet.f3GovernanceRows[index]!.dimId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: {},
+    }));
+    const requestWithoutHash = {
+      contractVersion: "f5-multimodal-request-v3" as const,
+      inputClassification: "confidential" as const,
+      sessionId: "session-106",
+      revision: 1,
+      inputRevision: 1,
+      workbook: structuredClone(input.workbook),
+      worksheetName: worksheet.worksheetName,
+      tableId: worksheet.baselineCalculation.worksheetSelection.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png" as const, contentHash: IMAGE_HASH, byteLength: 128, artifactPath: `images/${worksheet.worksheetName}.png` },
+      factorRows,
+    };
+    const multimodalRequest = { ...requestWithoutHash, requestHash: createF5MultimodalRequestHash(requestWithoutHash) };
+    return {
+      request: multimodalRequest,
+      result: {
+        contractVersion: "f5-multimodal-result-v3" as const,
+        outputClassification: "confidential" as const,
+        requestHash: multimodalRequest.requestHash,
+        sessionId: multimodalRequest.sessionId,
+        revision: multimodalRequest.revision,
+        inputRevision: multimodalRequest.inputRevision,
+        workbookContentHash: input.workbook.contentHash,
+        worksheetName: worksheet.worksheetName,
+        tableId: multimodalRequest.tableId,
+        imageContentHash: multimodalRequest.image.contentHash,
+        model: { modelId: "trusted-image-model", supportsImage: true as const },
+        imageTableInterpretation: `Interpret ${worksheet.worksheetName} image and complete Factor table.`,
+        rowMappings: factorRows.map((factor) => ({
+          worksheetName: factor.worksheetName,
+          tableId: factor.tableId,
+          sourceRow: factor.sourceRow,
+          factorOrdinal: structuredClone(factor.factorOrdinal),
+          mappingStatus: "matched" as const,
+          visibleStatus: "visible" as const,
+          interpretation: `Mapped ${factor.factorName}.`,
+        })),
+      },
+    };
+  });
+  return {
+    contractVersion: "f5-multimodal-artifact-v3",
+    outputClassification: "confidential",
+    sessionId: "session-106",
+    revision: 1,
+    inputRevision: 1,
+    workbookContentHash: input.workbook.contentHash,
+    selectedWorksheetNames: [...input.selectedWorksheetNames],
+    worksheets,
+  };
+}
+
+const interactionLanguage = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en" as const,
+  lockedAtTurnId: "turn-1",
+  source: "workflow_start" as const,
+  fallbackUsed: false,
+};
 
 describe("createF6Optimization", () => {
   it("creates the deterministic option set with governed metrics and immutable output", () => {
@@ -1187,7 +1276,10 @@ describe("createF6Optimization", () => {
 
   it("exports only the public orchestrator and no private optimization helpers", () => {
     expect(typeof createF6Optimization).toBe("function");
-    expect(Object.keys(packageRoot).filter((key) => key.toLowerCase().includes("optimization"))).toEqual(["createF6Optimization"]);
+    expect(Object.keys(packageRoot).filter((key) => key.toLowerCase().includes("optimization"))).toEqual([
+      "createF6Optimization",
+      "createF6OptimizationV3",
+    ]);
   });
 });
 
@@ -1693,5 +1785,119 @@ describe("createF6Optimization V2", () => {
       "Analysis-A:builtin-top3:OP2",
       "Analysis-A:builtin-top3:OP3",
     ]);
+  });
+});
+
+describe("createF6Optimization V3", () => {
+  function v3Inputs(input: F6OptimizationRequest) {
+    return {
+      interactionLanguage,
+      multimodalInterpretation: multimodalArtifact(input),
+      multimodalReference: { artifact: "f5/multimodal-v3.json", contentHash: "d".repeat(64) },
+      optimizationTargetsDecision: { outcome: "NOT_PROVIDED" as const },
+    };
+  }
+
+  it("emits the fixed sequential policy with stable contributor ordering and no legacy option fields", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -5, upperSpecLimit: 20, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+    const worksheet = result.worksheets[0]!;
+
+    expect(f6OptimizationResultV3Schema.parse(result)).toEqual(result);
+    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges"]);
+    expect(worksheet.steps[0]).toEqual(expect.objectContaining({ status: "offset", interpretation: expect.stringContaining("complete Factor table") }));
+    expect(worksheet.steps[1].priorities.map(({ factor }) => factor.sourceRow)).toEqual([2, 3, 4, 5]);
+    expect(worksheet.steps[2].proposals.map(({ side }) => side)).toEqual(["lower"]);
+    expect(worksheet.steps[2].proposals[0]).toEqual(expect.objectContaining({ approvalRequired: true, capabilityImprovementClaim: false }));
+    expect(JSON.stringify(result)).not.toMatch(/OP[123]|BUILT_IN_POLICY|reductionRatio|policyContext|"ratio"/u);
+  });
+
+  it("reports an aligned center and routes both failed specification sides independently", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -4.5, upperSpecLimit: 5.5, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+
+    expect(result.worksheets[0]!.steps[0]).toEqual({ step: "centerAssessment", status: "aligned", adjustedMean: 0.5, specificationMidpoint: 0.5, offset: 0 });
+    expect(result.worksheets[0]!.steps[2].proposals.map(({ side }) => side)).toEqual(["lower", "upper"]);
+  });
+
+  it.each([
+    { lowerSpecLimit: -20, upperSpecLimit: 5, expectedSides: ["upper"] },
+    { lowerSpecLimit: -20, upperSpecLimit: 20, expectedSides: [] },
+  ] as const)("routes specification proposals to $expectedSides", ({ lowerSpecLimit, upperSpecLimit, expectedSides }) => {
+    const input = request("Analysis-A", { lowerSpecLimit, upperSpecLimit, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+
+    expect(result.worksheets[0]!.steps[2].proposals.map(({ side }) => side)).toEqual(expectedSides);
+  });
+
+  it("converts F4 proposal verification failures into a structured clarification", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -5, upperSpecLimit: 20, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = createF6OptimizationV3(input, v3Inputs(input), {
+      calculateScenario: vi.fn(() => { throw new Error("controlled_f4_failure"); }),
+    });
+
+    expect(result.runStatus).toBe("CLARIFICATION_REQUIRED");
+    expect(result.worksheets[0]!.steps[2]).toEqual(expect.objectContaining({
+      proposals: [],
+      clarifications: [{ reasonCode: "f4_specification_verification_failed", requiredInputs: ["valid_f4_scenario_calculation"] }],
+    }));
+  });
+
+  it("fails closed instead of silently dropping a caller-authorized concrete target", () => {
+    const input = request();
+    const inputs = v3Inputs(input);
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const factor = baseline.factors[0]!;
+    inputs.optimizationTargetsDecision = {
+      outcome: "CALLER_AUTHORIZED",
+      artifactReference: { artifact: "targets.json", contentHash: "e".repeat(64) },
+    };
+    inputs.optimizationTargets = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      targetVersion: "f6-optimization-targets-v2",
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: {
+          calculationVersion: baseline.calculationVersion,
+          projectReference: baseline.projectReference,
+          runReference: baseline.runReference,
+          workbookContentHash: baseline.workbookContentHash,
+          worksheetName: baseline.worksheetSelection.worksheetName,
+          tableId: baseline.worksheetSelection.tableId,
+        },
+        targets: [{
+          targetId: "confirmed-factor-tolerance",
+          targetType: "factor_tolerance",
+          factor: {
+            worksheetName: factor.source.worksheetName,
+            tableId: factor.source.tableId,
+            sourceRow: factor.source.sourceRow,
+            factorName: factor.factorName,
+            unit: factor.unit,
+          },
+          lowerTolerance: -1,
+          upperTolerance: 1,
+          unit: "mm",
+        }],
+      }],
+    };
+
+    expect(() => createF6OptimizationV3(input, inputs)).toThrow(/separately versioned F4-backed target scenario/i);
+  });
+
+  it("rejects multimodal scope that does not exactly match the selected worksheet and table", () => {
+    const input = request();
+    const inputs = v3Inputs(input);
+    inputs.multimodalInterpretation.worksheets[0]!.request.tableId = "wrong-table";
+
+    expect(() => createF6OptimizationV3(input, inputs)).toThrow(/multimodal/i);
+  });
+
+  it("exports the v3 writer without replacing the historical v2 function", () => {
+    expect(packageRoot.createF6Optimization).toBe(createF6OptimizationV2);
+    expect(packageRoot.createF6OptimizationV3).toBe(createF6OptimizationV3);
   });
 });

@@ -1,4 +1,5 @@
 import type { ConversationTurn } from "@ai-assist/conversation";
+import type { UiCatalogLanguage } from "@ai-assist/product-language";
 import { useState } from "react";
 
 import type { WorkbenchApi } from "../api.js";
@@ -21,6 +22,7 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
   readonly api?: WorkbenchApi;
   readonly sessionId?: string;
   readonly snapshot?: F8SessionSnapshot;
+  readonly language?: UiCatalogLanguage;
   readonly disabled: boolean;
   readonly onSubmit: (message: string) => Promise<void>;
   readonly onSubmitCommand?: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
@@ -28,17 +30,30 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
 }) {
   const [suggestedMessage, setSuggestedMessage] = useState<string>();
   const contextChips = arguments[0].requestContextChips ?? [];
+  const language = arguments[0].language ?? "en";
+  const suggestedPrompts = language === "zh" ? [
+    "总结当前受治理的证据",
+    "哪个 Factor 是当前风险的主要驱动项？",
+    "比较 baseline 与已保存的 Scenario",
+  ] : [
+    "Summarize the current governed evidence",
+    "Which factor is driving the current risk?",
+    "Compare the baseline and saved Scenario",
+  ];
+  const copy = language === "zh"
+    ? { current: "当前上下文", waiting: "等待工作区", next: "下一请求上下文", suggested: "建议问题" }
+    : { current: "Current context", waiting: "Waiting for workspace", next: "Next request context", suggested: "Suggested prompts" };
   return (
     <section className="ta-assistant" aria-label="TA Assistant">
       <div className="assistant-context">
         <div className="assistant-context__current">
-          <span>Current context</span>
-          <strong>{worksheetName ?? "Waiting for workspace"}</strong>
+          <span>{copy.current}</span>
+          <strong>{worksheetName ?? copy.waiting}</strong>
           {factorName === undefined ? null : <span>{factorName}</span>}
         </div>
         <div className="assistant-context__next">
-          <span>Next request context</span>
-          <div className="token-row" aria-label="Next request context">
+          <span>{copy.next}</span>
+          <div className="token-row" aria-label={copy.next}>
             {contextChips.map((chip) => (
               <span
                 key={chip.key}
@@ -52,12 +67,8 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
           </div>
         </div>
       </div>
-      <div className="suggested-prompts" aria-label="Suggested prompts">
-        {[
-          "Summarize the current governed evidence",
-          "Which factor is driving the current risk?",
-          "Compare the baseline and saved Scenario",
-        ].map((prompt) => <button key={prompt} type="button" disabled={disabled} onClick={() => setSuggestedMessage(prompt)}>{prompt}</button>)}
+      <div className="suggested-prompts" aria-label={copy.suggested}>
+        {suggestedPrompts.map((prompt) => <button key={prompt} type="button" disabled={disabled} onClick={() => setSuggestedMessage(prompt)}>{prompt}</button>)}
       </div>
       {arguments[0].onSubmitCommand === undefined ? null : (
         <>
@@ -67,6 +78,7 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
             api={api}
             sessionId={sessionId}
             disabled={disabled}
+            language={arguments[0].language}
             onSendMessage={onSubmit}
             onSubmitDecision={arguments[0].onSubmitCommand}
           />
@@ -76,12 +88,13 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
             api={api}
             sessionId={sessionId}
             disabled={disabled}
+            language={arguments[0].language}
             onSendMessage={onSubmit}
             onSubmitDecision={arguments[0].onSubmitCommand}
           />
         </>
       )}
-      <ConversationPane turns={turns} api={api} sessionId={sessionId} disabled={disabled} suggestedMessage={suggestedMessage} onSubmit={onSubmit} />
+      <ConversationPane turns={turns} api={api} sessionId={sessionId} disabled={disabled} suggestedMessage={suggestedMessage} language={arguments[0].language} onSubmit={onSubmit} />
     </section>
   );
 }

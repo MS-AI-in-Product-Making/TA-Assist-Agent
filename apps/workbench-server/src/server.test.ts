@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 
-import { buildWorkbenchServer } from "./server.js";
+import { buildWorkbenchServer as buildWorkbenchServerBase } from "./server.js";
+import type { StartWorkbenchServerOptions } from "./server.js";
 import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
@@ -27,12 +28,20 @@ const REVIEW_CONTEXT = {
   baselineRunReference: "f2-run-2026-08-25",
 };
 const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function buildWorkbenchServer(options: StartWorkbenchServerOptions) {
+  return buildWorkbenchServerBase({ interactionLanguage: ENGLISH_LOCK, ...options });
+}
 
 function structuredReviewResult(featureId: "F4" | "F5" | "F6", includeContext = true) {
   const artifacts = featureId === "F4"
     ? [{ artifactId: "f4-calculation", kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64) }]
     : featureId === "F5"
-      ? [{ artifactId: "f5-report", kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64) }]
+      ? [
+          { artifactId: "f5-report", kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64) },
+          { artifactId: "f5-multimodal", kind: "f5_multimodal", relativePath: "f5/Feature5-Multimodal.json", contentHash: "5".repeat(64) },
+        ]
       : [
           { artifactId: "f6-optimization", kind: "f6_optimization", relativePath: "f6/Feature6-Optimization.json", contentHash: "3".repeat(64) },
           { artifactId: "f6-report", kind: "f6_report", relativePath: "f6/Feature6-Report.json", contentHash: "4".repeat(64) },
@@ -79,6 +88,20 @@ function f3Report(factorDescription: string, overrides: Record<string, unknown> 
   } as const;
 }
 
+function governedDownstreamSelection(workbookContentHash: string, inputRevision: number) {
+  return {
+    workbookContentHash,
+    selectedWorksheetNames: ["Analysis-A"],
+    confirmed: true as const,
+    provenance: "user" as const,
+    decision: "continue_ready" as const,
+    inputRevision,
+    f2ReportArtifactId: `f2-report-${inputRevision}`,
+    f2ReportContentHash: "b".repeat(64),
+    findingDigest: "c".repeat(64),
+  };
+}
+
 async function writeJsonArtifact(rootDir: string, relativePath: string, data: unknown): Promise<string> {
   const text = `${JSON.stringify(data, null, 2)}\n`;
   await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
@@ -92,7 +115,7 @@ async function writeImageArtifactFixture(rootDir: string, relativePath: string, 
   await writeFile(target, bytes);
 }
 
-function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array<{ worksheetName: string; relativePath: string }>) {
+function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array<{ worksheetName: string; relativePath: string }>, workbookHash = "a".repeat(64)) {
   const worksheets = entries.map((entry, index) => ({
     worksheetName: entry.worksheetName,
     toleranceLoopDescription: `${entry.worksheetName} loop`,
@@ -141,7 +164,7 @@ function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array
     handoffVersion: "f4-handoff-v1",
     inputClassification: "confidential",
     status: "ready",
-    workbookContentHash: "a".repeat(64),
+    workbookContentHash: workbookHash,
     worksheetName: entry.worksheetName,
     toleranceLoopDescription: `${entry.worksheetName} loop`,
     systemSpecification: {
@@ -165,7 +188,7 @@ function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array
     contractVersion: "v1",
     inputClassification: "confidential",
     status: "completed",
-    workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
+    workbook: { fileName: "anonymous.xlsx", contentHash: workbookHash, f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: "managed/f2",
@@ -230,6 +253,8 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
       }
     },
     async cancel() { return false; },
+    async discardForExternalGate() { return false; },
+    async assertNoUnreconciledExternalGateJobs() {},
     async reconcile() {},
   };
 }
@@ -484,7 +509,7 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("registers structured F4/F5/F6 results under one durable review context", async () => {
+  it("registers a structured F6 result under one durable F4/F5 review context", async () => {
     const rootDir = testRoot("workbench-server-review-context-registration");
     await rm(rootDir, { recursive: true, force: true });
     const runner = vi.fn(async (job: { readonly stage: string }) => {
@@ -505,10 +530,19 @@ describe("workbench server routes", () => {
       if (job.stage === "f6_running") return structuredReviewResult("F6");
       return { status: "completed" };
     });
-    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true });
+    const server = await buildWorkbenchServer({
+      rootDir,
+      runner,
+      queueFactory: immediateQueue,
+      skipWebAssets: true,
+    });
     const sessionId = "30303030-3030-4303-8303-303030303030";
     try {
       const browser = await server.testAuthenticate(sessionId);
+      await mkdir(join(rootDir, "f4"), { recursive: true });
+      await mkdir(join(rootDir, "f5"), { recursive: true });
+      await writeFile(join(rootDir, "f4", "Feature4-Calculation.json"), JSON.stringify({ artifactId: "f4-calculation" }));
+      await writeFile(join(rootDir, "f5", "Feature5-Report.json"), JSON.stringify({ artifactId: "f5-report" }));
       const store = await openSessionStore({ rootDir, sessionId });
       try {
         await store.applyCommand({
@@ -523,16 +557,19 @@ describe("workbench server routes", () => {
             ...snapshot,
             revision: snapshot.revision + 1,
             inputRevision: 1,
-            state: "failed",
-            downstreamScopeSelection: {
-              workbookContentHash: REVIEW_CONTEXT.workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            state: "analysis_context_decision_required",
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
-            activeAttempt: { attemptId: "seed-f4:f4_running", stage: "f4_running", status: "failed", startedAt: "2026-08-25T00:00:00.000Z", endedAt: "2026-08-25T00:00:01.000Z" },
+            activeAttempt: null,
+            artifactRefs: [
+              { artifactId: "f4-calculation", kind: "f4_calculation", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+              { artifactId: "f5-report", kind: "f5_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+            ],
           },
+          artifactReferences: [
+            { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64), reviewContext: REVIEW_CONTEXT },
+            { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64), reviewContext: REVIEW_CONTEXT },
+          ],
         }));
       } finally {
         await store.close();
@@ -550,7 +587,6 @@ describe("workbench server routes", () => {
         return response;
       };
 
-      expect((await submit("run-f4", "retry", { stage: "f4_running" })).statusCode).toBe(202);
       expect((await submit("confirm-analysis-context", "confirm_analysis_context", { decision: "not_provided", rationale: "No additional analysis context supplied." })).statusCode).toBe(202);
       expect((await submit("confirm-optimization-targets", "confirm_optimization_targets", { decision: "not_provided", rationale: "Use governed default optimization targets." })).statusCode).toBe(202);
 
@@ -566,10 +602,8 @@ describe("workbench server routes", () => {
       } finally {
         await reopened.close();
       }
-      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running", "f5_running", "f6_running"]);
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f6_running"]);
       expect(runner.mock.calls.map(([job]) => job.payload)).toEqual([
-        { sessionId, baselineRunReference: REVIEW_CONTEXT.baselineRunReference },
-        { sessionId, reviewContext: REVIEW_CONTEXT },
         { sessionId, reviewContext: REVIEW_CONTEXT },
       ]);
       const artifactResponse = await server.inject({
@@ -661,6 +695,8 @@ describe("workbench server routes", () => {
         return {
         async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       };
       },
@@ -689,12 +725,7 @@ describe("workbench server routes", () => {
               confirmed: true,
               provenance: "user",
             },
-            downstreamScopeSelection: {
-              workbookContentHash: workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            downstreamScopeSelection: governedDownstreamSelection(workbookHash, 1),
             priorRunReferences: [
               {
                 featureId: "F2",
@@ -794,6 +825,8 @@ describe("workbench server routes", () => {
         return {
           async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
           async cancel() { return false; },
+          async discardForExternalGate() { return false; },
+          async assertNoUnreconciledExternalGateJobs() {},
           async reconcile() {},
         };
       },
@@ -822,12 +855,7 @@ describe("workbench server routes", () => {
               confirmed: true,
               provenance: "user",
             },
-            downstreamScopeSelection: {
-              workbookContentHash: workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            downstreamScopeSelection: governedDownstreamSelection(workbookHash, 1),
             priorRunReferences: [
               {
                 featureId: "F2",
@@ -890,6 +918,8 @@ describe("workbench server routes", () => {
           return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
         },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       }),
       skipWebAssets: true,
@@ -979,11 +1009,14 @@ describe("workbench server routes", () => {
       runner: async () => ({ status: "ok" }),
       queueFactory: async (options) => ({
         async enqueue(job) {
+          await uploadGate;
           enqueued.push(job);
           await options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
           return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
         },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       }),
       skipWebAssets: true,
@@ -1028,7 +1061,7 @@ describe("workbench server routes", () => {
             revision: 1,
             inputRevision: 1,
             state: "image_decision_required",
-            downstreamScopeSelection: { workbookContentHash: REVIEW_CONTEXT.workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
             activeAttempt: null,
           },
@@ -1091,11 +1124,7 @@ describe("workbench server routes", () => {
             revision: snapshot.revision + 1,
             inputRevision: 1,
             state: "failed",
-            downstreamScopeSelection: {
-              workbookContentHash: REVIEW_CONTEXT.workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-            },
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: seedF2Lineage
               ? [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }]
               : [],
@@ -1132,7 +1161,7 @@ describe("workbench server routes", () => {
 
   it("exchanges a one-time bootstrap nonce for a browser cookie and CSRF-protected session", async () => {
     const rootDir = testRoot("workbench-server-bootstrap-session");
-    const server = await buildWorkbenchServer({ rootDir });
+    const server = await buildWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const nonce = await server.bootstrap.issueBrowserBootstrap();
       const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
@@ -1149,6 +1178,7 @@ describe("workbench server routes", () => {
         headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
       });
       expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ interactionLanguage: ENGLISH_LOCK });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -1818,6 +1848,26 @@ describe("workbench server routes", () => {
       expect(uploaded.statusCode).toBe(202);
       expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
 
+      const uploadReplayArtifactId = "managed-upload-replay-mismatch";
+      const uploadReplayRelativePath = `uploads/${auth.sessionId}/workbook/${uploadReplayArtifactId}-upload-replay.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, uploadReplayArtifactId, uploadReplayRelativePath, "upload-replay.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, uploadReplayRelativePath), createAnonymousWorkbookZip());
+      const mismatchedUploadReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId: uploadReplayArtifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(mismatchedUploadReplay.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, uploadReplayRelativePath))).rejects.toThrow();
+
       const afterInitial = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/commands`,
@@ -1838,11 +1888,253 @@ describe("workbench server routes", () => {
         initialScopeSelection: { workbookContentHash: workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
       });
       expect(afterInitial.json()).not.toHaveProperty("downstreamScopeSelection");
+
+      const invalidArtifactId = "managed-invalid-replacement";
+      const invalidRelativePath = `uploads/${auth.sessionId}/workbook/${invalidArtifactId}-invalid.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, invalidArtifactId, invalidRelativePath, "invalid.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, invalidRelativePath), createAnonymousWorkbookZip());
+      const invalidReplacement = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "second-stop-invalid-replace", expectedRevision: afterInitial.json<{ revision: number }>().revision, command: "replace_workbook",
+        payload: { artifactId: invalidArtifactId, previousWorkbookHash: "invalid", inputClassification: "confidential" },
+      } });
+      expect(invalidReplacement.statusCode).toBe(400);
+      await expect(readFile(join(rootDir, invalidRelativePath))).rejects.toThrow();
+
+      const staleArtifactId = "managed-stale-replacement";
+      const staleRelativePath = `uploads/${auth.sessionId}/workbook/${staleArtifactId}-stale.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, staleArtifactId, staleRelativePath, "stale.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, staleRelativePath), createAnonymousWorkbookZip());
+      const staleReplacement = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "second-stop-stale-replace", expectedRevision: 0, command: "replace_workbook",
+        payload: { artifactId: staleArtifactId, previousWorkbookHash: workbookHash, inputClassification: "confidential" },
+      } });
+      expect(staleReplacement.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, staleRelativePath))).rejects.toThrow();
+
+      const replacementArtifactId = "managed-replacement";
+      const replacementRelativePath = `uploads/${auth.sessionId}/workbook/${replacementArtifactId}-replacement.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, replacementArtifactId, replacementRelativePath, "replacement.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, replacementRelativePath), createAnonymousWorkbookZip());
+      const replaceCommand = {
+        contractVersion: "f8-session-command-v1" as const,
+        sessionId: auth.sessionId,
+        commandId: "second-stop-replace",
+        expectedRevision: afterInitial.json<{ revision: number }>().revision,
+        command: "replace_workbook" as const,
+        payload: { artifactId: replacementArtifactId, previousWorkbookHash: workbookHash, inputClassification: "confidential" as const },
+      };
+      const replaced = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: replaceCommand,
+      });
+      expect(replaced.statusCode, JSON.stringify(replaced.json())).toBe(202);
+      expect(replaced.json()).toMatchObject({ inputRevision: 2, state: "initial_scope_required" });
+      expect(replaced.json()).not.toHaveProperty("initialScopeSelection");
+
+      const replayArtifactId = "managed-replacement-replay-mismatch";
+      const replayRelativePath = `uploads/${auth.sessionId}/workbook/${replayArtifactId}-replay.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, replayArtifactId, replayRelativePath, "replay.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, replayRelativePath), createAnonymousWorkbookZip());
+      const mismatchedReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: { ...replaceCommand, payload: { ...replaceCommand.payload, artifactId: replayArtifactId } },
+      });
+      expect(mismatchedReplay.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, replayRelativePath))).rejects.toThrow();
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("materializes the exact downstream-ready set with revision-bound F2 evidence", async () => {
+    const rootDir = testRoot("workbench-server-downstream-exact-set");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+      { worksheetName: "Analysis-B", relativePath: "worksheets/analysis-b/tolerance-path.png" },
+    ]);
+    const reportRelativePath = "f2/downstream-exact-set.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-exact-set",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const findings = await server.inject({
+        method: "GET",
+        url: `/api/sessions/${sessionId}/findings/f2`,
+        headers: browser.headers,
+      });
+      expect(findings.statusCode).toBe(200);
+      expect(findings.json()).toMatchObject({
+        contractVersion: "f2-findings-decision-projection-v1",
+        inputRevision: 1,
+        f2ReportArtifactId: "f2-current",
+        f2ReportContentHash: reportHash,
+        downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"],
+      });
+
+      const omitted = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-omitted",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+      expect(omitted.statusCode).toBe(409);
+      expect(omitted.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      await writeFile(join(rootDir, reportRelativePath), "{}", "utf8");
+      const tamperedFindings = await server.inject({
+        method: "GET",
+        url: `/api/sessions/${sessionId}/findings/f2`,
+        headers: browser.headers,
+      });
+      expect(tamperedFindings.statusCode).toBe(409);
+      expect(tamperedFindings.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      const tampered = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-tampered",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A", "Analysis-B"] },
+        },
+      });
+      expect(tampered.statusCode).toBe(409);
+      expect(tampered.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      expect(await writeJsonArtifact(rootDir, reportRelativePath, report)).toBe(reportHash);
+
+      const exact = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-exact",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A", "Analysis-B"] },
+        },
+      });
+      expect(exact.statusCode).toBe(202);
+      expect(exact.json()).toMatchObject({
+        downstreamScopeSelection: {
+          decision: "continue_ready",
+          workbookContentHash: workbookHash,
+          selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+          inputRevision: 1,
+          f2ReportArtifactId: "f2-current",
+          f2ReportContentHash: reportHash,
+          findingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+
+      const mismatchedReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-exact",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+      expect(mismatchedReplay.statusCode).toBe(409);
+      expect(mismatchedReplay.json()).toEqual({ error: "command_receipt_mismatch" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects current-revision F2 findings whose workbook identity differs from the confirmed scope", async () => {
+    const rootDir = testRoot("workbench-server-downstream-workbook-mismatch");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "87878787-8787-4787-8787-878787878787";
+    const confirmedWorkbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [{ worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" }], "e".repeat(64));
+    const reportRelativePath = "f2/downstream-workbook-mismatch.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1", sessionId, commandId: "seed-downstream-workbook-mismatch", expectedRevision: 0,
+          command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: { ...snapshot, revision: 1, inputRevision: 1, state: "downstream_scope_required", activeAttempt: null, initialScopeSelection: { workbookContentHash: confirmedWorkbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" }, artifactRefs: [{ artifactId: "f2-wrong-workbook", kind: "f2_report", revision: 1, validated: true }] },
+          artifactReferenceOps: { upsert: [{ artifactId: "f2-wrong-workbook", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }] },
+        }));
+      } finally { await store.close(); }
+
+      const findings = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/findings/f2`, headers: browser.headers });
+      expect(findings.statusCode).toBe(409);
+      expect(findings.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      const confirmation = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/commands`, headers: browser.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId, commandId: "confirm-wrong-workbook", expectedRevision: 1, command: "confirm_downstream_scope", payload: { workbookHash: confirmedWorkbookHash, worksheetNames: ["Analysis-A"] },
+      } });
+      expect(confirmation.statusCode).toBe(409);
+      expect(confirmation.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 
   it("rejects blocked worksheets during downstream confirmation using current F2 readiness evidence", async () => {
     const rootDir = testRoot("workbench-server-downstream-blocked");
@@ -2141,6 +2433,14 @@ describe("workbench server routes", () => {
           },
         };
       }
+      if (job.stage === "f1_f2_running") {
+        const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+          { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+        ]);
+        const f2Root = join(rootDir, "fixture-f2");
+        await writeJsonArtifact(rootDir, "fixture-f2/Feature2-Report.json", report);
+        return { featureId: "F2", status: "completed", runId: "fixture-f2", f2Root, workbookContentHash: "a".repeat(64), report };
+      }
       return { status: "completed" };
     });
     const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true, allowInternalFixtureAutoConfirmation: true });
@@ -2155,11 +2455,19 @@ describe("workbench server routes", () => {
       const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload-fixture", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
 
       expect(response.statusCode).toBe(202);
+      expect(stages).toEqual(expect.arrayContaining(["f0_validating", "f1_f2_running", "f3_running"]));
       expect(response.json()).toMatchObject({
-        state: "downstream_scope_required",
         initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "internal_fixture" },
+        downstreamScopeSelection: {
+          selectedWorksheetNames: ["Analysis-A"],
+          confirmed: true,
+          provenance: "internal_fixture",
+          decision: "continue_ready",
+          inputRevision: 1,
+          f2ReportContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          findingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
       });
-      expect(stages).toEqual(["f0_validating", "f1_f2_running"]);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2170,7 +2478,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-session-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "14141414-1414-4414-8414-141414141414";
-    const store = await createSessionStore({ rootDir, sessionId });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
     try {
       await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "uploaded-book" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
     } finally {
@@ -2184,6 +2492,8 @@ describe("workbench server routes", () => {
       async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
       async reconcile() {},
     });
 
@@ -2195,6 +2505,74 @@ describe("workbench server routes", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("aborts startup before queue reconciliation when persisted session recovery fails", async () => {
+    const rootDir = testRoot("workbench-server-corrupt-recovery");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "16161616-1616-4616-8616-161616161616";
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    await store.close();
+    const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"));
+    try {
+      database.prepare("UPDATE sessions SET snapshot_json = ? WHERE session_id = ?").run("{}", sessionId);
+    } finally {
+      database.close();
+    }
+    const reconcile = vi.fn(async () => undefined);
+    const queueFactory = async () => ({
+      async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async recover(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
+      reconcile,
+    });
+
+    await expect(buildWorkbenchServer({ rootDir, queueFactory, skipWebAssets: true })).rejects.toThrow();
+    expect(reconcile).not.toHaveBeenCalled();
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  it("restores the managed workbook binding for a committed replacement after restart", async () => {
+    const rootDir = testRoot("workbench-server-replacement-recovery");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "15151515-1515-4515-8515-151515151515";
+    const artifactId = "replacement-book";
+    const relativePath = `uploads/${sessionId}/workbook/${artifactId}-book.xlsx`;
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    try {
+      const committed = await store.applyCommand({
+        contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-replace", expectedRevision: 0, command: "replace_workbook",
+        payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: artifactId, previousWorkbookHash: "a".repeat(64) },
+      }, async (snapshot, command) => ({ snapshot: reduceSessionCommand({ ...snapshot, state: "completed" }, command) }));
+      expect(committed.activeAttempt?.commandId).toBe("crash-window-replace");
+      expect((await store.readCommittedCommand("crash-window-replace"))?.command).toBe("replace_workbook");
+    } finally { await store.close(); }
+    await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+    await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+    const artifactRegistry = join(rootDir, "runtime", "workbench", "registries", "artifacts");
+    await mkdir(artifactRegistry, { recursive: true });
+    await writeFile(join(artifactRegistry, `${sessionId}.json`), JSON.stringify({ [artifactId]: { sessionId, relativePath, fileName: "book.xlsx", classification: "confidential", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } }));
+    const recovered: StageJob[] = [];
+    const queueFactory = async () => ({
+      async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
+      async reconcile() {},
+    });
+
+    const server = await buildWorkbenchServer({ rootDir, queueFactory, skipWebAssets: true });
+    try {
+      const active = JSON.parse(await readFile(join(rootDir, "runtime", "workbench", "registries", "active-workbooks", `${sessionId}.json`), "utf8"));
+      expect(active).toEqual({ artifactId });
+      expect(recovered).toEqual([expect.objectContaining({ attemptId: "crash-window-replace:f0_validating", stage: "f0_validating", payload: { sessionId } })]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 
   it("keeps create/use ADO decisions pending for Task 13 Surface validation and independent Confirm write", async () => {
     const rootDir = testRoot("workbench-server-ado-host-action");
@@ -2222,7 +2600,7 @@ describe("workbench server routes", () => {
           revision: snapshot.revision + 1,
           inputRevision: 1,
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+          downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 1),
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
         }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
@@ -2330,7 +2708,7 @@ describe("workbench server routes", () => {
           inputRevision: 2,
           state: "ado_decision_required",
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+          downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 2),
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [
             { artifactId: "f3-old", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
@@ -3757,7 +4135,7 @@ describe("workbench server routes", () => {
   it("keeps event IDs monotonic after retention rollover and marks an expired replay cursor", async () => {
     const rootDir = testRoot("workbench-server-event-rollover");
     await rm(rootDir, { recursive: true, force: true });
-    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await started.server.testAuthenticate("25252525-2525-4252-8252-252525252525");
       for (let index = 1; index <= 301; index += 1) {
@@ -3792,7 +4170,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-event-restart");
     const sessionId = "26262626-2626-4262-8262-262626262626";
     await rm(rootDir, { recursive: true, force: true });
-    const first = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const first = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await first.server.testAuthenticate(sessionId);
       first.server.publishEventForTest(auth.sessionId, "progress", { sequence: 1 });
@@ -3802,7 +4180,7 @@ describe("workbench server routes", () => {
       await first.server.close();
     }
 
-    const second = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const second = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await second.server.testAuthenticate(sessionId);
       const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
@@ -3828,7 +4206,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-external-session-progress");
     const sessionId = "27272727-2727-4272-8272-272727272727";
     await rm(rootDir, { recursive: true, force: true });
-    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await started.server.testAuthenticate(sessionId);
       const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {

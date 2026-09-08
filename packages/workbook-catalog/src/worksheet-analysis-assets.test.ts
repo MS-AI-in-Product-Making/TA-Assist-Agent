@@ -628,6 +628,23 @@ describe("worksheet analysis assets", () => {
     expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.factorName).toMatchObject({ status: "available", rawText: "tp-loop-factor" });
   });
 
+  it("preserves Factor ordinals from the cell immediately left of Factor Description", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="AB1" t="inlineStr"><is><t>Factor Description</t></is></c></row><row r="2"><c r="AA2" t="inlineStr"><is><t>A</t></is></c><c r="AB2" t="inlineStr"><is><t>first</t></is></c></row><row r="3"><c r="AB3" t="inlineStr"><is><t>blank</t></is></c></row><row r="4"><c r="AA4" t="inlineStr"><is><t>AA</t></is></c><c r="AB4" t="inlineStr"><is><t>multi</t></is></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1", inputClassification: "confidential", workbookBytes,
+      workbookCatalog: { contractVersion: "v1", workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-09-07", sourceCell: "Title Page!A1" } } }, analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }] },
+    });
+
+    expect(result.worksheets[0]!.factorTables[0]!.rows.map((row) => row.factorOrdinal)).toEqual([
+      { value: "A", rawText: "A", sourceCell: "Analysis-A!AA2" },
+      { value: "", rawText: "", sourceCell: "Analysis-A!AA3" },
+      { value: "AA", rawText: "AA", sourceCell: "Analysis-A!AA4" },
+    ]);
+  });
+
   it("fails closed for duplicate factor headers and retains independent zero-row tables", () => {
     const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
       "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c><c r="B1" t="inlineStr"><is><t>Safety Factor</t></is></c><c r="C1" t="inlineStr"><is><t>Long Term Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="B2"><v>1.5</v></c><c r="C2"><v>2</v></c></row><row r="5"><c r="D5" t="inlineStr"><is><t>Factor</t></is></c></row></sheetData></worksheet>',

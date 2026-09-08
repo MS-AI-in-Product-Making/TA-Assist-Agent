@@ -23,3 +23,11 @@ export function projectFactorActualFields(fields) {
     return [targetField, field?.status === "available" ? field.actualValue : null];
   }));
 }
+
+export function projectFactorOrdinalEvidence(evidence) {
+  return {
+    value: typeof evidence?.value === "string" ? evidence.value : "",
+    rawText: typeof evidence?.rawText === "string" ? evidence.rawText : "",
+    ...(typeof evidence?.sourceCell === "string" ? { sourceCell: evidence.sourceCell } : {}),
+  };
+}

@@ -53,7 +53,7 @@ function createBundle({ artifactContractVersion } = {}) {
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
     toleranceLoopDescription: "Anonymous device gap",
-    ...(artifactContractVersion === "f1-semantic-v2" ? {
+    ...(new Set(["f1-semantic-v2", "f1-semantic-v3"]).has(artifactContractVersion) ? {
       systemSpecification: {
         status: "available",
         designNominal: { status: "available", actualValue: -0.05, displayValue: "-0.05", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53", valueOrigin: "numeric_literal" },
@@ -113,8 +113,8 @@ describe("loadF1ArtifactBundle", () => {
     expect(Object.hasOwn(loaded.input, "workbookPath")).toBe(false);
   });
 
-  it("loads v2 system specification into the canonical input", () => {
-    const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
+  it.each(["f1-semantic-v2", "f1-semantic-v3"])("loads %s system specification into the canonical input", (artifactContractVersion) => {
+    const { root } = createBundle({ artifactContractVersion });
 
     expect(loadF1ArtifactBundle(root)).toMatchObject({
       status: "accepted",

@@ -32,6 +32,7 @@ type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
 type F8SessionEvent = ReturnType<typeof f8SessionEventSchema.parse>;
 type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
 type F8ScenarioDraft = NonNullable<F8SessionSnapshot["scenarioDrafts"]>[number];
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 type StageAttempt = NonNullable<F8SessionSnapshot["activeAttempt"]>;
 
@@ -44,6 +45,7 @@ export interface SessionStoreTestHooks {
 export interface SessionStoreOptions {
   readonly rootDir: string;
   readonly sessionId: string;
+  readonly interactionLanguage?: F8SessionSnapshot["interactionLanguage"];
   readonly testHooks?: SessionStoreTestHooks;
 }
 
@@ -169,7 +171,7 @@ async function initializeStore(options: SessionStoreOptions): Promise<SqliteSess
     throw error;
   }
 
-  return new SqliteSessionStore(database, options.sessionId, options.testHooks);
+  return new SqliteSessionStore(database, options.sessionId, options.interactionLanguage, options.testHooks);
 }
 
 class SqliteSessionStore implements SessionStore {
@@ -210,6 +212,7 @@ class SqliteSessionStore implements SessionStore {
   constructor(
     private readonly database: DatabaseSync,
     private readonly sessionId: string,
+    private readonly interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
     private readonly testHooks: SessionStoreTestHooks | undefined,
   ) {
     this.selectSessionStatement = this.database.prepare(`
@@ -348,7 +351,7 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const now = new Date().toISOString();
-    const snapshot = createInitialSnapshot(this.sessionId);
+    const snapshot = createInitialSnapshot(this.sessionId, this.interactionLanguage);
 
     this.insertSessionStatement.run(
       this.sessionId,
@@ -410,7 +413,7 @@ class SqliteSessionStore implements SessionStore {
   async readCommittedCommand(commandId: string): Promise<F8SessionCommand | undefined> {
     const row = this.readCommandRow(commandId);
     if (row?.result_json === null || row === undefined) return undefined;
-    return f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
+    return f8SessionCommandSchema.parse(parseStoredCommand(row.command_json));
   }
 
   async applyCommand(commandInput: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot> {
@@ -424,6 +427,7 @@ class SqliteSessionStore implements SessionStore {
     const mutation = await reducer(currentSnapshot, command);
     const snapshotTransition = prepareSnapshotTransition(currentSnapshot, mutation.snapshot, mutation.scenarioDrafts);
     const nextSnapshot = snapshotTransition.snapshot;
+    assertNoNewLegacyDownstreamSelection(currentSnapshot, nextSnapshot);
     const artifactReferenceOps = normalizeArtifactReferenceOps(
       this.sessionId,
       mutation.artifactReferences,
@@ -549,6 +553,7 @@ class SqliteSessionStore implements SessionStore {
       result.artifactReferenceOps,
     );
     const snapshotWithArtifactReferences = withArtifactReferences(nextSnapshot, artifactReferenceOps);
+    assertNoNewLegacyDownstreamSelection(currentSnapshot, snapshotWithArtifactReferences);
     const hostActionOps = normalizeHostActionOps(
       this.sessionId,
       result.hostActions,
@@ -720,16 +725,20 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const snapshot = parseSnapshotJson(row.snapshot_json);
-    return this.backfillHistoricalWorksheetSelectionProvenance(row, snapshot);
+    return this.backfillHistoricalCompatibility(row, snapshot);
   }
 
-  private backfillHistoricalWorksheetSelectionProvenance(row: SessionRow, snapshot: F8SessionSnapshot): F8SessionSnapshot {
+  private backfillHistoricalCompatibility(row: SessionRow, snapshot: F8SessionSnapshot): F8SessionSnapshot {
     const commandRows = parseCommittedScopeCommandRows(this.selectCommittedScopeCommandsStatement.all(this.sessionId) as unknown);
-    const migrated = migrateLegacyWorksheetSelectionProvenance(
+    const migratedSelections = migrateLegacyWorksheetSelectionProvenance(
       snapshot,
       commandRows,
       row.revision,
     );
+    const persistedSnapshot = JSON.parse(row.snapshot_json) as Record<string, unknown>;
+    const migrated = "interactionLanguage" in persistedSnapshot
+      ? migratedSelections
+      : { ...migratedSelections, interactionLanguage: snapshot.interactionLanguage };
     if (migrated === snapshot) return snapshot;
 
     this.updateSessionStatement.run(
@@ -752,7 +761,19 @@ class SqliteSessionStore implements SessionStore {
   }
 }
 
-function createInitialSnapshot(sessionId: string): F8SessionSnapshot {
+function createInitialSnapshot(
+  sessionId: string,
+  interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
+): F8SessionSnapshot {
+  if (interactionLanguage === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} requires an interaction language lock when it is first created.`,
+      suggestedAction: "Provide the workflow-start interaction language when creating a new session, or open an existing persisted session to backfill legacy data.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
   return f8SessionSnapshotSchema.parse({
     contractVersion: "f8-session-snapshot-v1",
     sessionId,
@@ -760,6 +781,7 @@ function createInitialSnapshot(sessionId: string): F8SessionSnapshot {
     inputRevision: 0,
     state: "created",
     activeAttempt: null,
+    interactionLanguage,
     priorRunReferences: [],
   });
 }
@@ -1030,16 +1052,49 @@ function isTerminalAttemptStatus(status: SessionAttemptResultRecord["status"]): 
 
 function parseSnapshotJson(value: string): F8SessionSnapshot {
   const parsed = JSON.parse(value) as Record<string, unknown>;
+  const candidate = materializeLegacyInteractionLanguage(parsed) ?? parsed;
   try {
-    return f8SessionSnapshotSchema.parse(parsed);
+    return f8SessionSnapshotSchema.parse(candidate);
   } catch (error) {
-    const normalized = normalizeLegacySelectionProvenanceForValidation(parsed);
+    const normalized = normalizeLegacySelectionProvenanceForValidation(candidate);
     if (normalized === undefined) {
       throw error;
     }
     f8SessionSnapshotSchema.parse(normalized);
-    return parsed as F8SessionSnapshot;
+    return candidate as F8SessionSnapshot;
   }
+}
+
+function materializeLegacyInteractionLanguage(snapshot: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (snapshot.interactionLanguage !== undefined) {
+    return undefined;
+  }
+
+  const sessionId = typeof snapshot.sessionId === "string" && snapshot.sessionId.length > 0
+    ? snapshot.sessionId
+    : "legacy-session";
+  const revision = typeof snapshot.revision === "number" && Number.isInteger(snapshot.revision) && snapshot.revision >= 0
+    ? snapshot.revision
+    : 0;
+
+  return {
+    ...snapshot,
+    interactionLanguage: createLegacyFallbackInteractionLanguage(sessionId, revision, undefined),
+  };
+}
+
+function createLegacyFallbackInteractionLanguage(
+  sessionId: string,
+  revision: number,
+  turnId: string | undefined,
+): F8SessionSnapshot["interactionLanguage"] {
+  return {
+    languageTag: "und",
+    uiCatalogLanguage: "en",
+    lockedAtTurnId: turnId ?? `legacy:${sessionId}:revision-${revision}`,
+    source: "legacy_fallback",
+    fallbackUsed: true,
+  };
 }
 
 function normalizeLegacySelectionProvenanceForValidation(
@@ -1089,7 +1144,40 @@ function rollbackQuietly(database: DatabaseSync): void {
 }
 
 function stringifyJson(value: unknown): string {
-  return JSON.stringify(value);
+  return JSON.stringify(value, (_key, candidate: unknown) => candidate instanceof Uint8Array
+    ? { $type: "Uint8Array", data: Array.from(candidate) }
+    : candidate);
+}
+
+function parseStoredCommand(value: string): unknown {
+  const parsed = JSON.parse(value) as unknown;
+  if (typeof parsed !== "object" || parsed === null || !("payload" in parsed)) return parsed;
+  const payload = (parsed as { readonly payload?: unknown }).payload;
+  if (typeof payload !== "object" || payload === null || !("workbookBytes" in payload)) return parsed;
+  const workbookBytes = (payload as { readonly workbookBytes?: unknown }).workbookBytes;
+  const byteValues = storedByteValues(workbookBytes);
+  return byteValues === undefined ? parsed : { ...parsed, payload: { ...payload, workbookBytes: Uint8Array.from(byteValues) } };
+}
+
+function storedByteValues(value: unknown): number[] | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if ("$type" in value && "data" in value) {
+    const tagged = value as { readonly $type?: unknown; readonly data?: unknown };
+    return tagged.$type === "Uint8Array" && Array.isArray(tagged.data) && tagged.data.every(isByte) ? tagged.data : undefined;
+  }
+  if ("type" in value && "data" in value) {
+    const buffer = value as { readonly type?: unknown; readonly data?: unknown };
+    return buffer.type === "Buffer" && Array.isArray(buffer.data) && buffer.data.every(isByte) ? buffer.data : undefined;
+  }
+  const entries = Object.entries(value);
+  if (!entries.every(([key, byte]) => /^(0|[1-9]\d*)$/.test(key) && isByte(byte))) return undefined;
+  const sorted = entries.sort(([left], [right]) => Number(left) - Number(right));
+  if (!sorted.every(([key], index) => Number(key) === index)) return undefined;
+  return sorted.map(([, byte]) => byte as number);
+}
+
+function isByte(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value >= 0 && value <= 255;
 }
 
 function canonicalizeJson(value: string): string {
@@ -1147,6 +1235,26 @@ function withArtifactReferences(
         affectedInputReferences: [reference.artifactId],
       });
     }
+    if (reference.kind === "f5_multimodal") {
+      if (reference.contentHash === undefined) {
+        throw createTypedError({
+          code: "evidence_mismatch",
+          summary: `Multimodal artifact ${reference.artifactId} has no content hash.`,
+          suggestedAction: "Register the immutable multimodal artifact with its validated SHA-256 identity.",
+          affectedInputReferences: [reference.artifactId],
+        });
+      }
+      references.set(reference.artifactId, {
+        artifactId: reference.artifactId,
+        kind: reference.kind,
+        revision: snapshot.inputRevision,
+        validated: true,
+        reviewContextId,
+        relativePath: reference.relativePath,
+        contentHash: reference.contentHash,
+      });
+      return;
+    }
     references.set(reference.artifactId, {
       artifactId: reference.artifactId,
       kind: reference.kind,
@@ -1161,8 +1269,8 @@ function withArtifactReferences(
   });
 }
 
-function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" {
-  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"].includes(kind);
+function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_multimodal" | "f5_report" | "f6_optimization" | "f6_report" {
+  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_multimodal", "f5_report", "f6_optimization", "f6_report"].includes(kind);
 }
 
 function migrateLegacyWorksheetSelectionProvenance(
@@ -1225,14 +1333,23 @@ function parseCommittedScopeCommandRow(row: CommittedScopeCommandRow): {
   readonly payload: { readonly workbookHash: string; readonly worksheetNames: string[] };
 } | undefined {
   try {
-    const parsed = f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
-    if (!isWorksheetScopeCommand(parsed.command) || !isWorksheetScopePayload(parsed.payload)) {
+    const stored = JSON.parse(row.command_json) as unknown;
+    const current = f8SessionCommandSchema.safeParse(stored);
+    const parsed = current.success ? current.data : stored;
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const candidate = parsed as { readonly contractVersion?: unknown; readonly commandId?: unknown; readonly expectedRevision?: unknown; readonly command?: unknown; readonly payload?: unknown };
+    if (!current.success && (candidate.contractVersion !== "f8-session-command-v1"
+      || candidate.commandId !== row.command_id
+      || typeof candidate.expectedRevision !== "number"
+      || !Number.isInteger(candidate.expectedRevision)
+      || candidate.expectedRevision < 0)) return undefined;
+    if (!isWorksheetScopeCommand(candidate.command) || !isWorksheetScopePayload(candidate.payload)) {
       return undefined;
     }
     return {
       commandId: row.command_id,
-      command: parsed.command,
-      payload: parsed.payload,
+      command: candidate.command,
+      payload: candidate.payload,
     };
   } catch {
     return undefined;
@@ -1264,8 +1381,11 @@ function isWorksheetScopePayload(payload: unknown): payload is { readonly workbo
   if (typeof payload !== "object" || payload === null) return false;
   const candidate = payload as { readonly workbookHash?: unknown; readonly worksheetNames?: unknown };
   return typeof candidate.workbookHash === "string"
+    && SHA256_PATTERN.test(candidate.workbookHash)
     && Array.isArray(candidate.worksheetNames)
-    && candidate.worksheetNames.every((name) => typeof name === "string");
+    && candidate.worksheetNames.length > 0
+    && candidate.worksheetNames.every((name) => typeof name === "string")
+    && new Set(candidate.worksheetNames).size === candidate.worksheetNames.length;
 }
 
 function sameWorksheetSet(left: readonly string[], right: readonly string[]): boolean {
@@ -1273,4 +1393,21 @@ function sameWorksheetSet(left: readonly string[], right: readonly string[]): bo
   const rightSet = new Set(right);
   if (rightSet.size !== right.length) return false;
   return left.every((name) => rightSet.has(name));
+}
+
+function assertNoNewLegacyDownstreamSelection(current: F8SessionSnapshot, next: F8SessionSnapshot): void {
+  const nextSelection = next.downstreamScopeSelection;
+  if (nextSelection === undefined || "decision" in nextSelection) return;
+  const currentSelection = current.downstreamScopeSelection;
+  const preservesHistoricalSelection = currentSelection !== undefined
+    && !("decision" in currentSelection)
+    && stringifyJson(currentSelection) === stringifyJson(nextSelection);
+  if (!preservesHistoricalSelection) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "New downstream selections require revision-bound evidence.",
+      suggestedAction: "Materialize the downstream decision from the current validated Data Cleaning report.",
+      affectedInputReferences: [next.sessionId],
+    });
+  }
 }

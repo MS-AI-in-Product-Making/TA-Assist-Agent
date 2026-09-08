@@ -82,14 +82,14 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
     } catch {
       return reply.code(409).send({ error: "conversation_turn_conflict" });
     }
-    const prompt = buildEvidenceLabeledModelPrompt(text, taContext);
+    const prompt = buildEvidenceLabeledModelPrompt(text, taContext, snapshot.interactionLanguage);
     const actionId = `model:${userTurn.turnId}`;
     const created = await context.hostActions.create({ contractVersion: "f8-host-action-request-v1", actionId, sessionId, expectedRevision: snapshot.revision, kind: "vscode_model_request", confirmationHash: createHash("sha256").update(prompt).digest("hex"), expectedTargetVersion: "vscode-model-v1", turnId: userTurn.turnId, prompt, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
     if (created === undefined) return reply.code(409).send({ error: "model_action_conflict" });
     const turns = await context.conversation.read(sessionId);
     let appended;
     try {
-      appended = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${userTurn.turnId}:assistant`, sessionId, sequence: nextConversationSequence(turns), source: "system", role: "assistant", content: [{ kind: "text", text: "等待 VS Code 模型回答…" }], createdAt: new Date().toISOString(), relatedArtifactIds: taContext.relatedArtifactIds }));
+      appended = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${userTurn.turnId}:assistant`, sessionId, sequence: nextConversationSequence(turns), source: "system", role: "assistant", content: [{ kind: "text", text: snapshot.interactionLanguage.uiCatalogLanguage === "zh" ? "等待 VS Code 模型回答…" : "Waiting for the VS Code model response..." }], createdAt: new Date().toISOString(), relatedArtifactIds: taContext.relatedArtifactIds }));
     } catch {
       return reply.code(409).send({ error: "conversation_turn_conflict" });
     }

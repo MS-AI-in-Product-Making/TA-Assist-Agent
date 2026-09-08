@@ -30,7 +30,7 @@ import {
   injectLinksIntoFactorTableMarkdown,
   maskBlankFactorTemplateRows,
 } from "./f1-dual-grid.mjs";
-import { projectFactorActualFields } from "./f1-factor-actuals.mjs";
+import { projectFactorActualFields, projectFactorOrdinalEvidence } from "./f1-factor-actuals.mjs";
 import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
 import { withSystemSpecificationDisplayValues } from "./f1-system-specification-display.mjs";
 import { configuredFeature1Jobs, resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
@@ -218,6 +218,7 @@ function withDisplayActualFields(worksheet, worksheetSheet) {
       }
       return {
         sourceRow: row.sourceRow,
+        factorOrdinal: projectFactorOrdinalEvidence(row.factorOrdinal),
         fields: nextFields,
         actualFields: projectFactorActualFields(nextFields),
       };
@@ -499,7 +500,7 @@ if (selectionArgs.selectionOnly) {
 }
 const report = {
   contractVersion: "v1",
-  artifactContractVersion: "f1-semantic-v2",
+  artifactContractVersion: "f1-semantic-v3",
   feature: "F1",
   generatedAt,
   tasks: ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"],

@@ -134,6 +134,7 @@ function request() {
       imageReference,
       governanceRows: [{
         factorInstanceId: "1".padStart(64, "0"),
+        factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
         drawingDimensionKey: "2".padStart(64, "0"),
         deviceLevelDim: "device-dim-1",
         dimensionDescription: "dimension-1",
@@ -189,6 +190,7 @@ function contextualObservationBundle() {
     rows: [{
       tableId: governanceRow.source.tableId,
       sourceRow: governanceRow.source.sourceRow,
+      factorOrdinal: governanceRow.factorOrdinal,
       partName: governanceRow.partSubsystem,
       partSubsystem: governanceRow.partSubsystem,
       partCategory: governanceRow.partCategory,
@@ -385,6 +387,7 @@ function createRealArtifactBundle() {
       columns: [],
       rows: [{
         sourceRow: 2,
+        factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
         fields: {},
         actualFields: {
           factorName: "Factor A",

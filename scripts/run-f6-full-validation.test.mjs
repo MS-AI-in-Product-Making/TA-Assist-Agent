@@ -3,10 +3,11 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createF6ArtifactBundleFixture } from "./f6-artifact-test-fixture.mjs";
+import { createF6ArtifactBundleFixture, installRequiredMultimodalV3 } from "./f6-artifact-test-fixture.mjs";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 
 const cleanup = [];
+const INTERACTION_LANGUAGE = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "f6-cli", source: "workflow_start", fallbackUsed: false };
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -58,6 +59,8 @@ describe("runF6FullValidation", () => {
     runF6FullValidation({}, {
       parseArgs: () => ({
         ...bundle,
+        interactionLanguage: INTERACTION_LANGUAGE,
+        expectedModelInterpretationContentHash: "a".repeat(64),
         analysisContextArtifact: contextPath,
         modelInterpretationArtifact: modelPath,
       }),
@@ -85,6 +88,8 @@ describe("runF6FullValidation", () => {
     runF6FullValidation({}, {
       parseArgs: () => ({
         ...bundle,
+        interactionLanguage: INTERACTION_LANGUAGE,
+        expectedModelInterpretationContentHash: "a".repeat(64),
         analysisContextArtifact: contextPath,
         optimizationTargetsArtifact: targetsPath,
         modelInterpretationArtifact: modelPath,
@@ -104,10 +109,15 @@ describe("runF6FullValidation", () => {
 
   it("does not rewrite a failure manifest produced by the governed runner", () => {
     const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
     cleanup.push(bundle.root);
     const layout = layoutFor(bundle);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle }),
+      parseArgs: () => ({
+        ...bundle,
+        interactionLanguage: INTERACTION_LANGUAGE,
+        modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
+      }),
       resolveLayout: () => layout,
       createFinalReport: () => {
         throw new Error("report rendering failed");

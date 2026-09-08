@@ -15,6 +15,7 @@ function f2Report() {
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow: 14,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!D14" },
     actualFields: {
       factorName: "Anonymous offset",
       partName: "Anonymous bracket",
@@ -78,7 +79,7 @@ function f2Report() {
         designNominal: -0.05, lowerSpecLimit: systemSpecification.lowerSpecLimit, upperSpecLimit: systemSpecification.upperSpecLimit,
         targetSigmaLevel: systemSpecification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: systemSpecification.additionalMeanShift,
       },
-      factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+      factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
     }],
     adoEvents: [],
     summary: {
@@ -130,9 +131,9 @@ describe("Feature 3 local artifact flow", () => {
     expect(markdown).toContain(json.worksheets[0].toleranceLoopDescription);
     expect(result.reminderMdPath).toBe(path.join(outputRoot, "Feature3-ADO-Reminder.md"));
     expect(result.historyHtmlPath).toBe(path.join(outputRoot, "Feature3-ADO-History.html"));
-    expect(reminder).toContain("| Device Level Dim | Dimension Description |");
+    expect(reminder).toContain("| Worksheet Source | Device Level Dim | Dimension Description |");
     expect(historyHtml).toContain("<table>");
-    expect(historyHtml.match(/<th>/g)).toHaveLength(11);
+    expect(historyHtml.match(/<th>/g)).toHaveLength(12);
     expect(historyHtml.match(/<tr data-f3-factor-row=true>/g)).toHaveLength(json.summary.factorCount);
     expect(historyHtml.match(/<tr data-f3-group-row=true>/g)).toHaveLength(1);
   });

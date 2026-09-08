@@ -126,7 +126,7 @@ Surface MCP entity calls may start only after Question call 1 returns
 
 1. Preview contract:
 	- deterministic English preview.
-	- exact 11 columns.
+	- exact 12 columns with `Worksheet Source` as column one.
 	- group all rows globally by `Part / Subsystem` across worksheets; do not create worksheet-level groups.
 	- preserve worksheet identity in `Device Level Dim`, `Dimension Description`, and validated row provenance.
 	- no model rewriting records.
@@ -134,6 +134,7 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- direct comment channel uses `confirmedMarkdownBody` from `Feature3-ADO-Reminder.md`.
 	- System.History channel uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`.
 	- The confirmation shows the complete governance data and states that System.History writes its deterministic HTML table serialization.
+	- Any pending preview produced from an 11-column body is stale and must be regenerated; the existing action revision and body hash validation must reject it.
 2. Question call 2 - final write confirmation: vscode_askQuestions
 3. Question call 2 must be after validation and complete preview.
 4. The exact confirmation choice must be:
@@ -152,7 +153,7 @@ Surface MCP entity calls may start only after Question call 1 returns
 3. For the `System.History` channel, after final confirmation, call `mcp_surface_mcp_p_update_work_item` exactly once with one `requestBody` item: `op=add`, `path=/fields/System.History`, and `value` equal to `confirmedHistoryHtml`.
 4. Do not add any other JSON Patch operation and never derive `path` from user input.
 5. After the write returns, read back comments exactly once with `mcp_surface_mcp_p_list_work_item_comments` and `top: 200`. Never pass a `top` value greater than `200`.
-6. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected marked factor row count (`data-f3-factor-row=true`), excluding group rows (`data-f3-group-row=true`), then compare ADO-safe canonical HTML using `normalizeAdoHistoryHtmlForVerification` on both bodies; canonical HTML text and SHA-256 must match `confirmedHistoryHtml`. This is the required readback full body/hash check. The renderer must emit ADO-stable unquoted attributes for both row markers and group-cell `colspan=11`; do not repair attribute quoting during verification.
+6. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 12 headers with `Worksheet Source` first and the expected marked factor row count (`data-f3-factor-row=true`), excluding group rows (`data-f3-group-row=true`), then compare ADO-safe canonical HTML using `normalizeAdoHistoryHtmlForVerification` on both bodies; canonical HTML text and SHA-256 must match `confirmedHistoryHtml`. This is the required readback full body/hash check. The renderer must emit ADO-stable unquoted attributes for both row markers and group-cell `colspan=12`; do not repair attribute quoting during verification.
 7. ADO-safe canonical HTML may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. It must not normalize any other text or structure.
 8. A write error, verification mismatch, or post-write check failure uses the local failed fallback with `write_verification_failed`; no retry.
 9. Success: use the supported `updated` persistence command with the validated work item reference and no reason code.

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { f5MultimodalArtifactV3Schema } from "@ai-assist/contracts";
 
 import { canonicalSelectedWorksheetSetHash, type F8SessionSnapshot, type RuntimeSkillResult, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import type { RunContext } from "@ai-assist/workflow-runners";
@@ -25,6 +26,7 @@ export interface ProductionStageEnvironment {
   readonly baselineRunReference: string;
   readonly reviewContext?: { readonly workbookHash: string; readonly downstreamSelectionHash: string; readonly baselineRunReference: string };
   readonly callerAuthorizedF6Inputs?: CallerAuthorizedF6Inputs;
+  readonly multimodalArtifact?: { readonly path: string; readonly contentHash: string };
 }
 
 export async function runProductionStage(stage: string, environment: ProductionStageEnvironment, orchestrator: TaWorkbookOrchestrator): Promise<{ readonly result: unknown; readonly roots: ProductionRoots }> {
@@ -75,6 +77,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
   }
   if (stage === "f5_running") {
     if (environment.roots.f3Root === undefined || environment.roots.f4Root === undefined || environment.reviewContext === undefined) throw new Error("F5 roots are unavailable.");
+    const multimodal = await requireMultimodalArtifact(environment, selected, "f5");
     const scripts = await loadF5(environment.repositoryRoot);
     const f5Base = join(outputBase, "f5");
     const result = requireRuntimeSkillOutput(await orchestrator.runStage("f5_running", {
@@ -83,23 +86,25 @@ export async function runProductionStage(stage: string, environment: ProductionS
       artifactReferences: [
         { artifactId: `f3:${environment.snapshot.inputRevision}`, kind: "f3_report", revision: environment.snapshot.inputRevision, validated: true },
         { artifactId: `f4:${environment.snapshot.inputRevision}`, kind: "f4_calculation", revision: environment.snapshot.inputRevision, validated: true },
+        { artifactId: `f5-multimodal:${environment.snapshot.inputRevision}`, kind: "f5_multimodal", revision: environment.snapshot.inputRevision, validated: true },
       ],
       ...(worksheetScope === undefined ? {} : { worksheetScope }),
       input: {
-        request: { f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, selectedWorksheetNames: selected },
+        request: { f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, selectedWorksheetNames: selected, modelInterpretationPath: multimodal.path, expectedModelInterpretationContentHash: multimodal.contentHash },
         context: { ...environment.context, managedOutputRoot: f5Base },
         dependencies: {
           resolveOutputLayout: () => scripts.resolveFeature5OutputLayout({ f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root }, f5Base, () => new Date(), publishRoot),
-          loadBundle: (request: { readonly f1ArtifactRoot: string; readonly f3ArtifactRoot: string; readonly f4ArtifactRoot: string; readonly selectedWorksheetNames?: readonly string[]; readonly imageObservationsPath?: string }) => scripts.loadF5ArtifactBundle({ f1ArtifactRoot: request.f1ArtifactRoot, f3ArtifactRoot: request.f3ArtifactRoot, f4ArtifactRoot: request.f4ArtifactRoot, selectedWorksheetNames: request.selectedWorksheetNames, imageObservationArtifact: request.imageObservationsPath } as never),
+          loadBundle: (request: { readonly f1ArtifactRoot: string; readonly f3ArtifactRoot: string; readonly f4ArtifactRoot: string; readonly selectedWorksheetNames?: readonly string[]; readonly imageObservationsPath?: string; readonly modelInterpretationPath: string; readonly expectedModelInterpretationContentHash: string }) => scripts.loadF5ArtifactBundle({ f1ArtifactRoot: request.f1ArtifactRoot, f3ArtifactRoot: request.f3ArtifactRoot, f4ArtifactRoot: request.f4ArtifactRoot, selectedWorksheetNames: request.selectedWorksheetNames, imageObservationArtifact: request.imageObservationsPath, modelInterpretationArtifact: request.modelInterpretationPath, expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash } as never),
           renderReport: scripts.renderF5Report,
         },
       },
     }), "engineering-interpretation-v1") as { readonly status: string; readonly reasonCode?: string; readonly reportJsonPath?: string; readonly outputDirectory: string };
     if (result.status === "failed" || result.reportJsonPath === undefined) throw new Error(`F5 failed: ${result.reasonCode ?? "unknown"}`);
-    return { result: { ...result, reviewContext: environment.reviewContext, artifactReferences: [await artifact(environment.serverRoot, `f5-report:${environment.snapshot.inputRevision}`, "f5_report", result.reportJsonPath)] }, roots: { ...environment.roots, f5Root: result.outputDirectory } };
+    return { result: { ...result, reviewContext: environment.reviewContext, artifactReferences: [await artifact(environment.serverRoot, `f5-multimodal:${environment.snapshot.inputRevision}`, "f5_multimodal", multimodal.path), await artifact(environment.serverRoot, `f5-report:${environment.snapshot.inputRevision}`, "f5_report", result.reportJsonPath)] }, roots: { ...environment.roots, f5Root: result.outputDirectory } };
   }
   if (stage === "f6_running") {
     if (environment.roots.f3Root === undefined || environment.roots.f4Root === undefined || environment.roots.f5Root === undefined || environment.reviewContext === undefined) throw new Error("F6 roots are unavailable.");
+    const multimodal = await requireMultimodalArtifact(environment, selected, "f6");
     const scripts = await loadF6(environment.repositoryRoot);
     const f6Base = join(outputBase, "f6");
     const layout = scripts.resolveFeature6OutputLayout({ f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root }, f6Base, () => new Date(), publishRoot);
@@ -109,6 +114,10 @@ export async function runProductionStage(stage: string, environment: ProductionS
       f4ArtifactRoot: environment.roots.f4Root,
       f5ArtifactRoot: environment.roots.f5Root,
       selectedWorksheetNames: selected,
+      interactionLanguage: environment.snapshot.interactionLanguage,
+      modelInterpretationPath: multimodal.path,
+      expectedModelInterpretationContentHash: multimodal.contentHash,
+      requireMultimodalV3: true,
       ...(environment.callerAuthorizedF6Inputs?.analysisContextPath === undefined ? {} : { analysisContextPath: environment.callerAuthorizedF6Inputs.analysisContextPath }),
       ...(environment.callerAuthorizedF6Inputs?.expectedAnalysisContextContentHash === undefined ? {} : { expectedAnalysisContextContentHash: environment.callerAuthorizedF6Inputs.expectedAnalysisContextContentHash }),
       ...(environment.callerAuthorizedF6Inputs?.optimizationTargetsPath === undefined ? {} : { optimizationTargetsPath: environment.callerAuthorizedF6Inputs.optimizationTargetsPath }),
@@ -134,6 +143,9 @@ export async function runProductionStage(stage: string, environment: ProductionS
             publishRoot: layout.publishRoot,
             analysisContextArtifact: request.analysisContextPath,
             optimizationTargetsArtifact: request.optimizationTargetsPath,
+            modelInterpretationArtifactRoot: dirname(request.modelInterpretationPath),
+            modelInterpretationArtifact: basename(request.modelInterpretationPath),
+            expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
           } as never),
           createFinalReport: scripts.createF6FinalReportProjection,
           renderOptimization: scripts.renderF6Report,
@@ -179,6 +191,32 @@ export async function runProductionStage(stage: string, environment: ProductionS
   throw new Error(`Unsupported production stage: ${stage}`);
 }
 
+async function requireMultimodalArtifact(environment: ProductionStageEnvironment, selectedWorksheetNames: readonly string[], consumer: "f5" | "f6") {
+  const identity = environment.multimodalArtifact;
+  if (identity === undefined) throw new Error("Mandatory multimodal interpretation artifact is unavailable.");
+  const bytes = await readFile(identity.path);
+  if (createHash("sha256").update(bytes).digest("hex") !== identity.contentHash) throw new Error("Mandatory multimodal interpretation artifact hash mismatch.");
+  const parsed = f5MultimodalArtifactV3Schema.safeParse(JSON.parse(bytes.toString("utf8")));
+  if (!parsed.success
+    || parsed.data.sessionId !== environment.sessionId
+    || (consumer === "f5" ? parsed.data.revision !== environment.snapshot.revision : parsed.data.revision >= environment.snapshot.revision)
+    || parsed.data.inputRevision !== environment.snapshot.inputRevision
+    || parsed.data.workbookContentHash !== environment.reviewContext?.workbookHash
+    || JSON.stringify(parsed.data.selectedWorksheetNames) !== JSON.stringify(selectedWorksheetNames)) {
+    throw new Error("Mandatory multimodal interpretation artifact authority mismatch.");
+  }
+  if (consumer === "f6") {
+    const references = environment.snapshot.artifactRefs?.filter((reference) => reference.kind === "f5_multimodal"
+      && reference.validated
+      && reference.revision === environment.snapshot.inputRevision
+      && reference.artifactId === `f5-multimodal:${environment.snapshot.inputRevision}`
+      && reference.contentHash === identity.contentHash
+      && resolve(environment.serverRoot, reference.relativePath) === resolve(identity.path)) ?? [];
+    if (references.length !== 1) throw new Error("Mandatory multimodal interpretation artifact reference mismatch.");
+  }
+  return { ...identity, artifact: parsed.data };
+}
+
 function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, skillId: string): Output {
   if (result.status === "failed") {
     if (result.error instanceof Error) {
@@ -215,7 +253,7 @@ export function reviewContextFor(snapshot: F8SessionSnapshot, baselineRunReferen
   return { workbookHash: scope.workbookContentHash, downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames), baselineRunReference };
 }
 
-async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection", absolutePath: string) {
+async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_multimodal" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection", absolutePath: string) {
   const bytes = await readFile(absolutePath);
   const relativePath = relative(resolve(rootDir), resolve(absolutePath));
   if (relativePath.startsWith("..")) throw new Error(`${kind} escaped the managed root.`);

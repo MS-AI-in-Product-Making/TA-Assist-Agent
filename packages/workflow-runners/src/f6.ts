@@ -14,8 +14,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { createTypedError } from "@ai-assist/contracts";
-import { createF6Optimization } from "@ai-assist/workbook-catalog";
+import { createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
@@ -34,8 +34,8 @@ interface F6Layout {
 export interface F6Dependencies {
   readonly resolveOutputLayout?: (request: F6OptimizationRequest, context: RunContext) => F6Layout;
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
-  readonly createOptimization?: typeof createF6Optimization;
-  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string }) => { markdown: string; reportSummary: unknown; projection: unknown };
+  readonly createOptimization?: typeof createF6OptimizationV3;
+  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
   readonly renderOptimization?: (optimization: any, options: { outputRoot: string }) => string;
   readonly mkdir?: typeof mkdirSync;
   readonly randomUUID?: typeof randomUUID;
@@ -252,7 +252,7 @@ function safeSources(sourceReferences: Record<string, { artifact: string; conten
   }]));
 }
 
-function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown) {
+function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown) {
   return {
     contractVersion: "v1",
     featureId: "F6",
@@ -260,8 +260,20 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     runId: layout.runId,
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(inputDecisions === undefined ? {} : { inputDecisions }),
+    ...(interactionLanguage === undefined ? {} : { interactionLanguage }),
     artifacts,
   };
+}
+
+function validInteractionLanguage(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const language = value as Record<string, unknown>;
+  return typeof language.languageTag === "string" && language.languageTag.length > 0
+    && (language.uiCatalogLanguage === "en" || language.uiCatalogLanguage === "zh")
+    && typeof language.lockedAtTurnId === "string" && language.lockedAtTurnId.length > 0
+    && (language.source === "workflow_start" || language.source === "explicit_user_change")
+    && language.fallbackUsed === false
+    && Object.keys(language).length === 5;
 }
 
 function failedResult(layout: F6Layout, paths: ReturnType<typeof outputPaths>, artifacts: Record<string, string>, reasonCode: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>): F6OptimizationResult {
@@ -313,7 +325,7 @@ export function runF6Optimization(
 ): F6OptimizationResult {
   const resolveOutputLayout = dependencies.resolveOutputLayout;
   const loadBundle = dependencies.loadBundle;
-  const createOptimization = dependencies.createOptimization ?? createF6Optimization;
+  const createOptimization = dependencies.createOptimization ?? createF6OptimizationV3;
   const createFinalReport = dependencies.createFinalReport;
   const renderOptimization = dependencies.renderOptimization;
   const mkdir = dependencies.mkdir ?? mkdirSync;
@@ -361,27 +373,37 @@ export function runF6Optimization(
       optimizationTargets: loaded.inputDecisions?.optimizationTargets ?? { outcome: "NOT_PROVIDED" },
       modelInterpretation: loaded.inputDecisions?.modelInterpretation ?? { outcome: "NOT_PROVIDED" },
     };
-    if (!verifyCallerAuthorizedHash(request.expectedAnalysisContextContentHash, inputDecisions.analysisContext)
-      || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)) {
+    requireDecisionOrder(inputDecisions, loaded);
+    if (!validInteractionLanguage(request.interactionLanguage)
+      || !verifyCallerAuthorizedHash(request.expectedAnalysisContextContentHash, inputDecisions.analysisContext)
+      || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)
+      || loaded.modelInterpretation === undefined
+      || loaded.modelInterpretation.contractVersion !== "f5-multimodal-artifact-v3"
+      || typeof request.expectedModelInterpretationContentHash !== "string"
+      || !verifyCallerAuthorizedHash(request.expectedModelInterpretationContentHash, inputDecisions.modelInterpretation)) {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
     }
-    requireDecisionOrder(inputDecisions, loaded);
 
     failureStage = "optimization";
-    const optimization = createOptimization(loaded.request, {
-      ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
+    const optimizationCandidate = createOptimization(loaded.request, {
+      interactionLanguage: request.interactionLanguage,
+      multimodalInterpretation: loaded.modelInterpretation,
+      multimodalReference: inputDecisions.modelInterpretation.artifactReference,
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
-      ...(loaded.modelInterpretation === undefined ? {} : { modelInterpretation: loaded.modelInterpretation }),
-      inputDecisions,
-    } as any);
+      optimizationTargetsDecision: inputDecisions.optimizationTargets,
+    });
+    const parsedOptimization = f6OptimizationResultV3Schema.safeParse(optimizationCandidate);
+    if (!parsedOptimization.success) throw new Error("Feature 6 optimizer must emit a governed v3 result.");
+    const optimization = parsedOptimization.data;
 
     failureStage = "report";
-    const finalReport = createFinalReport({
+    const finalReportCandidate = createFinalReport({
       f2Report: loaded.f2Report,
       f3Report: loaded.f3Report,
       f4Report: loaded.f4Report,
       f5Report: loaded.f5Report,
       f6Optimization: optimization,
+      interactionLanguage: request.interactionLanguage,
       generatedAt: generatedAtFromRunId(layout.runId),
       ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
       ...(loaded.modelInterpretation === undefined ? {} : { modelInterpretation: loaded.modelInterpretation }),
@@ -389,7 +411,9 @@ export function runF6Optimization(
       outputRoot: layout.runRoot,
       f1ArtifactRoot: loaded.f2Report.artifactRoot,
       publishRoot: layout.publishRoot,
+      requireMultimodalV3: true,
     });
+    const finalReport = taEngineeringReportProjectionSchema.parse(finalReportCandidate);
 
     const contents = {
       optimizationJson: json(optimization),
@@ -403,6 +427,7 @@ export function runF6Optimization(
       status: workflowStatus,
       sources: safeSources(loaded.sourceReferences),
       inputDecisions,
+      interactionLanguage: request.interactionLanguage,
       counts: optimization.summary,
       hashes: Object.fromEntries(Object.entries(contents).map(([key, content]) => [`${key}Sha256`, sha256(content)])),
       reportSummary: finalReport.reportSummary,
@@ -416,7 +441,7 @@ export function runF6Optimization(
     }
     atomicWrite(paths.runSummary, json(summary), boundary, staging, writeDependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions)), boundary, staging, writeDependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions, request.interactionLanguage)), boundary, staging, writeDependencies);
     context.emit({ kind: "artifact_written", featureId: "F6", stage: "report", timestamp: new Date().toISOString(), path: paths.optimizationJson });
     return {
       featureId: "F6",

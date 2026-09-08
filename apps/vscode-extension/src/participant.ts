@@ -1,4 +1,11 @@
 import type { AgentTurnRequest, AgentTurnResult } from "@ai-assist/agent-runtime";
+import type { UiCatalogLanguage } from "@ai-assist/product-language";
+import {
+  classifyTopLevelWorkflowIntent,
+  detectUserLanguage,
+  productWorkflowLabel,
+  type ProductWorkflowId,
+} from "@ai-assist/product-language";
 
 import { classifyAnalyzeIntent, type TaAnalyzeIntent } from "./analyze-intent.js";
 
@@ -25,7 +32,8 @@ export interface ParticipantCancellation {
 export interface ParticipantDependencies {
   readonly sessionId?: string;
   readonly commandId: () => string;
-  readonly handleAnalyzeIntent?: (intent: TaAnalyzeIntent) => Promise<string>;
+  readonly handleAnalyzeIntent?: (intent: TaAnalyzeIntent, requestText: string) => Promise<string>;
+  readonly uiCatalogLanguage?: UiCatalogLanguage;
   readonly handleTurn: (request: AgentTurnRequest, dependencies: { readonly model?: unknown }) => Promise<AgentTurnResult>;
 }
 
@@ -40,10 +48,12 @@ export async function handleParticipant(
   const handledAnalyzeIntent = await handleAnalyzeIntent(request, stream, cancellation, dependencies);
   if (handledAnalyzeIntent) return;
   if (dependencies.sessionId === undefined) {
-    stream.markdown("请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。");
+    stream.markdown(dependencies.uiCatalogLanguage === "zh"
+      ? "请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。"
+      : "Use `/analyze` or `/resume <session-id>` to bind a TA Assist session first.");
     return;
   }
-  stream.progress("正在读取 TA Assist session...");
+  stream.progress(dependencies.uiCatalogLanguage === "zh" ? "正在读取 TA Assist session..." : "Reading the TA Assist session...");
   const result = await dependencies.handleTurn({
     text: request.prompt,
     sessionId: dependencies.sessionId,
@@ -54,7 +64,7 @@ export async function handleParticipant(
   stream.markdown(result.responseText);
   for (const action of result.actions) {
     if (action.type === "open_report" && action.target === "/report/current") {
-      stream.button({ command: "ta-assist.openCurrentReport", title: "Design Optimization Report", arguments: [] });
+      stream.button({ command: "ta-assist.openCurrentReport", title: dependencies.uiCatalogLanguage === "zh" ? "设计优化报告" : "Design Optimization Report", arguments: [] });
       continue;
     }
     stream.button({ command: "ta-assist.openAction", title: action.label, arguments: [action.target] });
@@ -67,9 +77,37 @@ async function handleAnalyzeIntent(
   cancellation: ParticipantCancellation,
   dependencies: ParticipantDependencies,
 ): Promise<boolean> {
+  const workflowIntent = classifyParticipantWorkflowIntent(request);
+  if (workflowIntent === undefined) return false;
+
+  if (workflowIntent.kind === "measured_analysis") {
+    stream.markdown(buildMeasuredAnalysisMessage(request.prompt));
+    stream.button({ command: "ta-assist.openRealMeasurementAnalysis", title: "TA Real-Measurement Analysis", arguments: [] });
+    return true;
+  }
+
+  if (workflowIntent.kind === "knowledge_question") {
+    stream.markdown(buildKnowledgeLibraryMessage(request.prompt));
+    stream.button({ command: "ta-assist.openKnowledgeLibrary", title: "Knowledge Library", arguments: [] });
+    return true;
+  }
+
+  if (workflowIntent.kind === "clarification_required") {
+    stream.markdown(buildClarificationMessage(request.prompt, workflowIntent.candidates));
+    return true;
+  }
+
+  if (workflowIntent.kind === "unsupported") {
+    stream.markdown(dependencies.uiCatalogLanguage === "zh"
+      ? "无法将此请求路由到受支持的 TA Assist 产品能力。请明确请求知识库、TA 工作簿分析、真实量测分析或反馈应用。"
+      : "TA Assist cannot route this request to a supported product capability. Ask for Knowledge Library, TA workbook analysis, real-measurement analysis, or feedback application.");
+    return true;
+  }
+
+  if (workflowIntent.kind !== "workbook_analysis") return false;
+
   const classification = classifyParticipantAnalyzeIntent(request);
-  if (classification === undefined) return false;
-  if (classification.kind === "invalid_analyze_ta") {
+  if (classification?.kind === "invalid_analyze_ta") {
     stream.markdown(classification.reason === "multiple_paths"
       ? "Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench."
       : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, one exact .xlsx workbook file name, or no path.");
@@ -77,16 +115,43 @@ async function handleAnalyzeIntent(
   }
   if (dependencies.handleAnalyzeIntent === undefined) return false;
   stream.progress("正在准备 TA Assist Workbench...");
-  const response = await dependencies.handleAnalyzeIntent(classification);
+  const response = await dependencies.handleAnalyzeIntent(classification ?? { kind: "analyze_ta" }, request.prompt);
   if (cancellation.isCancellationRequested) return true;
   stream.markdown(response);
   return true;
 }
 
+function classifyParticipantWorkflowIntent(request: ParticipantRequest) {
+  if (request.command === "analyze") return { kind: "workbook_analysis" } as const;
+  if (request.command !== undefined) return undefined;
+  return classifyTopLevelWorkflowIntent(request.prompt);
+}
+
 function classifyParticipantAnalyzeIntent(request: ParticipantRequest): ReturnType<typeof classifyAnalyzeIntent> {
   if (request.command === "analyze") {
     const prompt = request.prompt.trim();
-    return classifyAnalyzeIntent(prompt.length === 0 ? "analyze TA workbook" : `analyze TA workbook ${prompt}`);
+    return prompt.length === 0 ? undefined : classifyAnalyzeIntent(`analyze ${prompt}`);
   }
   return request.command === undefined ? classifyAnalyzeIntent(request.prompt) : undefined;
+}
+
+function buildMeasuredAnalysisMessage(prompt: string): string {
+  const language = detectUserLanguage(prompt);
+  return language === "zh"
+    ? "TA Real-Measurement Analysis 已识别为本次请求的正确入口。"
+    : "TA Real-Measurement Analysis is the correct entry for this request.";
+}
+
+function buildKnowledgeLibraryMessage(prompt: string): string {
+  return detectUserLanguage(prompt) === "zh"
+    ? "Knowledge Library 已识别为本次请求的正确入口。"
+    : "Knowledge Library is the correct entry for this request.";
+}
+
+function buildClarificationMessage(prompt: string, candidates: readonly ProductWorkflowId[]): string {
+  const language = detectUserLanguage(prompt);
+  const names = candidates.map((candidate) => productWorkflowLabel(candidate, language));
+  return language === "zh"
+    ? `当前请求还不足以确定顶层产品 workflow。请明确你要进入以下哪一个：${names.join("、")}。`
+    : `This request is not specific enough to choose a product workflow. Please clarify which one you want: ${names.join(", ")}.`;
 }

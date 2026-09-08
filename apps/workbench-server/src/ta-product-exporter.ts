@@ -4,6 +4,7 @@ import path, { basename, dirname, join, relative, resolve } from "node:path";
 
 import {
   createTypedError,
+  taEngineeringReportProjectionSchema,
   taEngineeringReportProjectionContentSchema,
   taProductExportCommandSchema,
   taProductExportManifestSchema,
@@ -557,6 +558,17 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
     await assertArtifactRootBinding(options.rootDir, command.sessionId, productionRoots, { f3, f4, f5, f6Optimization, f6Report });
 
     const projection = taEngineeringReportProjectionContentSchema.parse(JSON.parse(projectionArtifact.text) as unknown);
+    const reportSurface = taEngineeringReportProjectionSchema.safeParse({
+      markdown: f6Report.text,
+      reportSummary: {
+        workbookDisposition: projection.workbookDisposition,
+        worksheetDispositions: projection.worksheetDispositions,
+      },
+      projection,
+    });
+    if (!reportSurface.success) {
+      evidenceMismatch("Final report does not satisfy the governed user-facing report contract.", command.sessionId);
+    }
     const f6RootRelative = dirname(f6Report.reference.relativePath);
     const [improvementOptions, runSummaryJson] = await Promise.all([
       readManagedText(options.rootDir, join(f6RootRelative, "Feature6-Optimization.md"), undefined, "Feature6-Optimization.md"),

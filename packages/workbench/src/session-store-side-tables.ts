@@ -18,7 +18,7 @@ export interface SessionArtifactReference {
   readonly reviewContext?: ReviewContextIdentity;
 }
 
-const REVIEW_ARTIFACT_KINDS = new Set(["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"]);
+const REVIEW_ARTIFACT_KINDS = new Set(["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_multimodal", "f5_report", "f6_optimization", "f6_report"]);
 
 export interface SessionHostActionRecord {
   readonly actionId: string;

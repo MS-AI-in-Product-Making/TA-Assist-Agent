@@ -4,8 +4,9 @@ import {
   drawingGovernanceResultV2Schema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
-  f6OptimizationResultSchema,
+  f6ReadableOptimizationResultSchema,
   f2UserReportSchema,
+  f2FindingsDecisionProjectionSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
   f8ScenarioDraftSchema,
@@ -15,8 +16,9 @@ import {
   type DrawingGovernanceResultV2,
   type F4WorkflowCalculationResult,
   type F5DataInterpretationResult,
-  type F6OptimizationResultV2,
+  type F6ReadableOptimizationResult,
   type F2UserReport,
+  type F2FindingsDecisionProjection,
   type F8ScenarioDraft,
   type F8AdoProjection,
   type F8AdoWriteConfirmation,
@@ -91,6 +93,8 @@ export interface WorkbenchApi {
   bootstrap(): Promise<BootstrapResult>;
   subscribe(sessionId: string, handlers: WorkbenchSubscriptionHandlers, lastEventId?: string): () => void;
   uploadWorkbook(sessionId: string, expectedRevision: number, file: File): Promise<{ readonly snapshot: F8SessionSnapshot; readonly workbookHash: string }>;
+  replaceWorkbook(sessionId: string, expectedRevision: number, previousWorkbookHash: string, file: File): Promise<{ readonly snapshot: F8SessionSnapshot; readonly workbookHash: string }>;
+  readF2Findings(sessionId: string): Promise<F2FindingsDecisionProjection>;
   submitCommand<TPayload extends F8PublicSessionCommand["payload"]>(
     sessionId: string,
     expectedRevision: number,
@@ -115,7 +119,7 @@ export interface WorkbenchApi {
     sessionId: string,
     artifactId: string,
     kind: "f2_report" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report",
-  ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6OptimizationResultV2 | undefined>;
+  ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6ReadableOptimizationResult | undefined>;
 }
 
 export interface TaConversationSelection { readonly worksheetName: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string }
@@ -235,6 +239,27 @@ export function createWorkbenchApi(): WorkbenchApi {
       });
       return { snapshot, workbookHash: upload.contentHash };
     },
+    async replaceWorkbook(sessionId, expectedRevision, previousWorkbookHash, file) {
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", file);
+      const uploadResponse = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/files`, {
+        method: "POST", credentials: "same-origin", headers: { "x-csrf-token": await readCsrfToken() }, body: form,
+      });
+      const upload = await parseJsonResponse(uploadResponse) as { readonly artifactId?: unknown; readonly contentHash?: unknown };
+      if (typeof upload.artifactId !== "string" || typeof upload.contentHash !== "string") {
+        throw createTypedError({ code: "validation_error", summary: "The server did not return a governed replacement workbook reference.", suggestedAction: "Upload the replacement workbook again.", affectedInputReferences: [sessionId] });
+      }
+      const snapshot = await submitCommandInternal({
+        sessionId, expectedRevision, command: "replace_workbook",
+        payload: { artifactId: upload.artifactId, previousWorkbookHash, inputClassification: "confidential" },
+      });
+      return { snapshot, workbookHash: upload.contentHash };
+    },
+    async readF2Findings(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/findings/f2`, { credentials: "same-origin" });
+      return f2FindingsDecisionProjectionSchema.parse(await parseJsonResponse(response));
+    },
     async submitCommand(sessionId, expectedRevision, command, payload) {
       return submitCommandInternal({ sessionId, expectedRevision, command, payload });
     },
@@ -331,7 +356,7 @@ export function createWorkbenchApi(): WorkbenchApi {
           return f5DataInterpretationResultSchema.parse(data);
         case "f6_optimization":
         case "f6_report":
-          return f6OptimizationResultSchema.parse(data);
+          return f6ReadableOptimizationResultSchema.parse(data);
         default:
           return undefined;
       }

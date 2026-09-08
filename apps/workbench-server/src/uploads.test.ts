@@ -3,8 +3,14 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
-import { buildWorkbenchServer } from "./server.js";
+import { buildWorkbenchServer as buildWorkbenchServerBase } from "./server.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
+
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function buildWorkbenchServer(options: Parameters<typeof buildWorkbenchServerBase>[0]) {
+  return buildWorkbenchServerBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+}
 
 function testRoot(name: string): string {
   return `.tmp/${name}-${randomUUID()}`;
@@ -42,6 +48,8 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
       }
     },
     async cancel() { return false; },
+    async discardForExternalGate() { return false; },
+    async assertNoUnreconciledExternalGateJobs() {},
     async reconcile() {},
   };
 }

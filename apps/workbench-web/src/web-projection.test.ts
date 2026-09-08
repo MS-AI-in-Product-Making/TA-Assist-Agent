@@ -25,7 +25,12 @@ describe("web-projection", () => {
 
   it("replaces internal capability identifiers in user-visible system text", () => {
     expect(projectProductText("F2 factor table and Feature6-Report.md")).toBe("Data Cleaning factor table and Design Optimization-Report.md");
+    expect(projectProductText("F2 factor table and Feature6-Report.md", "zh")).toBe("数据清洗 factor table and 设计优化-Report.md");
     expect(projectProductText("Ordinary engineering text")).toBe("Ordinary engineering text");
+  });
+
+  it("uses the locked Chinese catalog for capability labels", () => {
+    expect(featureDisplay("F6", "zh")).toBe("设计优化");
   });
 
   it("projects internal action values into human-readable labels", () => {

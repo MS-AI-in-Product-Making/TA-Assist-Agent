@@ -6,16 +6,21 @@ import { describe, expect, it } from "vitest";
 
 import { canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore } from "@ai-assist/workbench";
 
-import { buildWorkbenchServer } from "../server.js";
+import { buildWorkbenchServer as buildWorkbenchServerBase } from "../server.js";
 import { materializeF6InputDraftFromProposal } from "./f6-inputs.js";
 
 const WORKBOOK_HASH = "a".repeat(64);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
 const REVIEW_CONTEXT = {
   workbookHash: WORKBOOK_HASH,
   downstreamSelectionHash: canonicalSelectedWorksheetSetHash(["Analysis-A"]),
   baselineRunReference: "f2-run-2026-09-05",
 };
 const SESSION_ID = "90909090-9090-4909-8909-909090909090";
+
+function buildWorkbenchServer(options: Parameters<typeof buildWorkbenchServerBase>[0]) {
+  return buildWorkbenchServerBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+}
 
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
@@ -148,7 +153,7 @@ describe("f6 input drafts routes", () => {
     const rootDir = testRoot("workbench-server-f6-input-drafts-system-identity");
     await rm(rootDir, { recursive: true, force: true });
     try {
-      const createdStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+      const createdStore = await createSessionStore({ rootDir, sessionId: SESSION_ID, interactionLanguage: ENGLISH_LOCK });
       await createdStore.close();
       await seedSessionLineage(rootDir, SESSION_ID);
       const store = await openSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -521,9 +526,14 @@ async function seedSessionLineage(
         state: "analysis_context_decision_required",
         activeAttempt: null,
         downstreamScopeSelection: {
+          decision: "continue_ready",
           workbookContentHash: WORKBOOK_HASH,
           selectedWorksheetNames: ["Analysis-A"],
           confirmed: true,
+          inputRevision: snapshot.inputRevision,
+          f2ReportArtifactId: "f2-run-2026-09-05",
+          f2ReportContentHash: "4".repeat(64),
+          findingDigest: "5".repeat(64),
           provenance: "user",
         },
         priorRunReferences: [

@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { F8SessionSnapshot, TaWorkbookOrchestrator } from "@ai-assist/workbench";
+import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash } from "@ai-assist/contracts";
 
 import { runProductionStage, type ProductionStageEnvironment } from "./production-stage-runner.js";
 
@@ -26,6 +28,13 @@ const baseSnapshot = {
     selectedWorksheetNames: ["Analysis-A"],
     confirmed: true,
     provenance: "user",
+  },
+  interactionLanguage: {
+    languageTag: "en-US",
+    uiCatalogLanguage: "en",
+    lockedAtTurnId: "turn-1",
+    source: "workflow_start",
+    fallbackUsed: false,
   },
 } as const satisfies Partial<F8SessionSnapshot>;
 
@@ -72,6 +81,41 @@ function orchestratorResult(result: unknown): TaWorkbookOrchestrator {
 }
 
 describe("runProductionStage output gating", () => {
+  it("does not start deterministic F5 without a complete multimodal aggregate", async () => {
+    const runStage = vi.fn();
+    const orchestrator = { ...orchestratorResult({}), runStage };
+
+    await expect(runProductionStage("f5_running", createEnvironment("f5_running"), orchestrator)).rejects.toThrow(/multimodal/i);
+    expect(runStage).not.toHaveBeenCalled();
+  });
+
+  it("passes the governed multimodal aggregate identity into F5", async () => {
+    const serverRoot = await mkdtemp(join(tmpdir(), "ta-task6-f5-"));
+    try {
+      const reportPath = join(serverRoot, "managed", "f5", "Feature5-Report.json");
+      await mkdir(join(serverRoot, "managed", "f5"), { recursive: true });
+      await writeFile(reportPath, "{}\n", "utf8");
+      const environment = { ...createEnvironment("f5_running"), serverRoot };
+      const multimodalArtifact = await writeMultimodalArtifact(serverRoot, environment);
+      let capturedRequest: Record<string, unknown> | undefined;
+
+      await runProductionStage("f5_running", { ...environment, multimodalArtifact }, {
+        ...orchestratorResult({}),
+        runStage: async (_stage, input) => {
+          capturedRequest = (input.input as { request?: Record<string, unknown> }).request;
+          return { status: "completed", skillId: "engineering-interpretation-v1", inputRevision: 2, idempotencyKey: "attempt-1:f5_running", output: { status: "completed", outputDirectory: join(serverRoot, "managed", "f5"), reportJsonPath: reportPath } } as never;
+        },
+      });
+
+      expect(capturedRequest).toMatchObject({
+        modelInterpretationPath: multimodalArtifact.path,
+        expectedModelInterpretationContentHash: multimodalArtifact.contentHash,
+      });
+    } finally {
+      await rm(serverRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects blocked results even if output exists", async () => {
     await expect(runProductionStage(
       "f3_running",
@@ -141,7 +185,7 @@ describe("runProductionStage output gating", () => {
     }
   });
 
-  it("passes only caller-authorized F6 input references and registers the governed five-pack", async () => {
+  it("accepts the current-input multimodal artifact across expected F6 session revision drift", async () => {
     const serverRoot = await mkdtemp(join(tmpdir(), "ta-task5-f6-"));
     try {
       const sessionId = createEnvironment("f6_running").sessionId;
@@ -167,6 +211,22 @@ describe("runProductionStage output gating", () => {
         writeFile(runSummaryPath, "{}\n", "utf8"),
         writeFile(manifestPath, "{}\n", "utf8"),
       ]);
+      const multimodalArtifact = await writeMultimodalArtifact(serverRoot, createEnvironment("f6_running"));
+
+      await expect(runProductionStage(
+        "f6_running",
+        {
+          ...createEnvironment("f6_running"),
+          serverRoot,
+          snapshot: {
+            ...createEnvironment("f6_running").snapshot,
+            revision: 4,
+            artifactRefs: [{ artifactId: "f5-multimodal:2", kind: "f5_multimodal", revision: 2, validated: true, reviewContextId: "c".repeat(64), relativePath: "multimodal.json", contentHash: "f".repeat(64) }],
+          } as F8SessionSnapshot,
+          multimodalArtifact,
+        },
+        orchestratorResult({}),
+      )).rejects.toThrow(/reference mismatch/i);
 
       let capturedRequest: Record<string, unknown> | undefined;
       const result = await runProductionStage(
@@ -174,6 +234,11 @@ describe("runProductionStage output gating", () => {
         {
           ...createEnvironment("f6_running"),
           serverRoot,
+          snapshot: {
+            ...createEnvironment("f6_running").snapshot,
+            revision: 4,
+            artifactRefs: [{ artifactId: "f5-multimodal:2", kind: "f5_multimodal", revision: 2, validated: true, reviewContextId: "c".repeat(64), relativePath: "multimodal.json", contentHash: multimodalArtifact.contentHash }],
+          } as F8SessionSnapshot,
           roots: {
             f1Root: join(managedRoot, "f1"),
             f2Root: join(managedRoot, "f2"),
@@ -188,6 +253,7 @@ describe("runProductionStage output gating", () => {
             optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
             expectedOptimizationTargetsContentHash: "b".repeat(64),
           },
+          multimodalArtifact,
         },
         {
           runStage: async (_stage, input) => {
@@ -215,10 +281,13 @@ describe("runProductionStage output gating", () => {
       );
 
       expect(capturedRequest).toMatchObject({
+        interactionLanguage: baseSnapshot.interactionLanguage,
         analysisContextPath: "uploads/session/analysis-context-v2.json",
         expectedAnalysisContextContentHash: "a".repeat(64),
         optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
         expectedOptimizationTargetsContentHash: "b".repeat(64),
+        modelInterpretationPath: multimodalArtifact.path,
+        expectedModelInterpretationContentHash: multimodalArtifact.contentHash,
       });
 
       const artifactReferences = (result.result as { artifactReferences: Array<{ artifactId: string; relativePath: string }> }).artifactReferences;
@@ -252,3 +321,14 @@ describe("runProductionStage output gating", () => {
     }
   });
 });
+
+async function writeMultimodalArtifact(serverRoot: string, environment: ProductionStageEnvironment) {
+  const row = { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z11" }, factorName: "Factor A", partName: "Part A", partCategory: "CNC", drawingNumber: null, dimId: null, nominal: 0, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", sourceCells: { factorName: "Analysis-A!A11" } };
+  const request = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64) }, worksheetName: "Analysis-A", tableId: "table-a", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash([row]), image: { mediaType: "image/png" as const, contentHash: "b".repeat(64), byteLength: 100, artifactPath: "images/analysis-a.png" }, factorRows: [row] };
+  request.requestHash = createF5MultimodalRequestHash(request);
+  const result = { contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential", requestHash: request.requestHash, sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a", imageContentHash: "b".repeat(64), model: { modelId: "vision-model", supportsImage: true }, imageTableInterpretation: "Image and complete table interpreted.", rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: "A is visible." }] };
+  const bytes = Buffer.from(`${JSON.stringify({ contractVersion: "f5-multimodal-artifact-v3", outputClassification: "confidential", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], worksheets: [{ request, result }] })}\n`, "utf8");
+  const path = join(serverRoot, "multimodal.json");
+  await writeFile(path, bytes);
+  return { path, contentHash: createHash("sha256").update(bytes).digest("hex") };
+}

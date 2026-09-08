@@ -9,6 +9,8 @@ const globalStateValues = new Map<string, unknown>();
 const findFilesMock = vi.fn(async () => [] as Array<{ fsPath: string }>);
 const showQuickPickMock = vi.fn();
 const showOpenDialogMock = vi.fn();
+const showInputBoxMock = vi.fn();
+const showInformationMessageMock = vi.fn();
 const launchNewWorkbenchMock = vi.fn(async () => ({ sessionId: SESSION_ID, url: WORKBENCH_URL }));
 const launchWorkbenchMock = vi.fn(async () => ({ url: "http://127.0.0.1:4317/" }));
 const resumeWorkbenchMock = vi.fn(async (_rootDir: string, sessionId: string) => ({ sessionId, url: `http://127.0.0.1:4317/?session=${sessionId}` }));
@@ -35,13 +37,13 @@ vi.mock("vscode", () => ({
     }),
     executeCommand: vi.fn(),
   },
-  env: { machineId: "machine", openExternal: vi.fn() },
+  env: { machineId: "machine", language: "en-US", openExternal: vi.fn() },
   lm: { tools: {}, invokeTool: vi.fn(), selectChatModels: vi.fn(async () => []) },
   window: {
     createStatusBarItem: vi.fn(() => ({ text: "", command: "", show: vi.fn(), dispose: vi.fn() })),
     showErrorMessage: vi.fn(),
-    showInformationMessage: vi.fn(),
-    showInputBox: vi.fn(),
+    showInformationMessage: showInformationMessageMock,
+    showInputBox: showInputBoxMock,
     showQuickPick: showQuickPickMock,
     showOpenDialog: showOpenDialogMock,
   },
@@ -55,7 +57,15 @@ vi.mock("@ai-assist/conversation", () => ({
   createConversationStore: vi.fn(async () => ({ close: vi.fn() })),
 }));
 vi.mock("@ai-assist/agent-runtime", () => ({ handleAgentTurn: handleAgentTurnMock }));
-vi.mock("@ai-assist/workbench", () => ({ openSessionStore: vi.fn() }));
+vi.mock("@ai-assist/workbench", () => ({
+  openSessionStore: vi.fn(async () => ({
+    readSnapshot: async () => ({
+      sessionId: SESSION_ID,
+      interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false },
+    }),
+    close: vi.fn(async () => undefined),
+  })),
+}));
 vi.mock("./conversation-sync.js", () => ({ syncConversationUnread: vi.fn(async () => ({ markRead: vi.fn() })) }));
 vi.mock("./language-model.js", () => ({ createVsCodeLanguageModelAdapter: vi.fn() }));
 vi.mock("./workbench-launcher.js", () => ({ launchNewWorkbench: launchNewWorkbenchMock, launchWorkbench: launchWorkbenchMock, resumeWorkbench: resumeWorkbenchMock }));
@@ -74,6 +84,8 @@ afterEach(() => {
   findFilesMock.mockResolvedValue([]);
   showQuickPickMock.mockReset();
   showOpenDialogMock.mockReset();
+  showInputBoxMock.mockReset();
+  showInformationMessageMock.mockReset();
   importWorkbookMock.mockReset();
   importWorkbookMock.mockResolvedValue({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" });
   handleAgentTurnMock.mockClear();
@@ -128,7 +140,7 @@ describe("extension workbench binding", () => {
 
     await registeredCommands.get("ta-assist.analyze")!();
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(globalStateValues.get("ta-assist.hostBinding")).toEqual({ sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     context.subscriptions.forEach((subscription) => subscription.dispose());
@@ -139,7 +151,7 @@ describe("extension workbench binding", () => {
 
     await registeredCommands.get("ta-assist.workbench")!();
 
-    expect(launchWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
+    expect(launchWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(context.globalState.update).not.toHaveBeenCalled();
     expect(globalStateValues.get("ta-assist.hostBinding")).toBeUndefined();
     context.subscriptions.forEach((subscription) => subscription.dispose());
@@ -150,7 +162,7 @@ describe("extension workbench binding", () => {
 
     const response = await invokeParticipant({ prompt: `帮我分析 "${WORKBOOK_PATH}"` });
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
@@ -161,9 +173,9 @@ describe("extension workbench binding", () => {
   it("creates and binds a real session for natural analyze without a path", async () => {
     const context = await activateExtension();
 
-    const response = await invokeParticipant({ prompt: "帮我分析这份 TA 报告" });
+    const response = await invokeParticipant({ prompt: "帮我分析这份 Excel 工作簿" });
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(importWorkbookMock).not.toHaveBeenCalled();
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
@@ -203,11 +215,12 @@ describe("extension workbench binding", () => {
     const context = await activateExtension();
     findFilesMock.mockResolvedValueOnce([{ fsPath: WORKBOOK_PATH }]);
 
-    const response = await invokeParticipant({ prompt: "请帮我分析 report.xlsx 的 TA" });
+    const response = await invokeParticipant({ prompt: "请用中文分析 report.xlsx 的 TA" });
 
     expect(findFilesMock).toHaveBeenCalled();
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "zh-CN", uiCatalogLanguage: "zh" }));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
-    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    expect(response.markdown).toHaveBeenCalledWith(`工作簿已接受。Session ${SESSION_ID} 正在 TA Assist Workbench 中运行。`);
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -218,7 +231,10 @@ describe("extension workbench binding", () => {
 
     await invokeParticipant({ prompt: "Analyze report.xlsx" });
 
-    expect(showQuickPickMock).toHaveBeenCalled();
+    expect(showQuickPickMock).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
+      title: "Workbook file",
+      placeHolder: expect.stringContaining("TA.xlsx"),
+    }));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
@@ -279,6 +295,30 @@ describe("extension workbench binding", () => {
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
+  it("does not expose internal HostAction IDs in the normal command flow", async () => {
+    const context = await activateExtension();
+    await bindSessionThroughAnalyze();
+
+    await registeredCommands.get("ta-assist.executeHostAction")!();
+
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith(expect.stringContaining("run automatically"), { modal: false });
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("uses governed session recovery metadata for the resume input", async () => {
+    const context = await activateExtension();
+    showInputBoxMock.mockResolvedValueOnce(undefined);
+
+    await registeredCommands.get("ta-assist.resume")!();
+
+    expect(showInputBoxMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Session recovery",
+      placeHolder: "Resume the saved session.",
+    }));
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
   it("rejects arbitrary URL targets for action navigation", async () => {
     const context = await activateExtension();
     const vscode = await import("vscode");
@@ -288,6 +328,23 @@ describe("extension workbench binding", () => {
     await registeredCommands.get("ta-assist.openAction")!("https://evil.test/path");
 
     expect(vscode.env.openExternal).not.toHaveBeenCalled();
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("opens explicit chat handoffs for knowledge and real-measurement workflows", async () => {
+    const context = await activateExtension();
+    const vscode = await import("vscode");
+    vi.mocked(vscode.commands.executeCommand).mockClear();
+
+    await registeredCommands.get("ta-assist.openKnowledgeLibrary")!();
+    await registeredCommands.get("ta-assist.openRealMeasurementAnalysis")!();
+
+    expect(vscode.commands.executeCommand).toHaveBeenNthCalledWith(1, "workbench.action.chat.open", {
+      query: "Use Knowledge Library to answer my TA question.",
+    });
+    expect(vscode.commands.executeCommand).toHaveBeenNthCalledWith(2, "workbench.action.chat.open", {
+      query: "Use TA Real-Measurement Analysis for my measured data.",
+    });
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 });

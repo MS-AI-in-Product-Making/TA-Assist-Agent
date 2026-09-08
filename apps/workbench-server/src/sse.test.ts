@@ -3,11 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createSessionStore } from "@ai-assist/workbench";
+import { createSessionStore as createSessionStoreBase } from "@ai-assist/workbench";
 
 import { createSqliteEventSource, formatSseEvent } from "./sse.js";
 
 const tempRoots: string[] = [];
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function createSessionStore(options: Omit<Parameters<typeof createSessionStoreBase>[0], "interactionLanguage">) {
+  return createSessionStoreBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+}
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((rootDir) => rm(rootDir, { recursive: true, force: true })));

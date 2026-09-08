@@ -14,6 +14,10 @@
     "./ta-workbook-language": {
       "types": "./dist/ta-workbook-language.d.ts",
       "import": "./dist/ta-workbook-language.js"
+    },
+    "./input-metadata": {
+      "types": "./dist/input-metadata.d.ts",
+      "import": "./dist/input-metadata.js"
     }
   }
 }

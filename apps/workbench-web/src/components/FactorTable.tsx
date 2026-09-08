@@ -1,7 +1,14 @@
 import { useState } from "react";
 import type { FactorScenarioState } from "../hooks/use-scenario-workspace.js";
 import type { FactorRowModel } from "../workspace-model.js";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 import { SourceText } from "./SourceText.js";
+
+const FACTOR_INPUT_IDS = {
+  nominalValue: "factor_nominal_value",
+  upperTolerance: "factor_upper_tolerance",
+  lowerTolerance: "factor_lower_tolerance",
+} as const;
 
 function statusLabel(status: FactorRowModel["status"]): string {
   switch (status) {
@@ -29,6 +36,11 @@ export function FactorTable({ factors, states, onEdit, onCommit, onSelect, onEvi
   return (
     <section className="factor-table-section" aria-label="TA Factor Table">
       <div className="factor-table-section__header"><h2>TA Factor Table</h2><span>{factors.length} Factors</span></div>
+      <div className="input-guidance-group">
+        <InputGuidance inputId="factor_nominal_value" />
+        <InputGuidance inputId="factor_upper_tolerance" />
+        <InputGuidance inputId="factor_lower_tolerance" />
+      </div>
       <div className="factor-table-section__body">
         <table className="factor-table factor-table--compact">
           <colgroup>
@@ -83,7 +95,11 @@ export function FactorTable({ factors, states, onEdit, onCommit, onSelect, onEvi
                   <td>{factor.drawingNumber ?? "—"}</td>
                   <td>{factor.dimId ?? "—"}</td>
                   <td>{factor.partCategory}</td>
-                  {(["nominalValue", "upperTolerance", "lowerTolerance"] as const).map((field) => <td key={field} className="factor-table__cell--numeric"><input aria-label={`${factor.factorName.displayText} ${field}`} aria-describedby={state?.error === undefined ? undefined : `${factor.key}-error`} disabled={!factor.editable} type="number" name={field} autoComplete="off" step="any" value={state?.values[field] ?? String(factor[field])} onChange={(event) => onEdit(factor.key, field, event.target.value)} onBlur={() => onCommit(factor.key)} /></td>)}
+                  {(["nominalValue", "upperTolerance", "lowerTolerance"] as const).map((field) => {
+                    const inputId = FACTOR_INPUT_IDS[field];
+                    const describedBy = state?.error === undefined ? inputGuidanceId(inputId) : `${inputGuidanceId(inputId)} ${factor.key}-error`;
+                    return <td key={field} className="factor-table__cell--numeric"><input aria-label={`${factor.factorName.displayText} ${field}`} aria-describedby={describedBy} data-user-input-id={inputId} disabled={!factor.editable} type="number" name={field} autoComplete="off" step="any" value={state?.values[field] ?? String(factor[field])} onChange={(event) => onEdit(factor.key, field, event.target.value)} onBlur={() => onCommit(factor.key)} /></td>;
+                  })}
                   <td className="factor-table__cell--numeric">{factor.longTermSafetyFactorDisplay}</td>
                   <td className="factor-table__cell--numeric">{factor.sigmaLevelDisplay}</td>
                   <td>{factor.distribution}</td>

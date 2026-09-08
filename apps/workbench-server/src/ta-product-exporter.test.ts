@@ -51,6 +51,7 @@ async function seedValidatedSession(
   selection: {
     readonly initialSelectedWorksheetNames?: readonly string[];
     readonly downstreamSelectedWorksheetNames?: readonly string[];
+    readonly finalReportText?: string;
   } = {},
 ) {
   const initialSelectedWorksheetNames = [...(selection.initialSelectedWorksheetNames ?? ["Analysis-A"])];
@@ -68,7 +69,7 @@ async function seedValidatedSession(
   const f4 = await writeArtifact(rootDir, join(f4Root, "Feature4-Calculation.json"), `${JSON.stringify({ status: "completed" })}\n`);
   const f5 = await writeArtifact(rootDir, join(f5Root, "Feature5-Report.json"), `${JSON.stringify({ status: "completed" })}\n`);
   const f6Optimization = await writeArtifact(rootDir, join(f6Root, "Feature6-Optimization.json"), `${JSON.stringify({ status: "completed" })}\n`);
-  const f6Report = await writeArtifact(rootDir, join(f6Root, "Feature6-Report.md"), "# TA Engineering Analysis Report\n");
+  const f6Report = await writeArtifact(rootDir, join(f6Root, "Feature6-Report.md"), selection.finalReportText ?? "# TA Engineering Analysis Report\n");
   const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
   const f6Projection = await writeArtifact(rootDir, join(projectionRoot, "revision-1.json"), `${JSON.stringify(projection, null, 2)}\n`);
   await writeArtifact(rootDir, join(f6Root, "Feature6-Optimization.md"), "# TA Improvement Options\n");
@@ -80,7 +81,11 @@ async function seedValidatedSession(
     baselineRunReference: "f2-run-2026-09-02",
   };
 
-  const store = await createSessionStore({ rootDir, sessionId });
+  const store = await createSessionStore({
+    rootDir,
+    sessionId,
+    interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false },
+  });
   try {
     await store.applyCommand({
       contractVersion: "f8-session-command-v1",
@@ -103,9 +108,14 @@ async function seedValidatedSession(
           provenance: "user",
         },
         downstreamScopeSelection: {
+          decision: "continue_ready",
           workbookContentHash: "a".repeat(64),
           selectedWorksheetNames: downstreamSelectedWorksheetNames,
           confirmed: true,
+          inputRevision: 1,
+          f2ReportArtifactId: "f2-report",
+          f2ReportContentHash: f2.contentHash,
+          findingDigest: sha256("seeded-f2-findings"),
           provenance: "user",
         },
         priorRunReferences: [{ featureId: "F2", referenceId: "f2-ref", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-run-2026-09-02" }],
@@ -332,6 +342,25 @@ describe("exportTaAnalysisForSession", () => {
       await seedValidatedSession(rootDir, sessionId, projectionTemplate([]));
       const exported = await exportTaAnalysisForSession({ contractVersion: "ta-product-export-command-v1", sessionId, expectedRevision: 1, idempotencyKey: "export-2" }, { rootDir });
       expect(exported.manifest.files.some((file) => file.fileName.startsWith("evidence/"))).toBe(false);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a hash-valid final report containing a provenance display column", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-report-surface-"));
+    const sessionId = "54545454-5454-4545-8545-545454545454";
+    try {
+      await seedValidatedSession(rootDir, sessionId, projectionTemplate(), {
+        finalReportText: "# Report\n\n| Metric | Source |\n|---|---|\n| Cpk | F4 |\n",
+      });
+
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 1,
+        idempotencyKey: "export-forbidden-report-column",
+      }, { rootDir })).rejects.toMatchObject({ code: "evidence_mismatch" });
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

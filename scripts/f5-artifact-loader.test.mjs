@@ -121,9 +121,21 @@ function actualFields() {
   };
 }
 
+function systemSpecification() {
+  return {
+    status: "available",
+    designNominal: { status: "available", actualValue: 12.5, displayValue: "12.5", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53", valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", actualValue: 12.1, displayValue: "12.1", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 12.9, displayValue: "12.9", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 4, displayValue: "4", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+  };
+}
+
 function governanceRow(worksheetName, tableId, imageReference) {
   return {
     factorInstanceId: createHash("sha256").update(`${worksheetName}-factor`).digest("hex"),
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z2` },
     drawingDimensionKey: createHash("sha256").update(`${worksheetName}-dimension`).digest("hex"),
     deviceLevelDim: worksheetName,
     dimensionDescription: `Tolerance loop ${worksheetName}`,
@@ -157,7 +169,7 @@ function writeJson(filePath, value) {
   writeFileSync(filePath, JSON.stringify(value), "utf8");
 }
 
-function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
+function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"], artifactContractVersion } = {}) {
   const base = mkdtempSync(path.join(tmpdir(), "f5-loader-"));
   tempRoots.push(base);
   const f1ArtifactRoot = path.join(base, "f1");
@@ -190,6 +202,9 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
       workbook: { fileName: "anonymous.xlsx", contentHash: WORKBOOK_HASH },
       worksheetName,
       toleranceLoopDescription: `Tolerance loop ${worksheetName}`,
+      ...(new Set(["f1-semantic-v2", "f1-semantic-v3"]).has(artifactContractVersion)
+        ? { systemSpecification: systemSpecification() }
+        : {}),
       factorTables: [{
         tableId,
         headerRow: 1,
@@ -197,6 +212,7 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
         columns: [],
         rows: [{
           sourceRow: 2,
+          factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z2` },
           fields: {},
           actualFields: {
             ...actualFields(),
@@ -223,6 +239,7 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
 
   writeJson(path.join(f1ArtifactRoot, "Feature1-Report.json"), {
     contractVersion: "v1",
+    ...(artifactContractVersion ? { artifactContractVersion } : {}),
     feature: "F1",
     generatedAt: "2026-08-11T00:00:00.000Z",
     workbooks: [{
@@ -294,6 +311,7 @@ function addSecondMappedRow(bundle, worksheetName) {
     table.dataRange.endRow = 3;
     table.rows.unshift({
       sourceRow: 3,
+      factorOrdinal: { value: "B", rawText: "B", sourceCell: `${worksheetName}!Z3` },
       fields: {},
       actualFields: {
         ...actualFields(),
@@ -312,6 +330,7 @@ function addSecondMappedRow(bundle, worksheetName) {
     const worksheet = report.worksheets.find((candidate) => candidate.worksheetName === worksheetName);
     const secondRow = cloneJson(worksheet.rows[0]);
     secondRow.factorInstanceId = createHash("sha256").update(`${worksheetName}-factor-second`).digest("hex");
+    secondRow.factorOrdinal = { value: "B", rawText: "B", sourceCell: `${worksheetName}!Z3` };
     secondRow.drawingDimensionKey = createHash("sha256").update(`${worksheetName}-dimension-second`).digest("hex");
     secondRow.partCategory = "Sheet Metal";
     secondRow.partSubsystem = "Anonymous bracket second";
@@ -394,6 +413,7 @@ function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferenc
               return {
                 tableId: row.source.tableId,
                 sourceRow: row.source.sourceRow,
+                factorOrdinal: row.factorOrdinal,
                 partName: f1Row.actualFields.partName,
                 partSubsystem: row.partSubsystem,
                 partCategory: row.partCategory,
@@ -441,6 +461,18 @@ function expectRejected(result, reasonCode, artifactReference) {
 }
 
 describe("loadF5ArtifactBundle", () => {
+  it("accepts and validates v3 system specification evidence", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A"], artifactContractVersion: "f1-semantic-v3" });
+
+    expect(load(bundle).status).toBe("accepted");
+
+    rewriteJson(path.join(bundle.f1ArtifactRoot, "sheets/anonymous.xlsx/json/Analysis-A.json"), (worksheet) => {
+      delete worksheet.systemSpecification.lowerSpecLimit.sourceLabel;
+    });
+
+    expectRejected(load(bundle), "artifact_contract_invalid", "worksheet:Analysis-A");
+  });
+
   it("projects only controlled workbook identity fields from historical F1 reports", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
     rewriteJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"), (report) => {
@@ -511,6 +543,7 @@ describe("loadF5ArtifactBundle", () => {
         f4: "Feature4-Calculation.json",
       },
     });
+    expect(result.request.worksheets[0].governanceRows[0].factorOrdinal).toEqual({ value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" });
     expect(f5DataInterpretationRequestSchema.parse(result.request)).toEqual(result.request);
   });
 
@@ -968,6 +1001,7 @@ describe("loadF5ArtifactBundle", () => {
       rows: [{
         tableId: "table-1",
         sourceRow: 2,
+        factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
         partName: "Anonymous bracket",
         partSubsystem: "Anonymous bracket",
         partCategory: "CNC",
@@ -984,6 +1018,7 @@ describe("loadF5ArtifactBundle", () => {
       }, {
         tableId: "table-1",
         sourceRow: 3,
+        factorOrdinal: { value: "B", rawText: "B", sourceCell: "Analysis-A!Z3" },
         partName: "Anonymous bracket second",
         partSubsystem: "Anonymous bracket second",
         partCategory: "Sheet Metal",

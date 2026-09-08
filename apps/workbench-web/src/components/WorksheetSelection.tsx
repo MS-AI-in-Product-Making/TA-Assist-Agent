@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 export interface WorksheetOption {
   readonly worksheetName: string;
@@ -14,6 +16,7 @@ export interface WorksheetSelectionProps {
   readonly options: readonly WorksheetOption[];
   readonly disabled?: boolean;
   readonly blockedReason?: string;
+  readonly language?: UiCatalogLanguage;
   readonly onSubmit: (worksheetNames: string[]) => Promise<void>;
 }
 
@@ -24,8 +27,13 @@ export function WorksheetSelection({
   options,
   disabled = false,
   blockedReason,
+  language = "en",
   onSubmit,
 }: WorksheetSelectionProps) {
+  const metadata = inputMetadata(language).worksheet_scope;
+  const statusLabels = language === "zh"
+    ? { ready: "就绪", blocked: "已阻止", available: "可用" }
+    : { ready: "Ready", blocked: "Blocked", available: "Available" };
   const [selected, setSelected] = useState<readonly string[]>([]);
 
   useEffect(() => {
@@ -36,7 +44,7 @@ export function WorksheetSelection({
     <section className="panel" aria-labelledby={title}>
       <div className="panel__header">
         <div>
-          <p className="eyebrow">Selection</p>
+          <p className="eyebrow">{language === "zh" ? "选择" : "Selection"}</p>
           <h2 id={title}>{title}</h2>
         </div>
       </div>
@@ -49,7 +57,8 @@ export function WorksheetSelection({
         }}
       >
         <fieldset className="worksheet-list" disabled={disabled}>
-          <legend className="sr-only">{title}</legend>
+          <legend>{metadata.title}</legend>
+          <InputGuidance inputId="worksheet_scope" language={language} />
           {options.map((option) => {
             const checked = selected.includes(option.worksheetName);
             return (
@@ -59,6 +68,8 @@ export function WorksheetSelection({
                   aria-label={option.worksheetName}
                   checked={checked}
                   disabled={option.disabled}
+                  aria-describedby={inputGuidanceId("worksheet_scope")}
+                  data-user-input-id="worksheet_scope"
                   onChange={(event) => {
                     const nextSelected = event.target.checked
                       ? [...selected, option.worksheetName]
@@ -67,7 +78,7 @@ export function WorksheetSelection({
                   }}
                 />
                 <span className="worksheet-option__name">{option.worksheetName}</span>
-                <span className="worksheet-option__status">{option.status}</span>
+                <span className="worksheet-option__status">{statusLabels[option.status]}</span>
                 {option.detail === undefined ? null : <span className="worksheet-option__detail">{option.detail}</span>}
               </label>
             );

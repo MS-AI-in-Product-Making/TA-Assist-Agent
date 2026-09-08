@@ -62,7 +62,10 @@ function assetsFor(rows: readonly { readonly sourceRow: number; readonly fields:
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 7 },
         columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
-        rows,
+        rows: rows.map((row, index) => ({
+          ...row,
+          factorOrdinal: { value: `F${index + 1}`, rawText: `F${index + 1}`, sourceCell: `Analysis-A!Z${row.sourceRow}` },
+        })),
       }],
       formulaCells: [],
       imageAssets: [],

@@ -17,6 +17,7 @@ const URL_PATTERN = /(?:file|https?):\/\//i;
 const RELATIVE_XLSX_PATTERN = /(^|[\s"'])(?:\.\.?\\)[^"\r\n]*\.xlsx\b/i;
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
 const SESSION_FIRST_INTENT_PATTERN = /(继续|resume|continue|当前\s*session|current[-\s]*session|status|状态|进度|blocker|阻塞|卡住)/i;
+const WORKBOOK_TOKEN_PATTERN = /(?:^|[^A-Za-z0-9])(?:[^\s"'`<>]+\.xlsx\b|\.xlsx\b)/i;
 
 export function parseAnalyzeIntent(text: string): TaAnalyzeIntent | undefined {
   const classification = classifyAnalyzeIntent(text);
@@ -24,7 +25,7 @@ export function parseAnalyzeIntent(text: string): TaAnalyzeIntent | undefined {
 }
 
 export function classifyAnalyzeIntent(text: string): TaAnalyzeIntentClassification | undefined {
-  if (!looksLikeAnalyzeRequest(text)) return undefined;
+  if (!looksLikeAnalyzePathRequest(text)) return undefined;
   if (CONTROL_CHAR_PATTERN.test(text)) return { kind: "invalid_analyze_ta", reason: "control_chars" };
   if (URL_PATTERN.test(text)) return { kind: "invalid_analyze_ta", reason: "url_not_allowed" };
   if (RELATIVE_XLSX_PATTERN.test(text)) return { kind: "invalid_analyze_ta", reason: "relative_path" };
@@ -59,9 +60,9 @@ export function classifyAnalyzeIntent(text: string): TaAnalyzeIntentClassificati
   return { kind: "analyze_ta" };
 }
 
-function looksLikeAnalyzeRequest(text: string): boolean {
+function looksLikeAnalyzePathRequest(text: string): boolean {
   if (!ANALYZE_VERB.test(text)) return false;
-  return ANALYZE_CONTEXT.test(text) || hasPathLikeToken(text);
+  return WORKBOOK_TOKEN_PATTERN.test(text) || hasPathLikeToken(text);
 }
 
 function hasPathLikeToken(text: string): boolean {

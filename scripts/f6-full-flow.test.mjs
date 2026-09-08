@@ -15,20 +15,28 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createComparisonPlaceholder,
-  createF6Optimization,
+  createF6OptimizationV3,
 } from "../packages/workbook-catalog/dist/index.js";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
   installF5CurrentObservationLedger,
   installF6V2Evidence,
-  installF6ModelInterpretation,
+  installRequiredMultimodalV3,
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 
 const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
+const HASH = "a".repeat(64);
+const interactionLanguage = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-1",
+  source: "workflow_start",
+  fallbackUsed: false,
+};
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -44,12 +52,62 @@ function setup({ status = "completed" } = {}) {
   const publishRoot = path.join(root, "publish");
   const runRoot = path.join(publishRoot, "f6-runs", "run-1");
   mkdirSync(publishRoot);
-  const optimization = { featureId: "F6", status, summary: { worksheetCount: 2, completedOptionCount: 7 } };
+  const clarificationRequired = status === "partially_completed";
+  const optimization = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F6",
+    optimizationVersion: "f6-optimization-v3",
+    sequentialPolicyId: "f6-sequential-optimization-policy-v1",
+    interactionLanguage,
+    runStatus: clarificationRequired ? "CLARIFICATION_REQUIRED" : "COMPLETED",
+    workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      runStatus: clarificationRequired ? "CLARIFICATION_REQUIRED" : "COMPLETED",
+      baselineIdentity: { calculationVersion: "excel-ta-v1", projectReference: "project", runReference: "run", workbookContentHash: HASH, worksheetName: "Analysis-A", tableId: "table-1" },
+      steps: [
+        { step: "centerAssessment", status: "aligned", adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
+        { step: "contributorPriorities", priorities: [] },
+        { step: "specificationChanges", proposals: [], clarifications: clarificationRequired ? [{ reasonCode: "verification_required", requiredInputs: ["valid_f4_scenario_calculation"] }] : [] },
+      ],
+    }],
+    summary: { worksheetCount: 1, completedWorksheetCount: clarificationRequired ? 0 : 1, clarificationRequiredWorksheetCount: clarificationRequired ? 1 : 0 },
+    provenance: {
+      f2Reference: { artifact: "f2.json", contentHash: HASH },
+      f3Reference: { artifact: "f3.json", contentHash: HASH },
+      f4Reference: { artifact: "f4.json", contentHash: HASH },
+      f5Reference: { artifact: "f5.json", contentHash: HASH },
+      multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
+      reportScope: { worksheetNames: ["Analysis-A"] },
+    },
+  };
   const reportSummary = {
     workbookDisposition: status === "partially_completed" ? "CONDITIONAL_PASS" : "PASS",
     worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
   };
-  const finalReport = { markdown: "# F6 final report\n", reportSummary };
+  const finalReport = {
+    markdown: "# F6 final report\n",
+    reportSummary,
+    projection: {
+      schemaVersion: "ta-engineering-report-projection-v1",
+      title: "F6 final report",
+      workbookDisposition: reportSummary.workbookDisposition,
+      worksheetDispositions: reportSummary.worksheetDispositions,
+      workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Loop A",
+        disposition: "PASS",
+        requiredAction: "None",
+        findings: ["Validated multimodal context."],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: ["F4:Analysis-A", "F5-multimodal:Analysis-A"],
+      }],
+    },
+  };
   const renameCalls = [];
   const deps = {
     parseArgs: vi.fn(() => ({
@@ -58,6 +116,9 @@ function setup({ status = "completed" } = {}) {
       f4ArtifactRoot: path.join(publishRoot, "f4"),
       f5ArtifactRoot: path.join(publishRoot, "f5"),
       selectedWorksheetNames: ["Analysis-A"],
+      interactionLanguage,
+      modelInterpretationArtifact: path.join(publishRoot, "multimodal.json"),
+      expectedModelInterpretationContentHash: HASH,
     })),
     resolveLayout: vi.fn(() => ({
       runId: "2026-08-17T01-02-03-456Z",
@@ -76,6 +137,12 @@ function setup({ status = "completed" } = {}) {
       f3Report: { f3: true },
       f4Report: { f4: true },
       f5Report: { f5: true },
+      modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" },
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } },
+      },
       blockedWorksheets: [{ worksheetName: "Blocked-A", findings: [] }],
       sourceReferences: {
         f2: { artifact: "Feature2-Report.json", contentHash: "a".repeat(64) },
@@ -101,13 +168,14 @@ function readJson(filePath) {
 
 function createRealBundle(options) {
   const bundle = createF6ArtifactBundleFixture(options);
+  installRequiredMultimodalV3(bundle);
   cleanup.push(bundle.root);
   return bundle;
 }
 
 function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}) {
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
-  const parsed = { ...bundle, ...parsedOverrides };
+  const parsed = { ...bundle, interactionLanguage, ...parsedOverrides };
   if (!Object.hasOwn(parsedOverrides, "modelInterpretationArtifact")
     && typeof bundle.modelInterpretationArtifactRoot === "string"
     && typeof bundle.modelInterpretationArtifact === "string") {
@@ -216,33 +284,49 @@ describe("runF6FullValidation", () => {
       f5Report: { f5: true },
       f6Optimization: context.optimization,
       generatedAt: "2026-08-17T01:02:03.456Z",
+      interactionLanguage,
+      modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" },
     }, {
       outputRoot: context.runRoot,
       f1ArtifactRoot: undefined,
       publishRoot: context.publishRoot,
+      requireMultimodalV3: true,
     });
     expect(result.finalReportMdPath).toBe(path.join(context.runRoot, "Feature6-Report.md"));
     expect(result).not.toHaveProperty("composedReportJsonPath");
     expect(result).not.toHaveProperty("composedReportMdPath");
     expect(context.deps.createOptimization).toHaveBeenCalledWith({ request: true }, {
-      inputDecisions: {
-        analysisContext: { outcome: "NOT_PROVIDED" },
-        optimizationTargets: { outcome: "NOT_PROVIDED" },
-        modelInterpretation: { outcome: "NOT_PROVIDED" },
-      },
+      interactionLanguage,
+      multimodalInterpretation: { contractVersion: "f5-multimodal-artifact-v3" },
+      multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
+      optimizationTargetsDecision: { outcome: "NOT_PROVIDED" },
     });
   });
 
-  it("passes V2 optional inputs and records identical input decisions in summary and manifest", () => {
+  it("rejects a final report with a provenance display column before successful artifact writes", () => {
+    const context = setup();
+    context.deps.createFinalReport = vi.fn(() => ({
+      ...context.finalReport,
+      markdown: "# Report\n\n| Metric | Source |\n|---|---|\n| Cpk | F4 |\n",
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ artifacts: {} });
+  });
+
+  it("passes optional targets through the v3 gate and records identical input decisions in summary and manifest", () => {
     const context = setup();
     const inputDecisions = {
       analysisContext: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "context.json", contentHash: "e".repeat(64) } },
       optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets.json", contentHash: "f".repeat(64) } },
-      modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: "d".repeat(64) } },
+      modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: HASH } },
     };
     const analysisContext = { contextVersion: "f6-analysis-context-v1" };
     const optimizationTargets = { targetVersion: "f6-optimization-targets-v1" };
-    const modelInterpretation = { interpretationVersion: "f6-model-interpretation-v1" };
+    const modelInterpretation = { contractVersion: "f5-multimodal-artifact-v3" };
     context.deps.loadBundle.mockReturnValue({
       ...context.deps.loadBundle(),
       analysisContext,
@@ -261,7 +345,13 @@ describe("runF6FullValidation", () => {
 
     expect(context.deps.createOptimization).toHaveBeenCalledWith(
       { request: true },
-      { analysisContext, optimizationTargets, modelInterpretation, inputDecisions },
+      {
+        interactionLanguage,
+        multimodalInterpretation: modelInterpretation,
+        multimodalReference: inputDecisions.modelInterpretation.artifactReference,
+        optimizationTargets,
+        optimizationTargetsDecision: inputDecisions.optimizationTargets,
+      },
     );
     expect(context.deps.createFinalReport).toHaveBeenCalledWith({
       f2Report: { f2: true },
@@ -271,11 +361,13 @@ describe("runF6FullValidation", () => {
       f6Optimization: context.optimization,
       generatedAt: "2026-08-17T01:02:03.456Z",
       analysisContext,
+      interactionLanguage,
       modelInterpretation,
     }, {
       outputRoot: context.runRoot,
       f1ArtifactRoot: undefined,
       publishRoot: context.publishRoot,
+      requireMultimodalV3: true,
     });
     const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
     const manifest = readJson(path.join(context.runRoot, "manifest.json"));
@@ -313,9 +405,9 @@ describe("runF6FullValidation", () => {
   it("preserves partial option failure as a successful partially completed run", () => {
     const context = setup({ status: "partially_completed" });
     const result = runF6FullValidation({}, context.deps);
-    expect(result.status).toBe("partially_completed");
+    expect(result.status).toBe("clarification_required");
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({
-      status: "partially_completed",
+      status: "clarification_required",
       artifacts: { optimizationJson: "Feature6-Optimization.json" },
     });
   });
@@ -474,8 +566,10 @@ describe("F6 real artifact full flow", () => {
           bundle.f3ArtifactRoot,
           bundle.f4ArtifactRoot,
           bundle.f5ArtifactRoot,
-          "--worksheet", "Analysis-B",
           "--worksheet", "Analysis-A",
+          "--worksheet", "Analysis-B",
+          "--language", "en-US",
+          "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
           "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
         ],
         now: fixedNow,
@@ -506,8 +600,9 @@ describe("F6 real artifact full flow", () => {
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
     const finalMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
 
-    expect(optimization.worksheets.every(({ options }) =>
-      options.every(({ status }) => status === "candidate"))).toBe(true);
+    expect(optimization.optimizationVersion).toBe("f6-optimization-v3");
+    expect(optimization.worksheets.every(({ steps }) =>
+      steps.map(({ step }) => step).join(",") === "centerAssessment,contributorPriorities,specificationChanges")).toBe(true);
     expect(summary.reportSummary).toEqual(expect.objectContaining({
       workbookDisposition: expect.any(String),
       worksheetDispositions: expect.arrayContaining([
@@ -528,7 +623,14 @@ describe("F6 real artifact full flow", () => {
       inputDecisions: {
         analysisContext: { outcome: "NOT_PROVIDED" },
         optimizationTargets: { outcome: "NOT_PROVIDED" },
-        modelInterpretation: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: expect.objectContaining({ outcome: "CALLER_AUTHORIZED" }),
+      },
+      interactionLanguage: {
+        languageTag: "en-US",
+        uiCatalogLanguage: "en",
+        lockedAtTurnId: "f6-cli",
+        source: "workflow_start",
+        fallbackUsed: false,
       },
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
@@ -563,6 +665,8 @@ describe("F6 real artifact full flow", () => {
       bundle.f4ArtifactRoot,
       bundle.f5ArtifactRoot,
       "--worksheet", "Analysis-A",
+      "--language", "en-US",
+      "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
     ], {
       cwd: path.resolve("."),
@@ -613,25 +717,17 @@ describe("F6 real artifact full flow", () => {
     });
   });
 
-  it("selects only ready F2 worksheets and keeps blocked worksheets out of numeric sections", () => {
+  it("fails closed without final report artifacts when any selected F2 worksheet is blocked", () => {
     const bundle = createRealBundle({ blockedWorksheetNames: ["Blocked-A"] });
     const { result, runRoot } = runRealF6(bundle, "mixed-ready-blocked");
-    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
-    const finalMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
 
-    expect(result.status).toBe("completed");
-    expect(readdirSync(runRoot).sort()).toEqual([
-      "Feature6-Optimization.json",
-      "Feature6-Optimization.md",
-      "Feature6-Report.md",
-      "Feature6-Run-Summary.json",
-      "manifest.json",
-    ]);
-    expect(optimization.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
-    expect(finalMarkdown).toContain("Blocked-A");
-    expect(finalMarkdown).toContain("Analysis-A");
-    expect(finalMarkdown).not.toContain("whatIfAnalysis");
-    expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "failed",
+      reasonCode: "report_failed",
+      artifacts: {},
+    });
   });
 
   it("publishes valid hashes and conservative results when optional evidence is absent", () => {
@@ -643,15 +739,12 @@ describe("F6 real artifact full flow", () => {
 
     expect(result.status).toBe("completed");
     expect(readdirSync(runRoot)).toHaveLength(5);
-    expect(optimization.optimizationVersion).toBe("f6-optimization-v2");
-    expect(worksheet.options).toEqual([
-      expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided", impactRank: null }),
-    ]);
-    expect(worksheet.highestImpactAction).toBeNull();
+    expect(optimization.optimizationVersion).toBe("f6-optimization-v3");
+    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges"]);
     expect(summary.inputDecisions).toEqual({
       analysisContext: { outcome: "NOT_PROVIDED" },
       optimizationTargets: { outcome: "NOT_PROVIDED" },
-      modelInterpretation: { outcome: "NOT_PROVIDED" },
+      modelInterpretation: expect.objectContaining({ outcome: "CALLER_AUTHORIZED" }),
     });
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
@@ -673,7 +766,6 @@ describe("F6 real artifact full flow", () => {
   it("keeps model interpretation caller-authorized by auto-inheriting the current F5 observation ledger", () => {
     const bundle = createRealBundle();
     installF5CurrentObservationLedger(bundle);
-    installF6ModelInterpretation(bundle);
     bundle.imageObservationArtifact = undefined;
     bundle.evidenceArtifactRoot = undefined;
 
@@ -712,20 +804,20 @@ describe("F6 real artifact full flow", () => {
     });
   });
 
-  it("does not invoke scenario calculation or quantify improvement without targets", () => {
+  it("does not invent tolerance percentages when no concrete targets are provided", () => {
     const bundle = createRealBundle();
     const calculateScenario = vi.fn(() => { throw new Error("scenario must not run"); });
     const { result, runRoot } = runRealF6(bundle, "no-target-no-scenario", {
       createOptimization(request, inputs) {
-        return createF6Optimization(request, inputs, { calculateScenario });
+        return createF6OptimizationV3(request, inputs, { calculateScenario });
       },
     });
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
 
     expect(result.status).toBe("completed");
-  expect(readdirSync(runRoot)).toHaveLength(5);
+    expect(readdirSync(runRoot)).toHaveLength(5);
     expect(calculateScenario).not.toHaveBeenCalled();
-    expect(optimization.worksheets[0].options[0]).toMatchObject({ status: "candidate" });
+    expect(JSON.stringify(optimization)).not.toMatch(/OP[123]|reductionRatio|"ratio"/u);
   });
 
   it.each([
