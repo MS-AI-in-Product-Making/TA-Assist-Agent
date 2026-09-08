@@ -344,6 +344,42 @@ describe("runF1F2Confirmed", () => {
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
   });
 
+  it("supersedes an older pending selection for the same workbook and hash", () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+    const runContext = context(setup.repositoryRoot);
+    runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, runContext, { executeStage });
+    const latestSelection = runF1F2Selection({
+      workbookPath: setup.workbookPath,
+      now: () => new Date("2026-08-05T01:03:03.000Z"),
+    }, runContext, { executeStage });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      now: fixedNow,
+    }, runContext, { executeStage });
+
+    expect(result.runRoot).toBe(latestSelection.runRoot);
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1-selection", "f1", "f2"]);
+  });
+
   it("retries from F1 when confirmation failed before F1 side effects", async () => {
     const setup = setupRepo();
     const executeStage = vi.fn(({ stage, env, args }) => {
@@ -742,7 +778,7 @@ describe("runF1F2Confirmed", () => {
     }));
   });
 
-  it("rejects ambiguous pending selections when more than one candidate matches the workbook hash", async () => {
+  it("rejects a corrupted registry with multiple pending selections for the same workbook hash", async () => {
     const setup = setupRepo();
     const executeStage = vi.fn(({ env }) => {
       mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
@@ -752,6 +788,18 @@ describe("runF1F2Confirmed", () => {
 
     const first = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
     const second = runF1F2Selection({ workbookPath: setup.workbookPath, now: () => new Date("2026-08-05T01:02:04.000Z") }, context(setup.repositoryRoot), { executeStage });
+    const registryPath = path.join(setup.repositoryRoot, "managed-output", "f2-selection-registry.json");
+    const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+    registry.selections.unshift({
+      runId: first.runId,
+      runRoot: first.runRoot,
+      manifestPath: first.manifestPath,
+      promptPath: first.promptPath,
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      status: "selectionRequired",
+    });
+    writeFileSync(registryPath, JSON.stringify(registry));
 
     expect(() => runF1F2Confirmed({
       workbookPath: setup.workbookPath,

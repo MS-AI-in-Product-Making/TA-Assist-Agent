@@ -282,7 +282,11 @@ function persistSelectionRegistry(managedOutputRoot: string, registry: Selection
 
 function upsertSelectionRegistryEntry(managedOutputRoot: string, entry: SelectionRegistryEntry): void {
   const registry = loadSelectionRegistry(managedOutputRoot);
-  const selections = registry.selections.filter((candidate) => candidate.runId !== entry.runId);
+  const selections = registry.selections.filter((candidate) => candidate.runId !== entry.runId
+    && !(entry.status === "selectionRequired"
+      && candidate.status === "selectionRequired"
+      && candidate.workbookPath === entry.workbookPath
+      && candidate.workbookContentHash === entry.workbookContentHash));
   selections.push(entry);
   persistSelectionRegistry(managedOutputRoot, { contractVersion: "v1", selections });
 }
