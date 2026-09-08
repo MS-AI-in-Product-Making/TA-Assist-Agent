@@ -7,7 +7,7 @@ import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretatio
 import {
   buildF7EngineeringNarrative,
   type F7EngineeringNarrative,
-} from "@ai-assist/product-language";
+} from "@ai-assist/product-language/f7-engineering-narrative";
 import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type {
   F7DatasetValidationIssue,

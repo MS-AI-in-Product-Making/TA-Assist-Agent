@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import TAResultsInterpretation from "./TAResultsInterpretation.vue";
 import type { F7SessionSnapshot } from "../api/f7-client";
+import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
+import type { F7NarrativeRootCauseItem } from "@ai-assist/product-language/f7-engineering-narrative";
+
+let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
+let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
 
 function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   return {
@@ -33,11 +38,32 @@ function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   } as unknown as F7SessionSnapshot;
 }
 
+function unavailableInterpretationSnapshot(): F7SessionSnapshot {
+  return {
+    systemSpecification: { status: "unavailable" },
+    factors: [],
+  } as unknown as F7SessionSnapshot;
+}
+
+function mountWithActualInterpretation(session: F7SessionSnapshot) {
+  buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+  return mount(TAResultsInterpretation, {
+    props: { session },
+  });
+}
+
 describe("TAResultsInterpretation", () => {
+  beforeAll(async () => {
+    ({ buildAssumptionResultsInterpretation: actualBuildAssumptionResultsInterpretation } = await vi.importActual("../assumption-results-interpretation"));
+    buildAssumptionResultsInterpretationSpy = vi.spyOn(assumptionResultsInterpretationModule, "buildAssumptionResultsInterpretation");
+  });
+
+  afterEach(() => {
+    buildAssumptionResultsInterpretationSpy.mockReset();
+  });
+
   it("renders the governed engineering narrative hierarchy in the required reading order", () => {
-    const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot() },
-    });
+    const wrapper = mountWithActualInterpretation(enhancedInterpretationSnapshot());
 
     expect(wrapper.get("[data-result-judgment]").text()).toContain("Capability is below target");
     expect(wrapper.get("[data-result-judgment]").text()).toContain("Cpk");
@@ -69,5 +95,53 @@ describe("TAResultsInterpretation", () => {
     expect(topLevelSections[1]?.attributes("data-engineering-summary")).toBe("");
     expect(topLevelSections[3]?.attributes("data-engineering-risk")).toBe("");
     expect(topLevelSections[5]?.attributes("data-assumption-disclosure")).toBe("");
+    const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
+    expect(panelChildren[panelChildren.length - 1]?.attributes("data-input-readiness")).toBe("");
+  });
+
+  it("keeps the unavailable behavior unchanged and shows input readiness last", () => {
+    const wrapper = mountWithActualInterpretation(unavailableInterpretationSnapshot());
+
+    expect(wrapper.get("[data-interpretation-unavailable]").text()).toContain(
+      "Complete and confirm Factor Setup inputs to interpret assumption-based results.",
+    );
+    const sections = wrapper.findAll("section, div.input-readiness");
+    expect(sections[sections.length - 1]?.attributes("data-input-readiness")).toBe("");
+  });
+
+  it("shows the incomplete-evidence visual state when a matched hypothesis lacks dependent facts", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      narrative: {
+        ...available.narrative,
+        rootCauseAnalysis: [...available.narrative.rootCauseAnalysis.map<F7NarrativeRootCauseItem>((item, index) => (index === 1
+          ? {
+              ruleId: item.ruleId,
+              title: item.title,
+              hypothesisStatus: item.hypothesisStatus,
+              narrative: "Evidence is incomplete for this matched hypothesis.",
+              completeEvidence: false,
+            }
+          : item))],
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const incompleteItems = wrapper.findAll("[data-root-cause-item]").filter((item) => item.text().includes("Incomplete evidence"));
+    expect(incompleteItems.length).toBeGreaterThan(0);
+  });
+
+  it("shows verification, provenance, assumptions, and evidence disclosure together in the narrative disclosure section", () => {
+    const wrapper = mountWithActualInterpretation(enhancedInterpretationSnapshot());
+
+    const disclosure = wrapper.get("[data-assumption-disclosure]").text();
+    expect(disclosure).toContain("Verification Requirements");
+    expect(disclosure).toContain("Evidence Disclosure");
+    expect(disclosure).toContain("Assumption Disclosure");
+    expect(wrapper.get("[data-f0-provenance]").text()).toBe("F0 interpretation-rules-v2");
   });
 });

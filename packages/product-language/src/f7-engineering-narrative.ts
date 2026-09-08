@@ -518,17 +518,18 @@ function buildEngineeringSummary(
     resultJudgment.targetCpk,
     resultJudgment.margin,
   ]);
+  const cpkLead = `Cpk ${formatNarrativeNumber(resultJudgment.cpk, displayPlan)} versus target ${formatNarrativeNumber(resultJudgment.targetCpk, displayPlan)}.`;
 
   if (resultJudgment.status === "meets-target") {
-    return `Capability currently meets the resolved target with a margin of ${formatNarrativeNumber(resultJudgment.margin, displayPlan)}; continue stability verification with representative evidence and ME review.`;
+    return `${cpkLead} Capability currently meets the resolved target with a margin of ${formatNarrativeNumber(resultJudgment.margin, displayPlan)}; continue stability verification with representative evidence and ME review.`;
   }
 
   const completeRules = rootCauseAnalysis.filter((item) => item.completeEvidence).map((item) => item.ruleId);
   if (completeRules.length === 0) {
-    return `Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
+    return `${cpkLead} Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
   }
 
-  return `Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
+  return `${cpkLead} Capability is below target by ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)}; the matched governed hypothesis set indicates ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and requires validation before any corrective change.`;
 }
 
 function buildEngineeringRisk(
@@ -545,7 +546,7 @@ function buildEngineeringRisk(
     resultJudgment.targetCpk,
     resultJudgment.margin,
   ]);
-  const clauses = [`The capability shortfall of ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)} indicates below-target performance`];
+  const clauses = [`The capability shortfall of ${formatNarrativeNumber(Math.abs(resultJudgment.margin), displayPlan)} indicates below-target performance for Cpk ${formatNarrativeNumber(resultJudgment.cpk, displayPlan)} against the resolved target of ${formatNarrativeNumber(resultJudgment.targetCpk, displayPlan)}`];
   if (resultJudgment.nearerSpecificationSide === "LSL" || resultJudgment.nearerSpecificationSide === "USL") {
     clauses.push(`the mean direction is consistent with nearer exposure toward ${resultJudgment.nearerSpecificationSide}`);
   } else if (resultJudgment.nearerSpecificationSide === "balanced") {
@@ -564,7 +565,7 @@ function buildEngineeringRisk(
   if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-contributor-concentration" && item.completeEvidence)) {
     clauses.push("RC03 indicates contributor concentration");
   }
-  clauses.push("all matched hypotheses require validation");
+  clauses.push("the matched hypothesis set requires validation");
   return `${clauses.join("; ")}.`;
 }
 
