@@ -45,12 +45,16 @@ hash 或必要元数据；`secret` 始终以 `policy_denied` 拒绝且不得持�
 - `public-v1` 知识库始终只包含匿名 `public` 内容。经审查的 F0 内部规则与快照元数据
   可以作为 `internal` 治理工件维护；原始 `.xls`、`.xlsx`、`.xlsm` 一律不得提交，直到
   另行批准受控白名单。
-- `interpretation-rules-v1` 只保存去除具体案例后的通用解读规则、来源别名、hash、版本、
+- `interpretation-rules-v2` 只保存去除具体案例后的通用解读规则、来源别名、hash、版本、
   工作表和范围，分类为 `internal`。原始 TA 模板、规则工作簿、worked examples 与计算器
-  均为 `confidential`，不得提交到 Git，也不得在运行时由 F0 读取。
-- `public-v1`、`internal-v1` 与 `interpretation-rules-v1` 是三个独立只读模块，版本和 API
-  不可互换。F5 将 `interpretation-rules-v1` 的规则 ID、版本和适用范围与 F1/F3/F4 TA 事实组合，
-  请求、结果、可选图片观察和澄清/假设均保持 `confidential`；F6 当前仍为 `unavailable`。
+  均为 `confidential`，不得提交到 Git，也不得在运行时由 F0 读取。来源别名
+  `user-approved-f0-v2-rules-2026-09-08` 仅证明用户批准的 RC01/RC02 与对应验证规则；它不证明、
+  也不得被描述为 V4.2 工作簿派生证据。
+- `public-v1`、`internal-v1` 与 `interpretation-rules-v2` 是三个独立只读模块，版本和 API
+  不可互换。F5、F6 与 F7 将 `interpretation-rules-v2` 的规则 ID、版本和适用范围与受控 TA 事实组合，
+  请求、结果、可选图片观察和澄清/假设均保持 `confidential`；F0 只发布待验证 signal、未排序 option
+  与 validation requirement，量化情境、方案排序和建议值仍由 F6 独立拥有并通过独立治理条目保持
+  `available`。
 - F1 是 worksheet 图片的唯一物理 owner。F5 缺少 F1 `imageReference` 或对应物理图片时必须对该
   worksheet fail closed；存在已验证图片但 image mode 不可用、用户跳过观察或没有观察工件时，
   可继续确定性解读，但必须标记 `not_evaluated` 并说明未评估 drawing evidence。图片观察不是 drawing

@@ -3761,7 +3761,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
 }>;
 export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
     status: z.ZodLiteral<"available">;
-    provenance: z.ZodObject<{
+    provenance: z.ZodUnion<[z.ZodObject<{
         knowledgeBaseVersion: z.ZodLiteral<"v1">;
         ruleId: z.ZodLiteral<"default-cpk-target">;
         threshold: z.ZodNumber;
@@ -3776,7 +3776,22 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         threshold: number;
         applicability: string;
         knowledgeBaseVersion: "v1";
-    }>;
+    }>, z.ZodObject<{
+        knowledgeBaseVersion: z.ZodLiteral<"interpretation-rules-v2">;
+        ruleId: z.ZodEnum<["performance-cpk", "performance-cpk-below-target"]>;
+        threshold: z.ZodNumber;
+        applicability: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        ruleId: "performance-cpk" | "performance-cpk-below-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "interpretation-rules-v2";
+    }, {
+        ruleId: "performance-cpk" | "performance-cpk-below-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "interpretation-rules-v2";
+    }>]>;
     comparison: z.ZodObject<{
         setup: z.ZodObject<{
             mean: z.ZodNumber;
@@ -3840,6 +3855,39 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
     targetAssessment: z.ZodString;
     interpretations: z.ZodArray<z.ZodString, "many">;
     optimizationDirections: z.ZodArray<z.ZodString, "many">;
+    rootCauseSignals: z.ZodArray<z.ZodObject<{
+        ruleId: z.ZodString;
+        title: z.ZodString;
+        sourceAlias: z.ZodString;
+        sourceFileHash: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }, {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }>, "many">;
+    controlledOptions: z.ZodArray<z.ZodObject<{
+        ruleId: z.ZodString;
+        title: z.ZodString;
+        sourceAlias: z.ZodString;
+        sourceFileHash: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }, {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }>, "many">;
+    validationRequirements: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
     status: "available";
     provenance: {
@@ -3847,6 +3895,11 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         threshold: number;
         applicability: string;
         knowledgeBaseVersion: "v1";
+    } | {
+        ruleId: "performance-cpk" | "performance-cpk-below-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "interpretation-rules-v2";
     };
     comparison: {
         setup: {
@@ -3865,6 +3918,19 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
     targetAssessment: string;
     interpretations: string[];
     optimizationDirections: string[];
+    rootCauseSignals: {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }[];
+    controlledOptions: {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }[];
+    validationRequirements: string[];
 }, {
     status: "available";
     provenance: {
@@ -3872,6 +3938,11 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         threshold: number;
         applicability: string;
         knowledgeBaseVersion: "v1";
+    } | {
+        ruleId: "performance-cpk" | "performance-cpk-below-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "interpretation-rules-v2";
     };
     comparison: {
         setup: {
@@ -3890,6 +3961,19 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
     targetAssessment: string;
     interpretations: string[];
     optimizationDirections: string[];
+    rootCauseSignals: {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }[];
+    controlledOptions: {
+        ruleId: string;
+        sourceAlias: string;
+        sourceFileHash: string;
+        title: string;
+    }[];
+    validationRequirements: string[];
 }>, z.ZodObject<{
     status: z.ZodLiteral<"unavailable">;
     reason: z.ZodString;
@@ -4452,7 +4536,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     }>, "many">;
     analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         status: z.ZodLiteral<"available">;
-        provenance: z.ZodObject<{
+        provenance: z.ZodUnion<[z.ZodObject<{
             knowledgeBaseVersion: z.ZodLiteral<"v1">;
             ruleId: z.ZodLiteral<"default-cpk-target">;
             threshold: z.ZodNumber;
@@ -4467,7 +4551,22 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
-        }>;
+        }>, z.ZodObject<{
+            knowledgeBaseVersion: z.ZodLiteral<"interpretation-rules-v2">;
+            ruleId: z.ZodEnum<["performance-cpk", "performance-cpk-below-target"]>;
+            threshold: z.ZodNumber;
+            applicability: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
+        }, {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
+        }>]>;
         comparison: z.ZodObject<{
             setup: z.ZodObject<{
                 mean: z.ZodNumber;
@@ -4531,6 +4630,39 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: z.ZodString;
         interpretations: z.ZodArray<z.ZodString, "many">;
         optimizationDirections: z.ZodArray<z.ZodString, "many">;
+        rootCauseSignals: z.ZodArray<z.ZodObject<{
+            ruleId: z.ZodString;
+            title: z.ZodString;
+            sourceAlias: z.ZodString;
+            sourceFileHash: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }, {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }>, "many">;
+        controlledOptions: z.ZodArray<z.ZodObject<{
+            ruleId: z.ZodString;
+            title: z.ZodString;
+            sourceAlias: z.ZodString;
+            sourceFileHash: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }, {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }>, "many">;
+        validationRequirements: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
         status: "available";
         provenance: {
@@ -4538,6 +4670,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -4556,6 +4693,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     }, {
         status: "available";
         provenance: {
@@ -4563,6 +4713,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -4581,6 +4736,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     }>, z.ZodObject<{
         status: z.ZodLiteral<"unavailable">;
         reason: z.ZodString;
@@ -4886,6 +5054,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -4904,6 +5077,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     } | {
         status: "unavailable";
         reason: string;
@@ -5042,6 +5228,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -5060,6 +5251,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     } | {
         status: "unavailable";
         reason: string;
@@ -5198,6 +5402,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -5216,6 +5425,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     } | {
         status: "unavailable";
         reason: string;
@@ -5354,6 +5576,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             threshold: number;
             applicability: string;
             knowledgeBaseVersion: "v1";
+        } | {
+            ruleId: "performance-cpk" | "performance-cpk-below-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "interpretation-rules-v2";
         };
         comparison: {
             setup: {
@@ -5372,6 +5599,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetAssessment: string;
         interpretations: string[];
         optimizationDirections: string[];
+        rootCauseSignals: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        controlledOptions: {
+            ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
+            title: string;
+        }[];
+        validationRequirements: string[];
     } | {
         status: "unavailable";
         reason: string;

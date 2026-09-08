@@ -47,7 +47,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       dependsOn: [
         "knowledge-base-v1",
         "internal-tolerance-guidance-v1",
-        "interpretation-rules-v1",
+        "interpretation-rules-v2",
       ],
       inputContractId: "knowledge-base-query-request-v1",
       outputContractId: "knowledge-base-query-result-v1",
@@ -273,7 +273,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       title: "客观结果解释",
       status: "available",
       dependsOn: [
-        "interpretation-rules-v1",
+        "interpretation-rules-v2",
         "worksheet-analysis-assets-v1",
         "drawing-governance-v2",
         "calculation-service-v1",
@@ -300,7 +300,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       dependsOn: [
         "calculation-service-v1",
         "knowledge-base-v1",
-        "interpretation-rules-v1",
+        "interpretation-rules-v2",
         "objective-interpretation-v1",
       ],
       inputContractId: "interpretation-request-v1",
@@ -322,6 +322,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       title: "可比较的方案选项",
       status: "available",
       dependsOn: [
+        "interpretation-rules-v2",
         "f2-user-report-v1",
         "drawing-governance-v2",
         "calculation-service-v1",
@@ -354,7 +355,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
     unavailableFeature(
       "F7",
       "实测 Cpk 闭环",
-      ["measurement-store-v1", "dim-id-service-v1"],
+      ["interpretation-rules-v2", "measurement-store-v1", "dim-id-service-v1"],
       "cpk-request-v1",
       "cpk-result-v1",
       "confidential",

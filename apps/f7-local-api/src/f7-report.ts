@@ -6,7 +6,7 @@ import {
   type F7ReportSpecificationSourceCells,
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
-import { getPublicEngineeringRule } from "@ai-assist/knowledge-base/public-engineering-rules";
+import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
 
 type ReportWithoutMarkdown = Omit<F7ReportProjection, "markdown">;
 
@@ -18,14 +18,6 @@ function createF0Analysis(
   snapshot: F7SessionSnapshot,
   simulation: F7SessionSnapshot["monteCarloResult"] & {},
 ): NonNullable<F7ReportProjection["analysis"]> {
-  const rule = getPublicEngineeringRule({ ruleId: "default-cpk-target" });
-  if (
-    rule.status !== "matched"
-    || rule.entry.ruleId !== "default-cpk-target"
-    || rule.entry.ruleType !== "cpk"
-  ) {
-    return { status: "unavailable", reason: "The governed F0 Cpk rule is unavailable.", optimizationDirections: [] };
-  }
   if (simulation.capability.status !== "available") {
     return {
       status: "unavailable",
@@ -65,32 +57,59 @@ function createF0Analysis(
     (setupMean - simulation.lowerSpecLimit) / (3 * setupStandardDeviation),
   );
   const monteCarlo = simulation.capability;
+  const target = monteCarlo.targetCpk;
+  const targetEvidence = snapshot.systemSpecification?.targetSigmaLevel;
+  const targetSource = targetEvidence?.status === "available"
+    && targetEvidence.valueOrigin === "defaulted"
+    ? "template"
+    : "project";
+  const evaluation = loadInterpretationRules({ version: "interpretation-rules-v2" })
+    .evaluateInterpretationRules({
+      analysisDimension: "one-dimensional",
+      method: "monte-carlo",
+      facts: {
+        cp: monteCarlo.cp,
+        cpk: monteCarlo.cpk,
+        targetCpk: { value: target, source: targetSource },
+        mean: simulation.mean,
+        lowerSpecLimit: simulation.lowerSpecLimit,
+        upperSpecLimit: simulation.upperSpecLimit,
+      },
+    });
+  const performanceRule = evaluation.status === "matched"
+    ? evaluation.matchedRules.find(({ entryType }) => entryType === "performance-rule")
+    : undefined;
+  if (evaluation.knowledgeBaseVersion !== "interpretation-rules-v2"
+    || evaluation.resolvedTargets?.cpk?.value !== target
+    || evaluation.resolvedTargets.cpk.source !== targetSource
+    || performanceRule === undefined || (
+    performanceRule.entryId !== "performance-cpk"
+    && performanceRule.entryId !== "performance-cpk-below-target"
+  )) {
+    return { status: "unavailable", reason: "The governed F0 Cpk interpretation rule is unavailable.", optimizationDirections: [] };
+  }
   const meanDelta = simulation.mean - setupMean;
   const sigmaRelativeChange = (simulation.standardDeviation - setupStandardDeviation) / setupStandardDeviation;
   const cpDelta = monteCarlo.cp - setupCp;
   const cpkDelta = monteCarlo.cpk - setupCpk;
-  const target = rule.entry.threshold;
+  const rootCauseRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "root-cause-signal");
+  const improvementRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "improvement-option");
+  const projectRule = (rule: (typeof evaluation.matchedRules)[number]) => ({
+    ruleId: rule.entryId,
+    title: rule.title,
+    sourceAlias: rule.evidence.sourceAlias,
+    sourceFileHash: rule.evidence.sourceFileHash,
+  });
   const targetAssessment = monteCarlo.cpk >= target
-    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the F0 default target of ${target}.`
-    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the F0 default target of ${target}.`;
+    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the resolved target of ${target}.`
+    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the resolved target of ${target}.`;
   const interpretations = [
     `Mean changed from Setup ${setupMean.toFixed(4)} to Monte Carlo ${simulation.mean.toFixed(4)} (${formatSigned(meanDelta, 4)}).`,
     `Standard deviation changed from Setup ${setupStandardDeviation.toFixed(4)} to Monte Carlo ${simulation.standardDeviation.toFixed(4)} (${formatSigned(sigmaRelativeChange * 100, 1)}%).`,
     `Cp changed from Setup ${setupCp.toFixed(3)} to Monte Carlo ${monteCarlo.cp.toFixed(3)} (${formatSigned(cpDelta, 3)}).`,
     `Cpk changed from Setup ${setupCpk.toFixed(3)} to Monte Carlo ${monteCarlo.cpk.toFixed(3)} (${formatSigned(cpkDelta, 3)}); ${targetAssessment}`,
   ];
-  const optimizationDirections: string[] = [];
-  if (Math.abs(meanDelta) >= 0.00005 || monteCarlo.cp - monteCarlo.cpk >= 0.0005) {
-    optimizationDirections.push("Review process centering against the Factor Setup mean and specification midpoint before changing tolerances.");
-  }
-  if (sigmaRelativeChange > 0.0005) {
-    optimizationDirections.push("Prioritize reducing and stabilizing measured within-factor variation, then confirm with a new representative sample.");
-  } else if (sigmaRelativeChange < -0.0005) {
-    optimizationDirections.push("Confirm the lower measured variation is repeatable with a new representative sample.");
-  }
-  if (monteCarlo.cpk < target || cpDelta < -0.0005 || cpkDelta < -0.0005) {
-    optimizationDirections.push("After corrective action, rerun Monte Carlo and compare Cpk with the F0 target before any Release/Hold decision.");
-  }
+  const optimizationDirections = improvementRules.map(({ title }) => title);
   if (optimizationDirections.length === 0) {
     optimizationDirections.push("Maintain the current setup and verify capability remains stable with the next representative measurement sample.");
   }
@@ -98,10 +117,10 @@ function createF0Analysis(
   return {
     status: "available",
     provenance: {
-      knowledgeBaseVersion: rule.knowledgeBaseVersion,
-      ruleId: rule.entry.ruleId,
+      knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+      ruleId: performanceRule.entryId,
       threshold: target,
-      applicability: rule.entry.applicability,
+      applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
     },
     comparison: {
       setup: { mean: setupMean, standardDeviation: setupStandardDeviation, cp: setupCp, cpk: setupCpk },
@@ -115,6 +134,9 @@ function createF0Analysis(
     targetAssessment,
     interpretations,
     optimizationDirections,
+    rootCauseSignals: rootCauseRules.map(projectRule),
+    controlledOptions: improvementRules.map(projectRule),
+    validationRequirements: [...new Set(improvementRules.flatMap(({ validationSteps }) => validationSteps ?? []))],
   };
 }
 
@@ -187,9 +209,17 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
         "",
         ...report.analysis.interpretations.map((item) => `- ${escapeMarkdownTableText(item)}`),
         "",
-        "### Optimization direction",
+        "### Root Cause Signals",
+        "",
+        ...report.analysis.rootCauseSignals.map((item) => `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.ruleId)})`),
+        "",
+        "### Controlled Options",
         "",
         ...report.analysis.optimizationDirections.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+        "### Verification Requirements",
+        "",
+        ...report.analysis.validationRequirements.map((item) => `- ${escapeMarkdownTableText(item)}`),
         "",
       ]
     : [

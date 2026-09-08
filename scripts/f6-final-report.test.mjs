@@ -152,7 +152,7 @@ function buildSupportedF5Report(bundle) {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: f3Report.worksheets.map((worksheet) => {
       const calculationResult = f4Report.calculations.find((calculation) => calculation.worksheetSelection.worksheetName === worksheet.worksheetName);
       if (calculationResult === undefined) throw new Error("expected fixture F4 calculation");
@@ -193,7 +193,7 @@ function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: artifact.worksheets.map((worksheet, index) => ({
       worksheetName: worksheet.worksheetName,
       imageReference: worksheet.imageReference,

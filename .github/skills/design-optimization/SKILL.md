@@ -47,7 +47,7 @@ The remainder of this document is machine-facing execution contract text. Litera
 
 ### Phase W0 - Validate workbook and F0 capabilities
 
-Resolve exactly one canonical `.xlsx` path, verify that it is a regular non-linked file, and preserve it read-only. Confirm the repository-backed F0 modules required by the flow: public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1`. Stop if a required controlled version is unavailable.
+Resolve exactly one canonical `.xlsx` path, verify that it is a regular non-linked file, and preserve it read-only. Confirm the repository-backed F0 modules required by the flow: public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v2`. Stop if a required controlled version is unavailable.
 
 ### Phase W1 - Generate F1 worksheet selection
 

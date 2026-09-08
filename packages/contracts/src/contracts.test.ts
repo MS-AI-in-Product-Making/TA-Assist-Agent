@@ -8920,6 +8920,7 @@ describe("interpretation rules contracts", () => {
     matchedRules: [{
       entryId: "performance-cpk",
       entryType: "performance-rule" as const,
+      title: "Cpk meets target",
       effectiveVersion: "interpretation-rules-v1" as const,
       applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
       relatedFactReferences: ["cpk", "targetCpk"],
@@ -8930,6 +8931,7 @@ describe("interpretation rules contracts", () => {
 
   it("accepts the version, every entry discriminant, a strict seed package, and a version-only load request", () => {
     expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
+    expect(interpretationRuleVersionSchema.parse("interpretation-rules-v2")).toBe("interpretation-rules-v2");
     expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
       entries.map((entry) => entry.entryType),
     );
@@ -8941,6 +8943,9 @@ describe("interpretation rules contracts", () => {
     expect(interpretationKnowledgeSeedPackageSchema.parse(seedPackage)).toEqual(seedPackage);
     expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v1" })).toEqual({
       version: "interpretation-rules-v1",
+    });
+    expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v2" })).toEqual({
+      version: "interpretation-rules-v2",
     });
     expect(interpretationRuleLoadRequestSchema.safeParse({
       version: "interpretation-rules-v1",
@@ -9019,6 +9024,46 @@ describe("interpretation rules contracts", () => {
       ...evaluation,
       resolvedTargets: { ...evaluation.resolvedTargets, unexpected: true },
     }).success).toBe(false);
+  });
+
+  it("accepts V2 capability and centering facts and rejects inverted specification limits", () => {
+    const request = {
+      analysisDimension: "one-dimensional" as const,
+      method: "rss" as const,
+      facts: {
+        cp: 1.1,
+        cpk: 0.9,
+        targetCpk: { value: 1.33, source: "project" as const },
+        mean: 0.2,
+        lowerSpecLimit: -0.5,
+        upperSpecLimit: 0.5,
+      },
+    };
+
+    expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, lowerSpecLimit: 0.5, upperSpecLimit: -0.5 },
+    }).success).toBe(false);
+  });
+
+  it("accepts V2 variation and mean-shift root-cause conditions", () => {
+    const rootSignal = entries.find(({ entryType }) => entryType === "root-cause-signal")!;
+
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...rootSignal,
+      requiredFacts: ["cp", "targetCpk"],
+      activationCondition: { kind: "cp-below-target" },
+    }).success).toBe(true);
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...rootSignal,
+      requiredFacts: ["cp", "cpk", "mean", "lowerSpecLimit", "upperSpecLimit"],
+      activationCondition: {
+        kind: "mean-off-center",
+        minimumCpCpkGap: 1e-12,
+        minimumMeanOffset: 1e-12,
+      },
+    }).success).toBe(true);
   });
 
   it.each([

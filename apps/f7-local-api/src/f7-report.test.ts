@@ -536,9 +536,9 @@ describe("createF7ReportProjection", () => {
       analysis: {
         status: "available",
         provenance: {
-          knowledgeBaseVersion: "v1",
-          ruleId: "default-cpk-target",
-          threshold: 1.33,
+          knowledgeBaseVersion: "interpretation-rules-v2",
+          ruleId: "performance-cpk-below-target",
+          threshold: 2,
         },
         comparison: {
           setup: {
@@ -558,9 +558,19 @@ describe("createF7ReportProjection", () => {
     });
     expect(report.analysis.interpretations.length).toBeGreaterThan(0);
     expect(report.analysis.optimizationDirections.length).toBeGreaterThan(0);
+    expect(report.analysis.rootCauseSignals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: expect.stringMatching(/^root-cause-/) }),
+    ]));
+    expect(report.analysis.controlledOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: expect.stringMatching(/^improvement-/) }),
+    ]));
+    expect(report.analysis.validationRequirements.length).toBeGreaterThan(0);
     expect(report.markdown).toContain("## Factor Setup vs Monte Carlo TA");
     expect(report.markdown).toContain("## F0 Interpretation and Optimization Direction");
-    expect(report.markdown).toContain("F0 v1 / default-cpk-target");
+    expect(report.markdown).toContain("F0 interpretation-rules-v2 / performance-cpk-below-target");
+    expect(report.markdown).toContain("### Root Cause Signals");
+    expect(report.markdown).toContain("### Controlled Options");
+    expect(report.markdown).toContain("### Verification Requirements");
   });
 
   it("deduplicates repeated factor source references while preserving source order", () => {

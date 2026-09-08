@@ -16,9 +16,14 @@ const UNAVAILABLE_REASONS = {
   "calculation-unavailable": "Assumption-based calculation is unavailable; review Factor Setup values.",
   "rules-unavailable": "F0 interpretation rules are unavailable; do not issue a governed conclusion.",
 } as const;
-const INTERPRETATION_VERSION = "interpretation-rules-v1" as const;
-const PROVENANCE = "F0 interpretation-rules-v1" as const;
+const INTERPRETATION_VERSION = "interpretation-rules-v2" as const;
+const PROVENANCE = "F0 interpretation-rules-v2" as const;
 const CONCENTRATION_RULE_ID = "root-cause-contributor-concentration" as const;
+const ROOT_CAUSE_DISPLAY_ORDER = [
+  "root-cause-excessive-variation",
+  "root-cause-mean-shift",
+  CONCENTRATION_RULE_ID,
+] as const;
 const ASSUMPTION_DISCLOSURE = "These results are based on confirmed Factor Setup assumptions and RSS analysis; they are not measured or Monte Carlo evidence.";
 const CONCENTRATION_DISCLOSURE = "The contributor concentration hypothesis requires engineering validation.";
 
@@ -50,7 +55,11 @@ const DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>>
 const RULE_TITLES = {
   "performance-cpk": "Cpk meets target",
   "performance-cpk-below-target": "Cpk below target",
-  "root-cause-contributor-concentration": "Contributor concentration hypothesis",
+  "root-cause-excessive-variation": "RC01 Excessive variation hypothesis",
+  "root-cause-mean-shift": "RC02 Mean shift hypothesis",
+  "root-cause-contributor-concentration": "RC03 Contributor concentration hypothesis",
+  "improvement-reduce-variation": "Reduce total variation",
+  "improvement-center-mean": "Center the process mean",
   "improvement-reduce-contributor": "Reduce the dominant contributor",
 } as const;
 
@@ -88,6 +97,7 @@ export type AssumptionResultsInterpretation =
       readonly concentrationHypothesisMatched: boolean;
       readonly engineeringInterpretations: readonly string[];
       readonly improvementOptions: readonly string[];
+      readonly validationRequirements: readonly string[];
       readonly assumptions: readonly string[];
       readonly inputReadiness: InputReadiness;
       readonly provenance: typeof PROVENANCE;
@@ -223,6 +233,7 @@ export function buildAssumptionResultsInterpretation(
     };
   });
   const targetCpk = specification.targetSigmaLevel.actualValue / 3;
+  const targetSource = specification.targetSigmaLevel.valueOrigin === "defaulted" ? "template" : "project";
   let calculation: ReturnType<typeof calculateToleranceAnalysis>;
   try {
     calculation = calculateToleranceAnalysis({
@@ -261,15 +272,22 @@ export function buildAssumptionResultsInterpretation(
       analysisDimension: "one-dimensional",
       method: "rss",
       facts: {
+        cp: calculation.capability.cp,
         cpk: calculation.capability.cpk,
-        targetCpk: { value: targetCpk, source: "project" },
+        targetCpk: { value: targetCpk, source: targetSource },
+        mean: calculation.system.mean,
+        lowerSpecLimit: calculation.capability.lowerSpecLimit,
+        upperSpecLimit: calculation.capability.upperSpecLimit,
         contributors: contributors.map(({ reference, contributionPercent }) => ({
           reference,
           contributionPercent,
         })),
       },
     });
-    if (evaluation.status !== "matched" || evaluation.knowledgeBaseVersion !== INTERPRETATION_VERSION) {
+    if (evaluation.status !== "matched"
+      || evaluation.knowledgeBaseVersion !== INTERPRETATION_VERSION
+      || evaluation.resolvedTargets?.cpk?.value !== targetCpk
+      || evaluation.resolvedTargets.cpk.source !== targetSource) {
       return unavailable("rules-unavailable", inputReadiness);
     }
     for (const rule of evaluation.matchedRules) controlledTitle(rule.entryId);
@@ -287,7 +305,9 @@ export function buildAssumptionResultsInterpretation(
     const rootCauseRules = evaluation.matchedRules.filter((rule) => rule.entryType === "root-cause-signal");
     const improvementRules = evaluation.matchedRules.filter((rule) => rule.entryType === "improvement-option");
     const concentrationMatched = rootCauseRules.some((rule) => rule.entryId === CONCENTRATION_RULE_ID);
-    const engineeringInterpretations = rootCauseRules.map((rule) => controlledTitle(rule.entryId));
+    const engineeringInterpretations = ROOT_CAUSE_DISPLAY_ORDER
+      .filter((entryId) => rootCauseRules.some((rule) => rule.entryId === entryId))
+      .map(controlledTitle);
 
     return {
       status: "available",
@@ -305,6 +325,7 @@ export function buildAssumptionResultsInterpretation(
       concentrationHypothesisMatched: concentrationMatched,
       engineeringInterpretations,
       improvementOptions: improvementRules.map((rule) => controlledTitle(rule.entryId)),
+      validationRequirements: [...new Set(improvementRules.flatMap((rule) => rule.validationSteps ?? []))],
       assumptions: concentrationMatched
         ? [ASSUMPTION_DISCLOSURE, CONCENTRATION_DISCLOSURE]
         : [ASSUMPTION_DISCLOSURE],

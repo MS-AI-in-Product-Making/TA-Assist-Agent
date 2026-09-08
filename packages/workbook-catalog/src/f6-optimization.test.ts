@@ -161,7 +161,7 @@ function request(
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: [{ worksheetName, imageReference, governanceRows, calculationResult: calculation, imageObservations: [] }],
   });
   const f5Worksheet = f5.worksheets[0];
@@ -176,7 +176,7 @@ function request(
     f3Reference: { artifact: "f3/result.json", contentHash: HASH },
     f4Reference: { artifact: "f4/result.json", contentHash: HASH, runId: "run", calculationVersion: "excel-ta-v1" },
     f5Reference: { artifact: "f5/result.json", contentHash: HASH, interpretationVersion: "f5-data-interpretation-v1" },
-    f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "capability-v1", interpretationVersion: "interpretation-rules-v1" },
+    f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "capability-v1", interpretationVersion: "interpretation-rules-v2" },
     scenarioPolicyVersion: "f6-scenario-policy-v1",
     worksheets: [{
       worksheetName,
@@ -231,7 +231,7 @@ function refreshGovernedBaseline(input: F6OptimizationRequest): void {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: input.workbook,
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: [{
       worksheetName: worksheet.worksheetName,
       imageReference: worksheet.f5Worksheet.imageReference,
@@ -781,7 +781,7 @@ describe("createF6Optimization", () => {
       contractVersion: "v1",
       inputClassification: "confidential",
       workbook: input.workbook,
-      knowledgeBaseVersion: "interpretation-rules-v1",
+      knowledgeBaseVersion: "interpretation-rules-v2",
       worksheets: [{
         worksheetName: worksheetInput.worksheetName,
         imageReference: worksheetInput.f5Worksheet.imageReference,

@@ -111,6 +111,15 @@ function formatContribution(value: number): string {
         class="assumption-disclosure"
         data-assumption-disclosure
       >
+        <h3>Verification Requirements</h3>
+        <ul data-validation-requirements>
+          <li
+            v-for="requirement in interpretation.validationRequirements"
+            :key="requirement"
+          >
+            {{ requirement }}
+          </li>
+        </ul>
         <h3>Assumption Disclosure</h3>
         <p
           v-for="assumption in interpretation.assumptions"

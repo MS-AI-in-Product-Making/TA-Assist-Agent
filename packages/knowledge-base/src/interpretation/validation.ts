@@ -11,7 +11,6 @@ import type {
   InterpretationKnowledgeSnapshot,
 } from "./types.js";
 
-const PACKAGE_REFERENCE = "interpretation-rules-v1";
 const DEPENDENCY_ERROR_SUMMARY = "Interpretation-rules package is invalid.";
 const DEPENDENCY_ERROR_ACTION = "Provide a valid interpretation-rules package.";
 const SAFE_DEPENDENCY_ERRORS = new WeakSet<object>();
@@ -67,7 +66,8 @@ function validateProvenance(seed: InterpretationKnowledgeSeedPackage): void {
       || entry.provenance.sourceFileHash !== source.sourceFileHash
       || entry.provenance.sourceVersion !== source.sourceVersion
       || entry.provenance.classification !== source.classification
-      || entry.provenance.owner !== source.owner) {
+      || entry.provenance.owner !== source.owner
+      || entry.provenance.effectiveVersion !== seed.manifest.version) {
       throw dependencyError([entry.entryId]);
     }
   }
@@ -80,7 +80,7 @@ function validateManifest(seed: InterpretationKnowledgeSeedPackage): void {
   if (seed.manifest.sourcesHash !== sourcesHash
     || seed.manifest.entriesHash !== entriesHash
     || seed.manifest.contentHash !== packageHash) {
-    throw dependencyError([PACKAGE_REFERENCE]);
+    throw dependencyError([seed.manifest.version]);
   }
 }
 
@@ -102,10 +102,17 @@ function validatePerformanceRequiredFacts(entries: readonly InterpretationKnowle
 }
 
 function validateRootCauseRequiredFacts(entries: readonly InterpretationKnowledgeEntry[]): void {
+  const requiredFactsByCondition = {
+    "maximum-contribution-at-least": ["contributors"],
+    "cp-below-target": ["cp", "targetCpk"],
+    "mean-off-center": ["cp", "cpk", "mean", "lowerSpecLimit", "upperSpecLimit"],
+  } as const;
   for (const entry of entries) {
-    if (entry.entryType !== "root-cause-signal"
-      || entry.activationCondition.kind !== "maximum-contribution-at-least") continue;
-    if (entry.requiredFacts.length !== 1 || entry.requiredFacts[0] !== "contributors") {
+    if (entry.entryType !== "root-cause-signal") continue;
+    const expected = requiredFactsByCondition[entry.activationCondition.kind];
+    if (entry.requiredFacts.length !== expected.length
+      || new Set(entry.requiredFacts).size !== expected.length
+      || expected.some((fact) => !entry.requiredFacts.includes(fact))) {
       throw dependencyError([entry.entryId]);
     }
   }
@@ -121,8 +128,8 @@ const COMPARISON_STATES = {
 } as const;
 
 function methodsOverlap(
-  first: "rss" | "worst-case" | undefined,
-  second: "rss" | "worst-case" | undefined,
+  first: "rss" | "worst-case" | "monte-carlo" | undefined,
+  second: "rss" | "worst-case" | "monte-carlo" | undefined,
 ): boolean {
   return first === undefined || second === undefined || first === second;
 }

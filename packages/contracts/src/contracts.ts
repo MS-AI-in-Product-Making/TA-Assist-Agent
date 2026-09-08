@@ -2257,8 +2257,12 @@ const interpretationSectionSchema = z.enum([
 ]);
 
 export const interpretationFactReferenceSchema = z.enum([
+  "cp",
   "cpk",
   "targetCpk",
+  "mean",
+  "lowerSpecLimit",
+  "upperSpecLimit",
   "achievedSigma",
   "targetSigma",
   "contributors",
@@ -2389,6 +2393,11 @@ const interpretationFactContentSchema = z
   ])
   .pipe(interpretationFactContentByMetricSchema);
 
+export const interpretationRuleVersionSchema = z.enum([
+  "interpretation-rules-v1",
+  "interpretation-rules-v2",
+]);
+
 const interpretationRuleStatementEvidenceSchema = z
   .object({
     classification: z.literal("internal"),
@@ -2399,17 +2408,15 @@ const interpretationRuleStatementEvidenceSchema = z
     sourceFileHash: sha256Schema,
     owner: z.string().min(1),
     confidence: z.number().finite().min(0).max(1),
-    effectiveVersion: z.literal("interpretation-rules-v1"),
+    effectiveVersion: interpretationRuleVersionSchema,
     changeSummary: z.string().min(1),
   })
   .strict();
 
-export const interpretationRuleVersionSchema = z.literal("interpretation-rules-v1");
-
 export const interpretationApplicabilitySchema = z
   .object({
     analysisDimension: z.literal("one-dimensional"),
-    method: z.enum(["rss", "worst-case"]).optional(),
+    method: z.enum(["rss", "worst-case", "monte-carlo"]).optional(),
   })
   .strict();
 
@@ -2544,7 +2551,7 @@ export const f5ObjectiveInterpretationCompletedResultSchema = z
     workbookContentHash: sha256Schema,
     worksheetSelection: calculationWorksheetSelectionSchema,
     calculationVersion: z.literal("excel-ta-v1"),
-    knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+    knowledgeBaseVersion: interpretationRuleVersionSchema,
     ruleEvaluationStatus: z.enum(["matched", "insufficient-facts", "not-applicable"]),
     statements: z.array(interpretationStatementSchema),
     clarifications: z.array(interpretationClarificationSchema),
@@ -3528,12 +3535,20 @@ const interpretationRootCauseSignalSchema = z
     signalStatus: z.literal("hypothesis"),
     requiredFacts: z.array(z.string().min(1)),
     validationFacts: z.array(z.string().min(1)),
-    activationCondition: z
-      .object({
+    activationCondition: z.discriminatedUnion("kind", [
+      z.object({
         kind: z.literal("maximum-contribution-at-least"),
         thresholdPercent: z.number().finite().min(0).max(100),
-      })
-      .strict(),
+      }).strict(),
+      z.object({
+        kind: z.literal("cp-below-target"),
+      }).strict(),
+      z.object({
+        kind: z.literal("mean-off-center"),
+        minimumCpCpkGap: z.number().finite().nonnegative(),
+        minimumMeanOffset: z.number().finite().nonnegative(),
+      }).strict(),
+    ]),
   })
   .strict();
 
@@ -3666,8 +3681,12 @@ const interpretationContributorFactSchema = z
 
 const interpretationFactsSchema = z
   .object({
+    cp: z.number().finite().optional(),
     cpk: z.number().finite().optional(),
     targetCpk: interpretationRequestTargetSchema.optional(),
+    mean: z.number().finite().optional(),
+    lowerSpecLimit: z.number().finite().optional(),
+    upperSpecLimit: z.number().finite().optional(),
     achievedSigma: z.number().finite().optional(),
     targetSigma: interpretationRequestTargetSchema.optional(),
     contributors: z.array(interpretationContributorFactSchema).optional(),
@@ -3677,10 +3696,20 @@ const interpretationFactsSchema = z
 export const interpretationRuleEvaluationRequestSchema = z
   .object({
     analysisDimension: z.literal("one-dimensional"),
-    method: z.enum(["rss", "worst-case"]),
+    method: z.enum(["rss", "worst-case", "monte-carlo"]),
     facts: interpretationFactsSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const { lowerSpecLimit, upperSpecLimit } = request.facts;
+    if (lowerSpecLimit !== undefined && upperSpecLimit !== undefined && lowerSpecLimit >= upperSpecLimit) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "lowerSpecLimit must be less than upperSpecLimit",
+        path: ["facts", "lowerSpecLimit"],
+      });
+    }
+  });
 
 const interpretationResolvedTargetsSchema = z
   .object({
@@ -3695,10 +3724,12 @@ const interpretationMatchedRuleSchema = z
   .object({
     entryId: z.string().min(1),
     entryType: z.enum(["performance-rule", "root-cause-signal", "improvement-option"]),
+    title: z.string().min(1),
     effectiveVersion: interpretationRuleVersionSchema,
     applicability: interpretationApplicabilitySchema,
     relatedFactReferences: z.array(interpretationFactReferenceSchema),
     evidence: interpretationRuleEvidenceSchema,
+    validationSteps: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 
@@ -5184,7 +5215,7 @@ export const f5DataInterpretationRequestSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
-  knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  knowledgeBaseVersion: interpretationRuleVersionSchema,
   observationFallback: z.object({
     reasonCode: z.literal("enhanced_observation_rejected"),
   }).strict().optional(),
@@ -6085,7 +6116,7 @@ export const f5DataInterpretationResultSchema = z.object({
   featureId: z.literal("F5"),
   status: z.enum(["completed", "partially_completed", "input_rejected"]),
   interpretationVersion: z.literal("f5-data-interpretation-v1"),
-  knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  knowledgeBaseVersion: interpretationRuleVersionSchema,
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   worksheets: z.array(f5WorksheetResultSchema).min(1),
   summary: z.object({
@@ -7619,7 +7650,7 @@ export const f6OptimizationRequestSchema = z.object({
   f0Versions: z.object({
     knowledgeBaseVersion: z.literal("v1"),
     capabilityVersion: z.string().min(1),
-    interpretationVersion: z.literal("interpretation-rules-v1"),
+    interpretationVersion: interpretationRuleVersionSchema,
   }).strict(),
   scenarioPolicyVersion: z.literal("f6-scenario-policy-v1"),
   imageObservationReference: f6ArtifactReferenceSchema.optional(),
@@ -7853,7 +7884,7 @@ export const f6ProvenanceSchema = z.object({
   f0Versions: z.object({
     knowledgeBaseVersion: z.literal("v1"),
     capabilityVersion: z.string().min(1),
-    interpretationVersion: z.literal("interpretation-rules-v1"),
+    interpretationVersion: interpretationRuleVersionSchema,
   }).strict(),
   scenarioPolicyVersion: z.literal("f6-scenario-policy-v1"),
   imageObservationReference: f6ArtifactReferenceSchema.optional(),

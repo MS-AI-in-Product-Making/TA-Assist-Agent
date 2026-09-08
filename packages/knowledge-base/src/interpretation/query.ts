@@ -10,6 +10,7 @@ import {
   type InterpretationRuleEvaluationRequest,
 } from "@ai-assist/contracts";
 import { createReviewedInterpretationRulesV1SeedPackage } from "./data/interpretation-rules-v1.js";
+import { createReviewedInterpretationRulesV2SeedPackage } from "./data/interpretation-rules-v2.js";
 import type { InterpretationKnowledgeSnapshot } from "./types.js";
 import { createInterpretationKnowledgeSnapshot } from "./validation.js";
 
@@ -19,36 +20,38 @@ type ImprovementOption = Extract<InterpretationKnowledgeEntry, { entryType: "imp
 type MatchedRule = InterpretationRuleEvaluation["matchedRules"][number];
 type Facts = InterpretationRuleEvaluationRequest["facts"];
 
-const VERSION = "interpretation-rules-v1";
-
 export interface InterpretationRules {
   evaluateInterpretationRules(request: unknown): InterpretationRuleEvaluation;
 }
 
 export function loadInterpretationRules(request: unknown): InterpretationRules {
-  parseOrThrow(
+  const parsed = parseOrThrow(
     interpretationRuleLoadRequestSchema,
     request,
     "Interpretation rule load request is invalid.",
     "interpretation-rule-load-request",
   );
   const snapshot = createInterpretationKnowledgeSnapshot(
-    createReviewedInterpretationRulesV1SeedPackage(),
+    parsed.version === "interpretation-rules-v1"
+      ? createReviewedInterpretationRulesV1SeedPackage()
+      : createReviewedInterpretationRulesV2SeedPackage(),
   );
-  return createInterpretationRulesFromValidatedEntries(snapshot.entries);
+  return createInterpretationRulesFromValidatedEntries(snapshot.entries, snapshot.manifest.version);
 }
 
 export function createInterpretationRulesFromValidatedEntries(
   validatedEntries: InterpretationKnowledgeSnapshot["entries"],
+  version = validatedEntries[0]?.provenance.effectiveVersion ?? "interpretation-rules-v1",
 ): InterpretationRules {
   const entries = structuredClone(validatedEntries) as InterpretationKnowledgeEntry[];
   return {
-    evaluateInterpretationRules: (request) => evaluate(entries, request),
+    evaluateInterpretationRules: (request) => evaluate(entries, version, request),
   };
 }
 
 function evaluate(
   entries: readonly InterpretationKnowledgeEntry[],
+  version: InterpretationRuleEvaluation["knowledgeBaseVersion"],
   request: unknown,
 ): InterpretationRuleEvaluation {
   const query = parseOrThrow(
@@ -64,7 +67,7 @@ function evaluate(
   const performanceRules = applicableEntries.filter(
     (entry): entry is PerformanceRule => entry.entryType === "performance-rule",
   );
-  if (performanceRules.length === 0) return immutableEvaluation(notApplicable());
+  if (performanceRules.length === 0) return immutableEvaluation(notApplicable(version));
 
   const relevantPerformanceRules = selectRelevantPerformanceRules(performanceRules, query.facts);
   const missingPerformanceFacts = uniqueSorted(relevantPerformanceRules.flatMap(
@@ -76,7 +79,7 @@ function evaluate(
   ));
   if (missingPerformanceFacts.length > 0) {
     return immutableEvaluation({
-      knowledgeBaseVersion: VERSION,
+      knowledgeBaseVersion: version,
       status: "insufficient-facts",
       resolvedTargets,
       factsUsed: availablePerformanceFacts,
@@ -115,9 +118,9 @@ function evaluate(
     )),
   ];
 
-  if (matchedPerformanceIds.size === 0) return immutableEvaluation(notApplicable());
+  if (matchedPerformanceIds.size === 0) return immutableEvaluation(notApplicable(version));
   return immutableEvaluation({
-    knowledgeBaseVersion: VERSION,
+    knowledgeBaseVersion: version,
     status: "matched",
     resolvedTargets,
     factsUsed: uniqueSorted(matchedRules.flatMap((rule) => rule.relatedFactReferences)),
@@ -163,11 +166,26 @@ function compareRule(rule: PerformanceRule, facts: Facts): boolean {
 }
 
 function signalConditionMatches(signal: RootCauseSignal, facts: Facts): boolean {
-  const contributors = facts.contributors;
-  return contributors !== undefined
-    && contributors.length > 0
-    && Math.max(...contributors.map(({ contributionPercent }) => contributionPercent))
-      >= signal.activationCondition.thresholdPercent;
+  switch (signal.activationCondition.kind) {
+    case "maximum-contribution-at-least": {
+      const contributors = facts.contributors;
+      return contributors !== undefined
+        && contributors.length > 0
+        && Math.max(...contributors.map(({ contributionPercent }) => contributionPercent))
+          >= signal.activationCondition.thresholdPercent;
+    }
+    case "cp-below-target":
+      return facts.cp !== undefined
+        && facts.targetCpk !== undefined
+        && facts.cp < facts.targetCpk.value;
+    case "mean-off-center": {
+      if (facts.cp === undefined || facts.cpk === undefined || facts.mean === undefined
+        || facts.lowerSpecLimit === undefined || facts.upperSpecLimit === undefined) return false;
+      const midpoint = (facts.lowerSpecLimit + facts.upperSpecLimit) / 2;
+      return facts.cp - facts.cpk > signal.activationCondition.minimumCpCpkGap
+        && Math.abs(facts.mean - midpoint) > signal.activationCondition.minimumMeanOffset;
+    }
+  }
 }
 
 function resolveTargets(facts: Facts): NonNullable<InterpretationRuleEvaluation["resolvedTargets"]> {
@@ -202,16 +220,22 @@ function matchedRule(
   return {
     entryId: entry.entryId,
     entryType: entry.entryType,
+    title: entry.title,
     effectiveVersion: entry.provenance.effectiveVersion,
     applicability: structuredClone(entry.applicability),
     relatedFactReferences: [...relatedFactReferences],
     evidence: structuredClone(entry.provenance),
+    ...(entry.entryType === "improvement-option"
+      ? { validationSteps: [...entry.validationSteps] }
+      : {}),
   };
 }
 
-function notApplicable(): InterpretationRuleEvaluation {
+function notApplicable(
+  version: InterpretationRuleEvaluation["knowledgeBaseVersion"],
+): InterpretationRuleEvaluation {
   return {
-    knowledgeBaseVersion: VERSION,
+    knowledgeBaseVersion: version,
     status: "not-applicable",
     resolvedTargets: {},
     factsUsed: [],

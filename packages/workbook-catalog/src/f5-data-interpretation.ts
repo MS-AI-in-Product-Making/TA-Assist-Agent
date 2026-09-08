@@ -5,7 +5,7 @@ import {
   f5ObjectiveInterpretationCompletedResultSchema,
   type F5DataInterpretationResult,
 } from "@ai-assist/contracts";
-import { createInterpretation } from "./interpretation-placeholder.js";
+import { createInterpretation, createInterpretationService } from "./interpretation-placeholder.js";
 
 const REQUEST_REFERENCE = "f5-data-interpretation-request-v1";
 const STRUCTURAL_SCOPES = [
@@ -292,6 +292,7 @@ function structuralAssumptions(worksheet: RequestWorksheet) {
 function createWorksheetResult(
   worksheet: RequestWorksheet,
   createObjectiveInterpretation: typeof createInterpretation,
+  knowledgeBaseVersion: ParsedRequest["knowledgeBaseVersion"],
   observationFallback: ParsedRequest["observationFallback"],
 ) {
   let objectiveRaw: unknown;
@@ -307,6 +308,11 @@ function createWorksheetResult(
   const objective = f5ObjectiveInterpretationCompletedResultSchema.safeParse(objectiveRaw);
   if (!objective.success) {
     throw typedRequestError("F5 objective interpretation result is invalid.", "prerequisite_not_ready");
+  }
+  if (objective.data.statements.some((statement) => (
+    statement.type !== "FACT" && statement.content.effectiveVersion !== knowledgeBaseVersion
+  ))) {
+    throw typedRequestError("F5 objective interpretation version does not match the request.", "prerequisite_not_ready");
   }
 
   const objectiveStatements = mapObjectiveStatements(objective.data);
@@ -459,12 +465,14 @@ export function createF5DataInterpretation(
   }
   if (!parsed.success) throw typedRequestError("F5 data interpretation request is invalid.");
 
-  const createObjectiveInterpretation = dependencies.createObjectiveInterpretation ?? createInterpretation;
+  const createObjectiveInterpretation = dependencies.createObjectiveInterpretation
+    ?? createInterpretationService({ interpretationVersion: parsed.data.knowledgeBaseVersion });
   const worksheets = parsed.data.worksheets.map((worksheet) => {
     try {
       return createWorksheetResult(
         worksheet,
         createObjectiveInterpretation,
+        parsed.data.knowledgeBaseVersion,
         parsed.data.observationFallback,
       );
     } catch {

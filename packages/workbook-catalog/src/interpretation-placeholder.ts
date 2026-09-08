@@ -2,6 +2,7 @@ import {
   createTypedError,
   interpretationRequestSchema,
   interpretationResultSchema,
+  type InterpretationRuleVersion,
   type InterpretationResult,
 } from "@ai-assist/contracts";
 import { loadInterpretationRules } from "@ai-assist/knowledge-base";
@@ -58,6 +59,7 @@ type InterpretationRuleLoader = typeof loadInterpretationRules;
 function createInterpretationWithRules(
   request: unknown,
   loadRules: InterpretationRuleLoader,
+  interpretationVersion: InterpretationRuleVersion,
 ): InterpretationResult {
   let parsed: ReturnType<typeof interpretationRequestSchema.safeParse> | undefined;
   let policyDenied = false;
@@ -184,13 +186,17 @@ function createInterpretationWithRules(
   ];
 
   const evaluation = calculation.recommendation.method === "rss_1d"
-    ? loadRules({ version: "interpretation-rules-v1" })
+    ? loadRules({ version: interpretationVersion })
       .evaluateInterpretationRules({
         analysisDimension: "one-dimensional",
         method: "rss",
         facts: {
+          cp: calculation.capability.cp,
           cpk: calculation.capability.cpk,
           targetCpk: { value: calculation.capability.targetCpk, source: "project" },
+          mean: calculation.system.mean,
+          lowerSpecLimit: calculation.capability.lowerSpecLimit,
+          upperSpecLimit: calculation.capability.upperSpecLimit,
           achievedSigma: Math.min(calculation.capability.lowerZ, calculation.capability.upperZ),
           targetSigma: { value: calculation.capability.targetSigmaLevel, source: "project" },
           contributors: calculation.factors.map((factor) => ({
@@ -200,7 +206,7 @@ function createInterpretationWithRules(
         },
       })
     : {
-      knowledgeBaseVersion: "interpretation-rules-v1" as const,
+      knowledgeBaseVersion: interpretationVersion,
       status: "not-applicable" as const,
       resolvedTargets: {},
       factsUsed: [],
@@ -287,8 +293,12 @@ function createInterpretationWithRules(
 
 export function createInterpretationService({
   loadRules = loadInterpretationRules,
-}: { loadRules?: InterpretationRuleLoader } = {}): (request: unknown) => InterpretationResult {
-  return (request) => createInterpretationWithRules(request, loadRules);
+  interpretationVersion = "interpretation-rules-v2",
+}: {
+  loadRules?: InterpretationRuleLoader;
+  interpretationVersion?: InterpretationRuleVersion;
+} = {}): (request: unknown) => InterpretationResult {
+  return (request) => createInterpretationWithRules(request, loadRules, interpretationVersion);
 }
 
 const defaultInterpretationService = createInterpretationService();

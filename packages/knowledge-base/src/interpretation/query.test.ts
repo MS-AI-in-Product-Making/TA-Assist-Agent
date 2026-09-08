@@ -12,6 +12,8 @@ import {
   createValidInterpretationKnowledgeSeedPackage,
   refreshInterpretationKnowledgeManifest,
 } from "./test-support.js";
+import { createReviewedInterpretationRulesV2SeedPackage } from "./data/interpretation-rules-v2.js";
+import { contentHash } from "../validation.js";
 
 const cpkRequest = {
   analysisDimension: "one-dimensional",
@@ -380,7 +382,7 @@ describe("interpretation rule evaluation", () => {
 });
 
 describe("interpretation rule loading", () => {
-  it("loads only the strict reviewed v1 request", () => {
+  it("loads the strict reviewed v1 request for historical compatibility", () => {
     const rules = loadInterpretationRules({ version: "interpretation-rules-v1" });
     const result = rules.evaluateInterpretationRules(cpkRequest);
     const commonProvenance = {
@@ -421,15 +423,204 @@ describe("interpretation rule loading", () => {
       },
     ]);
 
-    for (const request of [
-      { version: "interpretation-rules-v2" },
-      { version: "interpretation-rules-v1", unexpected: true },
-      {},
-    ]) {
+    for (const request of [{ version: "interpretation-rules-v1", unexpected: true }, {}]) {
       expect(captureTypedError(() => loadInterpretationRules(request)).typedError).toMatchObject({
         code: "validation_error",
         summary: "Interpretation rule load request is invalid.",
       });
     }
+  });
+
+  it("loads reviewed v2 rules with v2 result and evidence provenance", () => {
+    const result = loadInterpretationRules({ version: "interpretation-rules-v2" })
+      .evaluateInterpretationRules(cpkRequest);
+
+    expect(result.knowledgeBaseVersion).toBe("interpretation-rules-v2");
+    expect(result.matchedRules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entryId: "performance-cpk-below-target",
+        effectiveVersion: "interpretation-rules-v2",
+        evidence: expect.objectContaining({ effectiveVersion: "interpretation-rules-v2" }),
+      }),
+      expect.objectContaining({
+        entryId: "root-cause-contributor-concentration",
+        effectiveVersion: "interpretation-rules-v2",
+      }),
+    ]));
+  });
+
+  it("locks the production V2 canonical hashes and user-approved source boundary", () => {
+    const seed = createReviewedInterpretationRulesV2SeedPackage();
+
+    expect(seed.sources).toContainEqual(expect.objectContaining({
+      sourceAlias: "user-approved-f0-v2-rules-2026-09-08",
+      sourceFileHash: "7f17c9c1cedf3d980832ca1f8c0ee3be670eb69f64bd401f41eecfef7839f63d",
+    }));
+    expect(seed.manifest).toMatchObject({
+      sourcesHash: contentHash(seed.sources),
+      entriesHash: contentHash(seed.entries),
+    });
+    expect(seed.manifest.contentHash).toBe(contentHash({
+      version: seed.manifest.version,
+      sourcesHash: seed.manifest.sourcesHash,
+      entriesHash: seed.manifest.entriesHash,
+    }));
+  });
+
+  it("matches RC01 excessive variation and its controlled option", () => {
+    const result = loadInterpretationRules({ version: "interpretation-rules-v2" })
+      .evaluateInterpretationRules({
+        analysisDimension: "one-dimensional",
+        method: "rss",
+        facts: {
+          cp: 1.1,
+          cpk: 1.05,
+          targetCpk: { value: 1.33, source: "project" },
+        },
+      });
+
+    expect(result.matchedRules.map(({ entryId }) => entryId)).toEqual(expect.arrayContaining([
+      "root-cause-excessive-variation",
+      "improvement-reduce-variation",
+    ]));
+    expect(result.matchedRules.find(({ entryId }) => entryId === "improvement-reduce-variation"))
+      .toMatchObject({
+        validationSteps: [
+          "Update representative variation evidence.",
+          "Rerun the same RSS or Monte Carlo method with unchanged specifications and target.",
+          "Confirm Cp and Cpk meet the resolved target using a new representative sample.",
+        ],
+      });
+  });
+
+  it("matches RC02 mean shift only when the process is materially off-center", () => {
+    const rules = loadInterpretationRules({ version: "interpretation-rules-v2" });
+    const offCenter = rules.evaluateInterpretationRules({
+      analysisDimension: "one-dimensional",
+      method: "rss",
+      facts: {
+        cp: 1.5,
+        cpk: 1.1,
+        targetCpk: { value: 1.33, source: "project" },
+        mean: 0.2,
+        lowerSpecLimit: -0.5,
+        upperSpecLimit: 0.5,
+      },
+    });
+    const centered = rules.evaluateInterpretationRules({
+      analysisDimension: "one-dimensional",
+      method: "rss",
+      facts: {
+        cp: 1.5,
+        cpk: 1.1,
+        targetCpk: { value: 1.33, source: "project" },
+        mean: 0,
+        lowerSpecLimit: -0.5,
+        upperSpecLimit: 0.5,
+      },
+    });
+
+    expect(offCenter.matchedRules.map(({ entryId }) => entryId)).toEqual(expect.arrayContaining([
+      "root-cause-mean-shift",
+      "improvement-center-mean",
+    ]));
+    expect(centered.matchedRules.map(({ entryId }) => entryId)).not.toContain("root-cause-mean-shift");
+  });
+
+  it("applies V2 rules to one-dimensional Monte Carlo capability facts", () => {
+    const result = loadInterpretationRules({ version: "interpretation-rules-v2" })
+      .evaluateInterpretationRules({
+        analysisDimension: "one-dimensional",
+        method: "monte-carlo",
+        facts: {
+          cp: 1.1,
+          cpk: 0.9,
+          targetCpk: { value: 1.33, source: "project" },
+          mean: 0.01,
+          lowerSpecLimit: -0.1,
+          upperSpecLimit: 0.1,
+        },
+      });
+
+    expect(result.status).toBe("matched");
+    expect(result.matchedRules.map(({ entryId }) => entryId)).toEqual(expect.arrayContaining([
+      "root-cause-excessive-variation",
+      "root-cause-mean-shift",
+    ]));
+  });
+
+  it("keeps the numerical RC02 tolerance boundary deterministic", () => {
+    const evaluate = (gap: number, offset: number) => loadInterpretationRules({ version: "interpretation-rules-v2" })
+      .evaluateInterpretationRules({
+        analysisDimension: "one-dimensional",
+        method: "rss",
+        facts: {
+          cp: gap,
+          cpk: 0,
+          targetCpk: { value: 1.33, source: "project" },
+          mean: offset,
+          lowerSpecLimit: -1,
+          upperSpecLimit: 1,
+        },
+      }).matchedRules.some(({ entryId }) => entryId === "root-cause-mean-shift");
+
+    expect(evaluate(1e-12, 2e-12)).toBe(false);
+    expect(evaluate(2e-12, 1e-12)).toBe(false);
+    expect(evaluate(2e-12, 2e-12)).toBe(true);
+  });
+
+  it("returns RC01, RC02, and RC03 in deterministic order when causes coexist", () => {
+    const result = loadInterpretationRules({ version: "interpretation-rules-v2" })
+      .evaluateInterpretationRules({
+        analysisDimension: "one-dimensional",
+        method: "rss",
+        facts: {
+          cp: 1.1,
+          cpk: 0.8,
+          targetCpk: { value: 1.33, source: "project" },
+          mean: 0.2,
+          lowerSpecLimit: -0.5,
+          upperSpecLimit: 0.5,
+          contributors: [{ reference: "factor-a", contributionPercent: 55 }],
+        },
+      });
+
+    expect(result.matchedRules.filter(({ entryType }) => entryType === "root-cause-signal")
+      .map(({ entryId }) => entryId)).toEqual([
+      "root-cause-contributor-concentration",
+      "root-cause-excessive-variation",
+      "root-cause-mean-shift",
+    ]);
+  });
+
+  it("keeps user-approved enhanced rules out of V1", () => {
+    const result = loadInterpretationRules({ version: "interpretation-rules-v1" })
+      .evaluateInterpretationRules({
+        analysisDimension: "one-dimensional",
+        method: "rss",
+        facts: {
+          cp: 1.1,
+          cpk: 0.8,
+          targetCpk: { value: 1.33, source: "project" },
+          mean: 0.2,
+          lowerSpecLimit: -0.5,
+          upperSpecLimit: 0.5,
+        },
+      });
+
+    expect(result.matchedRules.map(({ entryId }) => entryId)).not.toEqual(expect.arrayContaining([
+      "root-cause-excessive-variation",
+      "root-cause-mean-shift",
+      "improvement-reduce-variation",
+      "improvement-center-mean",
+    ]));
+  });
+
+  it("rejects unknown interpretation rule versions", () => {
+    expect(captureTypedError(() => loadInterpretationRules({ version: "interpretation-rules-v3" })).typedError)
+      .toMatchObject({
+        code: "validation_error",
+        summary: "Interpretation rule load request is invalid.",
+      });
   });
 });

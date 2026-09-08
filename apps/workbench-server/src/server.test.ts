@@ -1458,7 +1458,7 @@ describe("workbench server routes", () => {
           skillId: "knowledge-and-rules-validation-v1",
           inputRevision: 1,
           idempotencyKey: "attempt:f0",
-          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v2"] },
         };
       },
       async runWorkbookScopeDiscovery() {
@@ -1549,7 +1549,7 @@ describe("workbench server routes", () => {
           skillId: "knowledge-and-rules-validation-v1",
           inputRevision: 1,
           idempotencyKey: "attempt:f0",
-          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v2"] },
         };
       },
       async runWorkbookScopeDiscovery() {
@@ -1649,7 +1649,7 @@ describe("workbench server routes", () => {
             skillId: "knowledge-and-rules-validation-v1",
             inputRevision: 1,
             idempotencyKey: "attempt:f0",
-            output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+            output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v2"] },
           };
         }
         if (stage === "f1_f2_running") {
@@ -1753,7 +1753,7 @@ describe("workbench server routes", () => {
         return {
           featureId: "F0",
           status: "completed",
-          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          versions: ["v1", "internal-v1", "interpretation-rules-v2"],
           worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
           selectionPrompt: {
             contractVersion: "v1",
@@ -1796,7 +1796,7 @@ describe("workbench server routes", () => {
         return {
           featureId: "F0",
           status: "completed",
-          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          versions: ["v1", "internal-v1", "interpretation-rules-v2"],
           worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
           selectionPrompt: {
             contractVersion: "v1",
@@ -2422,7 +2422,7 @@ describe("workbench server routes", () => {
         return {
           featureId: "F0",
           status: "completed",
-          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          versions: ["v1", "internal-v1", "interpretation-rules-v2"],
           worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
           selectionPrompt: {
             contractVersion: "v1",

@@ -69,7 +69,7 @@ describe("policy gate", () => {
     expect(feature?.dependsOn).toEqual(expect.arrayContaining([
       "knowledge-base-v1",
       "internal-tolerance-guidance-v1",
-      "interpretation-rules-v1",
+      "interpretation-rules-v2",
     ]));
     expect(feature?.acceptanceChecks).toEqual(
       expect.arrayContaining([
@@ -288,7 +288,7 @@ describe("policy gate", () => {
       title: "客观结果解释",
       status: "available",
       dependsOn: [
-        "interpretation-rules-v1",
+        "interpretation-rules-v2",
         "worksheet-analysis-assets-v1",
         "drawing-governance-v2",
         "calculation-service-v1",
@@ -315,7 +315,7 @@ describe("policy gate", () => {
       dependsOn: [
         "calculation-service-v1",
         "knowledge-base-v1",
-        "interpretation-rules-v1",
+        "interpretation-rules-v2",
         "objective-interpretation-v1",
       ],
       inputContractId: "interpretation-request-v1",
@@ -337,6 +337,7 @@ describe("policy gate", () => {
       title: "可比较的方案选项",
       status: "available",
       dependsOn: [
+        "interpretation-rules-v2",
         "f2-user-report-v1",
         "drawing-governance-v2",
         "calculation-service-v1",
@@ -384,7 +385,7 @@ describe("policy gate", () => {
       featureId: "F7",
       title: "实测 Cpk 闭环",
       status: "unavailable",
-      dependsOn: ["measurement-store-v1", "dim-id-service-v1"],
+      dependsOn: ["interpretation-rules-v2", "measurement-store-v1", "dim-id-service-v1"],
       inputContractId: "cpk-request-v1",
       outputContractId: "cpk-result-v1",
       maximumClassification: "confidential",

@@ -1537,15 +1537,30 @@ const f7ReportTaMetricsSchema = z.object({
   cpk: finiteNumberSchema,
 }).strict();
 
+const f7ReportMatchedInterpretationSchema = z.object({
+  ruleId: z.string().min(1),
+  title: z.string().min(1),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
+}).strict();
+
 export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("available"),
-    provenance: z.object({
-      knowledgeBaseVersion: z.literal("v1"),
-      ruleId: z.literal("default-cpk-target"),
-      threshold: finitePositiveNumberSchema,
-      applicability: z.string().min(1),
-    }).strict(),
+    provenance: z.union([
+      z.object({
+        knowledgeBaseVersion: z.literal("v1"),
+        ruleId: z.literal("default-cpk-target"),
+        threshold: finitePositiveNumberSchema,
+        applicability: z.string().min(1),
+      }).strict(),
+      z.object({
+        knowledgeBaseVersion: z.literal("interpretation-rules-v2"),
+        ruleId: z.enum(["performance-cpk", "performance-cpk-below-target"]),
+        threshold: finitePositiveNumberSchema,
+        applicability: z.string().min(1),
+      }).strict(),
+    ]),
     comparison: z.object({
       setup: f7ReportTaMetricsSchema,
       monteCarlo: f7ReportTaMetricsSchema,
@@ -1553,6 +1568,9 @@ export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
     targetAssessment: z.string().min(1),
     interpretations: z.array(z.string().min(1)).min(1),
     optimizationDirections: z.array(z.string().min(1)).min(1),
+    rootCauseSignals: z.array(f7ReportMatchedInterpretationSchema),
+    controlledOptions: z.array(f7ReportMatchedInterpretationSchema),
+    validationRequirements: z.array(z.string().min(1)),
   }).strict(),
   z.object({
     status: z.literal("unavailable"),

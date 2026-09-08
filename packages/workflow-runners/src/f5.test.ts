@@ -155,7 +155,7 @@ describe("runF5Interpretation", () => {
       contractVersion: "v1",
       inputClassification: "confidential",
       workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
-      knowledgeBaseVersion: "interpretation-rules-v1",
+      knowledgeBaseVersion: "interpretation-rules-v2",
       worksheets: [{
         worksheetName: "Analysis-A",
         imageReference: {

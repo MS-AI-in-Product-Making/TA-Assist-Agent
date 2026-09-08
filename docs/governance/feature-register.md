@@ -5,7 +5,7 @@
 Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
 误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询，以及经审查的
-`internal-v1` 制程指导和 `interpretation-rules-v1` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
+`internal-v1` 制程指导和 `interpretation-rules-v2` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；根 F2 Initial 为 worksheet 隔离的数据清洗与能力一致性门禁而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；F2.3 的受限例外处理与 F2.4 的标识符质量检查也标记为
 `available`；F3 为 `drawing-governance-v2` 本地治理核心和受控 Surface MCP adapter 而标记为
@@ -19,7 +19,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 
 | Feature | 标题 | 当前状态 | 依赖与外部前置条件 | 输入/输出契约 | 最大分类 | 验收检查 | 禁用行为 |
 |---|---|---|---|---|---|---|---|
-| F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`, `interpretation-rules-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot`, `approved-interpretation-rules-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto`, `interpretation-rules-integrity-check`, `internal-interpretation-source-evidence` | `return feature_not_available` |
+| F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`, `interpretation-rules-v2`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot`, `approved-interpretation-rules-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto`, `interpretation-rules-integrity-check`, `internal-interpretation-source-evidence` | `return feature_not_available` |
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F1.7 | TA 因子表语义识别与人工确认 | `available` | `workbook-catalog-v1`, `semantic-table-detection-v1`; `approved-ooxml-parser` | `semantic-table-detection-request-v1` / `semantic-table-detection-result-v1` | `confidential` | `anonymous-semantic-table-detection-fixture`, `semantic-detection-failfast-check`, `semantic-detection-privacy-check` | `return feature_not_available` |
 | F2 | TA 数据清洗与能力一致性门禁 | `available` | `knowledge-base-v1`, `capability-item-mapping-v1`, `worksheet-analysis-assets-v1`, `f2-artifact-input-v1`, `f2-user-report-v1`; `approved-public-knowledge-snapshot`, `approved-ooxml-parser` | `f2-artifact-input-v1` / `f2-user-report-v1` | `confidential` | `f0-f1-artifact-f2-real-workbook-flow`, `f2-artifact-only-check`, `f2-blocking-policy-check`, `f2-capability-difference-nonblocking-check`, `f2-privacy-check` | `return feature_not_available` |
@@ -29,11 +29,11 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F2.4 | DIM ID 与 Drawing Number 质量检查 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `identifier-quality-check-v1`; `approved-ooxml-parser` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture`, `identifier-quality-gate-check`, `identifier-quality-privacy-check` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `surface-mcp-adapter-v1`; `approved-surface-mcp-access`, `approved-comment-zero-write-policy` | `drawing-governance-request-v2` / `drawing-governance-result-v2` | `confidential` | `anonymous-drawing-governance-fixture`, `drawing-governance-anchor-check`, `drawing-governance-privacy-check`, `surface-mcp-comment-zero-confirmation-check` | `return feature_not_available` |
 | F4 | 方法推荐与 Excel 一致性计算 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `exception-resolution-v1`, `calculation-service-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `anonymous-calculation-kernel-fixture`, `approved-template-regression`, `calculation-privacy-check` | `return feature_not_available` |
-| F5 | 客观结果解释 | `available` | `interpretation-rules-v1`, `worksheet-analysis-assets-v1`, `drawing-governance-v2`, `calculation-service-v1`; `approved-knowledge-base`, `approved-me-review` | `f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` | `confidential` | `f5-artifact-association-check`, `f5-rule-traceability-check`, `f5-clarification-gate-check`, `f5-skill-contract-check` | `return feature_not_available` |
-| F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
-| F6 | 可比较的方案选项 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
+| F5 | 客观结果解释 | `available` | `interpretation-rules-v2`, `worksheet-analysis-assets-v1`, `drawing-governance-v2`, `calculation-service-v1`; `approved-knowledge-base`, `approved-me-review` | `f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` | `confidential` | `f5-artifact-association-check`, `f5-rule-traceability-check`, `f5-clarification-gate-check`, `f5-skill-contract-check` | `return feature_not_available` |
+| F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v2`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
+| F6 | 可比较的方案选项 | `available` | `interpretation-rules-v2`, `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
 |   | 产品能力名称：Design Optimization。 |   |   |   |   |   |   |
-| F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
+| F7 | 实测 Cpk 闭环 | `unavailable` | `interpretation-rules-v2`, `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
 | F8 | TA Assist Workbench | `available` | F8 session/snapshot/conversation/Surface contracts; approved OOXML and Surface MCP access | `f8-session-command-v1` / `f8-session-snapshot-v1` | `confidential` | `f8-browser-integration`, `f8-security-e2e`, `f8-f7-placeholder-e2e`, `f8-what-if-no-writeback`, `f8-product-output-fail-closed-e2e` | `return feature_not_available` |
 | F8.public-smoke | TA Public Workflow Smoke Fixture | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
 
@@ -63,11 +63,14 @@ F5 的 `approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启
   `internal-v1` 已发布 110 条经审核规则，覆盖 CNC、压铸、模切、PCB/FPC、注塑与钣金；每条
   规则保留来源 hash、工作表及范围证据。原始 `.xls`、`.xlsx`、`.xlsm` 始终禁止提交，除非另行批准受控白名单。
   不得仅凭 F0 状态推断其他 Feature 已启用；根 F5 的可用性由其独立条目、四项验收证据和外部前置条件治理。
-- F0 的 `interpretation-rules-v1` 是独立的只读审核子集，仅接受结构化事实并返回规则证据、
+- F0 的 `interpretation-rules-v2` 是独立的只读审核子集，仅接受结构化事实并返回规则证据、
   待验证信号与未排序选项。它不读取 Excel、不包含具体案例或计算器、不生成最终解释文本，
   也不改变 `public-v1` 或 `internal-v1`。新增 loader 使用 interpretation evaluation contract schema，
   F0 主行继续保留兼容公共契约；根 F5 通过该规则子集解读受控结构化事实，F5.1 保留为历史
-  internal compatible core。F6 由其独立的受控工件、优化契约与验收门禁启用，不得仅凭 F0 状态推断 F6 可执行。
+  internal compatible core。RC01、RC02 与其受控选项的来源别名为
+  `user-approved-f0-v2-rules-2026-09-08`，表示用户批准的治理规则，不得宣称来自尚未取得的 V4.2
+  工作簿。F6 由其独立的受控工件、优化契约与验收门禁启用，并且独占量化 what-if 情境、排序与
+  建议值的所有权；不得仅凭 F0 状态或 F0 未排序选项推断 F6 可执行或已完成优化。
 
 F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](../superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md) 和 [实施计划](../superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)。
 F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../superpowers/specs/2026-07-29-f0-interpretation-rules-design.md) 和 [实施计划](../superpowers/plans/2026-07-29-f0-interpretation-rules.md)。
@@ -131,7 +134,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   差异诊断，不在生产请求热路径中；文档和配置不得记录真实 workbook 路径或 hash。F4 可用本身不启用
   其他 Feature；根 F5 与 F6 均由各自独立治理条目、契约与验收证据启用。
 - 根 F5 的 `available` 覆盖能力与规格、主要贡献因子及基于受控证据的公差链有效性解读。直接输入为
-  F0 `interpretation-rules-v1`、F1 `worksheet-analysis-assets-v1`、F3 `drawing-governance-v2` 和 F4
+  F0 `interpretation-rules-v2`、F1 `worksheet-analysis-assets-v1`、F3 `drawing-governance-v2` 和 F4
   `calculation-service-v1` 工件；从 workbook 启动时必须先通过 F2 门禁。F0 规则引用必须保留规则 ID、
   版本和适用范围。报告固定展示五章节，但仅前三章由 F5 生成，结构性风险和并列改善方案两章明确
   委派给 F6，不得伪造 F6 结果。F1 是 worksheet 图片的唯一物理 owner；缺少 F1 `imageReference`
@@ -143,7 +146,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   追溯、澄清门或 Skill 合同失败时 fail closed。`approved-knowledge-base` 与 `approved-me-review` 不作为
   每次运行的交互参数重复收集；运行时工程复核继续由 `requiresEngineeringReview` SIGNAL、clarification/
   assumption 和不生成无证据最终 RULE 的门禁执行。
-- F5.1 的 `available` 是历史 internal compatible core，仅覆盖由 F4 `excel-ta-v1` 结果和 F0 `interpretation-rules-v1` 支持的能力与
+- F5.1 的 `available` 是历史 internal compatible core，仅覆盖由 F4 `excel-ta-v1` 结果和 F0 `interpretation-rules-v2` 支持的能力与
   规格、主要贡献因子解读。它保留可追溯 FACT，并仅在 F4 方法为一维 RSS 时生成带 F0 证据的
   RULE、SIGNAL 和未排序 OPTION；WC 和 3D Variation Analysis 场景不得套用 RSS 规则，只能保留
   确定性 FACT 并返回规则不适用或 3D 跟进澄清。F5.1 不判断图纸、公差链、基准链、装配基准面、

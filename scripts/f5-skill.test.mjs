@@ -442,7 +442,7 @@ describe("result-interpretation skill contract", () => {
     const skill = readSkill();
     expect(skill).toContain("`v1`");
     expect(skill).toContain("`internal-v1`");
-    expect(skill).toContain("`interpretation-rules-v1`");
+    expect(skill).toContain("`interpretation-rules-v2`");
     expect(skill).toContain("validate the versions recorded by the F2 and F5 artifacts");
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
   });

@@ -159,7 +159,7 @@ describe("createInterpretation", () => {
     expect(result).toMatchObject({
       featureId: "F5.1",
       status: "completed",
-      knowledgeBaseVersion: "interpretation-rules-v1",
+      knowledgeBaseVersion: "interpretation-rules-v2",
       ruleEvaluationStatus: "matched",
     });
     if (result.status !== "completed") throw new Error("expected completed interpretation");
@@ -212,7 +212,7 @@ describe("createInterpretation", () => {
         sourceFileHash: expect.any(String),
         owner: expect.any(String),
         confidence: expect.any(Number),
-        effectiveVersion: "interpretation-rules-v1",
+        effectiveVersion: "interpretation-rules-v2",
         changeSummary: expect.any(String),
       }));
     }
