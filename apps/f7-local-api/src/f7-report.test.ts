@@ -556,21 +556,84 @@ describe("createF7ReportProjection", () => {
         },
       },
     });
-    expect(report.analysis.interpretations.length).toBeGreaterThan(0);
-    expect(report.analysis.optimizationDirections.length).toBeGreaterThan(0);
-    expect(report.analysis.rootCauseSignals).toEqual(expect.arrayContaining([
-      expect.objectContaining({ ruleId: expect.stringMatching(/^root-cause-/) }),
-    ]));
-    expect(report.analysis.controlledOptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ ruleId: expect.stringMatching(/^improvement-/) }),
-    ]));
-    expect(report.analysis.validationRequirements.length).toBeGreaterThan(0);
+    expect(report.analysis.status).toBe("available");
+    if (report.analysis.status !== "available") {
+      throw new Error("Expected available analysis for BELOW_TARGET snapshot");
+    }
+    expect(report.analysis.narrative).toMatchObject({
+      resultJudgment: {
+        status: "below-target",
+        headline: "Capability is below target",
+        judgment: expect.any(String),
+        cpk: expect.any(Number),
+        targetCpk: 2,
+        margin: expect.any(Number),
+        display: { cpk: expect.any(String), targetCpk: expect.any(String), margin: expect.any(String) },
+        nearerSpecificationSide: "balanced",
+      },
+      engineeringSummary: expect.any(String),
+      engineeringRisk: expect.any(String),
+      validationRequirements: expect.any(Array),
+      evidenceDisclosure: expect.any(String),
+    });
+    expect(report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
+      "root-cause-excessive-variation",
+      "root-cause-contributor-concentration",
+    ]);
+    expect(report.analysis.narrative.rootCauseAnalysis[0]).toMatchObject({
+      ruleId: "root-cause-excessive-variation",
+      title: "RC01 Excessive variation hypothesis",
+      hypothesisStatus: "hypothesis",
+      completeEvidence: true,
+      quantitativeEvidenceLabels: {
+        cp: "Cp",
+        targetCpk: "Target Cpk",
+        cpTargetGap: "Cp vs target gap",
+      },
+    });
+    expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.cp).toBeCloseTo(1.6666666666666667, 12);
+    expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.targetCpk).toBeCloseTo(2, 12);
+    expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.33333333333333326, 12);
+    expect(report.analysis.narrative.rootCauseAnalysis[1]).toMatchObject({
+      ruleId: "root-cause-contributor-concentration",
+      title: expect.any(String),
+      hypothesisStatus: "hypothesis",
+      completeEvidence: true,
+      quantitativeEvidenceLabels: {
+        contributorName: "Contributor",
+        contributorReference: "Contributor reference",
+        contributionPercent: "Contribution (%)",
+      },
+    });
+    expect((report.analysis.narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { contributionPercent?: number } | undefined)?.contributionPercent).toBeCloseTo(100, 12);
+    expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
+      "improvement-reduce-variation",
+      "improvement-reduce-contributor",
+    ]);
+    expect(report.analysis.narrative.validationRequirements.length).toBeGreaterThan(0);
+    expect(report.analysis.narrative.evidenceDisclosure).toContain("Measured Monte Carlo evidence was supplied for this narrative projection.");
+    expect(report.analysis.narrative.evidenceDisclosure).toContain("interpretation-rules-v2");
     expect(report.markdown).toContain("## Factor Setup vs Monte Carlo TA");
-    expect(report.markdown).toContain("## F0 Interpretation and Optimization Direction");
-    expect(report.markdown).toContain("F0 interpretation-rules-v2 / performance-cpk-below-target");
-    expect(report.markdown).toContain("### Root Cause Signals");
-    expect(report.markdown).toContain("### Controlled Options");
+    expect(report.markdown).toContain("### Result Judgment");
+    expect(report.markdown).toContain("### Root Cause Analysis");
+    expect(report.markdown).toContain("### Engineering Risk");
+    expect(report.markdown).toContain("### Suggested Action Sequence");
     expect(report.markdown).toContain("### Verification Requirements");
+    expect(report.markdown).toContain("### Evidence Disclosure");
+    expect(report.markdown).toContain("root-cause-excessive-variation");
+    expect(report.markdown).toContain("improvement-reduce-variation");
+    expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
+  });
+
+  it("keeps unavailable analysis unchanged when Monte Carlo capability is not evaluable", () => {
+    const report = createF7ReportProjection(createSnapshot("NOT_EVALUABLE"), GENERATED_AT);
+
+    expect(report.analysis).toEqual({
+      status: "unavailable",
+      reason: "TA comparison is unavailable because Monte Carlo capability is not evaluable.",
+      optimizationDirections: ["Resolve zero or invalid variation evidence, then rerun Monte Carlo capability."],
+    });
+    expect(report.markdown).not.toContain("### Result Judgment");
   });
 
   it("deduplicates repeated factor source references while preserving source order", () => {
@@ -631,6 +694,12 @@ describe("createF7ReportProjection", () => {
     const report = createF7ReportProjection(createSnapshot(), GENERATED_AT);
     const headings = [
       "## Assessment",
+      "### Result Judgment",
+      "### Root Cause Analysis",
+      "### Engineering Risk",
+      "### Suggested Action Sequence",
+      "### Verification Requirements",
+      "### Evidence Disclosure",
       "## Key Metrics",
       "## Monte Carlo Distribution",
       "## Monte Carlo Summary",
@@ -643,13 +712,14 @@ describe("createF7ReportProjection", () => {
     for (let index = 1; index < offsets.length; index += 1) {
       expect(offsets[index]).toBeGreaterThan(offsets[index - 1]!);
     }
-    expect(report.markdown).toContain("not a design or production release decision");
+    expect(report.markdown).toContain("does not authorize design or production release");
     expect(report.markdown).toContain(WORKBOOK_HASH);
     expect(report.markdown).toContain(RUN_SEED);
     expect(report.markdown).toContain("F7_MONTE_CARLO_V1");
     expect(report.markdown).toContain("| Histogram method | F7_HISTOGRAM_FD_V1 |");
     expect(report.markdown).toContain("| Histogram bin count | 20 |");
     expect(report.markdown).toContain("| Normal fit method | F7_NORMAL_MOMENT_FIT_V1 |");
+    expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
   });
 
   it("escapes HTML and Markdown structures from worksheet, factor, and source text", () => {

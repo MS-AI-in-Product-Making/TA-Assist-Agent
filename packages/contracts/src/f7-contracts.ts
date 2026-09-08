@@ -1537,6 +1537,83 @@ const f7ReportTaMetricsSchema = z.object({
   cpk: finiteNumberSchema,
 }).strict();
 
+const f7ReportNarrativeSpecificationSideSchema = z.enum(["LSL", "USL", "balanced"]);
+
+const f7ReportNarrativeResultJudgmentSchema = z.object({
+  status: z.enum(["meets-target", "below-target"]),
+  headline: z.string().min(1),
+  judgment: z.string().min(1),
+  cpk: finiteNumberSchema,
+  targetCpk: finiteNumberSchema,
+  margin: finiteNumberSchema,
+  display: z.object({
+    cpk: z.string().min(1),
+    targetCpk: z.string().min(1),
+    margin: z.string().min(1),
+  }).strict(),
+  nearerSpecificationSide: f7ReportNarrativeSpecificationSideSchema.optional(),
+}).strict();
+
+const f7ReportNarrativeEvidenceValueSchema = z.union([z.string().min(1), finiteNumberSchema]);
+
+const f7ReportNarrativeRootCauseItemSchema = z.object({
+  ruleId: z.string().min(1),
+  title: z.string().min(1),
+  hypothesisStatus: z.literal("hypothesis"),
+  narrative: z.string().min(1),
+  completeEvidence: z.boolean(),
+  quantitativeEvidence: z.record(z.string().min(1), f7ReportNarrativeEvidenceValueSchema).optional(),
+  quantitativeEvidenceLabels: z.record(z.string().min(1), z.string().min(1)).optional(),
+}).strict().superRefine((item, context) => {
+  if (item.quantitativeEvidence === undefined) {
+    if (item.quantitativeEvidenceLabels !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "quantitativeEvidenceLabels requires quantitativeEvidence",
+        path: ["quantitativeEvidenceLabels"],
+      });
+    }
+    return;
+  }
+
+  if (item.quantitativeEvidenceLabels === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "quantitativeEvidenceLabels is required when quantitativeEvidence is present",
+      path: ["quantitativeEvidenceLabels"],
+    });
+    return;
+  }
+
+  const evidenceKeys = Object.keys(item.quantitativeEvidence).sort();
+  const labelKeys = Object.keys(item.quantitativeEvidenceLabels).sort();
+  if (evidenceKeys.length !== labelKeys.length
+    || evidenceKeys.some((key, index) => key !== labelKeys[index])) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "quantitativeEvidenceLabels must match quantitativeEvidence keys",
+      path: ["quantitativeEvidenceLabels"],
+    });
+  }
+});
+
+const f7ReportNarrativeActionItemSchema = z.object({
+  optionId: z.string().min(1),
+  title: z.string().min(1),
+  narrative: z.string().min(1),
+  validationSteps: z.array(z.string().min(1)),
+}).strict();
+
+const f7ReportNarrativeSchema = z.object({
+  resultJudgment: f7ReportNarrativeResultJudgmentSchema,
+  engineeringSummary: z.string().min(1),
+  rootCauseAnalysis: z.array(f7ReportNarrativeRootCauseItemSchema),
+  engineeringRisk: z.string().min(1),
+  suggestedActionSequence: z.array(f7ReportNarrativeActionItemSchema),
+  validationRequirements: z.array(z.string().min(1)),
+  evidenceDisclosure: z.string().min(1),
+}).strict();
+
 const f7ReportMatchedInterpretationSchema = z.object({
   ruleId: z.string().min(1),
   title: z.string().min(1),
@@ -1571,6 +1648,7 @@ export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
     rootCauseSignals: z.array(f7ReportMatchedInterpretationSchema),
     controlledOptions: z.array(f7ReportMatchedInterpretationSchema),
     validationRequirements: z.array(z.string().min(1)),
+    narrative: f7ReportNarrativeSchema,
   }).strict(),
   z.object({
     status: z.literal("unavailable"),

@@ -125,6 +125,106 @@ import type {
   CalculationMethod,
 } from "./index.js";
 
+describe("F7 report narrative contracts", () => {
+  it("accepts available report analysis with governed narrative and rejects extra fields", () => {
+    const analysis = {
+      status: "available" as const,
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2" as const,
+        ruleId: "performance-cpk-below-target" as const,
+        threshold: 1.33,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.1, cpk: 0.95 },
+        monteCarlo: { mean: 0.08, standardDeviation: 0.12, cp: 1.18, cpk: 0.92 },
+      },
+      targetAssessment: "Monte Carlo Cpk 0.920 is below the resolved target of 1.33.",
+      interpretations: ["Mean changed from Setup 0.0000 to Monte Carlo 0.0800 (+0.0800)."],
+      optimizationDirections: ["Reduce total variation only after representative variation evidence confirms the modeled shortfall."],
+      rootCauseSignals: [{
+        ruleId: "root-cause-excessive-variation",
+        title: "Excessive variation",
+        sourceAlias: "interpretation-rules",
+        sourceFileHash: "a".repeat(64),
+      }],
+      controlledOptions: [{
+        ruleId: "improvement-reduce-variation",
+        title: "Reduce variation",
+        sourceAlias: "interpretation-rules",
+        sourceFileHash: "b".repeat(64),
+      }],
+      validationRequirements: ["Confirm representative measured variation before changing tolerance or process controls."],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 0.92 is 0.41 below the resolved target of 1.33.",
+          cpk: 0.92,
+          targetCpk: 1.33,
+          margin: -0.41,
+          display: {
+            cpk: "0.92",
+            targetCpk: "1.33",
+            margin: "-0.41",
+          },
+          nearerSpecificationSide: "USL",
+        },
+        engineeringSummary: "Capability is below target by 0.41 and requires validation before any corrective change.",
+        rootCauseAnalysis: [{
+          ruleId: "root-cause-mean-shift",
+          title: "Mean shift",
+          hypothesisStatus: "hypothesis",
+          narrative: "Cp exceeds Cpk and indicates a centering-loss hypothesis that requires validation.",
+          completeEvidence: true,
+          quantitativeEvidence: {
+            cpCpkGap: 0.26,
+            specificationMidpoint: 0,
+            meanOffset: 0.08,
+            direction: "USL",
+          },
+          quantitativeEvidenceLabels: {
+            cpCpkGap: "Cp-Cpk gap",
+            specificationMidpoint: "Specification midpoint",
+            meanOffset: "Mean offset",
+            direction: "Direction",
+          },
+        }],
+        engineeringRisk: "The capability shortfall indicates below-target performance and requires validation.",
+        suggestedActionSequence: [{
+          optionId: "improvement-center-mean",
+          title: "Center the mean",
+          narrative: "Confirm mean-centering feasibility before changing the process centerline.",
+          validationSteps: ["Validate mean-centering feasibility with representative evidence."],
+        }],
+        validationRequirements: ["Validate mean-centering feasibility with representative evidence."],
+        evidenceDisclosure: "Measured Monte Carlo evidence was supplied for this narrative projection. Provenance: interpretation-rules-v2. Matched rule IDs: root-cause-mean-shift. This output does not replace ME review or F6 optimization.",
+      },
+    };
+
+    const parsed = contractExports.f7ReportAnalysisSchema.parse(analysis);
+    expect(parsed).toEqual(analysis);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: { ...analysis.narrative, extra: true },
+    }).success).toBe(false);
+  });
+
+  it("keeps unavailable report analysis unchanged without narrative", () => {
+    const unavailable = {
+      status: "unavailable" as const,
+      reason: "TA comparison is unavailable because Monte Carlo capability is not evaluable.",
+      optimizationDirections: ["Resolve zero or invalid variation evidence, then rerun Monte Carlo capability."],
+    };
+
+    expect(contractExports.f7ReportAnalysisSchema.parse(unavailable)).toEqual(unavailable);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...unavailable,
+      narrative: {},
+    }).success).toBe(false);
+  });
+});
+
 describe("F8 Web ADO contracts", () => {
   const confirmation = {
     status: "confirmation_required" as const,

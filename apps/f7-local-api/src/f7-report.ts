@@ -7,11 +7,67 @@ import {
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
 import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
+import { buildF7EngineeringNarrative } from "@ai-assist/product-language/f7-engineering-narrative";
 
 type ReportWithoutMarkdown = Omit<F7ReportProjection, "markdown">;
+type AvailableF7ReportAnalysis = Extract<NonNullable<F7ReportProjection["analysis"]>, { status: "available" }>;
 
 function formatSigned(value: number, digits: number): string {
   return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
+}
+
+function buildAvailableContributorFacts(snapshot: F7SessionSnapshot): readonly {
+  readonly name: string;
+  readonly reference: string;
+  readonly contributionPercent: number;
+}[] {
+  return snapshot.factors
+    .flatMap((factor) => {
+      const evidence = factor.evidence;
+      if (evidence === undefined
+        || !Number.isFinite(evidence.percentContributionToSigma)
+        || evidence.percentContributionToSigma < 0
+        || evidence.percentContributionToSigma > 1) {
+        return [];
+      }
+      return [{
+        name: evidence.factorName,
+        reference: JSON.stringify([evidence.worksheetName, evidence.tableId, evidence.sourceRow]),
+        contributionPercent: evidence.percentContributionToSigma * 100,
+      }];
+    })
+    .sort((left, right) => (
+      right.contributionPercent - left.contributionPercent
+      || (left.reference === right.reference ? 0 : left.reference < right.reference ? -1 : 1)
+    ));
+}
+
+function projectNarrativeForReport(
+  narrative: ReturnType<typeof buildF7EngineeringNarrative>,
+): AvailableF7ReportAnalysis["narrative"] {
+  return {
+    resultJudgment: {
+      ...narrative.resultJudgment,
+      display: { ...narrative.resultJudgment.display },
+    },
+    engineeringSummary: narrative.engineeringSummary,
+    rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => ({
+      ...item,
+      ...(item.quantitativeEvidence === undefined
+        ? {}
+        : { quantitativeEvidence: { ...item.quantitativeEvidence } }),
+      ...(item.quantitativeEvidenceLabels === undefined
+        ? {}
+        : { quantitativeEvidenceLabels: { ...item.quantitativeEvidenceLabels } }),
+    })),
+    engineeringRisk: narrative.engineeringRisk,
+    suggestedActionSequence: narrative.suggestedActionSequence.map((item) => ({
+      ...item,
+      validationSteps: [...item.validationSteps],
+    })),
+    validationRequirements: [...narrative.validationRequirements],
+    evidenceDisclosure: narrative.evidenceDisclosure,
+  };
 }
 
 function createF0Analysis(
@@ -63,6 +119,7 @@ function createF0Analysis(
     && targetEvidence.valueOrigin === "defaulted"
     ? "template"
     : "project";
+  const availableContributors = buildAvailableContributorFacts(snapshot);
   const evaluation = loadInterpretationRules({ version: "interpretation-rules-v2" })
     .evaluateInterpretationRules({
       analysisDimension: "one-dimensional",
@@ -74,6 +131,14 @@ function createF0Analysis(
         mean: simulation.mean,
         lowerSpecLimit: simulation.lowerSpecLimit,
         upperSpecLimit: simulation.upperSpecLimit,
+        ...(availableContributors.length === 0
+          ? {}
+          : {
+              contributors: availableContributors.map(({ reference, contributionPercent }) => ({
+                reference,
+                contributionPercent,
+              })),
+            }),
       },
     });
   const performanceRule = evaluation.status === "matched"
@@ -113,6 +178,24 @@ function createF0Analysis(
   if (optimizationDirections.length === 0) {
     optimizationDirections.push("Maintain the current setup and verify capability remains stable with the next representative measurement sample.");
   }
+  const narrative = projectNarrativeForReport(buildF7EngineeringNarrative({
+    evidenceBasis: "measured",
+    method: "monte-carlo",
+    cp: monteCarlo.cp,
+    cpk: monteCarlo.cpk,
+    targetCpk: target,
+    mean: simulation.mean,
+    lowerSpecLimit: simulation.lowerSpecLimit,
+    upperSpecLimit: simulation.upperSpecLimit,
+    rootCauseRules: rootCauseRules.map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+    controlledOptions: improvementRules.map((rule) => ({
+      ruleId: rule.entryId,
+      title: rule.title,
+      validationSteps: rule.validationSteps ?? [],
+    })),
+    contributors: availableContributors,
+    knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+  }));
 
   return {
     status: "available",
@@ -137,6 +220,7 @@ function createF0Analysis(
     rootCauseSignals: rootCauseRules.map(projectRule),
     controlledOptions: improvementRules.map(projectRule),
     validationRequirements: [...new Set(improvementRules.flatMap(({ validationSteps }) => validationSteps ?? []))],
+    narrative,
   };
 }
 
@@ -166,6 +250,17 @@ function escapeMarkdownTableText(value: string): string {
 
 function renderValue(value: string | number): string {
   return escapeMarkdownTableText(String(value));
+}
+
+function renderNarrativeEvidence(item: AvailableF7ReportAnalysis["narrative"]["rootCauseAnalysis"][number]): string | undefined {
+  if (item.quantitativeEvidence === undefined) {
+    return undefined;
+  }
+
+  return Object.entries(item.quantitativeEvidence)
+    .map(([key, value]) => `${item.quantitativeEvidenceLabels?.[key] ?? key}: ${String(value)}`)
+    .map(escapeMarkdownTableText)
+    .join("; ");
 }
 
 function renderMarkdown(report: ReportWithoutMarkdown): string {
@@ -201,29 +296,63 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
         `| Cp | ${renderValue(report.analysis.comparison.setup.cp)} | ${renderValue(report.analysis.comparison.monteCarlo.cp)} |`,
         `| Cpk | ${renderValue(report.analysis.comparison.setup.cpk)} | ${renderValue(report.analysis.comparison.monteCarlo.cpk)} |`,
         "",
-        "## F0 Interpretation and Optimization Direction",
-        "",
-        `F0 ${report.analysis.provenance.knowledgeBaseVersion} / ${report.analysis.provenance.ruleId}`,
-        "",
-        `**${report.analysis.targetAssessment}**`,
+        `**Assessment:** ${escapeMarkdownTableText(report.analysis.targetAssessment)}`,
         "",
         ...report.analysis.interpretations.map((item) => `- ${escapeMarkdownTableText(item)}`),
         "",
-        "### Root Cause Signals",
+        "### Result Judgment",
         "",
-        ...report.analysis.rootCauseSignals.map((item) => `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.ruleId)})`),
+        `**${escapeMarkdownTableText(report.analysis.narrative.resultJudgment.headline)}**`,
         "",
-        "### Controlled Options",
+        `- Cpk: ${renderValue(report.analysis.narrative.resultJudgment.cpk)} (${renderValue(report.analysis.narrative.resultJudgment.display.cpk)})`,
+        `- Target Cpk: ${renderValue(report.analysis.narrative.resultJudgment.targetCpk)} (${renderValue(report.analysis.narrative.resultJudgment.display.targetCpk)})`,
+        `- Margin: ${renderValue(report.analysis.narrative.resultJudgment.margin)} (${renderValue(report.analysis.narrative.resultJudgment.display.margin)})`,
+        ...(report.analysis.narrative.resultJudgment.nearerSpecificationSide === undefined
+          ? []
+          : [`- Nearer specification side: ${escapeMarkdownTableText(report.analysis.narrative.resultJudgment.nearerSpecificationSide)}`]),
         "",
-        ...report.analysis.optimizationDirections.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        escapeMarkdownTableText(report.analysis.narrative.resultJudgment.judgment),
+        "",
+        `**Summary:** ${escapeMarkdownTableText(report.analysis.narrative.engineeringSummary)}`,
+        "",
+        "### Root Cause Analysis",
+        "",
+        ...(report.analysis.narrative.rootCauseAnalysis.length === 0
+          ? ["No governed root-cause hypothesis matched."]
+          : report.analysis.narrative.rootCauseAnalysis.flatMap((item) => [
+              `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.ruleId)})`,
+              `  Hypothesis status: ${escapeMarkdownTableText(item.hypothesisStatus)}.`,
+              `  Explanation: ${escapeMarkdownTableText(item.narrative)}`,
+              `  Evidence completeness: ${item.completeEvidence ? "complete" : "incomplete"}.`,
+              ...(renderNarrativeEvidence(item) === undefined
+                ? []
+                : [`  Quantitative evidence: ${renderNarrativeEvidence(item)!}`]),
+              "",
+            ])),
+        "",
+        "### Engineering Risk",
+        "",
+        escapeMarkdownTableText(report.analysis.narrative.engineeringRisk),
+        "",
+        "### Suggested Action Sequence",
+        "",
+        ...(report.analysis.narrative.suggestedActionSequence.length === 0
+          ? ["No controlled improvement action matched."]
+          : report.analysis.narrative.suggestedActionSequence.map((item) => (
+              `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.optionId)}): ${escapeMarkdownTableText(item.narrative)}`
+            ))),
         "",
         "### Verification Requirements",
         "",
-        ...report.analysis.validationRequirements.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        ...report.analysis.narrative.validationRequirements.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+        "### Evidence Disclosure",
+        "",
+        escapeMarkdownTableText(report.analysis.narrative.evidenceDisclosure),
         "",
       ]
     : [
-        "## F0 Interpretation and Optimization Direction",
+        "## F0 Interpretation",
         "",
         report.analysis?.reason ?? "F0 analysis is unavailable.",
         "",
@@ -238,7 +367,7 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
     "",
     `**${report.assessment}**`,
     "",
-    "This statistical assessment is not a design or production release decision and does not confirm physical root cause.",
+    "This statistical assessment does not authorize design or production release and does not confirm physical root cause.",
     "",
     ...analysisLines,
     "## Key Metrics",
