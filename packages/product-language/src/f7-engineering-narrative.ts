@@ -84,6 +84,8 @@ const ACTION_ORDER: Readonly<Record<string, number>> = Object.freeze({
 
 const INCOMPLETE_EVIDENCE_MESSAGE = "Evidence is incomplete for this matched hypothesis.";
 const BALANCED_DISTANCE_SCALE = Number.EPSILON * 32;
+const DEFAULT_DISPLAY_DECIMALS = 2;
+const MAX_ADAPTIVE_DISPLAY_DECIMALS = 6;
 
 function assertFiniteNumber(name: string, value: number): void {
   if (!Number.isFinite(value)) {
@@ -118,6 +120,42 @@ function sortOptionsBySequence<T extends { readonly ruleId: string }>(items: rea
 function formatNumber(value: number): string {
   const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
   return rounded.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
+function roundToDisplayDecimals(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function resolveAdaptiveDisplayDecimals(values: readonly number[]): number {
+  for (let decimals = DEFAULT_DISPLAY_DECIMALS; decimals <= MAX_ADAPTIVE_DISPLAY_DECIMALS; decimals += 1) {
+    const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToDisplayDecimals(Math.abs(value), decimals) !== 0);
+    if (!nonZeroRelationPreserved) {
+      continue;
+    }
+
+    const [left, right] = values;
+    if (
+      left !== undefined
+      && right !== undefined
+      && left !== right
+      && roundToDisplayDecimals(left, decimals) === roundToDisplayDecimals(right, decimals)
+    ) {
+      continue;
+    }
+
+    return decimals;
+  }
+
+  return MAX_ADAPTIVE_DISPLAY_DECIMALS;
+}
+
+function formatDisplayNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
+  if (decimals <= DEFAULT_DISPLAY_DECIMALS) {
+    return formatNumber(value);
+  }
+
+  return value.toFixed(decimals);
 }
 
 function formatSignedNumber(value: number): string {
@@ -168,9 +206,10 @@ function resolveNearestSpecificationSide(
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
   const rawMargin = input.cpk - input.targetCpk;
   const margin = rawMargin;
+  const displayDecimals = resolveAdaptiveDisplayDecimals([input.cpk, input.targetCpk, rawMargin]);
   const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
   const headline = rawMargin >= 0 ? "Capability meets target" : "Capability is below target";
-  const judgment = `Cpk ${formatNumber(input.cpk)} is ${formatNumber(Math.abs(rawMargin))} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatNumber(input.targetCpk)}.`;
+  const judgment = `Cpk ${formatDisplayNumber(input.cpk, displayDecimals)} is ${formatDisplayNumber(Math.abs(rawMargin), displayDecimals)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatDisplayNumber(input.targetCpk, displayDecimals)}.`;
   const nearerSpecificationSide = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   return nearerSpecificationSide === undefined ? {
     status,
@@ -331,16 +370,22 @@ function buildEngineeringSummary(
   resultJudgment: F7NarrativeResultJudgment,
   rootCauseAnalysis: readonly F7NarrativeRootCauseItem[],
 ): string {
+  const displayDecimals = resolveAdaptiveDisplayDecimals([
+    resultJudgment.cpk,
+    resultJudgment.targetCpk,
+    resultJudgment.margin,
+  ]);
+
   if (resultJudgment.status === "meets-target") {
-    return `Capability currently meets the resolved target with a margin of ${formatNumber(resultJudgment.margin)}; continue stability verification with representative evidence and ME review.`;
+    return `Capability currently meets the resolved target with a margin of ${formatDisplayNumber(resultJudgment.margin, displayDecimals)}; continue stability verification with representative evidence and ME review.`;
   }
 
   const completeRules = rootCauseAnalysis.filter((item) => item.completeEvidence).map((item) => item.ruleId);
   if (completeRules.length === 0) {
-    return `Capability is below target by ${formatNumber(Math.abs(resultJudgment.margin))}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
+    return `Capability is below target by ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)}, and enhanced root-cause explanation remains limited by incomplete evidence.`;
   }
 
-  return `Capability is below target by ${formatNumber(Math.abs(resultJudgment.margin))}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
+  return `Capability is below target by ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)}; the matched governed hypotheses indicate ${completeRules.map((ruleId) => ruleId.replace(/^root-cause-/, "").replace(/-/g, " ")).join(", ")} and require validation before any corrective change.`;
 }
 
 function buildEngineeringRisk(
@@ -352,7 +397,12 @@ function buildEngineeringRisk(
     return "The calculated result meets the resolved target and indicates a stable baseline only if representative evidence and ME review confirm the assumptions.";
   }
 
-  const clauses = [`The capability shortfall of ${formatNumber(Math.abs(resultJudgment.margin))} indicates below-target performance`];
+  const displayDecimals = resolveAdaptiveDisplayDecimals([
+    resultJudgment.cpk,
+    resultJudgment.targetCpk,
+    resultJudgment.margin,
+  ]);
+  const clauses = [`The capability shortfall of ${formatDisplayNumber(Math.abs(resultJudgment.margin), displayDecimals)} indicates below-target performance`];
   if (resultJudgment.nearerSpecificationSide === "LSL" || resultJudgment.nearerSpecificationSide === "USL") {
     clauses.push(`the mean direction is consistent with nearer exposure toward ${resultJudgment.nearerSpecificationSide}`);
   } else if (resultJudgment.nearerSpecificationSide === "balanced") {

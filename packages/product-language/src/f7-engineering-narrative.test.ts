@@ -172,7 +172,32 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.resultJudgment.status).toBe("below-target");
     expect(narrative.resultJudgment.headline).toBe("Capability is below target");
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.001, 12);
-    expect(narrative.resultJudgment.judgment).toContain("Cpk 1.33 is 0 below the resolved target of 1.33.");
+    expect(narrative.resultJudgment.judgment).toBe("Cpk 1.329 is 0.001 below the resolved target of 1.330.");
+    expect(narrative.engineeringSummary).toBe(
+      "Capability is below target by 0.001, and enhanced root-cause explanation remains limited by incomplete evidence.",
+    );
+    expect(narrative.engineeringRisk).toContain("The capability shortfall of 0.001 indicates below-target performance");
+    expect(narrative.engineeringRisk).not.toContain("shortfall of 0 indicates");
+  });
+
+  it("keeps near-target positive raw margin truthful and deterministic in concise prose", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.331,
+      targetCpk: 1.33,
+      cp: 1.331,
+      mean: 0,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("meets-target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(0.001, 12);
+    expect(narrative.resultJudgment.judgment).toBe("Cpk 1.331 is 0.001 above the resolved target of 1.330.");
+    expect(narrative.engineeringSummary).toBe(
+      "Capability currently meets the resolved target with a margin of 0.001; continue stability verification with representative evidence and ME review.",
+    );
   });
 
   it("treats equal mean-to-limit distances as balanced within scaled tolerance", () => {
