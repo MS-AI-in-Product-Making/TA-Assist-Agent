@@ -734,10 +734,19 @@ describe("Drawing Governance skill contract", () => {
       "Expected exactly one heading '## Key Decision Points', found 2");
   });
 
-  it("documents governed F3 ADO publishing flow in EN/CN flow docs and governance register", () => {
+  it("documents governed F3 ADO publishing flow in the canonical English flow and governance register", () => {
     const englishFlow = readUtf8(englishFlowPath);
-    const chineseFlow = readUtf8(chineseFlowPath);
     const featureRegister = readUtf8(featureRegisterPath);
+    expect(englishFlow).toContain(".github/skills/drawing-governance/SKILL.md");
+    expect(englishFlow).toContain("Question call 1 - publishing mode");
+    expect(englishFlow).toContain("Surface MCP entity calls may start only after Question call 1 returns");
+    expect(englishFlow).toContain("Question call 2 - final write confirmation");
+    expect(englishFlow).toContain("Never use Azure DevOps MCP/REST/browser/shell HTTP");
+    expect(englishFlow).toContain("no scheduler, no milestone timer");
+    expect(englishFlow).toContain("no F4 calculation/handoff mutation");
+    expect(featureRegister).toContain("drawing-governance-v2");
+    if (!existsSync(chineseFlowPath)) return;
+    const chineseFlow = readUtf8(chineseFlowPath);
     const englishMermaid = extractFirstMermaidBlock(englishFlow);
     const chineseMermaid = extractFirstMermaidBlock(chineseFlow);
     const englishKeyHeading = "## Key Decision Points";
