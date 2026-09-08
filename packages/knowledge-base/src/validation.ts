@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { z } from "zod";
 import {
   capabilityEntrySchema,
@@ -54,7 +55,7 @@ export function canonicalJson(value: unknown): string {
 }
 
 export function contentHash(value: unknown): string {
-  return failClosed(() => createHash("sha256").update(canonicalJson(value)).digest("hex"));
+  return failClosed(() => bytesToHex(sha256(new TextEncoder().encode(canonicalJson(value)))));
 }
 
 export function createSeedPackage(): KnowledgeBaseSeedPackage {
