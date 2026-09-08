@@ -90,9 +90,9 @@ describe("buildF7EngineeringNarrative", () => {
       headline: "Capability is below target",
       cpk: 0.92,
       targetCpk: 1.33,
-      margin: -0.41,
       nearerSpecificationSide: "USL",
     });
+    expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
     expect(narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
       "root-cause-excessive-variation",
       "root-cause-mean-shift",
@@ -102,12 +102,12 @@ describe("buildF7EngineeringNarrative", () => {
       ruleId: "root-cause-mean-shift",
       completeEvidence: true,
       quantitativeEvidence: {
-        cpCpkGap: 0.26,
         specificationMidpoint: 0,
         meanOffset: 0.08,
         direction: "USL",
       },
     });
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.26, 12);
     expect(narrative.rootCauseAnalysis[2]).toMatchObject({
       ruleId: "root-cause-contributor-concentration",
       completeEvidence: true,
@@ -157,6 +157,22 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.rootCauseAnalysis).toEqual([]);
     expect(narrative.suggestedActionSequence).toEqual([]);
     expect(narrative.engineeringRisk).not.toMatch(/root cause|corrective action/i);
+  });
+
+  it("keeps near-target negative raw margin below target even when rounded prose reaches zero", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 1.329,
+      targetCpk: 1.33,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("below-target");
+    expect(narrative.resultJudgment.headline).toBe("Capability is below target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(-0.001, 12);
+    expect(narrative.resultJudgment.judgment).toContain("Cpk 1.33 is 0 below the resolved target of 1.33.");
   });
 
   it("treats equal mean-to-limit distances as balanced within scaled tolerance", () => {
@@ -209,14 +225,50 @@ describe("buildF7EngineeringNarrative", () => {
 
     const narrative = buildF7EngineeringNarrative(input);
 
-    expect(narrative.resultJudgment.margin).toBe(-0.41);
+    expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
     expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidence).toMatchObject({
       cp: 1.18,
       targetCpk: 1.33,
-      cpTargetGap: -0.15,
     });
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
     expectRecursivelyFrozen(narrative);
     expect(input).toEqual(snapshot);
+  });
+
+  it("retains raw structured evidence values and rounds only prose", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: 0.923,
+      targetCpk: 1.331,
+      cp: 1.184,
+      mean: 0.0837,
+      rootCauseRules: [
+        { ruleId: "root-cause-excessive-variation", title: "RC01 Excessive variation hypothesis" },
+        { ruleId: "root-cause-mean-shift", title: "RC02 Mean shift hypothesis" },
+      ],
+    });
+
+    expect(narrative.resultJudgment.margin).toBeCloseTo(-0.408, 12);
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
+      ruleId: "root-cause-excessive-variation",
+      quantitativeEvidence: {
+        cp: 1.184,
+        targetCpk: 1.331,
+      },
+    });
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.147, 12);
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("a 0.15 shortfall");
+    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+      ruleId: "root-cause-mean-shift",
+      quantitativeEvidence: {
+        specificationMidpoint: 0,
+        meanOffset: 0.0837,
+        direction: "USL",
+      },
+    });
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
+    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("Cp exceeds Cpk by 0.26");
+    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("the mean is +0.08");
   });
 
   it("exports the builder from the package root", () => {

@@ -124,10 +124,6 @@ function formatSignedNumber(value: number): string {
   return `${value >= 0 ? "+" : "-"}${formatNumber(Math.abs(value))}`;
 }
 
-function roundToHundredths(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 function dedupeStable(values: readonly string[]): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -171,10 +167,10 @@ function resolveNearestSpecificationSide(
 
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
   const rawMargin = input.cpk - input.targetCpk;
-  const margin = roundToHundredths(rawMargin);
-  const status: F7NarrativeJudgmentStatus = margin >= 0 ? "meets-target" : "below-target";
-  const headline = margin >= 0 ? "Capability meets target" : "Capability is below target";
-  const judgment = `Cpk ${formatNumber(input.cpk)} is ${formatNumber(Math.abs(margin))} ${margin >= 0 ? "above" : "below"} the resolved target of ${formatNumber(input.targetCpk)}.`;
+  const margin = rawMargin;
+  const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
+  const headline = rawMargin >= 0 ? "Capability meets target" : "Capability is below target";
+  const judgment = `Cpk ${formatNumber(input.cpk)} is ${formatNumber(Math.abs(rawMargin))} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatNumber(input.targetCpk)}.`;
   const nearerSpecificationSide = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   return nearerSpecificationSide === undefined ? {
     status,
@@ -205,7 +201,7 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     };
   }
 
-  const cpTargetGap = roundToHundredths(input.cp - input.targetCpk);
+  const cpTargetGap = input.cp - input.targetCpk;
   return {
     ruleId: rule.ruleId,
     title: rule.title,
@@ -236,9 +232,9 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     };
   }
 
-  const cpCpkGap = roundToHundredths(input.cp - input.cpk);
+  const cpCpkGap = input.cp - input.cpk;
   const specificationMidpoint = (input.lowerSpecLimit + input.upperSpecLimit) / 2;
-  const meanOffset = roundToHundredths(input.mean - specificationMidpoint);
+  const meanOffset = input.mean - specificationMidpoint;
   const direction = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit) === "LSL" ? "LSL" : "USL";
   return {
     ruleId: rule.ruleId,
