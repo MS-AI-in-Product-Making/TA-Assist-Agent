@@ -41,6 +41,11 @@ export interface F7NarrativeResultJudgment {
   readonly cpk: number;
   readonly targetCpk: number;
   readonly margin: number;
+  readonly display: Readonly<{
+    cpk: string;
+    targetCpk: string;
+    margin: string;
+  }>;
   readonly nearerSpecificationSide?: F7NarrativeSpecificationSide;
 }
 
@@ -51,6 +56,7 @@ export interface F7NarrativeRootCauseItem {
   readonly narrative: string;
   readonly completeEvidence: boolean;
   readonly quantitativeEvidence?: Readonly<Record<string, number | string>>;
+  readonly quantitativeEvidenceLabels?: Readonly<Record<string, string>>;
 }
 
 export interface F7NarrativeActionItem {
@@ -88,6 +94,18 @@ const DEFAULT_DISPLAY_DECIMALS = 2;
 const MAX_ADAPTIVE_DISPLAY_DECIMALS = 6;
 const MAX_SHARED_FIXED_DISPLAY_DECIMALS = 7;
 const MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS = 17;
+const QUANTITATIVE_EVIDENCE_LABELS = Object.freeze({
+  cp: "Cp",
+  targetCpk: "Target Cpk",
+  cpTargetGap: "Cp vs target gap",
+  cpCpkGap: "Cp-Cpk gap",
+  specificationMidpoint: "Specification midpoint",
+  meanOffset: "Mean offset",
+  direction: "Direction",
+  contributorName: "Contributor",
+  contributorReference: "Contribution",
+  contributionPercent: "Contribution",
+} as const satisfies Record<string, string>);
 
 interface NarrativeDisplayPlan {
   readonly notation: "fixed" | "scientific";
@@ -268,6 +286,34 @@ function formatSignedNumber(value: number): string {
   return `${value >= 0 ? "+" : "-"}${formatDeltaNumber(Math.abs(value))}`;
 }
 
+function formatSignedNarrativeNumber(value: number, plan: NarrativeDisplayPlan): string {
+  return `${value >= 0 ? "+" : "-"}${formatNarrativeNumber(Math.abs(value), plan)}`;
+}
+
+function buildResultJudgmentDisplay(
+  cpk: number,
+  targetCpk: number,
+  margin: number,
+): Readonly<{ cpk: string; targetCpk: string; margin: string }> {
+  const displayPlan = resolveNarrativeDisplayPlan([cpk, targetCpk, margin]);
+  return {
+    cpk: formatNarrativeNumber(cpk, displayPlan),
+    targetCpk: formatNarrativeNumber(targetCpk, displayPlan),
+    margin: formatSignedNarrativeNumber(margin, displayPlan),
+  };
+}
+
+function pickEvidenceLabels(keys: readonly string[]): Readonly<Record<string, string>> | undefined {
+  const labels: Record<string, string> = {};
+  for (const key of keys) {
+    const label = QUANTITATIVE_EVIDENCE_LABELS[key as keyof typeof QUANTITATIVE_EVIDENCE_LABELS];
+    if (label !== undefined) {
+      labels[key] = label;
+    }
+  }
+  return Object.keys(labels).length === 0 ? undefined : labels;
+}
+
 function dedupeStable(values: readonly string[]): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -338,6 +384,7 @@ function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7Narrati
   const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
   const headline = rawMargin >= 0 ? "Capability meets target" : "Capability is below target";
   const judgment = `Cpk ${formatNarrativeNumber(input.cpk, displayPlan)} is ${formatNarrativeNumber(Math.abs(rawMargin), displayPlan)} ${rawMargin >= 0 ? "above" : "below"} the resolved target of ${formatNarrativeNumber(input.targetCpk, displayPlan)}.`;
+  const display = buildResultJudgmentDisplay(input.cpk, input.targetCpk, margin);
   const nearerSpecificationSide = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   return nearerSpecificationSide === undefined ? {
     status,
@@ -346,6 +393,7 @@ function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7Narrati
     cpk: input.cpk,
     targetCpk: input.targetCpk,
     margin,
+    display,
   } : {
     status,
     headline,
@@ -353,6 +401,7 @@ function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7Narrati
     cpk: input.cpk,
     targetCpk: input.targetCpk,
     margin,
+    display,
     nearerSpecificationSide,
   };
 }
@@ -369,6 +418,7 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
   }
 
   const cpTargetGap = assertFiniteDerivedNumber("rootCauseAnalysis.cpTargetGap", input.cp - input.targetCpk);
+  const quantitativeEvidenceLabels = pickEvidenceLabels(["cp", "targetCpk", "cpTargetGap"]);
   return {
     ruleId: rule.ruleId,
     title: rule.title,
@@ -380,6 +430,7 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
       targetCpk: input.targetCpk,
       cpTargetGap,
     },
+    ...(quantitativeEvidenceLabels === undefined ? {} : { quantitativeEvidenceLabels }),
   };
 }
 
@@ -416,6 +467,7 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     };
   }
 
+  const quantitativeEvidenceLabels = pickEvidenceLabels(["cpCpkGap", "specificationMidpoint", "meanOffset", "direction"]);
   return {
     ruleId: rule.ruleId,
     title: rule.title,
@@ -430,6 +482,7 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
       meanOffset,
       direction,
     },
+    ...(quantitativeEvidenceLabels === undefined ? {} : { quantitativeEvidenceLabels }),
   };
 }
 
@@ -454,6 +507,7 @@ function buildContributorNarrative(input: BuildF7EngineeringNarrativeInput, rule
     };
   }
 
+  const quantitativeEvidenceLabels = pickEvidenceLabels(["contributorName", "contributorReference", "contributionPercent"]);
   return {
     ruleId: rule.ruleId,
     title: rule.title,
@@ -465,6 +519,7 @@ function buildContributorNarrative(input: BuildF7EngineeringNarrativeInput, rule
       contributorReference: dominantContributor.reference,
       contributionPercent: dominantContributor.contributionPercent,
     },
+    ...(quantitativeEvidenceLabels === undefined ? {} : { quantitativeEvidenceLabels }),
   };
 }
 
@@ -607,11 +662,22 @@ export function buildF7EngineeringNarrative(input: BuildF7EngineeringNarrativeIn
   };
 
   return deepFreeze({
-    resultJudgment: { ...result.resultJudgment },
+    resultJudgment: {
+      ...result.resultJudgment,
+      display: { ...result.resultJudgment.display },
+    },
     engineeringSummary: result.engineeringSummary,
     rootCauseAnalysis: result.rootCauseAnalysis.map((item) => item.quantitativeEvidence
-      ? { ...item, quantitativeEvidence: { ...item.quantitativeEvidence } }
-      : { ...item }),
+      ? {
+          ...item,
+          quantitativeEvidence: { ...item.quantitativeEvidence },
+          ...(item.quantitativeEvidenceLabels === undefined
+            ? {}
+            : { quantitativeEvidenceLabels: { ...item.quantitativeEvidenceLabels } }),
+        }
+      : item.quantitativeEvidenceLabels === undefined
+        ? { ...item }
+        : { ...item, quantitativeEvidenceLabels: { ...item.quantitativeEvidenceLabels } }),
     engineeringRisk: result.engineeringRisk,
     suggestedActionSequence: result.suggestedActionSequence.map((item) => ({
       ...item,

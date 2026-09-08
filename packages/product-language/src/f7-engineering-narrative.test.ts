@@ -209,6 +209,11 @@ describe("buildF7EngineeringNarrative", () => {
     );
     expect(narrative.engineeringRisk).toContain("The capability shortfall of 0.001 indicates below-target performance");
     expect(narrative.engineeringRisk).not.toContain("shortfall of 0 indicates");
+    expect(narrative.resultJudgment.display).toEqual({
+      cpk: "1.329",
+      targetCpk: "1.330",
+      margin: "-0.001",
+    });
   });
 
   it("keeps near-target positive raw margin truthful and deterministic in concise prose", () => {
@@ -229,6 +234,11 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.engineeringSummary).toBe(
       "Cpk 1.331 versus target 1.330. Capability currently meets the resolved target with a margin of 0.001; continue stability verification with representative evidence and ME review.",
     );
+    expect(narrative.resultJudgment.display).toEqual({
+      cpk: "1.331",
+      targetCpk: "1.330",
+      margin: "+0.001",
+    });
   });
 
   it("renders subprecision negative margins without collapsing them to zero prose", () => {
@@ -502,6 +512,11 @@ describe("buildF7EngineeringNarrative", () => {
       targetCpk: 1.33,
     });
     expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
+    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidenceLabels).toEqual({
+      cp: "Cp",
+      targetCpk: "Target Cpk",
+      cpTargetGap: "Cp vs target gap",
+    });
     expectRecursivelyFrozen(narrative);
     expect(input).toEqual(snapshot);
   });
@@ -538,8 +553,24 @@ describe("buildF7EngineeringNarrative", () => {
       },
     });
     expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
+    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidenceLabels).toEqual({
+      cpCpkGap: "Cp-Cpk gap",
+      specificationMidpoint: "Specification midpoint",
+      meanOffset: "Mean offset",
+      direction: "Direction",
+    });
     expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("Cp exceeds Cpk by 0.26");
     expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("the mean is +0.08");
+  });
+
+  it("labels contributor evidence with explicit engineering names", () => {
+    const narrative = buildF7EngineeringNarrative(combinedCauseInput());
+
+    expect(narrative.rootCauseAnalysis[2]?.quantitativeEvidenceLabels).toEqual({
+      contributorName: "Contributor",
+      contributorReference: "Contribution",
+      contributionPercent: "Contribution",
+    });
   });
 
   it("exports the builder from the package root", () => {

@@ -3,7 +3,10 @@ import { mount } from "@vue/test-utils";
 import TAResultsInterpretation from "./TAResultsInterpretation.vue";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
-import type { F7NarrativeRootCauseItem } from "@ai-assist/product-language/f7-engineering-narrative";
+import type {
+  F7NarrativeResultJudgment,
+  F7NarrativeRootCauseItem,
+} from "@ai-assist/product-language/f7-engineering-narrative";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
 let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
@@ -52,6 +55,16 @@ function mountWithActualInterpretation(session: F7SessionSnapshot) {
   });
 }
 
+function overrideResultJudgment(
+  resultJudgment: F7NarrativeResultJudgment,
+  override: Partial<F7NarrativeResultJudgment>,
+): F7NarrativeResultJudgment {
+  return {
+    ...resultJudgment,
+    ...override,
+  };
+}
+
 describe("TAResultsInterpretation", () => {
   beforeAll(async () => {
     ({ buildAssumptionResultsInterpretation: actualBuildAssumptionResultsInterpretation } = await vi.importActual("../assumption-results-interpretation"));
@@ -76,8 +89,8 @@ describe("TAResultsInterpretation", () => {
       expect.stringContaining("root-cause-mean-shift"),
       expect.stringContaining("root-cause-contributor-concentration"),
     ]);
-    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("cpCpkGap");
-    expect(wrapper.findAll("[data-root-cause-item]")[2]?.text()).toContain("contributionPercent");
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("Cp-Cpk gap");
+    expect(wrapper.findAll("[data-root-cause-item]")[2]?.text()).toContain("Contribution");
     expect(wrapper.findAll("[data-root-cause-item]")[2]?.text()).toContain("hypothesis");
     expect(wrapper.get("[data-engineering-risk]").text()).toContain("requires validation");
     expect(wrapper.findAll("[data-action-sequence-item]")).toHaveLength(3);
@@ -143,5 +156,136 @@ describe("TAResultsInterpretation", () => {
     expect(disclosure).toContain("Evidence Disclosure");
     expect(disclosure).toContain("Assumption Disclosure");
     expect(wrapper.get("[data-f0-provenance]").text()).toBe("F0 interpretation-rules-v2");
+  });
+
+  it("renders near-target negative status and display strings without collapsing the margin sign", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      narrative: {
+        ...available.narrative,
+        resultJudgment: overrideResultJudgment(available.narrative.resultJudgment, {
+          status: "below-target",
+          headline: "Capability is below target",
+          cpk: 1.3299999,
+          targetCpk: 1.33,
+          margin: -0.0000001,
+          display: {
+            cpk: "1.3299999",
+            targetCpk: "1.3300000",
+            margin: "-0.0000001",
+          },
+          judgment: "Cpk 1.3299999 is 0.0000001 below the resolved target of 1.3300000.",
+        }),
+      },
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const judgment = wrapper.get("[data-result-judgment]").text();
+    expect(judgment).toContain("Capability is below target");
+    expect(judgment).toContain("Cpk 1.3299999");
+    expect(judgment).toContain("Target 1.3300000");
+    expect(judgment).toContain("Margin -0.0000001");
+    expect(judgment).toMatch(/Margin -0\.0000001(?!\d)/);
+  });
+
+  it("renders near-target positive status and display strings without hiding the positive margin sign", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      narrative: {
+        ...available.narrative,
+        resultJudgment: overrideResultJudgment(available.narrative.resultJudgment, {
+          status: "meets-target",
+          headline: "Capability meets target",
+          cpk: 1.3300001,
+          targetCpk: 1.33,
+          margin: 0.0000001,
+          display: {
+            cpk: "1.3300001",
+            targetCpk: "1.3300000",
+            margin: "+0.0000001",
+          },
+          judgment: "Cpk 1.3300001 is 0.0000001 above the resolved target of 1.3300000.",
+        }),
+      },
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const judgment = wrapper.get("[data-result-judgment]").text();
+    expect(judgment).toContain("Capability meets target");
+    expect(judgment).toContain("Cpk 1.3300001");
+    expect(judgment).toContain("Target 1.3300000");
+    expect(judgment).toContain("Margin +0.0000001");
+    expect(judgment).toMatch(/Margin \+0\.0000001(?!\d)/);
+  });
+
+  it("renders explicit engineering evidence labels instead of raw camelCase keys", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      narrative: {
+        ...available.narrative,
+        rootCauseAnalysis: available.narrative.rootCauseAnalysis.map((item) => {
+          if (item.ruleId === "root-cause-excessive-variation") {
+            return {
+              ...item,
+              quantitativeEvidenceLabels: {
+                cp: "Cp",
+                targetCpk: "Target Cpk",
+                cpTargetGap: "Cp vs target gap",
+              },
+            };
+          }
+          if (item.ruleId === "root-cause-mean-shift") {
+            return {
+              ...item,
+              quantitativeEvidenceLabels: {
+                cpCpkGap: "Cp-Cpk gap",
+                specificationMidpoint: "Specification midpoint",
+                meanOffset: "Mean offset",
+                direction: "Direction",
+              },
+            };
+          }
+          return {
+            ...item,
+            quantitativeEvidenceLabels: {
+              contributorName: "Contributor",
+              contributorReference: "Contribution",
+              contributionPercent: "Contribution",
+            },
+          };
+        }),
+      },
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const rootCauseText = wrapper.findAll("[data-root-cause-item]").map((item) => item.text()).join(" ");
+    expect(rootCauseText).toContain("Cp vs target gap");
+    expect(rootCauseText).toContain("Cp-Cpk gap");
+    expect(rootCauseText).toContain("Specification midpoint");
+    expect(rootCauseText).toContain("Mean offset");
+    expect(rootCauseText).toContain("Direction");
+    expect(rootCauseText).toContain("Contributor");
+    expect(rootCauseText).toContain("Contribution");
+    expect(rootCauseText).not.toContain("cpTargetGap");
+    expect(rootCauseText).not.toContain("cpCpkGap");
+    expect(rootCauseText).not.toContain("specificationMidpoint");
+    expect(rootCauseText).not.toContain("meanOffset");
+    expect(rootCauseText).not.toContain("contributorName");
+    expect(rootCauseText).not.toContain("contributionPercent");
   });
 });

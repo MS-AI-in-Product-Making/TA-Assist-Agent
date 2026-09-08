@@ -9,14 +9,6 @@ const props = defineProps<{
 
 const interpretation = computed(() => buildAssumptionResultsInterpretation(props.session));
 
-function formatCapability(value: number): string {
-  return value.toFixed(4);
-}
-
-function formatMargin(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
-}
-
 function formatContribution(value: number): string {
   return `${value.toFixed(2)}%`;
 }
@@ -24,6 +16,14 @@ function formatContribution(value: number): string {
 function formatEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
   return /percent/i.test(key) ? formatContribution(value) : formatCapability(value);
+}
+
+function formatCapability(value: number): string {
+  return value.toFixed(4);
+}
+
+function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<string, string>> }, key: string): string {
+  return item.quantitativeEvidenceLabels?.[key] ?? key;
 }
 </script>
 
@@ -43,13 +43,13 @@ function formatEvidenceValue(key: string, value: number | string): string {
           <h3>{{ interpretation.narrative.resultJudgment.headline }}</h3>
           <p class="capability-line">
             <span>
-              <strong>Cpk</strong> {{ formatCapability(interpretation.narrative.resultJudgment.cpk) }}
+              <strong>Cpk</strong> {{ interpretation.narrative.resultJudgment.display.cpk }}
             </span>
             <span>
-              <strong>Target</strong> {{ formatCapability(interpretation.narrative.resultJudgment.targetCpk) }}
+              <strong>Target</strong> {{ interpretation.narrative.resultJudgment.display.targetCpk }}
             </span>
             <span>
-              <strong>Margin</strong> {{ formatMargin(interpretation.narrative.resultJudgment.margin) }}
+              <strong>Margin</strong> {{ interpretation.narrative.resultJudgment.display.margin }}
             </span>
           </p>
           <p>{{ interpretation.narrative.resultJudgment.judgment }}</p>
@@ -91,7 +91,7 @@ function formatEvidenceValue(key: string, value: number | string): string {
                   v-for="(value, key) in item.quantitativeEvidence"
                   :key="`${item.ruleId}-${key}`"
                 >
-                  <dt>{{ key }}</dt>
+                  <dt>{{ evidenceLabel(item, key) }}</dt>
                   <dd>{{ formatEvidenceValue(key, value) }}</dd>
                 </template>
               </dl>
