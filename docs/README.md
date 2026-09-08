@@ -21,6 +21,17 @@ Users start a complete workbook analysis with:
 
 Current runs publish one user-facing report, `Feature6-Report.md`, plus three internal governance artifacts. The final report contains verified image links, every active Factor, complete deterministic statistics, F0 guidance, adjusted-mean assessment, contributor priorities, and specification recommendations.
 
+## Developer Workbook Handshake
+
+The deterministic F1/F2 development runner uses a selection request followed by a hash-bound confirmation:
+
+```powershell
+npm run workflow:f2:excel -- "C:\path\to\workbook.xlsx"
+npm run workflow:f2:excel -- "C:\path\to\workbook.xlsx" --worksheets "Sheet A,Sheet B" --workbook-hash <sha256> --confirm
+```
+
+Do not run independent F1 and F2 commands as a substitute for this confirmed handshake.
+
 See the current design and execution plan:
 
 - [TA Assist Agent report and product optimization design](superpowers/specs/2026-09-08-ta-assist-agent-report-and-product-optimization-design.md)

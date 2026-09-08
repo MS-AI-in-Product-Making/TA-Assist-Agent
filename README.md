@@ -106,6 +106,7 @@ Focused commands:
 
 ```powershell
 npm run workflow:f2:excel -- "C:\path\to\workbook.xlsx"
+npm run workflow:f2:excel -- "C:\path\to\workbook.xlsx" --worksheets "Sheet A,Sheet B" --workbook-hash <sha256> --confirm
 npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name>
 npm run workflow:f4 -- --f2-report <f2-output-dir>\Feature2-Report.json
 npm run workflow:f5 -- <f1-root> <f3-root> <f4-root> --worksheet <worksheet-name>

@@ -361,7 +361,7 @@ it("runs Feature 6 through the default wrapper and fixed repository runner", asy
   const outputRoot = join(repoRoot, "test", "demo-output", "f6-runs", f5Stem);
   const fixtureModule = pathToFileURL(join(repoRoot, "scripts", "f6-artifact-test-fixture.mjs")).href;
   const setupCode = `
-import { cpSync, rmSync } from "node:fs";
+import { cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createF6ArtifactBundleFixture, installRequiredMultimodalV3 } from ${JSON.stringify(fixtureModule)};
 const [targetRoot, f5Stem] = process.argv.slice(1);
@@ -373,6 +373,12 @@ for (const [source, target] of [
   [bundle.f4ArtifactRoot, join(targetRoot, "f4")],
   [bundle.f5ArtifactRoot, join(targetRoot, f5Stem)],
 ]) cpSync(source, target, { recursive: true });
+for (const relativeReport of [join("f2", "Feature2-Report.json"), join("f3", "Feature3-Report.json")]) {
+  const reportPath = join(targetRoot, relativeReport);
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  report.artifactRoot = join(targetRoot, "f2");
+  writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\\n", "utf8");
+}
 cpSync(join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact), join(targetRoot, "model-interpretation.json"));
 rmSync(bundle.root, { recursive: true, force: true });
 `;

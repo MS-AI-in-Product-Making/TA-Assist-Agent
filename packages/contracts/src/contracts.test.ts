@@ -5255,7 +5255,7 @@ describe("F5.1 objective interpretation contracts", () => {
             f4Reference: artifactReference("Feature4-Calculation.json"),
             f5Reference: artifactReference("Feature5-Report.json"),
             multimodalReference: artifactReference("Feature5-Multimodal.json"),
-            reportScope: { worksheetNames: ["Analysis-A"] },
+            reportScope: { worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] },
           },
         };
 
