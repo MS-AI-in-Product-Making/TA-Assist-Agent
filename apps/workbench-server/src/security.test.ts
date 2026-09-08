@@ -7,8 +7,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import { createReviewContextId, openSessionStore } from "@ai-assist/workbench";
-import { buildWorkbenchServer, startWorkbenchServer } from "./server.js";
+import { buildWorkbenchServer as buildWorkbenchServerBase, startWorkbenchServer as startWorkbenchServerBase } from "./server.js";
 import { createBrowserBootstrapRendezvous } from "./bootstrap.js";
+
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function buildWorkbenchServer(options: Parameters<typeof buildWorkbenchServerBase>[0]) {
+  return buildWorkbenchServerBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+}
+
+function startWorkbenchServer(options: Parameters<typeof startWorkbenchServerBase>[0]) {
+  return startWorkbenchServerBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+}
 
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
@@ -266,7 +276,7 @@ describe("workbench server security boundary", () => {
         url: `/api/sessions/${auth.sessionId}/host-actions/action-binding/result`,
         headers: { host: "127.0.0.1:0", authorization: `Bearer ${resultToken}` },
         payload: resultBody,
-      })).statusCode).toBe(409);
+      })).statusCode).toBe(204);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -451,9 +461,14 @@ describe("workbench server security boundary", () => {
             state: "review_required",
             activeAttempt: null,
             downstreamScopeSelection: {
+              decision: "continue_ready",
               workbookContentHash: "a".repeat(64),
               selectedWorksheetNames: ["Analysis-A"],
               confirmed: true,
+              inputRevision: 1,
+              f2ReportArtifactId: "f2-current",
+              f2ReportContentHash: "c".repeat(64),
+              findingDigest: "d".repeat(64),
               provenance: "user",
             },
             artifactRefs: [

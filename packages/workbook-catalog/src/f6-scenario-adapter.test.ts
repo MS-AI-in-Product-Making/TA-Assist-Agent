@@ -49,6 +49,7 @@ function baselineRequest() {
           ],
           rows: [{
             sourceRow: 2,
+            factorOrdinal: { value: "F1", rawText: "F1", sourceCell: "Analysis-A!I2" },
             fields: {
               factorName: availableText("factor-1", "Analysis-A!A2"),
               nominalValue: availableNumber("0", "Analysis-A!B2", 0),

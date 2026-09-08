@@ -5,12 +5,17 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash } from "@ai-assist/contracts";
 
-import { createSessionStore, openSessionStore } from "./session-store.js";
+import { createSessionStore as createSessionStoreBase, openSessionStore } from "./session-store.js";
 import { createHostActionStore } from "./host-actions.js";
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 
 const SESSION_ID = "session-host-actions";
 const WORKBOOK_HASH = "a".repeat(64);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function createSessionStore(options: Omit<Parameters<typeof createSessionStoreBase>[0], "interactionLanguage"> & { interactionLanguage?: Parameters<typeof createSessionStoreBase>[0]["interactionLanguage"] }) {
+  return createSessionStoreBase({ ...options, interactionLanguage: options.interactionLanguage ?? ENGLISH_LOCK });
+}
 
 const tempRoots: string[] = [];
 
@@ -641,6 +646,7 @@ async function advanceSessionRevision(rootDir: string, expectedRevision: number,
         activeAttempt: null,
         priorRunReferences: snapshot.priorRunReferences,
         scenarioDrafts: snapshot.scenarioDrafts,
+        interactionLanguage: snapshot.interactionLanguage,
       },
     }));
   } finally {

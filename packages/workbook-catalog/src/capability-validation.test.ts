@@ -62,7 +62,7 @@ function assetsFor(fields = fieldsFor()) {
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
-        rows: [{ sourceRow: 2, fields }],
+        rows: [{ sourceRow: 2, factorOrdinal: { value: "F1", rawText: "F1", sourceCell: "Analysis-A!Z2" }, fields }],
       }],
       formulaCells: [],
       imageAssets: [],

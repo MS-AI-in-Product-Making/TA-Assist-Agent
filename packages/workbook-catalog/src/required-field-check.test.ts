@@ -45,7 +45,10 @@ function requestFor(fields: Record<string, unknown>, rows: readonly unknown[] = 
           headerRow: 1,
           dataRange: { startRow: 2, endRow: 2 },
           columns: [{ semanticField: "factorName", headerText: "Factor", sourceColumn: "A" }],
-          rows,
+          rows: rows.map((row, index) => ({
+            ...(row as object),
+            factorOrdinal: { value: `F${index + 1}`, rawText: `F${index + 1}` },
+          })),
         }],
         formulaCells: [],
         imageAssets: [],
@@ -159,7 +162,7 @@ describe("required field check", () => {
         tableId: "table-b",
         rows: [
           ...firstTable.rows,
-          { sourceRow: 3, fields: completeFields() },
+          { sourceRow: 3, factorOrdinal: { value: "F2", rawText: "F2" }, fields: completeFields() },
         ],
       }],
     });

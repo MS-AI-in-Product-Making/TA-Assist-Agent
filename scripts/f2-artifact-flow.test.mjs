@@ -57,7 +57,7 @@ function createArtifactBundle() {
     },
     factorTables: [{
       tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [],
-      rows: [{ sourceRow: 2, actualFields: actualFields(), fields: {
+      rows: [{ sourceRow: 2, factorOrdinal: { value: "1", rawText: "1", sourceCell: "Analysis-A!Z2" }, actualFields: actualFields(), fields: {
         factorName: field("Analysis-A!A2", "outside-library factor"), partName: field("Analysis-A!B2", "component"), partCategory: field("Analysis-A!C2", "unknown-category"),
         nominalValue: field("Analysis-A!D2", "1", 1), upperTolerance: field("Analysis-A!E2", "0.2", 0.2), lowerTolerance: field("Analysis-A!F2", "-0.2", -0.2),
         longTermSafetyFactor: field("Analysis-A!G2", "1", 1), standardDeviation: field("Analysis-A!H2", "0.01", 0.01), distribution: field("Analysis-A!I2", "Normal"),

@@ -135,6 +135,8 @@ describe("Feature 6 CLI trust boundary", () => {
       trustedRoot, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
       {
         selectedWorksheetNames: ["Overview", "Details"],
+        languageTag: "en-US",
+        modelInterpretationPath: "evidence/model.json",
         supplierCapabilityPath: "evidence/supplier.json",
         datumStrategyPath: "evidence/datum.json",
         costPath: "evidence/cost.json",
@@ -149,6 +151,7 @@ describe("Feature 6 CLI trust boundary", () => {
     expect(calls[0].args).toEqual([
       trustedRunner, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
       "--worksheet", "Overview", "--worksheet", "Details",
+      "--language", "en-US", "--model-interpretation", "evidence/model.json",
       "--supplier-capability", "evidence/supplier.json",
       "--datum-strategy", "evidence/datum.json",
       "--cost", "evidence/cost.json",

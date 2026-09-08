@@ -36,6 +36,8 @@ const defaultDependencies: Feature6CommandDependencies = {
 
 export interface Feature6CommandOptions {
   readonly selectedWorksheetNames: readonly string[];
+  readonly languageTag?: string;
+  readonly modelInterpretationPath?: string;
   readonly supplierCapabilityPath?: string;
   readonly datumStrategyPath?: string;
   readonly costPath?: string;
@@ -240,6 +242,10 @@ export async function runFeature6WorkflowCommand(
   for (const worksheetName of normalizedWorksheets(options.selectedWorksheetNames)) {
     args.push("--worksheet", worksheetName);
   }
+  const languageTag = optionalPath(options.languageTag, "language");
+  const modelInterpretationPath = optionalPath(options.modelInterpretationPath, "model interpretation");
+  if (languageTag !== undefined) args.push("--language", languageTag);
+  if (modelInterpretationPath !== undefined) args.push("--model-interpretation", modelInterpretationPath);
   for (const [flag, value] of [
     ["--supplier-capability", optionalPath(options.supplierCapabilityPath, "supplier capability")],
     ["--datum-strategy", optionalPath(options.datumStrategyPath, "datum strategy")],

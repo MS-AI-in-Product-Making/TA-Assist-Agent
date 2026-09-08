@@ -3,6 +3,7 @@ import { parseF6CliArgs } from "./f6-cli-args.mjs";
 
 const ROOTS = ["f2 run", "f3 run", "f4 run", "f5 run"];
 const LANGUAGE_ARGS = ["--language", "en-US"];
+const MODEL_ARGS = ["--model-interpretation", "model/run-id/Feature6-Model-Interpretation.json"];
 const INTERACTION_LANGUAGE = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -42,8 +43,8 @@ describe("parseF6CliArgs", () => {
     });
   });
 
-  it("keeps optional evidence values undefined", () => {
-    expect(parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, "--worksheet", "Analysis-A"])).toEqual({
+  it("keeps optional supporting evidence values undefined", () => {
+    expect(parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toEqual({
       f2ArtifactRoot: ROOTS[0],
       f3ArtifactRoot: ROOTS[1],
       f4ArtifactRoot: ROOTS[2],
@@ -56,7 +57,7 @@ describe("parseF6CliArgs", () => {
       imageObservationArtifact: undefined,
       analysisContextArtifact: undefined,
       optimizationTargetsArtifact: undefined,
-      modelInterpretationArtifact: undefined,
+      modelInterpretationArtifact: MODEL_ARGS[1],
     });
   });
 
@@ -65,7 +66,11 @@ describe("parseF6CliArgs", () => {
   });
 
   it("rejects a worksheet selection without a locked language", () => {
-    expect(() => parseF6CliArgs([...ROOTS, "--worksheet", "Analysis-A"])).toThrow(/--language/i);
+    expect(() => parseF6CliArgs([...ROOTS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--language/i);
+  });
+
+  it("rejects a worksheet selection without governed model interpretation", () => {
+    expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
   });
 
   it.each([[], ["f2"], ["f2", "f3"], ["f2", "f3", "f4"]])(

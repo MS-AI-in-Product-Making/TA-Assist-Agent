@@ -129,7 +129,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--session" && flag !== "--interaction-language" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets") {
+    if (flag !== "--root" && flag !== "--session" && flag !== "--interaction-language" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -227,12 +227,14 @@ function parseArguments(argv: readonly string[]):
     rejectUnexpected(values, [
       "--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet",
       "--supplier-capability", "--datum-strategy", "--cost", "--image-observations",
-      "--analysis-context", "--optimization-targets",
+      "--analysis-context", "--optimization-targets", "--language", "--model-interpretation",
     ]);
     const f2ArtifactRoot = requiredString(values, "--f2-artifacts", "Feature 6");
     const f3ArtifactRoot = requiredString(values, "--f3-artifacts", "Feature 6");
     const f4ArtifactRoot = requiredString(values, "--f4-artifacts", "Feature 6");
     const f5ArtifactRoot = requiredString(values, "--f5-artifacts", "Feature 6");
+    const languageTag = requiredString(values, "--language", "Feature 6");
+    const modelInterpretationPath = requiredString(values, "--model-interpretation", "Feature 6");
     const selectedWorksheetNames = worksheetValues.map((name) => name.trim());
     if (selectedWorksheetNames.length === 0 || selectedWorksheetNames.some((name) => name.length === 0)
       || new Set(selectedWorksheetNames).size !== selectedWorksheetNames.length) {
@@ -246,6 +248,8 @@ function parseArguments(argv: readonly string[]):
     const optimizationTargetsPath = optionalPath(values, "--optimization-targets", "Feature 6");
     const options: Feature6CommandOptions = {
       selectedWorksheetNames,
+      languageTag,
+      modelInterpretationPath,
       ...(supplierCapabilityPath === undefined ? {} : { supplierCapabilityPath }),
       ...(datumStrategyPath === undefined ? {} : { datumStrategyPath }),
       ...(costPath === undefined ? {} : { costPath }),

@@ -102,6 +102,8 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
 `);
     const options = {
       selectedWorksheetNames: ["Overview", "Details"],
+      languageTag: "en-US",
+      modelInterpretationPath: "evidence/model.json",
       supplierCapabilityPath: "evidence/supplier.json",
       datumStrategyPath: "evidence/datum.json",
       costPath: "evidence/cost.json",
@@ -119,6 +121,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
         "--worksheet", "Overview", "--worksheet", "Details",
+        "--language", "en-US", "--model-interpretation", "evidence/model.json",
         "--supplier-capability", "evidence/supplier.json",
         "--datum-strategy", "evidence/datum.json",
         "--cost", "evidence/cost.json",

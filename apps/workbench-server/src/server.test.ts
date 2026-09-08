@@ -38,7 +38,10 @@ function structuredReviewResult(featureId: "F4" | "F5" | "F6", includeContext = 
   const artifacts = featureId === "F4"
     ? [{ artifactId: "f4-calculation", kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64) }]
     : featureId === "F5"
-      ? [{ artifactId: "f5-report", kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64) }]
+      ? [
+          { artifactId: "f5-report", kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64) },
+          { artifactId: "f5-multimodal", kind: "f5_multimodal", relativePath: "f5/Feature5-Multimodal.json", contentHash: "5".repeat(64) },
+        ]
       : [
           { artifactId: "f6-optimization", kind: "f6_optimization", relativePath: "f6/Feature6-Optimization.json", contentHash: "3".repeat(64) },
           { artifactId: "f6-report", kind: "f6_report", relativePath: "f6/Feature6-Report.json", contentHash: "4".repeat(64) },
@@ -506,7 +509,7 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("registers structured F4/F5/F6 results under one durable review context", async () => {
+  it("registers a structured F6 result under one durable F4/F5 review context", async () => {
     const rootDir = testRoot("workbench-server-review-context-registration");
     await rm(rootDir, { recursive: true, force: true });
     const runner = vi.fn(async (job: { readonly stage: string }) => {
@@ -527,10 +530,19 @@ describe("workbench server routes", () => {
       if (job.stage === "f6_running") return structuredReviewResult("F6");
       return { status: "completed" };
     });
-    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true });
+    const server = await buildWorkbenchServer({
+      rootDir,
+      runner,
+      queueFactory: immediateQueue,
+      skipWebAssets: true,
+    });
     const sessionId = "30303030-3030-4303-8303-303030303030";
     try {
       const browser = await server.testAuthenticate(sessionId);
+      await mkdir(join(rootDir, "f4"), { recursive: true });
+      await mkdir(join(rootDir, "f5"), { recursive: true });
+      await writeFile(join(rootDir, "f4", "Feature4-Calculation.json"), JSON.stringify({ artifactId: "f4-calculation" }));
+      await writeFile(join(rootDir, "f5", "Feature5-Report.json"), JSON.stringify({ artifactId: "f5-report" }));
       const store = await openSessionStore({ rootDir, sessionId });
       try {
         await store.applyCommand({
@@ -545,11 +557,19 @@ describe("workbench server routes", () => {
             ...snapshot,
             revision: snapshot.revision + 1,
             inputRevision: 1,
-            state: "failed",
+            state: "analysis_context_decision_required",
             downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
-            activeAttempt: { attemptId: "seed-f4:f4_running", stage: "f4_running", status: "failed", startedAt: "2026-08-25T00:00:00.000Z", endedAt: "2026-08-25T00:00:01.000Z" },
+            activeAttempt: null,
+            artifactRefs: [
+              { artifactId: "f4-calculation", kind: "f4_calculation", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+              { artifactId: "f5-report", kind: "f5_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+            ],
           },
+          artifactReferences: [
+            { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64), reviewContext: REVIEW_CONTEXT },
+            { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64), reviewContext: REVIEW_CONTEXT },
+          ],
         }));
       } finally {
         await store.close();
@@ -567,7 +587,6 @@ describe("workbench server routes", () => {
         return response;
       };
 
-      expect((await submit("run-f4", "retry", { stage: "f4_running" })).statusCode).toBe(202);
       expect((await submit("confirm-analysis-context", "confirm_analysis_context", { decision: "not_provided", rationale: "No additional analysis context supplied." })).statusCode).toBe(202);
       expect((await submit("confirm-optimization-targets", "confirm_optimization_targets", { decision: "not_provided", rationale: "Use governed default optimization targets." })).statusCode).toBe(202);
 
@@ -583,10 +602,8 @@ describe("workbench server routes", () => {
       } finally {
         await reopened.close();
       }
-      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running", "f5_running", "f6_running"]);
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f6_running"]);
       expect(runner.mock.calls.map(([job]) => job.payload)).toEqual([
-        { sessionId, baselineRunReference: REVIEW_CONTEXT.baselineRunReference },
-        { sessionId, reviewContext: REVIEW_CONTEXT },
         { sessionId, reviewContext: REVIEW_CONTEXT },
       ]);
       const artifactResponse = await server.inject({

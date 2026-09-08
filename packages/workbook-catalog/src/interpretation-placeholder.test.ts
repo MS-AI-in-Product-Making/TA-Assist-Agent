@@ -26,6 +26,7 @@ function factorRow(index: number) {
   const standardDeviation = index === 0 ? 2 : 1;
   return {
     sourceRow: row,
+    factorOrdinal: { value: `F${index + 1}`, rawText: `F${index + 1}`, sourceCell: `Analysis-A!I${row}` },
     fields: {
       factorName: availableText(`factor-${index + 1}`, `Analysis-A!A${row}`),
       nominalValue: availableNumber("0", `Analysis-A!B${row}`, 0),

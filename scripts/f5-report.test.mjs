@@ -35,6 +35,7 @@ function calculationRequest(factorName = "factor|one") {
     const row = index + 2;
     return {
       sourceRow: row,
+      factorOrdinal: { value: String(index + 1), rawText: String(index + 1), sourceCell: `Analysis-A!I${row}` },
       fields: {
         factorName: availableText(name, `Analysis-A!A${row}`),
         nominalValue: availableNumber("0", `Analysis-A!B${row}`, 0),
@@ -140,6 +141,7 @@ function completedReport({
   };
   const governanceRows = calculationResult.factors.map((factor, index) => ({
     factorInstanceId: String(index + 1).padStart(64, "0"),
+    factorOrdinal: { value: String(index + 1), rawText: String(index + 1), sourceCell: `Analysis-A!I${factor.source.sourceRow}` },
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-dim-${index + 1}`,
     dimensionDescription: "dimension-1",
@@ -196,6 +198,7 @@ function completedReport({
     rows: governanceRows.map((row) => ({
       tableId: row.source.tableId,
       sourceRow: row.source.sourceRow,
+      factorOrdinal: structuredClone(row.factorOrdinal),
       partName: row.partSubsystem,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,

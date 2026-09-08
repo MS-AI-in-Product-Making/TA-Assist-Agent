@@ -57,6 +57,9 @@ export function parseF6CliArgs(args = []) {
   if (languageTag === undefined) {
     throw new Error("Feature 6 requires one locked --language value.");
   }
+  if (optionalPaths.modelInterpretationArtifact === undefined) {
+    throw new Error("Feature 6 requires one governed --model-interpretation artifact.");
+  }
 
   return {
     f2ArtifactRoot,
