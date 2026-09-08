@@ -111,28 +111,32 @@ function assertReportScope(f2Report, f6Optimization) {
 
 const F6_V3_REPORT_CATALOG = {
   en: {
-    title: "TA Engineering Analysis Report", workbook: "Workbook Summary", worksheet: "Worksheet",
+    title: "TA Engineering Analysis Report", document: "Document Overview", workbook: "Workbook Summary", worksheet: "Worksheet",
     image: "Tolerance Path Image", openImage: "Open tolerance path image", factors: "Complete Factor Table",
-    interpretation: "Image and Factor Table Context Interpretation", center: "Center Assessment",
-    contributors: "Contributor Priorities", specifications: "Specification Changes", factor: "Factor", part: "Part",
-    drawing: "Drawing Number", dimId: "DIM ID", nominal: "Nominal", upperTolerance: "+Tolerance",
-    lowerTolerance: "-Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "Status",
+    interpretation: "Image and Factor Table Context Interpretation", results: "Requirements and Statistical Results",
+    f0Guidance: "F0 Capability and Knowledge Guidance", center: "Adjusted Mean to Spec Center Shift",
+    contributors: "Contributor Priorities", specifications: "Specification Changes", factor: "Factor", part: "Part Name",
+    drawing: "Drawing Number", dimId: "DIM ID", nominal: "Design Nominal", upperTolerance: "+ Tolerance",
+    lowerTolerance: "- Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "Status",
     rank: "Rank", priority: "Priority", guidance: "Guidance", side: "Side", currentLimit: "Current Limit",
     proposedLimit: "Proposed Limit", targetCpk: "Target Cpk", approval: "Approval",
     approvalRequired: "Engineering approval required", noProposal: "No specification change is proposed.",
     clarification: "Clarification required", modelUnavailable: "Model interpretation unavailable",
-    high: "High", medium: "Medium", lower: "Lower",
+    high: "High", medium: "Medium", lower: "Lower", topThree: "Focus tolerance-range review on the first three priorities.",
+    nominalReminder: "The adjusted mean is off the specification center; optimize Factor nominal values before changing specifications.",
   },
   zh: {
-    title: "TA 工程分析报告", workbook: "工作簿摘要", worksheet: "工作表", image: "公差路径图片",
+    title: "TA 工程分析报告", document: "文档概览", workbook: "工作簿摘要", worksheet: "工作表", image: "公差路径图片",
     openImage: "打开公差路径图片", factors: "完整 Factor 表", interpretation: "图片与 Factor 表上下文解读",
-    center: "中心评估", contributors: "贡献因子优先级", specifications: "规格变更建议", factor: "Factor",
-    part: "零件", drawing: "Drawing Number", dimId: "DIM ID", nominal: "名义值", upperTolerance: "+公差",
-    lowerTolerance: "-公差", distribution: "分布", sigmaLevel: "Sigma Level", status: "状态", rank: "排序",
+    results: "要求与统计结果", f0Guidance: "F0 能力与知识库建议", center: "Adjusted Mean to Spec Center Shift",
+    contributors: "贡献因子优先级", specifications: "规格变更建议", factor: "Factor",
+    part: "Part Name", drawing: "Drawing Number", dimId: "DIM ID", nominal: "Design Nominal", upperTolerance: "+ Tolerance",
+    lowerTolerance: "- Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "状态", rank: "排序",
     priority: "优先级", guidance: "建议", side: "规格侧", currentLimit: "当前限值", proposedLimit: "建议限值",
     targetCpk: "目标 Cpk", approval: "审批", approvalRequired: "需要工程审批", noProposal: "无需提出规格变更。",
     clarification: "需要澄清", modelUnavailable: "模型解读 unavailable",
-    high: "高", medium: "中", lower: "较低",
+    high: "高", medium: "中", lower: "较低", topThree: "请着重检查前三优先级 Factor 的公差范围。",
+    nominalReminder: "Adjusted Mean 偏离规格中心，请先优化 Factor nominal 值，再评估规格变更。",
   },
 };
 
@@ -153,6 +157,73 @@ function v3FactorRows(interpretation) {
   }));
 }
 
+function factorSourceKey(tableId, sourceRow) {
+  return JSON.stringify([tableId, sourceRow]);
+}
+
+function f0Recommendation(row) {
+  const recommendation = row.recommendation;
+  if (recommendation?.kind === "public") return {
+    band: `${numberText(recommendation.toleranceMin)}-${numberText(recommendation.toleranceMax)} ${recommendation.unit}`,
+    distribution: recommendation.distribution,
+    knowledge: `v1 · ${recommendation.capabilityEntryId}`,
+  };
+  if (recommendation?.kind === "internal-guidance") return {
+    band: `<= ${numberText(recommendation.maximumRecommendedTotalBand)} ${recommendation.unit}`,
+    distribution: NA,
+    knowledge: `internal-v1 · ${recommendation.matchedEntryId}`,
+  };
+  return { band: NA, distribution: NA, knowledge: row.f0InformationReason ?? NA };
+}
+
+function v3CompleteFactorRows(worksheet, interpretation) {
+  const interpreted = new Map(v3FactorRows(interpretation).map((factor) => [
+    factorSourceKey(factor.tableId, factor.sourceRow), factor,
+  ]));
+  const calculated = new Map(worksheet.f4Calculation.factors.map((factor) => [
+    factorSourceKey(factor.source.tableId, factor.source.sourceRow), factor,
+  ]));
+  return worksheet.f2Worksheet.rows.map((f2Row) => {
+    const key = factorSourceKey(f2Row.tableId, f2Row.sourceRow);
+    const modelRow = interpreted.get(key);
+    const calculation = calculated.get(key);
+    if (modelRow === undefined || calculation === undefined) failInvalid("complete Factor identity set");
+    return { f2Row, modelRow, calculation, f0: f0Recommendation(f2Row) };
+  });
+}
+
+function fixedEngineering(value, unit) {
+  return Number.isFinite(value) ? `${value.toFixed(3)} ${clean(unit)}` : NA;
+}
+
+function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog) {
+  const readyCount = f2Report.worksheets.filter(({ status }) => status === "ready").length;
+  return [
+    `## 1. ${catalog.document}`, "",
+    "| Field | Value |", "|---|---|",
+    row(["Source Workbook", clean(f2Report.workbook.fileName)]),
+    row(["Workbook Revision", clean(f2Report.workbook.revision, NA)]),
+    row(["Selected Worksheet Count", f2Report.worksheets.length]),
+    row(["Ready / Blocked Worksheet Count", `${readyCount} / ${f2Report.worksheets.length - readyCount}`]),
+    row(["Report Generated At", reportTimestamp(generatedAt)]),
+    row(["Reviewed By", reviewStatus(analysisContext)]),
+  ];
+}
+
+function renderF6V3WorkbookSummary(worksheets, catalog, language) {
+  const lines = [
+    `## 2. ${catalog.workbook}`, "",
+    "| Worksheet | Tolerance Loop Description | Key Finding | Disposition |", "|---|---|---|---|",
+  ];
+  for (const worksheet of worksheets) lines.push(row([
+    clean(worksheet.worksheetName),
+    clean(worksheet.f2Worksheet.toleranceLoopDescription),
+    worksheet.f2Worksheet.status === "ready" ? primaryFinding(worksheet) : blockedWorksheetFinding(worksheet, language),
+    dispositionText(worksheet.disposition),
+  ]));
+  return lines;
+}
+
 function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
   const prefix = `3-${ordinal}`;
   const [center, contributors, specifications] = worksheet.f6Worksheet.steps;
@@ -160,30 +231,84 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
   const imageLink = typeof relativePath === "string" && !relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)
     ? `[${catalog.openImage}](<${encodeURI(relativePath.replace(/\\/g, "/"))}>)`
     : NA;
-  const factors = v3FactorRows(interpretation);
+  const factors = v3CompleteFactorRows(worksheet, interpretation);
+  const calculation = worksheet.f4Calculation;
+  const unit = calculation.factors[0]?.unit ?? "unit";
+  const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
+  const statistical = projection.margins.statistical;
+  const worstCase = projection.margins.worstCase;
   const lines = [
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`, "",
     `## ${prefix}.1 ${catalog.image}`, "", imageLink, "",
     `## ${prefix}.2 ${catalog.factors}`, "",
-    `| ${catalog.factor} | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | ${catalog.distribution} | ${catalog.sigmaLevel} |`,
-    "|---|---|---|---|---:|---:|---:|---|---:|",
+    `| Ordinal | Row | Factor Description | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | Part Category | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | Long Term/Safety Factor | ${catalog.sigmaLevel} | ${catalog.distribution} | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability Library Result | Knowledge Library Recommendation |`,
+    "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|---|",
   ];
-  for (const factor of factors) {
-    lines.push(row([clean(factor.factorName), clean(factor.partName), clean(factor.drawingNumber), clean(factor.dimId),
-      numberText(factor.nominal), numberText(factor.upperTolerance), numberText(factor.lowerTolerance),
-      clean(factor.distribution), numberText(factor.sigmaLevel)]));
+  for (const { f2Row, modelRow, calculation: factor, f0 } of factors) {
+    const actual = f2Row.actualFields;
+    lines.push(row([
+      clean(f2Row.factorOrdinal?.value), f2Row.sourceRow, clean(modelRow.factorName), clean(actual.partName),
+      clean(actual.drawingNumber, "MISSING"), clean(actual.dimCharacteristicId, "MISSING"), clean(actual.partCategory),
+      engineeringText(factor.input.nominalValue, factor.unit), engineeringText(factor.input.upperTolerance, factor.unit),
+      engineeringText(factor.input.lowerTolerance, factor.unit), numberText(factor.input.longTermSafetyFactor),
+      numberText(factor.input.sigmaLevel), clean(factor.input.distribution), engineeringText(factor.mean, factor.unit),
+      engineeringText(factor.halfTolerance, factor.unit), engineeringText(factor.sigma, factor.unit),
+      percentText(factor.contribution), clean(actual.notes), clean(f2Row.capabilityStatus), clean(f0.knowledge),
+    ]));
   }
   lines.push("", `## ${prefix}.3 ${catalog.interpretation}`, "", clean(interpretation.imageTableInterpretation));
-  for (const factor of factors) lines.push(`- ${clean(factor.factorName)}: ${clean(factor.rowInterpretation)}`);
-  lines.push("", `## ${prefix}.4 ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
-  if (center.status === "offset") lines.push(`- Offset: ${numberText(center.offset)}. ${clean(center.interpretation)}`);
-  if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
-  lines.push("", `## ${prefix}.5 ${catalog.contributors}`, "",
-    `| ${catalog.rank} | ${catalog.factor} | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---|---|");
+  for (const { modelRow } of factors) lines.push(`- ${clean(modelRow.factorName)}: ${clean(modelRow.rowInterpretation)}`);
+  lines.push(
+    "", `## ${prefix}.4 ${catalog.results}`, "",
+    "| Requirement | Value |", "|---|---:|",
+    row(["Design Nominal", engineeringText(calculation.system.designNominal, unit)]),
+    row(["LSL", engineeringText(calculation.capability.lowerSpecLimit, unit)]),
+    row(["USL", engineeringText(calculation.capability.upperSpecLimit, unit)]),
+    row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
+    row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
+    "", "| Metric | Lower | Upper | Minimum Margin | Result |", "|---|---:|---:|---:|---|",
+    row(["Statistical Range", engineeringText(statistical.lowerBound, unit), engineeringText(statistical.upperBound, unit), engineeringText(statistical.minimumMargin, unit), statistical.minimumMargin >= 0 ? "PASS" : "FAIL"]),
+    row(["Worst-Case Range", engineeringText(worstCase.lowerBound, unit), engineeringText(worstCase.upperBound, unit), engineeringText(worstCase.minimumMargin, unit), worstCase.minimumMargin >= 0 ? "PASS" : "FAIL"]),
+    "", "| Capability Metric | Value | Result |", "|---|---:|---|",
+    row(["Predictive Cp", numberText(calculation.capability.cp), clean(calculation.capability.cpStatus)]),
+    row(["Predictive CpkL", numberText(calculation.capability.lowerCpk), clean(calculation.capability.lowerCpkStatus)]),
+    row(["Predictive CpkU", numberText(calculation.capability.upperCpk), clean(calculation.capability.upperCpkStatus)]),
+    row(["Predictive Cpk", numberText(calculation.capability.cpk), clean(calculation.capability.status)]),
+    row(["Predicted Yield", percentText(calculation.capability.yield), NA]),
+    row(["Predicted DPM", numberText(calculation.capability.totalDpm), NA]),
+    "", `- Mean Response: ${engineeringText(calculation.system.mean, unit)}`,
+    `- Mean Shift: ${engineeringText(calculation.system.additionalMeanShift, unit)}`,
+    `- RSS One Sigma: ${engineeringText(calculation.system.rssSigma, unit)}`,
+    "", "| Rank | Factor | One Sigma | Variance Contribution |", "|---:|---|---:|---:|",
+  );
   for (const item of contributors.priorities) {
-    lines.push(row([item.rank, clean(item.factor.factorName), v3PriorityLabel(item.rank, contributors.priorities.length, catalog), clean(item.guidance)]));
+    const factor = calculation.factors.find(({ source }) => source.tableId === item.factor.tableId && source.sourceRow === item.factor.sourceRow);
+    if (factor === undefined) failInvalid("contributor Factor identity");
+    lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution)]));
   }
-  lines.push("", `## ${prefix}.6 ${catalog.specifications}`, "");
+  lines.push("", `## ${prefix}.5 ${catalog.f0Guidance}`, "",
+    "| Factor | Capability Library Result | Recommended Tolerance Band or Range | Recommended Distribution | Knowledge Recommendation |",
+    "|---|---|---|---|---|");
+  for (const { f2Row, modelRow, f0 } of factors) lines.push(row([
+    clean(modelRow.factorName), clean(f2Row.capabilityStatus), clean(f0.band), clean(f0.distribution), clean(f0.knowledge),
+  ]));
+  lines.push("", `## ${prefix}.6 ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
+  if (center.status !== "clarification_required") {
+    lines.push(`- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
+      `- Specification Center: ${fixedEngineering(center.specificationMidpoint, unit)}`,
+      `- Offset: ${fixedEngineering(center.offset, unit)}`);
+  }
+  if (center.status === "offset") lines.push(`- ${catalog.nominalReminder}`, `- ${clean(center.interpretation)}`);
+  if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
+  lines.push("", `## ${prefix}.7 ${catalog.contributors}`, "",
+    `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---:|---:|---|---|");
+  for (const item of contributors.priorities) {
+    const factor = calculation.factors.find(({ source }) => source.tableId === item.factor.tableId && source.sourceRow === item.factor.sourceRow);
+    if (factor === undefined) failInvalid("contributor Factor identity");
+    lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution),
+      v3PriorityLabel(item.rank, contributors.priorities.length, catalog), clean(item.guidance)]));
+  }
+  lines.push("", catalog.topThree, "", `## ${prefix}.8 ${catalog.specifications}`, "");
   if (specifications.proposals.length === 0) lines.push(catalog.noProposal);
   else {
     lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
@@ -195,34 +320,41 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
   return lines;
 }
 
-function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog) {
+function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog, language) {
   const prefix = `3-${ordinal}`;
   return [
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`,
     "",
     `- Status: FAIL`,
-    `- ${clean(primaryFinding(worksheet))}`,
+    `- ${clean(blockedWorksheetFinding(worksheet, language))}`,
     `- ${catalog.modelUnavailable}`,
     `- Required Action: ${clean(requiredAction(worksheet))}`,
   ];
 }
 
-function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, generatedAt }) {
+function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, generatedAt }) {
   if (f6Optimization.runStatus !== "COMPLETED" || f6Optimization.worksheets.some(({ runStatus }) => runStatus !== "COMPLETED")) {
     failInvalid("incomplete F6 optimization");
   }
   const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
   const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
-  const catalog = F6_V3_REPORT_CATALOG[f6Optimization.interactionLanguage.uiCatalogLanguage];
+  const language = f6Optimization.interactionLanguage.uiCatalogLanguage;
+  const catalog = F6_V3_REPORT_CATALOG[language];
   const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = { workbookDisposition, worksheetDispositions };
-  const markdown = [`# ${catalog.title}`, "", `## 1. ${catalog.workbook}`, "", `- Workbook: ${clean(f2Report.workbook.fileName)}`, `- Worksheets: ${worksheets.length}`, `- Generated At: ${reportTimestamp(generatedAt)}`];
+  const markdown = [
+    `# ${catalog.title}`,
+    "",
+    ...renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog),
+    "",
+    ...renderF6V3WorkbookSummary(worksheets, catalog, language),
+  ];
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
     ...(worksheet.f2Worksheet.status === "ready"
       ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog)
-      : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog)),
+      : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
   ));
   const projection = {
     schemaVersion: "ta-engineering-report-projection-v1", title: catalog.title, workbookDisposition, worksheetDispositions,
@@ -235,7 +367,9 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
         toleranceLoopDescription: clean(worksheet.f2Worksheet.toleranceLoopDescription, NA),
         disposition: worksheet.disposition,
         requiredAction: requiredAction(worksheet),
-        findings: [primaryFinding(worksheet)],
+        findings: [worksheet.f2Worksheet.status === "ready"
+          ? primaryFinding(worksheet)
+          : blockedWorksheetFinding(worksheet, language)],
         assumptions: [],
         clarifications: [],
         gatingEvidenceReferences: worksheet.f2Worksheet.status === "ready"
@@ -597,6 +731,106 @@ function primaryFinding(context) {
   if (context.disposition === "INCOMPLETE") return "计算已完成，但 CpkL、CpkU 或规格范围未达到 worksheet 要求。";
   if (context.disposition === "CONDITIONAL_PASS") return "数值达到要求，但仍需补齐 Drawing Number、DIM ID 或完成图像与工程复核。";
   return INSUFFICIENT_EVIDENCE;
+}
+
+const BLOCKED_FINDING_CATALOG = {
+  en: {
+    fields: {
+      factorName: "Factor Description",
+      nominalValue: "Design Nominal",
+      upperTolerance: "+ Tolerance",
+      lowerTolerance: "- Tolerance",
+      unit: "Unit",
+      distribution: "Distribution",
+      longTermSafetyFactor: "Long Term/Safety Factor",
+      partName: "Part Name",
+      partCategory: "Part Category",
+    },
+    specificationFields: {
+      designNominal: "Design Nominal",
+      lowerSpecLimit: "Lower Spec Limit",
+      upperSpecLimit: "Upper Spec Limit",
+      targetSigmaLevel: "Target Sigma Level",
+    },
+    calculationIssues: {
+      factor_tables_missing: "Factor table is missing",
+      factor_table_has_no_rows: "Factor table has no active rows",
+      factor_ordinal_missing: "Factor ordinal is missing",
+      factor_ordinal_duplicate: "Factor ordinal is duplicated",
+      factor_tolerance_range_invalid: "Factor tolerance range is invalid",
+      long_term_safety_factor_invalid: "Long Term/Safety Factor is invalid",
+      sigma_level_invalid: "Sigma Level is invalid",
+      f4_calculation_not_possible: "A valid TA calculation cannot be formed",
+    },
+    row: "Row",
+    rows: "Rows",
+    rowJoiner: " and ",
+    missing: "is missing.",
+    imageMissing: "Tolerance path image is missing.",
+    generic: "The worksheet is blocked by invalid required input, image, or calculation evidence.",
+  },
+  zh: {
+    fields: {
+      factorName: "Factor Description",
+      nominalValue: "Design Nominal",
+      upperTolerance: "+ Tolerance",
+      lowerTolerance: "- Tolerance",
+      unit: "Unit",
+      distribution: "Distribution",
+      longTermSafetyFactor: "Long Term/Safety Factor",
+      partName: "Part Name",
+      partCategory: "Part Category",
+    },
+    specificationFields: {
+      designNominal: "Design Nominal",
+      lowerSpecLimit: "Lower Spec Limit",
+      upperSpecLimit: "Upper Spec Limit",
+      targetSigmaLevel: "Target Sigma Level",
+    },
+    calculationIssues: {
+      factor_tables_missing: "缺少 Factor 表",
+      factor_table_has_no_rows: "Factor 表没有有效行",
+      factor_ordinal_missing: "缺少 Factor 序号",
+      factor_ordinal_duplicate: "Factor 序号重复",
+      factor_tolerance_range_invalid: "Factor 公差范围无效",
+      long_term_safety_factor_invalid: "Long Term/Safety Factor 无效",
+      sigma_level_invalid: "Sigma Level 无效",
+      f4_calculation_not_possible: "无法形成有效的 TA 计算",
+    },
+    row: "Row",
+    rows: "Rows",
+    rowJoiner: "、",
+    missing: "缺失。",
+    imageMissing: "缺少公差路径图片。",
+    generic: "worksheet 因必填输入、图片或计算证据无效而被阻断。",
+  },
+};
+
+function formatSourceRows(sourceRows, catalog) {
+  const rows = [...new Set(sourceRows)].sort((left, right) => left - right);
+  if (rows.length === 0) return "";
+  return `${rows.length === 1 ? catalog.row : catalog.rows} ${rows.join(catalog.rowJoiner)}: `;
+}
+
+function blockedWorksheetFinding(context, language) {
+  const catalog = BLOCKED_FINDING_CATALOG[language] ?? BLOCKED_FINDING_CATALOG.en;
+  const findings = [];
+  for (const item of context.f2Worksheet.missingFieldSummary ?? []) {
+    if (item.field === "tolerancePathImage") continue;
+    const field = catalog.fields[item.field] ?? clean(item.field);
+    findings.push(`${formatSourceRows(item.sourceRows, catalog)}${field} ${catalog.missing}`);
+  }
+  for (const issue of context.f2Worksheet.systemSpecificationIssues ?? []) {
+    const field = catalog.specificationFields[issue.field] ?? clean(issue.field);
+    findings.push(`${field}: ${clean(issue.reasonCode)}.`);
+  }
+  for (const issue of context.f2Worksheet.f4CalculabilityIssues ?? []) {
+    const message = catalog.calculationIssues[issue.reasonCode] ?? clean(issue.reasonCode);
+    const prefix = issue.sourceRow === undefined ? "" : `${catalog.row} ${issue.sourceRow}: `;
+    findings.push(`${prefix}${message}.`);
+  }
+  if (context.f2Worksheet.tolerancePathImageStatus !== "available") findings.push(catalog.imageMissing);
+  return findings.length === 0 ? catalog.generic : findings.join(" ");
 }
 
 function reportTimestamp(value) {
@@ -1367,6 +1601,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
       f5Report,
       f6Optimization,
       modelInterpretation: requiredMultimodalV3,
+      analysisContext,
       generatedAt: options.generatedAt ?? input.generatedAt,
     });
   }

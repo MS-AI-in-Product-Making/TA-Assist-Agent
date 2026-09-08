@@ -80,7 +80,7 @@ function setup({ status = "completed" } = {}) {
       f4Reference: { artifact: "f4.json", contentHash: HASH },
       f5Reference: { artifact: "f5.json", contentHash: HASH },
       multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
-      reportScope: { worksheetNames: ["Analysis-A"] },
+      reportScope: { worksheetNames: ["Analysis-A", "Blocked-A"], blockedWorksheetNames: ["Blocked-A"] },
     },
   };
   const reportSummary = {
@@ -717,17 +717,24 @@ describe("F6 real artifact full flow", () => {
     });
   });
 
-  it("fails closed without final report artifacts when any selected F2 worksheet is blocked", () => {
+  it("publishes an evidence-only final report section when an F2 worksheet is blocked", () => {
     const bundle = createRealBundle({ blockedWorksheetNames: ["Blocked-A"] });
     const { result, runRoot } = runRealF6(bundle, "mixed-ready-blocked");
 
-    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
-    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
-    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
-      status: "failed",
-      reasonCode: "report_failed",
-      artifacts: {},
-    });
+    expect(result.status).toBe("completed");
+    expect(readdirSync(runRoot).sort()).toEqual([
+      "Feature6-Optimization.json",
+      "Feature6-Optimization.md",
+      "Feature6-Report.md",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    const report = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    expect(report).toContain("Worksheet: Blocked-A");
+    expect(report).toContain("Tolerance path image is missing.");
+    expect(report).toContain("Model interpretation unavailable");
+    expect(summary.reportSummary.workbookDisposition).toBe("FAIL");
   });
 
   it("publishes valid hashes and conservative results when optional evidence is absent", () => {
