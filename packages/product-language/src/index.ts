@@ -21,6 +21,24 @@ export {
 export {
 	inputMetadata,
 } from "./input-metadata.js";
+export {
+	buildF7EngineeringNarrative,
+} from "./f7-engineering-narrative.js";
 export { assertNoProhibitedProductIdentifiers, createProductRunReference, productSafeNameV1 } from "./product-identifiers.js";
+export type {
+	BuildF7EngineeringNarrativeInput,
+	F7EngineeringNarrative,
+	F7NarrativeActionItem,
+	F7NarrativeContributor,
+	F7NarrativeEvidenceBasis,
+	F7NarrativeJudgmentStatus,
+	F7NarrativeKnowledgeBaseVersion,
+	F7NarrativeMethod,
+	F7NarrativeOption,
+	F7NarrativeResultJudgment,
+	F7NarrativeRootCauseItem,
+	F7NarrativeRule,
+	F7NarrativeSpecificationSide,
+} from "./f7-engineering-narrative.js";
 export { classifyTopLevelWorkflowIntent, PRODUCT_WORKFLOWS, productWorkflowLabel } from "./workflow-intent.js";
 export type { ProductWorkflowId, TopLevelWorkflowIntent } from "./workflow-intent.js";

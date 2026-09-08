@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./f7-engineering-narrative": {
+      "types": "./dist/f7-engineering-narrative.d.ts",
+      "import": "./dist/f7-engineering-narrative.js"
+    },
     "./ta-workbook-language": {
       "types": "./dist/ta-workbook-language.d.ts",
       "import": "./dist/ta-workbook-language.js"
