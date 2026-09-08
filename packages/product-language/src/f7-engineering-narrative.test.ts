@@ -6,6 +6,33 @@ import {
 } from "./f7-engineering-narrative.js";
 import { buildF7EngineeringNarrative as buildFromRootExport } from "./index.js";
 
+function nextRepresentableUp(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  if (Object.is(value, -0)) return Number.MIN_VALUE;
+  if (value === 0) return Number.MIN_VALUE;
+
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, value, false);
+  let bits = view.getBigUint64(0, false);
+  bits += value > 0 ? 1n : -1n;
+  view.setBigUint64(0, bits, false);
+  return view.getFloat64(0, false);
+}
+
+function nextRepresentableDown(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  if (value === 0) return -Number.MIN_VALUE;
+
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, value, false);
+  let bits = view.getBigUint64(0, false);
+  bits += value > 0 ? -1n : 1n;
+  view.setBigUint64(0, bits, false);
+  return view.getFloat64(0, false);
+}
+
 function combinedCauseInput(): BuildF7EngineeringNarrativeInput {
   return {
     evidenceBasis: "assumption",
@@ -289,6 +316,48 @@ describe("buildF7EngineeringNarrative", () => {
     );
   });
 
+  it("keeps scientific negative endpoints distinguishable for 1e-8 deltas and adjacent representable values", () => {
+    const targetCpk = 1e-8;
+    const cpk = nextRepresentableDown(targetCpk);
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk,
+      targetCpk,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("below-target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(cpk - targetCpk, 30);
+    expect(narrative.resultJudgment.judgment).toContain("below the resolved target");
+    expect(narrative.resultJudgment.judgment).toContain("9.999999999999999e-9");
+    expect(narrative.resultJudgment.judgment).toContain("1e-8");
+    expect(narrative.resultJudgment.judgment).not.toContain("Cpk 1e-8 is");
+  });
+
+  it("keeps scientific positive endpoints distinguishable for +1e-8 deltas and adjacent representable values", () => {
+    const targetCpk = 1e-8;
+    const cpk = nextRepresentableUp(targetCpk);
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk,
+      targetCpk,
+      cp: cpk,
+      mean: 0,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    });
+
+    expect(narrative.resultJudgment.status).toBe("meets-target");
+    expect(narrative.resultJudgment.margin).toBeCloseTo(cpk - targetCpk, 30);
+    expect(narrative.resultJudgment.judgment).toContain("above the resolved target");
+    expect(narrative.resultJudgment.judgment).toContain("1.0000000000000002e-8");
+    expect(narrative.resultJudgment.judgment).toContain("1e-8");
+    expect(narrative.resultJudgment.judgment).not.toContain("Cpk 1e-8 is");
+  });
+
   it("treats equal mean-to-limit distances as balanced within scaled tolerance", () => {
     const narrative = buildF7EngineeringNarrative({
       ...combinedCauseInput(),
@@ -359,6 +428,30 @@ describe("buildF7EngineeringNarrative", () => {
         narrative: "Evidence is incomplete for this matched hypothesis.",
       }),
     ]);
+  });
+
+  it("throws a deterministic RangeError when result margin arithmetic is non-finite", () => {
+    expect(() => buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: Number.MAX_VALUE,
+      targetCpk: -Number.MAX_VALUE,
+      rootCauseRules: [],
+      controlledOptions: [],
+      contributors: [],
+    })).toThrowError(new RangeError("Derived narrative value resultJudgment.margin must be finite."));
+  });
+
+  it("throws a deterministic RangeError when RC quantitative differences become non-finite", () => {
+    expect(() => buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      cpk: -Number.MAX_VALUE,
+      targetCpk: 1.33,
+      cp: Number.MAX_VALUE,
+      rootCauseRules: [
+        { ruleId: "root-cause-excessive-variation", title: "RC01 Excessive variation hypothesis" },
+        { ruleId: "root-cause-mean-shift", title: "RC02 Mean shift hypothesis" },
+      ],
+    })).toThrowError(new RangeError("Derived narrative value rootCauseAnalysis.cpCpkGap must be finite."));
   });
 
   it("preserves raw quantitative values and keeps the output recursively frozen", () => {

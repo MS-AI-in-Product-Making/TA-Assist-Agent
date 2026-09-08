@@ -87,7 +87,7 @@ const BALANCED_DISTANCE_SCALE = Number.EPSILON * 32;
 const DEFAULT_DISPLAY_DECIMALS = 2;
 const MAX_ADAPTIVE_DISPLAY_DECIMALS = 6;
 const MAX_SHARED_FIXED_DISPLAY_DECIMALS = 7;
-const MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS = 12;
+const MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS = 17;
 
 interface NarrativeDisplayPlan {
   readonly notation: "fixed" | "scientific";
@@ -105,6 +105,13 @@ function assertOptionalFiniteNumber(name: string, value: number | undefined): vo
   if (value !== undefined) {
     assertFiniteNumber(name, value);
   }
+}
+
+function assertFiniteDerivedNumber(name: string, value: number): number {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`Derived narrative value ${name} must be finite.`);
+  }
+  return value;
 }
 
 function sortByReadingOrder<T extends { readonly ruleId: string }>(items: readonly T[]): T[] {
@@ -130,8 +137,8 @@ function formatNumber(value: number): string {
   return rounded.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
-function formatScientificNumber(value: number): string {
-  const normalized = Number(value.toPrecision(MAX_ADAPTIVE_DISPLAY_DECIMALS));
+function formatScientificNumber(value: number, significantDigits = MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS): string {
+  const normalized = Number(value.toPrecision(significantDigits));
   return normalized
     .toExponential()
     .replace(/\.0+e/, "e")
@@ -229,7 +236,7 @@ function formatNarrativeNumber(value: number, plan: NarrativeDisplayPlan): strin
     return formatDisplayNumber(value, plan.decimals ?? DEFAULT_DISPLAY_DECIMALS);
   }
 
-  return formatScientificNumber(Number(value.toPrecision(plan.significantDigits ?? MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS)));
+  return formatScientificNumber(value, plan.significantDigits ?? MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS);
 }
 
 function formatDeltaNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
@@ -239,7 +246,7 @@ function formatDeltaNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): 
 
   const boundedDecimals = Math.min(Math.max(decimals, DEFAULT_DISPLAY_DECIMALS), MAX_ADAPTIVE_DISPLAY_DECIMALS);
   if (roundToDisplayDecimals(Math.abs(value), boundedDecimals) === 0) {
-    return formatScientificNumber(value);
+    return formatScientificNumber(value, Math.max(MAX_ADAPTIVE_DISPLAY_DECIMALS, DEFAULT_DISPLAY_DECIMALS + 1));
   }
 
   return formatDisplayNumber(value, boundedDecimals);
@@ -281,9 +288,12 @@ function resolveNearestSpecificationSide(
     return undefined;
   }
 
-  const lowerDistance = mean - lowerSpecLimit;
-  const upperDistance = upperSpecLimit - mean;
-  const tolerance = BALANCED_DISTANCE_SCALE * Math.max(1, Math.abs(mean), Math.abs(lowerSpecLimit), Math.abs(upperSpecLimit), Math.abs(lowerDistance), Math.abs(upperDistance));
+  const lowerDistance = assertFiniteDerivedNumber("resultJudgment.lowerDistance", mean - lowerSpecLimit);
+  const upperDistance = assertFiniteDerivedNumber("resultJudgment.upperDistance", upperSpecLimit - mean);
+  const tolerance = assertFiniteDerivedNumber(
+    "resultJudgment.balanceTolerance",
+    BALANCED_DISTANCE_SCALE * Math.max(1, Math.abs(mean), Math.abs(lowerSpecLimit), Math.abs(upperSpecLimit), Math.abs(lowerDistance), Math.abs(upperDistance)),
+  );
   if (Math.abs(lowerDistance - upperDistance) <= tolerance) {
     return "balanced";
   }
@@ -302,7 +312,7 @@ function buildMeanShiftDirectionNarrative(
 }
 
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
-  const rawMargin = input.cpk - input.targetCpk;
+  const rawMargin = assertFiniteDerivedNumber("resultJudgment.margin", input.cpk - input.targetCpk);
   const margin = rawMargin;
   const displayPlan = resolveNarrativeDisplayPlan([input.cpk, input.targetCpk, rawMargin]);
   const status: F7NarrativeJudgmentStatus = rawMargin >= 0 ? "meets-target" : "below-target";
@@ -338,7 +348,7 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     };
   }
 
-  const cpTargetGap = input.cp - input.targetCpk;
+  const cpTargetGap = assertFiniteDerivedNumber("rootCauseAnalysis.cpTargetGap", input.cp - input.targetCpk);
   return {
     ruleId: rule.ruleId,
     title: rule.title,
@@ -369,9 +379,12 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     };
   }
 
-  const cpCpkGap = input.cp - input.cpk;
-  const specificationMidpoint = (input.lowerSpecLimit + input.upperSpecLimit) / 2;
-  const meanOffset = input.mean - specificationMidpoint;
+  const cpCpkGap = assertFiniteDerivedNumber("rootCauseAnalysis.cpCpkGap", input.cp - input.cpk);
+  const specificationMidpoint = assertFiniteDerivedNumber(
+    "rootCauseAnalysis.specificationMidpoint",
+    (input.lowerSpecLimit + input.upperSpecLimit) / 2,
+  );
+  const meanOffset = assertFiniteDerivedNumber("rootCauseAnalysis.meanOffset", input.mean - specificationMidpoint);
   const direction = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   if (direction === undefined) {
     return {
