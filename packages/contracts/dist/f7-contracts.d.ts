@@ -1223,24 +1223,24 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
         upper: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     }, {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     }>, {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     }, {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     }>;
     pValue: z.ZodNumber;
     replicates: z.ZodLiteral<10000>;
@@ -1258,9 +1258,9 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     extremeReplicateCount: number;
     confidenceInterval: {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     };
     pValue: number;
     replicates: 10000;
@@ -1277,9 +1277,9 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     extremeReplicateCount: number;
     confidenceInterval: {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     };
     pValue: number;
     replicates: 10000;
@@ -1296,9 +1296,9 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     extremeReplicateCount: number;
     confidenceInterval: {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     };
     pValue: number;
     replicates: 10000;
@@ -1315,9 +1315,9 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     extremeReplicateCount: number;
     confidenceInterval: {
         method: "wilson_score";
-        level: 0.95;
         lower: number;
         upper: number;
+        level: 0.95;
     };
     pValue: number;
     replicates: 10000;
@@ -1368,24 +1368,24 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
             upper: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         }, {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         }>, {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         }, {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         }>;
         pValue: z.ZodNumber;
         replicates: z.ZodLiteral<10000>;
@@ -1403,9 +1403,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1422,9 +1422,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1441,9 +1441,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1460,9 +1460,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1498,9 +1498,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1536,9 +1536,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1574,9 +1574,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1612,9 +1612,9 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         extremeReplicateCount: number;
         confidenceInterval: {
             method: "wilson_score";
-            level: 0.95;
             lower: number;
             upper: number;
+            level: 0.95;
         };
         pValue: number;
         replicates: 10000;
@@ -1754,24 +1754,24 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
                 upper: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             }, {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             }>, {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             }, {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             }>;
             pValue: z.ZodNumber;
             replicates: z.ZodLiteral<10000>;
@@ -1789,9 +1789,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1808,9 +1808,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1827,9 +1827,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1846,9 +1846,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1884,9 +1884,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1922,9 +1922,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1960,9 +1960,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -1998,9 +1998,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -2116,9 +2116,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -2181,9 +2181,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -2246,9 +2246,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -2311,9 +2311,9 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             extremeReplicateCount: number;
             confidenceInterval: {
                 method: "wilson_score";
-                level: 0.95;
                 lower: number;
                 upper: number;
+                level: 0.95;
             };
             pValue: number;
             replicates: 10000;
@@ -7362,24 +7362,24 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                         upper: z.ZodNumber;
                     }, "strict", z.ZodTypeAny, {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     }, {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     }>, {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     }, {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     }>;
                     pValue: z.ZodNumber;
                     replicates: z.ZodLiteral<10000>;
@@ -7397,9 +7397,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7416,9 +7416,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7435,9 +7435,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7454,9 +7454,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7492,9 +7492,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7530,9 +7530,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7568,9 +7568,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7606,9 +7606,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7724,9 +7724,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7789,9 +7789,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7854,9 +7854,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -7919,9 +7919,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -8205,9 +8205,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -8481,9 +8481,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -8757,9 +8757,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -9033,9 +9033,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -9770,9 +9770,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -10296,9 +10296,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -10822,9 +10822,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -11348,9 +11348,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     extremeReplicateCount: number;
                     confidenceInterval: {
                         method: "wilson_score";
-                        level: 0.95;
                         lower: number;
                         upper: number;
+                        level: 0.95;
                     };
                     pValue: number;
                     replicates: 10000;
@@ -13850,24 +13850,24 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                             upper: z.ZodNumber;
                         }, "strict", z.ZodTypeAny, {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         }, {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         }>, {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         }, {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         }>;
                         pValue: z.ZodNumber;
                         replicates: z.ZodLiteral<10000>;
@@ -13885,9 +13885,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -13904,9 +13904,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -13923,9 +13923,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -13942,9 +13942,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -13980,9 +13980,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14018,9 +14018,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14056,9 +14056,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14094,9 +14094,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14212,9 +14212,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14277,9 +14277,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14342,9 +14342,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14407,9 +14407,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14693,9 +14693,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -14969,9 +14969,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -15245,9 +15245,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -15521,9 +15521,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -16258,9 +16258,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -16784,9 +16784,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -17310,9 +17310,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -17836,9 +17836,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -18366,9 +18366,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
@@ -18896,9 +18896,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         extremeReplicateCount: number;
                         confidenceInterval: {
                             method: "wilson_score";
-                            level: 0.95;
                             lower: number;
                             upper: number;
+                            level: 0.95;
                         };
                         pValue: number;
                         replicates: 10000;
