@@ -182,29 +182,6 @@ function roundToSignificantDigits(value: number, significantDigits: number): num
   );
 }
 
-function resolveAdaptiveDisplayDecimals(values: readonly number[]): number {
-  for (let decimals = DEFAULT_DISPLAY_DECIMALS; decimals <= MAX_ADAPTIVE_DISPLAY_DECIMALS; decimals += 1) {
-    const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToDisplayDecimals(Math.abs(value), decimals) !== 0);
-    if (!nonZeroRelationPreserved) {
-      continue;
-    }
-
-    const [left, right] = values;
-    if (
-      left !== undefined
-      && right !== undefined
-      && left !== right
-      && roundToDisplayDecimals(left, decimals) === roundToDisplayDecimals(right, decimals)
-    ) {
-      continue;
-    }
-
-    return decimals;
-  }
-
-  return MAX_ADAPTIVE_DISPLAY_DECIMALS;
-}
-
 function resolveNarrativeDisplayPlan(values: readonly number[]): NarrativeDisplayPlan {
   for (let decimals = DEFAULT_DISPLAY_DECIMALS; decimals <= MAX_SHARED_FIXED_DISPLAY_DECIMALS; decimals += 1) {
     const nonZeroRelationPreserved = values.every((value) => value === 0 || roundToDisplayDecimals(Math.abs(value), decimals) !== 0);
