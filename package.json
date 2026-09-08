@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "environment:bootstrap": "pwsh -NoProfile -File scripts/bootstrap-environment.ps1",
     "build": "tsc -b",
     "build:beta": "npm --workspace apps/vscode-extension run build:beta",
     "package:vsix": "npm --workspace apps/vscode-extension run package:vsix",

@@ -13,6 +13,8 @@ Use this as the primary entry for a complete governed TA workbook analysis.
 
 Before any acknowledgement, plan, skill-loading update, or other user-visible text, determine and lock the interaction language from the natural language of the request that starts this workflow. A naturally English request locks English, and a naturally Chinese request locks Chinese; an explicit language request overrides that natural-language detection. Do not inherit the VS Code, host, or UI locale when the workflow-start request has a clear language. Use the locked language for the first response and every later response, question, option label, progress update, action description, and final result.
 
+**REQUIRED SUB-SKILL: Use environment-bootstrap.** Prepare and verify the repository environment before starting the governed workbook flow. Recover safe dependency and build-tool failures autonomously, then continue the original request without requiring the user to repeat it.
+
 **REQUIRED SUB-SKILL: Use design-optimization.** Follow that Skill's workbook entry mode without omitting, merging, or reordering its governance gates.
 
 ## Entry
