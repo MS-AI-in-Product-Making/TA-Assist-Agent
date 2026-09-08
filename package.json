@@ -37,6 +37,7 @@
     "workflow:ta-calculation": "node scripts/run-f4-full-validation.mjs",
     "workflow:f5": "node scripts/run-f5-full-validation.mjs",
     "workflow:result-interpretation": "node scripts/run-f5-full-validation.mjs",
+    "workflow:f6:model-interpretation": "node scripts/f6-model-interpretation-materializer.mjs",
     "workflow:f6": "node scripts/run-f6-full-validation.mjs",
     "workflow:design-optimization": "node scripts/run-f6-full-validation.mjs"
   },

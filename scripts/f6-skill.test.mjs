@@ -13,7 +13,8 @@ const allowedCommands = [
   "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
-  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--model-interpretation <artifact-path>] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
+  "npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact>",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -103,6 +104,8 @@ describe("Design Optimization skill contract", () => {
   it("allows only the governed F1 through F6 workflow command shapes", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(commandLines(internal)).toEqual(allowedCommands);
+    expect(internal).toContain("Pass the workflow-locked language tag with `--language <locked-language-tag>`");
+    expect(internal).toContain("Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`");
     expect(internal).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(internal).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
   });
@@ -155,7 +158,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
     expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
     expect(internal).toContain("must not be combined with the F3 ADO confirmation");
-    expect(internal).toContain("f6-optimization-v2");
+    expect(internal).toContain("f6-optimization-v3");
     expect(internal).not.toContain("reduce_top_contributor_20");
   });
 
@@ -202,10 +205,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("hallucinations, label mismatches, or omissions");
     expect(internal).toContain("must be reviewed by ME");
     expect(internal).toContain("Compare explicit visible arrow direction and label mapping with linked structured Factor descriptions and nominal signs");
-    expect(internal).toContain("Section 3.3 contains only the verified tolerance-path image and its link; do not render the F5 model reference interpretation there");
-    expect(internal).toContain("Section 4 consumes only accepted W8 Markdown and deterministic calculation claim substitution");
-    expect(internal).toContain("prominently summarize each `indicated_conflict` with its `textBasis`, linked Factor names, and required ME review");
-    expect(internal).toContain("Exclude `datum_chain` and `stack_start` from the user-facing summary while retaining them in governed internal artifacts");
+    expect(internal).toContain("Each worksheet's `3-N.1` section contains only the verified tolerance-path image and its link");
+    expect(internal).toContain("Section 3-N.3 consumes only the accepted W8 multimodal v3 interpretation");
     expect(internal).toContain("Never hard-code screenshot-specific labels, values, loads, or conclusions into the report template");
     expect(internal).toContain("Feature6-Report.md");
     expect(internal).toContain("not_evaluated");
@@ -228,7 +229,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("No other automatic percentage scenario is permitted");
   });
 
-  it("governs freeform model interpretation as an immutable pre-F6 artifact", () => {
+  it("governs required multimodal v3 interpretation as an immutable pre-F6 artifact", () => {
     const { internal } = splitSkillSections(readSkill());
     expectOrdered(internal, [
       "### Phase W7 - Run and validate F5",
@@ -238,26 +239,23 @@ describe("Design Optimization skill contract", () => {
       "### Phase W9 - Run and validate F6",
     ]);
     for (const marker of [
-      "f6-model-interpretation-v2",
+      "f5-multimodal-artifact-v3",
       "test/demo-output/f6-model-interpretations/<workbook-content-hash>/<system-generated-uuid>/Feature6-Model-Interpretation.json",
-      "f6ModelInterpretationArtifactSchema",
+      "f5MultimodalArtifactV3Schema",
+      "validateF5MultimodalArtifactV3",
       "each selected worksheet independently",
       "all active Factor rows",
-      "validated F4 calculation",
-      "validated F5 evidence",
-      "optimizationAssessment",
-      "factor_nominal",
-      "system_mean_shift",
-      "system_specification",
-      "factor_tolerance",
-      "must not fill governed numeric values",
-      "calculation claim placeholders",
+      "complete ordered Factor set",
+      "exactly one field-identical row mapping",
+      "f6-model-interpretation-response-v1",
+      "workflow:f6:model-interpretation",
+      "Never manually assemble the complete v3 artifact",
+      "required input",
       "must be reviewed by ME",
       "hallucinations, label mismatches, or omissions",
-      "soft-rejected",
-      "模型解读 unavailable",
       "--model-interpretation <artifact-path>",
     ]) expect(internal).toContain(marker);
+    expect(internal).not.toContain("f6-model-interpretation-v2");
     expect(internal).toContain("Never edit, overwrite, append to, repair, or reuse a model interpretation target");
     expect(internal).toContain("does not require an additional caller confirmation");
     expect(internal).not.toContain("Replace the former Reference Traceability appendix with a per-worksheet TA summary");
@@ -269,7 +267,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Entry mode 1 - TA workbook");
     expect(internal).toContain("Entry mode 2 - Existing F6 artifact");
     expect(internal).toContain("Feature6-Report.md");
-    expect(internal).toContain("five-file");
+    expect(internal).toContain("four-file");
+    expect(internal).not.toContain("Feature6-Optimization.md");
     expect(internal).toContain("final report link");
     expect(internal).toContain("reportSummary");
     expect(internal).not.toContain(deprecatedF6ReportArtifactJsonName);
