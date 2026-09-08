@@ -174,8 +174,8 @@ describe("F7 report narrative contracts", () => {
         rootCauseAnalysis: [{
           ruleId: "root-cause-mean-shift",
           title: "Mean shift",
-          hypothesisStatus: "hypothesis",
-          narrative: "Cp exceeds Cpk and indicates a centering-loss hypothesis that requires validation.",
+          hypothesis: true,
+          explanation: "Cp exceeds Cpk and indicates a centering-loss hypothesis that requires validation.",
           completeEvidence: true,
           quantitativeEvidence: {
             cpCpkGap: 0.26,
@@ -207,6 +207,26 @@ describe("F7 report narrative contracts", () => {
     expect(contractExports.f7ReportAnalysisSchema.safeParse({
       ...analysis,
       narrative: { ...analysis.narrative, extra: true },
+    }).success).toBe(false);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: {
+        ...analysis.narrative,
+        rootCauseAnalysis: [{
+          ...analysis.narrative.rootCauseAnalysis[0],
+          hypothesisStatus: "hypothesis",
+        }],
+      },
+    }).success).toBe(false);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: {
+        ...analysis.narrative,
+        rootCauseAnalysis: [{
+          ...analysis.narrative.rootCauseAnalysis[0],
+          narrative: "shared internal name should be rejected",
+        }],
+      },
     }).success).toBe(false);
   });
 

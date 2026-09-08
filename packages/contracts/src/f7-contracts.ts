@@ -1559,8 +1559,8 @@ const f7ReportNarrativeEvidenceValueSchema = z.union([z.string().min(1), finiteN
 const f7ReportNarrativeRootCauseItemSchema = z.object({
   ruleId: z.string().min(1),
   title: z.string().min(1),
-  hypothesisStatus: z.literal("hypothesis"),
-  narrative: z.string().min(1),
+  hypothesis: z.literal(true),
+  explanation: z.string().min(1),
   completeEvidence: z.boolean(),
   quantitativeEvidence: z.record(z.string().min(1), f7ReportNarrativeEvidenceValueSchema).optional(),
   quantitativeEvidenceLabels: z.record(z.string().min(1), z.string().min(1)).optional(),

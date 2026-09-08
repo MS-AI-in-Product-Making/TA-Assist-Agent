@@ -4,7 +4,12 @@ import {
   f7SessionSnapshotSchema,
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
-import { createF7ReportProjection } from "./f7-report.js";
+import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
+import { buildF7EngineeringNarrative } from "@ai-assist/product-language/f7-engineering-narrative";
+import {
+  createF7ReportProjection,
+  projectF7EngineeringNarrativeForReport,
+} from "./f7-report.js";
 
 const WORKBOOK_HASH = "a".repeat(64);
 const BASELINE_FACTOR_ID = "b".repeat(64);
@@ -447,6 +452,93 @@ function createSnapshot(
   return f7SessionSnapshotSchema.parse(snapshot);
 }
 
+function escapeMarkdownExpectation(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("|", "\\|")
+    .replace(/\r\n|\r|\n/g, "<br>")
+    .replace(/([`!*#_[\]()~])/g, "\\$1");
+}
+
+function buildExpectedReportNarrative(snapshot: F7SessionSnapshot) {
+  const simulation = snapshot.monteCarloResult;
+  if (simulation === undefined || simulation.capability.status !== "available") {
+    throw new Error("Expected available Monte Carlo capability for report narrative parity test");
+  }
+
+  const availableContributors = snapshot.factors
+    .flatMap((factor) => {
+      const evidence = factor.evidence;
+      if (evidence === undefined
+        || !Number.isFinite(evidence.percentContributionToSigma)
+        || evidence.percentContributionToSigma < 0
+        || evidence.percentContributionToSigma > 1) {
+        return [];
+      }
+      return [{
+        name: evidence.factorName,
+        reference: JSON.stringify([evidence.worksheetName, evidence.tableId, evidence.sourceRow]),
+        contributionPercent: evidence.percentContributionToSigma * 100,
+      }];
+    })
+    .sort((left, right) => (
+      right.contributionPercent - left.contributionPercent
+      || (left.reference === right.reference ? 0 : left.reference < right.reference ? -1 : 1)
+    ));
+  const targetEvidence = snapshot.systemSpecification?.targetSigmaLevel;
+  const targetSource = targetEvidence?.status === "available"
+    && targetEvidence.valueOrigin === "defaulted"
+    ? "template"
+    : "project";
+  const evaluation = loadInterpretationRules({ version: "interpretation-rules-v2" })
+    .evaluateInterpretationRules({
+      analysisDimension: "one-dimensional",
+      method: "monte-carlo",
+      facts: {
+        cp: simulation.capability.cp,
+        cpk: simulation.capability.cpk,
+        targetCpk: { value: simulation.capability.targetCpk, source: targetSource },
+        mean: simulation.mean,
+        lowerSpecLimit: simulation.lowerSpecLimit,
+        upperSpecLimit: simulation.upperSpecLimit,
+        ...(availableContributors.length === 0
+          ? {}
+          : {
+              contributors: availableContributors.map(({ reference, contributionPercent }) => ({
+                reference,
+                contributionPercent,
+              })),
+            }),
+      },
+    });
+
+  return projectF7EngineeringNarrativeForReport(buildF7EngineeringNarrative({
+    evidenceBasis: "measured",
+    method: "monte-carlo",
+    cp: simulation.capability.cp,
+    cpk: simulation.capability.cpk,
+    targetCpk: simulation.capability.targetCpk,
+    mean: simulation.mean,
+    lowerSpecLimit: simulation.lowerSpecLimit,
+    upperSpecLimit: simulation.upperSpecLimit,
+    rootCauseRules: evaluation.matchedRules
+      .filter(({ entryType }) => entryType === "root-cause-signal")
+      .map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+    controlledOptions: evaluation.matchedRules
+      .filter(({ entryType }) => entryType === "improvement-option")
+      .map((rule) => ({
+        ruleId: rule.entryId,
+        title: rule.title,
+        validationSteps: rule.validationSteps ?? [],
+      })),
+    contributors: availableContributors,
+    knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+  }));
+}
+
 describe("createF7ReportProjection", () => {
   it.each([
     ["MEETS_TARGET", "meets_target"],
@@ -583,7 +675,7 @@ describe("createF7ReportProjection", () => {
     expect(report.analysis.narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-excessive-variation",
       title: "RC01 Excessive variation hypothesis",
-      hypothesisStatus: "hypothesis",
+      hypothesis: true,
       completeEvidence: true,
       quantitativeEvidenceLabels: {
         cp: "Cp",
@@ -597,7 +689,7 @@ describe("createF7ReportProjection", () => {
     expect(report.analysis.narrative.rootCauseAnalysis[1]).toMatchObject({
       ruleId: "root-cause-contributor-concentration",
       title: expect.any(String),
-      hypothesisStatus: "hypothesis",
+      hypothesis: true,
       completeEvidence: true,
       quantitativeEvidenceLabels: {
         contributorName: "Contributor",
@@ -623,6 +715,18 @@ describe("createF7ReportProjection", () => {
     expect(report.markdown).toContain("root-cause-excessive-variation");
     expect(report.markdown).toContain("improvement-reduce-variation");
     expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
+  });
+
+  it("keeps report analysis narrative exactly aligned with the report-mapped shared builder result", () => {
+    const snapshot = createSnapshot("BELOW_TARGET");
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.analysis.status).toBe("available");
+    if (report.analysis.status !== "available") {
+      throw new Error("Expected available analysis for narrative parity test");
+    }
+
+    expect(report.analysis.narrative).toEqual(buildExpectedReportNarrative(snapshot));
   });
 
   it("keeps unavailable analysis unchanged when Monte Carlo capability is not evaluable", () => {
@@ -720,6 +824,52 @@ describe("createF7ReportProjection", () => {
     expect(report.markdown).toContain("| Histogram bin count | 20 |");
     expect(report.markdown).toContain("| Normal fit method | F7_NORMAL_MOMENT_FIT_V1 |");
     expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
+  });
+
+  it("renders escaped narrative lines in exact heading order", () => {
+    const snapshot = createSnapshot("BELOW_TARGET");
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.analysis.status).toBe("available");
+    if (report.analysis.status !== "available") {
+      throw new Error("Expected available analysis for Markdown narrative assertions");
+    }
+
+    const expectedNarrative = buildExpectedReportNarrative(snapshot);
+    const headings = [
+      "## Factor Setup vs Monte Carlo TA",
+      "### Result Judgment",
+      "### Root Cause Analysis",
+      "### Engineering Risk",
+      "### Suggested Action Sequence",
+      "### Verification Requirements",
+      "### Evidence Disclosure",
+    ];
+    const offsets = headings.map((heading) => report.markdown.indexOf(heading));
+
+    expect(offsets.every((offset) => offset >= 0)).toBe(true);
+    for (let index = 1; index < offsets.length; index += 1) {
+      expect(offsets[index]).toBeGreaterThan(offsets[index - 1]!);
+    }
+    for (const item of expectedNarrative.rootCauseAnalysis) {
+      expect(report.markdown).toContain(`- ${escapeMarkdownExpectation(item.title)} (${escapeMarkdownExpectation(item.ruleId)})`);
+      expect(report.markdown).toContain("  Hypothesis: true.");
+      expect(report.markdown).toContain(`  Explanation: ${escapeMarkdownExpectation(item.explanation)}`);
+    }
+    for (const item of expectedNarrative.suggestedActionSequence) {
+      expect(report.markdown).toContain(
+        `- ${escapeMarkdownExpectation(item.title)} (${escapeMarkdownExpectation(item.optionId)}): ${escapeMarkdownExpectation(item.narrative)}`,
+      );
+      for (const step of item.validationSteps) {
+        expect(report.markdown).toContain(`- ${escapeMarkdownExpectation(step)}`);
+      }
+    }
+    for (const requirement of expectedNarrative.validationRequirements) {
+      expect(report.markdown).toContain(`- ${escapeMarkdownExpectation(requirement)}`);
+    }
+    for (const disclosureLine of expectedNarrative.evidenceDisclosure.split(". ")) {
+      expect(report.markdown).toContain(escapeMarkdownExpectation(disclosureLine));
+    }
   });
 
   it("escapes HTML and Markdown structures from worksheet, factor, and source text", () => {

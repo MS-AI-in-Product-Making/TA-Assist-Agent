@@ -42,7 +42,7 @@ function buildAvailableContributorFacts(snapshot: F7SessionSnapshot): readonly {
     ));
 }
 
-function projectNarrativeForReport(
+export function projectF7EngineeringNarrativeForReport(
   narrative: ReturnType<typeof buildF7EngineeringNarrative>,
 ): AvailableF7ReportAnalysis["narrative"] {
   return {
@@ -52,7 +52,11 @@ function projectNarrativeForReport(
     },
     engineeringSummary: narrative.engineeringSummary,
     rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => ({
-      ...item,
+      ruleId: item.ruleId,
+      title: item.title,
+      hypothesis: true,
+      explanation: item.narrative,
+      completeEvidence: item.completeEvidence,
       ...(item.quantitativeEvidence === undefined
         ? {}
         : { quantitativeEvidence: { ...item.quantitativeEvidence } }),
@@ -178,7 +182,7 @@ function createF0Analysis(
   if (optimizationDirections.length === 0) {
     optimizationDirections.push("Maintain the current setup and verify capability remains stable with the next representative measurement sample.");
   }
-  const narrative = projectNarrativeForReport(buildF7EngineeringNarrative({
+  const narrative = projectF7EngineeringNarrativeForReport(buildF7EngineeringNarrative({
     evidenceBasis: "measured",
     method: "monte-carlo",
     cp: monteCarlo.cp,
@@ -321,8 +325,8 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
           ? ["No governed root-cause hypothesis matched."]
           : report.analysis.narrative.rootCauseAnalysis.flatMap((item) => [
               `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.ruleId)})`,
-              `  Hypothesis status: ${escapeMarkdownTableText(item.hypothesisStatus)}.`,
-              `  Explanation: ${escapeMarkdownTableText(item.narrative)}`,
+              `  Hypothesis: ${item.hypothesis ? "true" : "false"}.`,
+              `  Explanation: ${escapeMarkdownTableText(item.explanation)}`,
               `  Evidence completeness: ${item.completeEvidence ? "complete" : "incomplete"}.`,
               ...(renderNarrativeEvidence(item) === undefined
                 ? []
