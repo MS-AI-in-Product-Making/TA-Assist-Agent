@@ -596,6 +596,25 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
           targetAssessment: "Monte Carlo Cpk is below the F0 default target of 1.33.",
           interpretations: ["Measured-data Monte Carlo variation is wider than the Factor Setup assumption."],
           optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+          rootCauseSignals: [
+            {
+              ruleId: "root-cause-excessive-variation",
+              title: "RC01 Excessive variation hypothesis",
+              sourceAlias: "F0",
+              sourceFileHash: HASH_A,
+            },
+          ],
+          controlledOptions: [
+            {
+              ruleId: "improvement-reduce-variation",
+              title: "Reduce total variation",
+              sourceAlias: "F0",
+              sourceFileHash: HASH_A,
+            },
+          ],
+          validationRequirements: [
+            "Update representative variation evidence.",
+          ],
         }
       : {
           status: "unavailable",

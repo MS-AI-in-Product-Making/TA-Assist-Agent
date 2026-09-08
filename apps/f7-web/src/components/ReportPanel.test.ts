@@ -133,6 +133,25 @@ function createReport(
           targetAssessment: "Monte Carlo Cpk 1.667 meets the F0 default target of 1.33.",
           interpretations: ["Measured variation is wider than the Factor Setup assumption."],
           optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+          rootCauseSignals: [
+            {
+              ruleId: "root-cause-excessive-variation",
+              title: "RC01 Excessive variation hypothesis",
+              sourceAlias: "F0",
+              sourceFileHash: WORKBOOK_HASH,
+            },
+          ],
+          controlledOptions: [
+            {
+              ruleId: "improvement-reduce-variation",
+              title: "Reduce total variation",
+              sourceAlias: "F0",
+              sourceFileHash: WORKBOOK_HASH,
+            },
+          ],
+          validationRequirements: [
+            "Update representative variation evidence.",
+          ],
         },
     evidence: {
       workbookContentHash: WORKBOOK_HASH,

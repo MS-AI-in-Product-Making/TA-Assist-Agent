@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildAssumptionResultsInterpretation } from "./assumption-results-interpretation";
 
+type NarrativeRuleLike = { readonly ruleId: string };
+type NarrativeActionLike = { readonly optionId: string };
+
 function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   return {
     systemSpecification: {
@@ -38,6 +41,30 @@ describe("assumption results enhanced interpretation", () => {
 
     expect(result.status).toBe("available");
     if (result.status !== "available") return;
+    expect(result.narrative.resultJudgment.headline).toBe("Capability is below target");
+    expect(result.narrative.resultJudgment.margin).toBeLessThan(0);
+    expect(result.narrative.rootCauseAnalysis.map((item: NarrativeRuleLike) => item.ruleId)).toEqual([
+      "root-cause-excessive-variation",
+      "root-cause-mean-shift",
+      "root-cause-contributor-concentration",
+    ]);
+    expect(result.narrative.rootCauseAnalysis[1]?.quantitativeEvidence).toMatchObject({
+      cpCpkGap: expect.any(Number),
+      specificationMidpoint: expect.any(Number),
+      meanOffset: expect.any(Number),
+      direction: "USL",
+    });
+    expect(result.narrative.rootCauseAnalysis[2]?.quantitativeEvidence).toMatchObject({
+      contributorName: "Factor 01",
+      contributionPercent: expect.any(Number),
+    });
+    expect(result.narrative.engineeringRisk).toMatch(/requires validation/i);
+    expect(result.narrative.suggestedActionSequence.map((item: NarrativeActionLike) => item.optionId)).toEqual([
+      "improvement-center-mean",
+      "improvement-reduce-variation",
+      "improvement-reduce-contributor",
+    ]);
+    expect(result.narrative.evidenceDisclosure).toContain("Assumption-based RSS evidence; this is not measured capability evidence.");
     expect(result.engineeringInterpretations).toEqual([
       "RC01 Excessive variation hypothesis",
       "RC02 Mean shift hypothesis",

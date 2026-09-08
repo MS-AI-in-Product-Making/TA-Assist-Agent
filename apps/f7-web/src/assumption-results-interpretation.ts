@@ -4,6 +4,10 @@ import {
   type Distribution,
 } from "@ai-assist/contracts";
 import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
+import {
+  buildF7EngineeringNarrative,
+  type F7EngineeringNarrative,
+} from "@ai-assist/product-language";
 import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type {
   F7DatasetValidationIssue,
@@ -100,6 +104,7 @@ export type AssumptionResultsInterpretation =
       readonly validationRequirements: readonly string[];
       readonly assumptions: readonly string[];
       readonly inputReadiness: InputReadiness;
+      readonly narrative: F7EngineeringNarrative;
       readonly provenance: typeof PROVENANCE;
     }
   | {
@@ -308,6 +313,28 @@ export function buildAssumptionResultsInterpretation(
     const engineeringInterpretations = ROOT_CAUSE_DISPLAY_ORDER
       .filter((entryId) => rootCauseRules.some((rule) => rule.entryId === entryId))
       .map(controlledTitle);
+    const narrative = buildF7EngineeringNarrative({
+      evidenceBasis: "assumption",
+      method: "rss",
+      cp: calculation.capability.cp,
+      cpk: calculation.capability.cpk,
+      targetCpk,
+      mean: calculation.system.mean,
+      lowerSpecLimit: calculation.capability.lowerSpecLimit,
+      upperSpecLimit: calculation.capability.upperSpecLimit,
+      rootCauseRules: rootCauseRules.map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+      controlledOptions: improvementRules.map((rule) => ({
+        ruleId: rule.entryId,
+        title: rule.title,
+        validationSteps: rule.validationSteps ?? [],
+      })),
+      contributors: contributors.map(({ factorName, reference, contributionPercent }) => ({
+        name: factorName,
+        reference,
+        contributionPercent,
+      })),
+      knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+    });
 
     return {
       status: "available",
@@ -330,6 +357,7 @@ export function buildAssumptionResultsInterpretation(
         ? [ASSUMPTION_DISCLOSURE, CONCENTRATION_DISCLOSURE]
         : [ASSUMPTION_DISCLOSURE],
       inputReadiness,
+      narrative,
       provenance: PROVENANCE,
     };
   } catch {
