@@ -225,6 +225,17 @@ function resolveNearestSpecificationSide(
   return lowerDistance < upperDistance ? "LSL" : "USL";
 }
 
+function buildMeanShiftDirectionNarrative(
+  meanOffset: number,
+  direction: F7NarrativeSpecificationSide,
+): string {
+  if (direction === "balanced") {
+    return `the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint and remains at or balanced around the specification midpoint`;
+  }
+
+  return `the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint toward ${direction}`;
+}
+
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
   const rawMargin = input.cpk - input.targetCpk;
   const margin = rawMargin;
@@ -296,12 +307,24 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
   const cpCpkGap = input.cp - input.cpk;
   const specificationMidpoint = (input.lowerSpecLimit + input.upperSpecLimit) / 2;
   const meanOffset = input.mean - specificationMidpoint;
-  const direction = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit) === "LSL" ? "LSL" : "USL";
+  const direction = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
+  if (direction === undefined) {
+    return {
+      ruleId: rule.ruleId,
+      title: rule.title,
+      hypothesisStatus: "hypothesis",
+      narrative: INCOMPLETE_EVIDENCE_MESSAGE,
+      completeEvidence: false,
+    };
+  }
+
   return {
     ruleId: rule.ruleId,
     title: rule.title,
     hypothesisStatus: "hypothesis",
-    narrative: `Cp exceeds Cpk by ${formatDeltaNumber(cpCpkGap)} and the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint toward ${direction}, indicating a centering-loss hypothesis that requires validation.`,
+    narrative: direction === "balanced"
+      ? `Cp exceeds Cpk by ${formatDeltaNumber(cpCpkGap)} and ${buildMeanShiftDirectionNarrative(meanOffset, direction)}, indicating a midpoint-balance mean-shift hypothesis that requires validation.`
+      : `Cp exceeds Cpk by ${formatDeltaNumber(cpCpkGap)} and ${buildMeanShiftDirectionNarrative(meanOffset, direction)}, indicating a centering-loss hypothesis that requires validation.`,
     completeEvidence: true,
     quantitativeEvidence: {
       cpCpkGap,
@@ -434,7 +457,11 @@ function buildEngineeringRisk(
     clauses.push("RC01 indicates variation-related exposure");
   }
   if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-mean-shift" && item.completeEvidence)) {
-    clauses.push("RC02 indicates centering loss");
+    if (resultJudgment.nearerSpecificationSide === "balanced") {
+      clauses.push("RC02 indicates the mean remains at or balanced around the specification midpoint");
+    } else {
+      clauses.push("RC02 indicates centering loss");
+    }
   }
   if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-contributor-concentration" && item.completeEvidence)) {
     clauses.push("RC03 indicates contributor concentration");

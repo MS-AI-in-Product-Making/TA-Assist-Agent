@@ -261,6 +261,34 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.resultJudgment.nearerSpecificationSide).toBe("balanced");
   });
 
+  it("keeps combined RC02 direction balanced when mean-to-limit distances are equal", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean: Number.EPSILON * 8,
+      lowerSpecLimit: -1,
+      upperSpecLimit: 1,
+      rootCauseRules: [
+        { ruleId: "root-cause-excessive-variation", title: "RC01 Excessive variation hypothesis" },
+        { ruleId: "root-cause-mean-shift", title: "RC02 Mean shift hypothesis" },
+      ],
+    });
+
+    expect(narrative.resultJudgment.nearerSpecificationSide).toBe("balanced");
+    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+      ruleId: "root-cause-mean-shift",
+      completeEvidence: true,
+      quantitativeEvidence: {
+        specificationMidpoint: 0,
+        direction: "balanced",
+      },
+    });
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { meanOffset?: number } | undefined)?.meanOffset).toBeCloseTo(Number.EPSILON * 8, 20);
+    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("balanced around the specification midpoint");
+    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward USL");
+    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward LSL");
+    expect(narrative.engineeringRisk).toContain("mean remains at or balanced around the specification midpoint");
+  });
+
   it("returns incomplete-evidence items when matched hypotheses lack dependent facts", () => {
     const narrative = buildF7EngineeringNarrative({
       ...combinedCauseInput(),
