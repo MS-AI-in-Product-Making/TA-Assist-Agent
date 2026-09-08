@@ -341,4 +341,12 @@ describe("Design Optimization skill contract", () => {
       "f6-final-report-check",
     ]) expect(documents.register).toContain(check);
   });
+
+  it("locks the entry language before any user-visible response", () => {
+    const entrySkill = readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+
+    expect(entrySkill).toContain("Before any acknowledgement, plan, skill-loading update, or other user-visible text");
+    expect(entrySkill).toContain("A naturally English request locks English");
+    expect(entrySkill).toContain("Do not inherit the VS Code, host, or UI locale");
+  });
 });

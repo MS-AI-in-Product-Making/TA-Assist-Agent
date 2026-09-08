@@ -248,6 +248,12 @@ describe("Drawing Governance skill contract", () => {
     expect(skill).toContain("[ADO publishing protocol](./references/ado-publishing.md)");
   });
 
+  it("builds repository modules before the first governed workbook command", () => {
+    const scripts = getPackageScripts();
+
+    expect(scripts["preworkflow:f2:excel"]).toBe("npm run build -- --force");
+  });
+
   it("locks complete workflow commands to repository scripts and real argument shapes", () => {
     const skill = readUtf8(skillPath);
     const scripts = getPackageScripts();

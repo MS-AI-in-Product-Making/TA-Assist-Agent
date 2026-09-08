@@ -9,6 +9,10 @@ argument-hint: "[<ta-workbook-path>]"
 
 Use this as the primary entry for a complete governed TA workbook analysis.
 
+## Language Gate
+
+Before any acknowledgement, plan, skill-loading update, or other user-visible text, determine and lock the interaction language from the natural language of the request that starts this workflow. A naturally English request locks English, and a naturally Chinese request locks Chinese; an explicit language request overrides that natural-language detection. Do not inherit the VS Code, host, or UI locale when the workflow-start request has a clear language. Use the locked language for the first response and every later response, question, option label, progress update, action description, and final result.
+
 **REQUIRED SUB-SKILL: Use design-optimization.** Follow that Skill's workbook entry mode without omitting, merging, or reordering its governance gates.
 
 ## Entry
@@ -16,7 +20,6 @@ Use this as the primary entry for a complete governed TA workbook analysis.
 - Accept exactly one `.xlsx` TA workbook path.
 - If no path is supplied, ask for exactly one workbook path.
 - Never infer a workbook from editor state, prior runs, uploads, or similarly named files.
-- Lock the interaction language from the request that starts this workflow and preserve it throughout the session.
 
 ## Product Boundary
 
