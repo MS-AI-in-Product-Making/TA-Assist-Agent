@@ -590,6 +590,18 @@ describe("F7 phase 1 factor contracts", () => {
     expect(
       f7FactorEvidenceSchema.safeParse({
         ...valid,
+        distribution: "Uniform",
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorEvidenceSchema.safeParse({
+        ...valid,
+        distribution: "Triangular",
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorEvidenceSchema.safeParse({
+        ...valid,
         factorId: SHA256.toUpperCase(),
       }).success,
     ).toBe(false);
@@ -700,6 +712,45 @@ describe("F7 phase 1 factor contracts", () => {
         },
       }).success,
     ).toBe(true);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "BASELINE_ASSUMPTION",
+        baselineSampler: {
+          samplerId: "UNIFORM_BOUNDED_V1",
+          physicalMean: 1_000_000,
+          standardDeviation: 1,
+          minimum: 1_000_000 - Math.sqrt(3),
+          maximum: 1_000_000 + Math.sqrt(3),
+          support: "BOUNDED_REAL",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "BASELINE_ASSUMPTION",
+        baselineSampler: {
+          samplerId: "UNIFORM_BOUNDED_V1",
+          physicalMean: 0.2,
+          standardDeviation: 0.05,
+          minimum: 0.2 - Math.sqrt(3) * 0.05,
+          maximum: 0.2 + Math.sqrt(3) * 0.05,
+          support: "BOUNDED_REAL",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "BASELINE_ASSUMPTION",
+        baselineSampler: {
+          samplerId: "UNIFORM_BOUNDED_V1",
+          physicalMean: 0.2,
+          standardDeviation: 0.05,
+          minimum: 0.1,
+          maximum: 0.3,
+          support: "BOUNDED_REAL",
+        },
+      }).success,
+    ).toBe(false);
     expect(
       f7FactorInputSchema.safeParse({
         mode: "BASELINE_ASSUMPTION",

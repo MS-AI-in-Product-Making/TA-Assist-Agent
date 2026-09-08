@@ -30,7 +30,7 @@ For each functional defect:
 4. Apply one focused fix at the owning module.
 5. Re-run the focused test, relevant F7 suite, build, and browser scenario.
 
-Expected Phase 1 constraints, such as unsupported workbook structures or non-Normal baseline factors, are reported separately rather than silently patched around.
+Expected Phase 1 constraints, such as unsupported workbook structures or baseline factors without a governed sampler, are reported separately rather than silently patched around.
 
 ## Completion Criteria
 

@@ -837,6 +837,57 @@ describe("createF7SessionService", () => {
     expect(f7SessionSnapshotSchema.safeParse(fitted).success).toBe(true);
   });
 
+  it("maps a Uniform baseline sampler into bounded Monte Carlo parameters", () => {
+    const service = createService();
+    const imported = service.importWorkbook(importRequest(buildWorkbook()));
+    const worksheetReady = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+    });
+    let snapshot = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: confirmAll(worksheetReady).map((confirmation, index) => index === 0
+        ? { ...confirmation, distribution: "Uniform" as const }
+        : confirmation),
+    });
+    const uniformFactor = snapshot.factors[0]!.evidence!;
+    for (const factor of snapshot.factors) {
+      snapshot = service.setFactorMode({
+        sessionId: imported.sessionId,
+        factorId: factor.evidence!.factorId,
+        mode: "BASELINE_ASSUMPTION",
+      });
+    }
+    vi.mocked(runF7MonteCarlo).mockImplementation((request) => createMonteCarloResult(
+      request as Parameters<typeof runF7MonteCarlo>[0] & { readonly targetSigmaLevel: number },
+    ));
+
+    service.runMonteCarlo({
+      sessionId: imported.sessionId,
+      lowerSpecLimit: -5,
+      upperSpecLimit: 5,
+      targetSigmaLevel: 4,
+      iterations: 10_000,
+      runSeed: "d".repeat(64),
+      correlationMode: "INDEPENDENT",
+    });
+
+    expect(uniformFactor.baselineSampler.samplerId).toBe("UNIFORM_BOUNDED_V1");
+    if (uniformFactor.baselineSampler.samplerId !== "UNIFORM_BOUNDED_V1") return;
+    expect(runF7MonteCarlo).toHaveBeenCalledWith(expect.objectContaining({
+      factors: expect.arrayContaining([{
+        factorId: uniformFactor.factorId,
+        coefficient: uniformFactor.loopCoefficient,
+        sourceMode: "BASELINE_ASSUMPTION",
+        family: "uniform",
+        parameters: {
+          minimum: uniformFactor.baselineSampler.minimum,
+          maximum: uniformFactor.baselineSampler.maximum,
+        },
+      }]),
+    }));
+  });
+
   it("automatically approves the final fitted distribution before running Monte Carlo", () => {
     const service = createService();
     const imported = service.importWorkbook(importRequest(buildWorkbook()));

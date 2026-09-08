@@ -345,6 +345,31 @@ describe("F7 interim excel adapter", () => {
     expect(first.oneSigma).toBeCloseTo(0.0125 * 1.732, 12);
   });
 
+  it("supports a governed bounded sampler for a Uniform workbook factor", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true, distributionOverride: "Uniform" });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const first = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmCandidates(extracted),
+    }).factors[0]!;
+
+    const halfRange = Math.sqrt(3) * first.oneSigma;
+    expect(first.distribution).toBe("Uniform");
+    expect(first.baselineSampler).toEqual({
+      samplerId: "UNIFORM_BOUNDED_V1",
+      physicalMean: first.physicalMean,
+      standardDeviation: first.oneSigma,
+      minimum: first.physicalMean - halfRange,
+      maximum: first.physicalMean + halfRange,
+      support: "BOUNDED_REAL",
+    });
+  });
+
   it("derives each factor's capability limits from absolute nominal value and tolerances", () => {
     const workbookBytes = buildWorkbook({ factorSpecifications: true });
     const imported = importWorkbook(workbookBytes);
@@ -517,7 +542,7 @@ describe("F7 interim excel adapter", () => {
     ))).toBe(true);
   });
 
-  it("rejects missing specs, ambiguous headers, non-Normal baseline, and multiple factor-header tables", () => {
+  it("rejects missing specs, ambiguous headers, unsupported baseline distributions, and multiple factor-header tables", () => {
     const missingSpecBytes = buildWorkbook({ includeUpperSpec: false });
     const missingSpecImport = importWorkbook(missingSpecBytes);
     expect(() => extractF7FactorCandidates({

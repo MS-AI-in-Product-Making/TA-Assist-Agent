@@ -310,7 +310,9 @@ export function createF7ReportProjection(
     }
 
     const approvedDistribution = sourceMode === "BASELINE_ASSUMPTION"
-      ? "normal" as const
+      ? evidence.baselineSampler.samplerId === "UNIFORM_BOUNDED_V1"
+        ? "uniform" as const
+        : "normal" as const
       : (() => {
           const approval = factorState.distributionApproval;
           const fitResult = factorState.distributionFitResult;

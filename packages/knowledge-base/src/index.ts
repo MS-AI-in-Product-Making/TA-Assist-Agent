@@ -13,6 +13,8 @@ export {
 } from "./interpretation/validation.js";
 export {
 	createInterpretationRules,
+} from "./interpretation/create.js";
+export {
 	loadInterpretationRules,
 	type InterpretationRules,
 } from "./interpretation/query.js";

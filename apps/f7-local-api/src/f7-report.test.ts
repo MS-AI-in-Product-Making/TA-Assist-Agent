@@ -676,6 +676,42 @@ describe("createF7ReportProjection", () => {
     );
   });
 
+  it("accepts a Uniform baseline factor that matches the simulation manifest", () => {
+    const snapshot = createSnapshot();
+    const baseline = snapshot.factors[0]!;
+    const physicalMean = baseline.evidence!.physicalMean;
+    const standardDeviation = baseline.evidence!.oneSigma;
+    const halfRange = Math.sqrt(3) * standardDeviation;
+    const baselineSampler = {
+      samplerId: "UNIFORM_BOUNDED_V1" as const,
+      physicalMean,
+      standardDeviation,
+      minimum: physicalMean - halfRange,
+      maximum: physicalMean + halfRange,
+      support: "BOUNDED_REAL" as const,
+    };
+    const uniformSnapshot = f7SessionSnapshotSchema.parse({
+      ...snapshot,
+      factors: [{
+        ...baseline,
+        factorCandidate: { ...baseline.factorCandidate, distribution: "Uniform" as const },
+        setup: { ...baseline.setup, distribution: "Uniform" as const },
+        input: { mode: "BASELINE_ASSUMPTION" as const, baselineSampler },
+        evidence: { ...baseline.evidence!, distribution: "Uniform" as const, baselineSampler },
+      }, snapshot.factors[1]!],
+      monteCarloResult: {
+        ...snapshot.monteCarloResult!,
+        factorManifest: [
+          { ...snapshot.monteCarloResult!.factorManifest[0]!, family: "uniform" as const },
+          snapshot.monteCarloResult!.factorManifest[1]!,
+        ],
+      },
+    });
+
+    const report = createF7ReportProjection(uniformSnapshot, GENERATED_AT);
+    expect(report.factors[0]?.approvedDistribution).toBe("uniform");
+  });
+
   it.each([
     ["factorId", { factorId: "9".repeat(64) }],
     ["sourceMode", { sourceMode: "MEASURED" as const }],

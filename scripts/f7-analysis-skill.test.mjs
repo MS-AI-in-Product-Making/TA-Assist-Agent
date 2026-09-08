@@ -57,6 +57,8 @@ describe("TA real-measurement analysis workspace skill", () => {
     expect(skill).toMatch(/MEASURED/);
     expect(skill).toMatch(/Open workspace/);
     expect(skill).toMatch(/Normal.*baseline/i);
+    expect(skill).toMatch(/Normal and Uniform distributions/i);
+    expect(skill).toMatch(/other workbook distributions.*governed sampler/i);
     expect(skill).toMatch(/do not.*invent.*measurement|never.*invent.*measurement/i);
     expect(skill).toMatch(/do not.*upload|never.*upload/i);
     expect(skill).toMatch(/do not.*modify.*workbook|never.*modify.*workbook/i);

@@ -8,23 +8,30 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
-    ,"./public-engineering-rules": {
+    },
+    "./public-engineering-rules": {
       "types": "./dist/public-engineering-rules.d.ts",
       "import": "./dist/public-engineering-rules.js"
-    }
-    ,"./public-distribution-rules": {
+    },
+    "./public-distribution-rules": {
       "types": "./dist/public-distribution-rules.d.ts",
       "import": "./dist/public-distribution-rules.js"
+    },
+    "./interpretation-rules": {
+      "types": "./dist/interpretation-rules.d.ts",
+      "import": "./dist/interpretation-rules.js"
     }
   },
   "dependencies": {
     "@ai-assist/contracts": "0.1.0",
+    "@noble/hashes": "^2.4.0",
     "zod": "^3.24.0"
   }
 }

@@ -32,17 +32,16 @@ export function loadInterpretationRules(request: unknown): InterpretationRules {
     "Interpretation rule load request is invalid.",
     "interpretation-rule-load-request",
   );
-  return createValidatedInterpretationRules(
-    createInterpretationKnowledgeSnapshot(createReviewedInterpretationRulesV1SeedPackage()),
+  const snapshot = createInterpretationKnowledgeSnapshot(
+    createReviewedInterpretationRulesV1SeedPackage(),
   );
+  return createInterpretationRulesFromValidatedEntries(snapshot.entries);
 }
 
-export function createInterpretationRules(snapshot: unknown): InterpretationRules {
-  return createValidatedInterpretationRules(createInterpretationKnowledgeSnapshot(snapshot));
-}
-
-function createValidatedInterpretationRules(snapshot: InterpretationKnowledgeSnapshot): InterpretationRules {
-  const entries = structuredClone(snapshot.entries) as InterpretationKnowledgeEntry[];
+export function createInterpretationRulesFromValidatedEntries(
+  validatedEntries: InterpretationKnowledgeSnapshot["entries"],
+): InterpretationRules {
+  const entries = structuredClone(validatedEntries) as InterpretationKnowledgeEntry[];
   return {
     evaluateInterpretationRules: (request) => evaluate(entries, request),
   };

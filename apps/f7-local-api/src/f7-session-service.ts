@@ -776,6 +776,18 @@ export function createF7SessionService(dependencies: {
       const evidence = factorState.evidence;
       if (!evidence || !factorState.sourceMode) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
       if (factorState.sourceMode === "BASELINE_ASSUMPTION") {
+        if (evidence.baselineSampler.samplerId === "UNIFORM_BOUNDED_V1") {
+          return {
+            factorId: evidence.factorId,
+            coefficient: evidence.loopCoefficient,
+            sourceMode: factorState.sourceMode,
+            family: "uniform" as const,
+            parameters: {
+              minimum: evidence.baselineSampler.minimum,
+              maximum: evidence.baselineSampler.maximum,
+            },
+          };
+        }
         return {
           factorId: evidence.factorId,
           coefficient: evidence.loopCoefficient,

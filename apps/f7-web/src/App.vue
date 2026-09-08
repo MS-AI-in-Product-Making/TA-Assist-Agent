@@ -7,7 +7,7 @@ import FactorInputTable from "./components/FactorInputTable.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
 import MonteCarloPanel from "./components/MonteCarloPanel.vue";
 import ReportPanel from "./components/ReportPanel.vue";
-import ValidationSummary from "./components/ValidationSummary.vue";
+import TAResultsInterpretation from "./components/TAResultsInterpretation.vue";
 import { createF7SessionStore } from "./state/f7-session";
 
 const props = defineProps<{
@@ -523,7 +523,7 @@ async function openReport(): Promise<void> {
           :report="store.report.value"
         />
 
-        <ValidationSummary
+        <TAResultsInterpretation
           v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
         />
