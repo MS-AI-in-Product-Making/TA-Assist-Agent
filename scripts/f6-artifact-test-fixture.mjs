@@ -13,7 +13,8 @@ import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 
 export const F6_FIXTURE_WORKBOOK_HASH = "a".repeat(64);
 export const F6_FIXTURE_RUN_ID = "f4-run-1";
-const IMAGE_HASH = "b".repeat(64);
+const IMAGE_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+const IMAGE_HASH = createHash("sha256").update(IMAGE_BYTES).digest("hex");
 const CORE_SCOPES = [
   "tolerance_loop_closure",
   "datum_chain",
@@ -210,7 +211,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
-    artifactRoot: "controlled/f1",
+    artifactRoot: f2ArtifactRoot,
     worksheets: [...worksheets, ...blockedWorksheets],
     f4Handoffs: handoffs,
     adoEvents: [],
@@ -245,7 +246,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     outputClassification: "confidential",
     featureId: "F3",
     status: "completed",
-    artifactRoot: "controlled/f1",
+    artifactRoot: f2ArtifactRoot,
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
     worksheets: f3Worksheets,
     ado: { status: "not_requested" },
@@ -281,6 +282,11 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
   writeFixtureJson(paths.f3, f3);
   writeFixtureJson(paths.f4, f4);
   writeFixtureJson(paths.f5, f5);
+  for (const worksheetName of worksheetNames) {
+    const imagePath = path.join(f2ArtifactRoot, "images", `${worksheetName}.png`);
+    mkdirSync(path.dirname(imagePath), { recursive: true });
+    writeFileSync(imagePath, IMAGE_BYTES);
+  }
 
   return {
     root,

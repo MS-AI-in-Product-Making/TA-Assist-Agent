@@ -9,6 +9,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -612,6 +613,11 @@ describe("F6 real artifact full flow", () => {
     expect(finalMarkdown).toContain("Analysis-A");
     expect(finalMarkdown).toContain("2026-08-17 01:02:03");
     expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
+    const imageLink = /\[Open tolerance path image\]\(<([^>]+)>\)/u.exec(finalMarkdown);
+    expect(imageLink).not.toBeNull();
+    const linkedImagePath = path.resolve(path.dirname(path.join(runRoot, "Feature6-Report.md")), decodeURI(imageLink[1]));
+    expect(existsSync(linkedImagePath)).toBe(true);
+    expect(artifactHash(linkedImagePath)).toBe(bundle.f3Worksheets[0].rows[0].imageReference.contentHash);
     expect(cliResult.finalReportMdPath).toBe(path.join(runRoot, "Feature6-Report.md"));
     expect(cliResult).not.toHaveProperty("composedReportJsonPath");
     expect(cliResult).not.toHaveProperty("composedReportMdPath");
@@ -839,6 +845,22 @@ describe("F6 real artifact full flow", () => {
 
     expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
     expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+  });
+
+  it("rejects a tolerance image whose bytes do not match the governed hash", () => {
+    const bundle = createRealBundle();
+    const imageReference = bundle.f3Worksheets[0].rows[0].imageReference;
+    writeFileSync(path.join(bundle.f2ArtifactRoot, imageReference.relativePath), Buffer.from("tampered image bytes"));
+
+    const { result, runRoot } = runRealF6(bundle, "tampered-image");
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "failed",
+      reasonCode: "report_failed",
+      artifacts: {},
+    });
   });
 
   it("keeps the legacy comparison placeholder unavailable", () => {

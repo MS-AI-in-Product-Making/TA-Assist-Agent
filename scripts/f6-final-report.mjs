@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   drawingGovernanceResultV2Schema,
@@ -196,6 +199,37 @@ function fixedEngineering(value, unit) {
   return Number.isFinite(value) ? `${value.toFixed(3)} ${clean(unit)}` : NA;
 }
 
+function isContained(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function verifiedImageLinks(modelInterpretation, options) {
+  if (typeof options.outputRoot !== "string" || typeof options.f1ArtifactRoot !== "string" || typeof options.publishRoot !== "string") {
+    return undefined;
+  }
+  const publishRoot = realpathSync(path.resolve(options.publishRoot));
+  const artifactRoot = realpathSync(path.resolve(options.f1ArtifactRoot));
+  const outputRoot = realpathSync(path.resolve(options.outputRoot));
+  if (!isContained(publishRoot, artifactRoot) || !isContained(publishRoot, outputRoot)) failInvalid("image boundary");
+  const links = new Map();
+  for (const worksheet of modelInterpretation.worksheets) {
+    const image = worksheet.request.image;
+    const relativePath = image.artifactPath;
+    if (path.isAbsolute(relativePath) || relativePath.split(/[\\/]/u).includes("..") || !/\.(?:png|jpe?g)$/iu.test(relativePath)) {
+      failInvalid("image path");
+    }
+    const sourcePath = path.resolve(artifactRoot, relativePath);
+    const realSourcePath = realpathSync(sourcePath);
+    const stats = lstatSync(sourcePath);
+    if (!isContained(artifactRoot, realSourcePath) || stats.isSymbolicLink() || !stats.isFile()) failInvalid("image boundary");
+    const actualHash = createHash("sha256").update(readFileSync(realSourcePath)).digest("hex");
+    if (actualHash !== image.contentHash) failInvalid("image hash");
+    links.set(worksheet.request.worksheetName, path.relative(outputRoot, realSourcePath).split(path.sep).join("/"));
+  }
+  return links;
+}
+
 function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog) {
   const readyCount = f2Report.worksheets.filter(({ status }) => status === "ready").length;
   return [
@@ -224,11 +258,13 @@ function renderF6V3WorkbookSummary(worksheets, catalog, language) {
   return lines;
 }
 
-function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog) {
+function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
   const prefix = `3-${ordinal}`;
   const [center, contributors, specifications] = worksheet.f6Worksheet.steps;
-  const relativePath = interpretation?.request?.image?.artifactPath;
-  const imageLink = typeof relativePath === "string" && !relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)
+  const verifiedRelativePath = imageLinks?.get(worksheet.worksheetName);
+  const relativePath = verifiedRelativePath ?? interpretation?.request?.image?.artifactPath;
+  const imageLink = typeof relativePath === "string"
+    && (verifiedRelativePath !== undefined || (!relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)))
     ? `[${catalog.openImage}](<${encodeURI(relativePath.replace(/\\/g, "/"))}>)`
     : NA;
   const factors = v3CompleteFactorRows(worksheet, interpretation);
@@ -332,7 +368,7 @@ function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog, language) {
   ];
 }
 
-function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, generatedAt }) {
+function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, generatedAt, imageLinks }) {
   if (f6Optimization.runStatus !== "COMPLETED" || f6Optimization.worksheets.some(({ runStatus }) => runStatus !== "COMPLETED")) {
     failInvalid("incomplete F6 optimization");
   }
@@ -353,7 +389,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
     ...(worksheet.f2Worksheet.status === "ready"
-      ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog)
+      ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks)
       : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
   ));
   const projection = {
@@ -1594,6 +1630,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation"));
   if (requiredMultimodalV3 !== undefined) {
     assertMultimodalV3Authority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report });
+    const imageLinks = verifiedImageLinks(requiredMultimodalV3, options);
     return createF6V3Report({
       f2Report,
       f3Report,
@@ -1602,6 +1639,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
       f6Optimization,
       modelInterpretation: requiredMultimodalV3,
       analysisContext,
+      imageLinks,
       generatedAt: options.generatedAt ?? input.generatedAt,
     });
   }
