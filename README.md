@@ -115,6 +115,28 @@ npm run workflow:f6 -- <f2-root> <f3-root> <f4-root> <f5-root> --worksheet <work
 
 Direct runner commands are development and validation surfaces. Product users should start with `/ta-assist-agent` so that required governance gates are preserved.
 
+## Experimental F7 Local Workflow
+
+F7 Phase 1 is experimental, local-only, single-user, confidential, and ephemeral. Start it with:
+
+```powershell
+npm run build -- --force
+npm run dev:f7
+```
+
+- Local API: `127.0.0.1:4317`
+- Local Web UI: `127.0.0.1:5177`
+- Max 8 sessions; restart to clear all in-memory sessions.
+- Data not uploaded; no upload and no remote persistence.
+- Direct Excel interim adapter.
+- Normal baseline supported.
+- Explicit worksheet / Factor specification / unit confirmations.
+- Measured / baseline mix supported by Factor.
+- Ready measured Factors receive capability analysis and distribution fit evaluation.
+- Distribution-family use requires explicit engineer approval.
+- Deterministic Monte Carlo uses engineer-entered system limits.
+- No recommendation, no write-back, no ADO publication, and no F0 writes.
+
 ## Product Name
 
 - Product: **TA Assist Agent**
