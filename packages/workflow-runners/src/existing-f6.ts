@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { f6OptimizationResultSchema } from "@ai-assist/contracts";
+import { f6ReadableOptimizationResultSchema } from "@ai-assist/contracts";
 import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
@@ -159,6 +159,15 @@ function safeArtifactReference(reference: any): { artifact: string; contentHash:
 }
 
 function expectedSources(optimization: any) {
+  if (optimization.optimizationVersion === "f6-optimization-v3") {
+    return {
+      f2: safeArtifactReference(optimization.provenance?.f2Reference),
+      f3: safeArtifactReference(optimization.provenance?.f3Reference),
+      f4: safeArtifactReference(optimization.provenance?.f4Reference),
+      f5: safeArtifactReference(optimization.provenance?.f5Reference),
+      modelInterpretation: safeArtifactReference(optimization.provenance?.multimodalReference),
+    };
+  }
   const directSources = Object.entries(SOURCE_PROVENANCE_FIELDS)
     .map(([sourceKey, provenanceKey]) => [sourceKey, safeArtifactReference(optimization.provenance?.[provenanceKey])])
     .filter(([, reference]) => reference !== undefined);
@@ -188,7 +197,8 @@ function validateReportSummary(summary: any, optimization: any): boolean {
   const worksheetDispositions = reportSummary?.worksheetDispositions;
   if (!ALLOWED_DISPOSITIONS.has(reportSummary?.workbookDisposition) || !Array.isArray(worksheetDispositions)) return false;
   const reportScope = optimization.provenance?.reportScope;
-  if (!Array.isArray(reportScope?.worksheetNames) || !Array.isArray(reportScope?.blockedWorksheetNames)) return false;
+  if (!Array.isArray(reportScope?.worksheetNames)) return false;
+  if (optimization.optimizationVersion === "f6-optimization-v2" && !Array.isArray(reportScope.blockedWorksheetNames)) return false;
 
   const worksheetNames = worksheetDispositions.map(({ worksheetName }: any) => worksheetName);
   if (worksheetNames.some((worksheetName: any) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
@@ -199,7 +209,7 @@ function validateReportSummary(summary: any, optimization: any): boolean {
   const optimizationWorksheetNames = optimization.worksheets.map(({ worksheetName }: any) => worksheetName);
   if (optimizationWorksheetNames.some((worksheetName: any) => typeof worksheetName !== "string" || worksheetName.length === 0)) return false;
   if (new Set(optimizationWorksheetNames).size !== optimizationWorksheetNames.length) return false;
-  const blockedNames = reportScope.blockedWorksheetNames;
+  const blockedNames = optimization.optimizationVersion === "f6-optimization-v2" ? reportScope.blockedWorksheetNames : [];
   const blockedNameSet = new Set(blockedNames);
   const expectedOptimizationNames = reportScope.worksheetNames.filter((worksheetName: string) => !blockedNameSet.has(worksheetName));
   if (!sameStringSet(optimizationWorksheetNames, expectedOptimizationNames)) return false;
@@ -214,6 +224,10 @@ function validateInputDecisions(summary: any, manifest: any, optimization: any):
   const decisions = summary?.inputDecisions;
   if (decisions === undefined || manifest?.inputDecisions === undefined) return false;
   if (!sameJson(manifest.inputDecisions, decisions)) return false;
+  if (optimization.optimizationVersion === "f6-optimization-v3") {
+    return decisions.modelInterpretation?.outcome === "CALLER_AUTHORIZED"
+      && sameJson(decisions.modelInterpretation.artifactReference, optimization.provenance.multimodalReference);
+  }
   for (const [decisionKey, provenanceKey] of Object.entries(DECISION_PROVENANCE_FIELDS)) {
     if (!sameJson(decisions?.[decisionKey], optimization.provenance?.[provenanceKey])) return false;
   }
@@ -234,7 +248,7 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
 
     const manifest = jsonFile(path.join(runRoot, "manifest.json"));
     const optimizationRaw = jsonFile(path.join(runRoot, "Feature6-Optimization.json"));
-    const optimization = f6OptimizationResultSchema.parse(optimizationRaw);
+    const optimization = f6ReadableOptimizationResultSchema.parse(optimizationRaw);
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus)) return rejected("manifest_invalid");
