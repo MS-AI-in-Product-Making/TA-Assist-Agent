@@ -165,7 +165,7 @@ describe("extension workbench binding", () => {
     expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
-    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Agent Workbench.`);
     expect(JSON.stringify(response.markdown.mock.calls)).not.toContain(WORKBOOK_PATH);
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
@@ -178,7 +178,7 @@ describe("extension workbench binding", () => {
     expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(importWorkbookMock).not.toHaveBeenCalled();
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
-    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Agent Workbench is ready. Upload a workbook to begin.");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -207,7 +207,7 @@ describe("extension workbench binding", () => {
     const response = await invokeParticipant({ prompt: WORKBOOK_PATH, command: "analyze" });
 
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
-    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Agent Workbench.`);
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -220,7 +220,7 @@ describe("extension workbench binding", () => {
     expect(findFilesMock).toHaveBeenCalled();
     expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "zh-CN", uiCatalogLanguage: "zh" }));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
-    expect(response.markdown).toHaveBeenCalledWith(`工作簿已接受。Session ${SESSION_ID} 正在 TA Assist Workbench 中运行。`);
+    expect(response.markdown).toHaveBeenCalledWith(`工作簿已接受。Session ${SESSION_ID} 正在 TA Assist Agent Workbench 中运行。`);
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -249,7 +249,7 @@ describe("extension workbench binding", () => {
     expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
     expect(showQuickPickMock).toHaveBeenCalledTimes(1);
     expect(importWorkbookMock).not.toHaveBeenCalled();
-    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Agent Workbench is ready. Upload a workbook to begin.");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -263,7 +263,7 @@ describe("extension workbench binding", () => {
     expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
     expect(showOpenDialogMock).toHaveBeenCalledTimes(1);
     expect(importWorkbookMock).not.toHaveBeenCalled();
-    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Agent Workbench is ready. Upload a workbook to begin.");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
@@ -273,13 +273,13 @@ describe("extension workbench binding", () => {
     showOpenDialogMock.mockResolvedValueOnce([{ fsPath: "C:\\TA Reports\\report.csv" }]);
     importWorkbookMock.mockRejectedValueOnce(Object.assign(new Error("unsafe"), {
       summary: "Workbook import failed for C:\\TA Reports\\report.csv",
-      suggestedAction: "Open TA Assist Workbench and upload the workbook again.",
+      suggestedAction: "Open TA Assist Agent Workbench and upload the workbook again.",
     }));
 
     const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
 
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: "C:\\TA Reports\\report.csv" }, expect.any(Object));
-    expect(response.markdown).toHaveBeenCalledWith("Workbook import failed. Open TA Assist Workbench and upload the workbook again.");
+    expect(response.markdown).toHaveBeenCalledWith("Workbook import failed. Open TA Assist Agent Workbench and upload the workbook again.");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 

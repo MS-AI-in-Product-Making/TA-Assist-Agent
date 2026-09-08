@@ -176,7 +176,7 @@ Delivered as a confidential local TA Assist Workbench. CLI `agent analyze|resume
 - Cite the F0 knowledge-base entry, rule version, and applicable scope for every `RULE` or capability conclusion.
 - Show a clarification card and explicit assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing.
 - Hold only the conclusions that depend on the unanswered question; continue analysis for evidence that is already sufficient.
-- Support `workflow:f5` and the trigger phrase `使用F5分析报告`; never auto-publish to ADO or write back to the workbook.
+- Support `workflow:f5` as a development entry and `/ta-assist-agent` as the product entry; never auto-publish to ADO or write back to the workbook.
 - Retain F5.1 as an internal compatible core, not as the only available F5 entry. Keep the existing detailed F5 report and its controlled delegation unchanged; the available F6 workflow consumes that delegation without ranking F5 `OPTION` statements.
 
 ### F6 - Tolerance / Dimension-Chain Optimization

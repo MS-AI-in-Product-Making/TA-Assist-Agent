@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
+import { findEngineeringLanguageViolations, hasCjkText, isEnglishEngineeringPath, isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
 const COMPOSED_REPORT_ARTIFACT_TOKEN = ["Feature6", "Composed", "Report"].join("-");
 
@@ -54,6 +54,17 @@ function writeRepositoryFixture(repositoryPath, fixturePath, content) {
 }
 
 describe("isForbiddenRepositoryPath", () => {
+  it("enforces English on engineering entry assets without rejecting localized product files", () => {
+    expect(hasCjkText("English only")).toBe(false);
+    expect(hasCjkText("中文 product copy")).toBe(true);
+    expect(isEnglishEngineeringPath("README.md")).toBe(true);
+    expect(isEnglishEngineeringPath("apps/vscode-extension/src/participant.ts")).toBe(false);
+    expect(findEngineeringLanguageViolations(
+      ["README.md", "apps/vscode-extension/src/participant.ts"],
+      (repositoryPath) => repositoryPath === "README.md" ? "中文 developer guide" : "中文 localized response",
+    )).toEqual(["README.md"]);
+  });
+
   it("rejects active Feature 6 legacy report artifact references outside historical plans and specs", () => {
     expect(activeComposedReportArtifactReferences(process.cwd())).toEqual([]);
   });

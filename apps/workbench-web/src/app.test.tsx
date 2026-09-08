@@ -25,8 +25,8 @@ const KNOWN_CHINESE_UI_TEXT = [
   "优化结论",
   "缺失信息与数据健康",
   "ADO 治理验收",
-  "关闭 TA Assistant",
-  "打开 TA Assistant",
+  "关闭 TA Assist Agent",
+  "打开 TA Assist Agent",
   "已连接",
   "连接恢复中",
 ];
@@ -552,7 +552,7 @@ describe("App", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Gap", description: "中心间隙" }));
-  fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open TA Assist Agent" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Conversation input" }), { target: { value: "Explain the current tolerance risk." } });
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
@@ -588,8 +588,8 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "AJ_GAP" })).toBeVisible();
     expect(screen.getByRole("region", { name: "TA Factor Table" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    expect(screen.getByRole("region", { name: "TA Assistant" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assist Agent" }));
+    expect(screen.getByRole("region", { name: "TA Assist Agent" })).toBeVisible();
   }, 15_000);
 
   it("shows next-request context chips from current governed evidence instead of unsaved client scenario state", () => {
@@ -719,8 +719,8 @@ describe("App", () => {
       } as never,
     }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    const assistant = screen.getByRole("region", { name: "TA Assistant" });
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assist Agent" }));
+    const assistant = screen.getByRole("region", { name: "TA Assist Agent" });
     expect(within(assistant).getByText("Knowledge: 1 item")).toBeVisible();
     expect(within(assistant).getByText("Loop image: Requested")).toBeVisible();
     expect(within(assistant).getByText("Factor table: 1 row")).toBeVisible();

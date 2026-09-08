@@ -44,8 +44,8 @@ export function createBrowserBootstrapRendezvous(options: BrowserBootstrapRendez
 export function renderBootstrapPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>TA Assist Workbench</title></head>
-<body><main id="app"><h1>TA Assist Workbench 需要重新连接</h1><p>请从 VS Code 执行 TA Assist: Resume Session，生成一次性安全恢复链接。</p></main><script src="/bootstrap.js"></script></body>
+<head><meta charset="utf-8"><title>TA Assist Agent Workbench</title></head>
+<body><main id="app"><h1>TA Assist Agent Workbench 需要重新连接</h1><p>请从 VS Code 执行 TA Assist Agent: Resume Session，生成一次性安全恢复链接。</p></main><script src="/bootstrap.js"></script></body>
 </html>`;
 }
 
@@ -64,7 +64,7 @@ export function renderBootstrapScript(): string {
     if (!response.ok) throw new Error('bootstrap rejected');
     location.replace(location.pathname + location.search);
   }).catch(() => {
-    document.getElementById('app').textContent = 'Workbench authentication failed. Relaunch TA Assist.';
+    document.getElementById('app').textContent = 'Workbench authentication failed. Relaunch TA Assist Agent.';
   }).finally(() => params.delete('bootstrap'));
 })();`;
 }

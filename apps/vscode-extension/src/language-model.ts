@@ -36,7 +36,7 @@ export function createVsCodeLanguageModelAdapter(input: {
         ? "全部使用中文回答，包括解释、建议、进度和操作说明。"
         : "Respond entirely in English, including explanations, recommendations, progress, and action text.";
       const response = await input.model.sendRequest([
-        input.createUserMessage(`You are TA Assist. Answer concisely using only this governed context. ${languageInstruction} Use product capability names only and never expose internal feature identifiers.\n${JSON.stringify(governedContext)}\n\nUser: ${request.text}`),
+        input.createUserMessage(`You are TA Assist Agent. Answer concisely using only this governed context. ${languageInstruction} Use product capability names only and never expose internal feature identifiers.\n${JSON.stringify(governedContext)}\n\nUser: ${request.text}`),
       ], {}, input.token);
       let responseText = "";
       for await (const chunk of response.text) responseText += chunk;

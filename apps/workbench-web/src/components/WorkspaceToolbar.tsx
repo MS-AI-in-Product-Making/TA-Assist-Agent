@@ -22,7 +22,7 @@ export function WorkspaceToolbar({ model, loading, language = "en", onUpload, on
   return (
     <header className="workspace-toolbar">
       <div className="workspace-toolbar__brand">
-        <strong>TA Assist</strong>
+        <strong>TA Assist Agent</strong>
         <span className="workspace-toolbar__workbook-name" title={workbookName}>{workbookName}</span>
         <span className="read-only-badge">Read-only source</span>
       </div>

@@ -21,11 +21,11 @@ export function ConversationPane({ turns, api, sessionId, disabled = false, sugg
   const metadata = inputMetadata(language).conversation_input;
   const copy = language === "zh" ? {
     eyebrow: "会话", heading: "会话面板", empty: "此会话尚无会话历史。", send: "发送请求",
-    engineer: "工程师", assistant: "TA Assist", tool: "工具", pending: "等待模型回答", waiting: "正在等待 VS Code 模型回答...",
+    engineer: "工程师", assistant: "TA Assist Agent", tool: "工具", pending: "等待模型回答", waiting: "正在等待 VS Code 模型回答...",
     error: "错误", decision: "决策记录可用。", evidence: "证据", command: "受治理的命令可用。", generated: "已生成受治理的工具操作。", report: "设计优化报告",
   } : {
     eyebrow: "Conversation", heading: "Conversation panel", empty: "No conversation history is available for this session yet.", send: "Send request",
-    engineer: "Engineer", assistant: "TA Assist", tool: "Tool", pending: "Pending model response", waiting: "Waiting for VS Code model response...",
+    engineer: "Engineer", assistant: "TA Assist Agent", tool: "Tool", pending: "Pending model response", waiting: "Waiting for VS Code model response...",
     error: "Error", decision: "Decision record available.", evidence: "Evidence", command: "Governed command available.", generated: "Generated governed tool action.", report: "Design Optimization Report",
   };
   const [draft, setDraft] = useState("");

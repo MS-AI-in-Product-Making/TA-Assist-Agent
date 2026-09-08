@@ -561,7 +561,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
         throw createTypedError({
           code: "evidence_mismatch",
           summary: "Model proposal does not match the active F6 input gate.",
-          suggestedAction: "Use the currently active gate in TA Assistant to provide input.",
+          suggestedAction: "Use the currently active gate in TA Assist Agent to provide input.",
           affectedInputReferences: [sessionId],
         });
       }
@@ -647,7 +647,7 @@ async function importHostWorkbookOnce(context: WorkbenchServerContext, input: Ho
 
   const current = await context.sessions.read(input.sessionId);
   if (current === undefined) {
-    throw createTypedError({ code: "validation_error", summary: "Session is unavailable for workbook import.", suggestedAction: "Create or resume a TA Assist session before importing.", affectedInputReferences: ["session_unavailable"] });
+    throw createTypedError({ code: "validation_error", summary: "Session is unavailable for workbook import.", suggestedAction: "Create or resume a TA Assist Agent session before importing.", affectedInputReferences: ["session_unavailable"] });
   }
   if (!isAcceptedHostWorkbookFileName(input.fileName)) {
     throw createTypedError({ code: "validation_error", summary: "Workbook import rejected.", suggestedAction: "Provide a supported .xlsx workbook file.", affectedInputReferences: ["workbook_name_rejected"] });
@@ -1956,7 +1956,7 @@ function parseReviewContext(snapshot: F8SessionSnapshot, value: unknown): Review
 }
 
 function renderWorkbenchPage(): string {
-  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>TA Assist Workbench</title><link rel=\"stylesheet\" href=\"/workbench.css\"></head><body><main id=\"app\"></main><script type=\"module\" src=\"/workbench.js\"></script></body></html>";
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>TA Assist Agent Workbench</title><link rel=\"stylesheet\" href=\"/workbench.css\"></head><body><main id=\"app\"></main><script type=\"module\" src=\"/workbench.js\"></script></body></html>";
 }
 
 function writeSanitizedRunnerError(rootDir: string, sessionId: string, stage: string, error: unknown): void {
