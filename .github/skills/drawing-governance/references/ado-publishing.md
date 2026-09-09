@@ -26,7 +26,8 @@ Use strict query order: organization -> project -> work item type/work item id.
 2. Validate selected organization.
 3. Query projects under that organization.
 4. Validate selected project.
-5. For create mode: query work item types and validate selected type (`Default: Task`).
+5. For create mode: query work item types and validate selected type (`Default: Task`). Default the editable title to `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>`, replace `<TA Excel Name>` with the uploaded TA workbook file name, and show the same template as a copyable example.
+6. For create mode, require a valid sponsor email before creating the target or offering final write confirmation. Create the Task with `System.Title` and `System.AssignedTo`, then require the title readback to match exactly and the assigned-owner readback to match the sponsor email case-insensitively.
 6. For existing mode: read work item by ID and validate target.
 
 If any lookup is invalid, run candidate correction from Surface MCP results before moving forward.

@@ -79,7 +79,10 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 				organization: DEFAULT_CREATE_TARGET.organization,
 				project: DEFAULT_CREATE_TARGET.project,
 				workItemType: DEFAULT_CREATE_TARGET.workItemType,
-				requestBody: [{ name: "System.Title", value: input.title }],
+				requestBody: [
+					{ name: "System.Title", value: input.title },
+					{ name: "System.AssignedTo", value: input.sponsorEmail },
+				],
 			});
 			const workItemId = requiredNumber(result, "id");
 			if (!Number.isInteger(workItemId) || workItemId <= 0) {
@@ -103,10 +106,12 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 				expand: "fields",
 			});
 			const fields = record(result.fields, "fields");
+			const title = typeof fields["System.Title"] === "string" ? fields["System.Title"] : undefined;
 			const ownerReference = identity(fields["System.AssignedTo"]);
 			const requestByReference = identity(fields["System.CreatedBy"]);
 			return {
 				version: String(requiredNumber(result, "rev")),
+				...(title === undefined ? {} : { title }),
 				...(ownerReference === undefined ? {} : { ownerReference }),
 				...(requestByReference === undefined ? {} : { requestByReference }),
 			};

@@ -168,7 +168,7 @@ export interface StoredEvent {
 }
 
 export interface AdoPreviewIdentity {
-  readonly target: { readonly mode: "create"; readonly title: string } | { readonly mode: "existing"; readonly workItemReference: string };
+  readonly target: { readonly mode: "create"; readonly title: string; readonly sponsorEmail: string } | { readonly mode: "existing"; readonly workItemReference: string };
   readonly markdown: string;
   readonly contentHash: string;
   readonly factorCount: number;
@@ -1196,10 +1196,12 @@ async function createDefaultSurfacePrepareRequest(
   const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
   if (report.status === "input_rejected") throw reviewContextMismatch(snapshot, "Surface validation cannot use an input-rejected F3 report.");
   const nextContent = renderF3AdoMarkdown(report).markdown;
-  const payload = command.payload as { readonly decision: "create_new" | "use_existing"; readonly workItemReference?: string };
+  const payload = command.payload as
+    | { readonly decision: "create_new"; readonly title: string; readonly sponsorEmail: string }
+    | { readonly decision: "use_existing"; readonly workItemReference: string };
   return payload.decision === "create_new"
-    ? { mode: "create", title: `TA Drawing Governance - ${report.workbook.fileName}`, nextContent, factorCount: report.summary.factorCount }
-    : { mode: "existing", workItemReference: payload.workItemReference!, nextContent, factorCount: report.summary.factorCount };
+    ? { mode: "create", title: payload.title, sponsorEmail: payload.sponsorEmail, nextContent, factorCount: report.summary.factorCount }
+    : { mode: "existing", workItemReference: payload.workItemReference, nextContent, factorCount: report.summary.factorCount };
 }
 
 async function createAdoPreview(
@@ -1214,10 +1216,10 @@ async function createAdoPreview(
   if (report.status === "input_rejected") throw reviewContextMismatch(snapshot, "ADO preview cannot use an input-rejected F3 report.");
   const rendered = renderF3AdoMarkdown(report);
   const target = prepareRequest.mode === "create"
-    ? { mode: "create" as const, title: `TA Drawing Governance - ${report.workbook.fileName}` }
+    ? { mode: "create" as const, title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail }
     : { mode: "existing" as const, workItemReference: prepareRequest.workItemReference };
   const expectedPrepareRequest = prepareRequest.mode === "create"
-    ? { mode: "create" as const, title: target.title, nextContent: rendered.markdown, factorCount: report.summary.factorCount }
+    ? { mode: "create" as const, title: target.title, sponsorEmail: target.sponsorEmail, ...(prepareRequest.workItemReference === undefined ? {} : { workItemReference: prepareRequest.workItemReference }), nextContent: rendered.markdown, factorCount: report.summary.factorCount }
     : { mode: "existing" as const, workItemReference: target.workItemReference, nextContent: rendered.markdown, factorCount: report.summary.factorCount };
   return {
     target,

@@ -19,14 +19,30 @@ describe("AdoWorkspaceDecision", () => {
     expect(onSubmit).toHaveBeenCalledWith("use_existing", "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123");
   });
 
-  it("submits a create work item decision from the inline F3 workspace controls", async () => {
+  it("prefills the governed title and requires a sponsor email before creating a work item", async () => {
     const onSubmit = vi.fn(async () => undefined);
-    render(<AdoWorkspaceDecision visible onSubmit={onSubmit} />);
+    render(<AdoWorkspaceDecision visible workbookFileName="Gearbox TA.xlsx" onSubmit={onSubmit} />);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create work item" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("create_new");
+    const title = screen.getByRole("textbox", { name: "Work item title" });
+    const sponsorEmail = screen.getByRole("textbox", { name: "Sponsor email" });
+    const create = screen.getByRole("button", { name: "Create and validate work item" });
+    expect(title).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx");
+    expect(screen.getByRole("textbox", { name: "Title example" })).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>");
+    expect(screen.getByRole("textbox", { name: "Title example" })).toHaveAttribute("readonly");
+    expect(create).toBeDisabled();
+
+    fireEvent.change(sponsorEmail, { target: { value: "invalid" } });
+    expect(create).toBeDisabled();
+    fireEvent.change(sponsorEmail, { target: { value: "sponsor@example.com" } });
+    fireEvent.click(create);
+
+    expect(onSubmit).toHaveBeenCalledWith("create_new", undefined, {
+      title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx",
+      sponsorEmail: "sponsor@example.com",
+    });
   });
 
   it("renders the complete preview and requires a separate Web confirmation", async () => {
@@ -36,6 +52,13 @@ describe("AdoWorkspaceDecision", () => {
     expect(screen.getByText(/owner@example.com/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Confirm ADO write" }));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ validationActionId: "validation-1", expectedRevision: 2, target: { mode: "existing", workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42" }, contentHash: "c".repeat(64), confirmationHash: "b".repeat(64), confirmed: true }));
+  });
+
+  it("reminds the user that the new task is assigned to the sponsor before confirmation", () => {
+    render(<AdoWorkspaceDecision visible projection={{ contractVersion: "f8-ado-projection-v1", sessionId: "session-1", state: "preview_ready", actionId: "validation-1", expectedRevision: 2, target: { mode: "create", title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox.xlsx", sponsorEmail: "sponsor@example.com" }, markdown: "# Complete governance preview", contentHash: "c".repeat(64), confirmation: { status: "confirmation_required", workItemReference: "WI-42", ownerReference: "sponsor@example.com", commentReference: "C0", expectedVersion: "7", beforeContentHash: "a".repeat(64), nextContent: "# Complete governance preview", factorCount: 2, confirmationHash: "b".repeat(64), diff: [{ before: "old", after: "new", changed: true }] } }} onSubmit={vi.fn()} onConfirm={vi.fn()} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sponsor email is required. This task is assigned to sponsor@example.com.");
+    expect(screen.getByRole("button", { name: "Confirm ADO write" })).toBeEnabled();
   });
 
   it("shows write outcome unknown messaging without a generic retry-write button", () => {

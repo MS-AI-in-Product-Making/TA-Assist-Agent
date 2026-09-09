@@ -98,7 +98,7 @@ describe("workbench browser API", () => {
       contractVersion: "f8-ado-write-confirmation-v1",
       validationActionId: "ado-validation:session-1:2",
       expectedRevision: 2,
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" },
+      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
       contentHash: "c".repeat(64),
       confirmationHash: "b".repeat(64),
       confirmed: true,

@@ -2591,7 +2591,7 @@ describe("workbench server routes", () => {
     const report = f3Report("Host action canonical factor");
     const reportHash = await writeJsonArtifact(rootDir, "f3/current-host-action.json", report);
     const rendered = renderF3AdoMarkdown(report);
-    const prepareRequest = { mode: "create" as const, title: "TA Drawing Governance - Anonymous.xlsx", nextContent: rendered.markdown, factorCount: 1 };
+    const prepareRequest = { mode: "create" as const, title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: rendered.markdown, factorCount: 1 };
     const runner = vi.fn(async () => ({ status: "worker-ran" }));
     const server = await buildWorkbenchServer({ rootDir, runner, surfacePrepareService: { create: async () => prepareRequest } });
     try {
@@ -2629,7 +2629,7 @@ describe("workbench server routes", () => {
           commandId: "request-ado-validation",
           expectedRevision: snapshot.revision,
           command: "confirm_ado_decision",
-          payload: { decision: "create_new" },
+          payload: { decision: "create_new", title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail },
         },
       });
 
@@ -2656,10 +2656,16 @@ describe("workbench server routes", () => {
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(missingOutcomePayload)).digest("hex"), payload: missingOutcomePayload } })).statusCode).toBe(400);
       const confirmationHash = createHash("sha256").update(JSON.stringify(["WI-1", "C0", "1", prepareRequest.nextContent])).digest("hex");
       const confirmation = {
-        status: "confirmation_required", workItemReference: "WI-1", ownerReference: "owner-1", commentReference: "C0", expectedVersion: "1",
+        status: "confirmation_required", workItemReference: "WI-1", ownerReference: prepareRequest.sponsorEmail, commentReference: "C0", expectedVersion: "1",
         beforeContentHash: "b".repeat(64), nextContent: prepareRequest.nextContent, factorCount: prepareRequest.factorCount,
         confirmationHash, diff: [{ before: "before", after: prepareRequest.nextContent, changed: true }],
       } as const;
+      const mismatchedOwnerPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation: { ...confirmation, ownerReference: "other@example.com" } } };
+      expect((await server.inject({
+        method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` },
+        payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(mismatchedOwnerPayload)).digest("hex"), payload: mismatchedOwnerPayload },
+      })).statusCode).toBe(400);
       const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
       expect((await server.inject({
         method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`,
@@ -2670,13 +2676,13 @@ describe("workbench server routes", () => {
 
       const previewResponse = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
       expect(previewResponse.statusCode, previewResponse.payload).toBe(200);
-      expect(previewResponse.json()).toMatchObject({ state: "preview_ready", actionId, target: { mode: "create", title: prepareRequest.title }, markdown: rendered.markdown, contentHash: rendered.contentHash, confirmation });
+      expect(previewResponse.json()).toMatchObject({ state: "preview_ready", actionId, target: { mode: "create", title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail }, markdown: rendered.markdown, contentHash: rendered.contentHash, confirmation });
       expect(previewResponse.json()).not.toHaveProperty("leaseId");
 
       const writeActionId = `ado-write:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
       const writeClaimToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: writeActionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } })).statusCode).toBe(409);
-      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId: actionId, expectedRevision: response.json<{ revision: number }>().revision, target: { mode: "create", title: prepareRequest.title }, contentHash: rendered.contentHash, confirmationHash, confirmed: true } })).statusCode).toBe(201);
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId: actionId, expectedRevision: response.json<{ revision: number }>().revision, target: { mode: "create", title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail }, contentHash: rendered.contentHash, confirmationHash, confirmed: true } })).statusCode).toBe(201);
       const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
       expect(writeClaimResponse.statusCode).toBe(200);
       expect(writeClaimResponse.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation } });
@@ -2765,7 +2771,7 @@ describe("workbench server routes", () => {
       expect(preview.json().markdown).not.toContain("Old stale factor");
 
       for (const payload of [
-        { target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" }, contentHash: rendered.contentHash, expectedRevision },
+        { target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" }, contentHash: rendered.contentHash, expectedRevision },
         { target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" }, contentHash: "9".repeat(64), expectedRevision },
         { target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" }, contentHash: rendered.contentHash, expectedRevision: expectedRevision - 1 },
       ]) {
@@ -2807,7 +2813,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -2883,7 +2889,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -2959,7 +2965,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3044,7 +3050,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3114,7 +3120,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3189,7 +3195,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3258,7 +3264,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3347,7 +3353,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3447,7 +3453,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3533,7 +3539,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3660,7 +3666,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3745,6 +3751,21 @@ describe("workbench server routes", () => {
         actionId: `ado-validation:${browser.sessionId}:${nextRevision}`,
         expectedRevision: nextRevision,
       });
+      const regeneratedActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        expect(await regeneratedActions.getHostAction(`ado-validation:${browser.sessionId}:${nextRevision}`)).toMatchObject({
+          request: {
+            prepareRequest: {
+              mode: "create",
+              workItemReference: testSurfaceConfirmation().workItemReference,
+              title: "TA Drawing Governance - Anonymous.xlsx",
+              sponsorEmail: "sponsor@example.com",
+            },
+          },
+        });
+      } finally {
+        await regeneratedActions.close();
+      }
 
       const blockedRootDir = testRoot("workbench-server-ado-reconcile-blocked-generation");
       await rm(blockedRootDir, { recursive: true, force: true });
@@ -3767,7 +3788,7 @@ describe("workbench server routes", () => {
             expiresAt: new Date(Date.now() + 60_000).toISOString(),
             confirmationHash: confirmation.confirmationHash,
             expectedTargetVersion: "comment-v1",
-            prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+            prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
           });
           const validationClaim = await blockedActions.claimHostAction(blockedValidationActionId, "host-a");
           const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
@@ -3868,7 +3889,7 @@ describe("workbench server routes", () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
         });
         const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
         const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };

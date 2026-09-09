@@ -791,6 +791,13 @@ describe("F8 session and host contracts", () => {
     expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
   });
 
+  it("requires a title and valid sponsor email for a new Work Item", () => {
+    const create = { contractVersion: "f8-session-command-v1", sessionId: SESSION_ID, commandId: COMMAND_ID, expectedRevision: 3, command: "confirm_ado_decision", payload: { decision: "create_new", title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox.xlsx", sponsorEmail: "sponsor@example.com" } };
+    expect(f8PublicSessionCommandSchema.parse(create)).toEqual(create);
+    expect(() => f8PublicSessionCommandSchema.parse({ ...create, payload: { decision: "create_new", title: create.payload.title } })).toThrow();
+    expect(() => f8PublicSessionCommandSchema.parse({ ...create, payload: { ...create.payload, sponsorEmail: "invalid" } })).toThrow();
+  });
+
   it("keeps automatic initial scope confirmation internal", () => {
     const internal = { contractVersion: "f8-session-command-v1", sessionId: SESSION_ID, commandId: "auto-scope", expectedRevision: 4, command: "auto_confirm_initial_scope", payload: { worksheetNames: ["AJ_GAP"], workbookHash: WORKBOOK_HASH } };
     expect(f8SessionCommandSchema.parse(internal).command).toBe("auto_confirm_initial_scope");

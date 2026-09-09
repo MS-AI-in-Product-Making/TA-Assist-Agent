@@ -133,7 +133,7 @@ registerWorkbookUploadArtifact(MODEL_UNAVAILABLE_SESSION_ID);
 registerWorkbookUploadArtifact(AMBIGUOUS_MAPPING_SESSION_ID);
 await seedReviewSession(SESSION_ID, "review_required", auth.headers.cookie);
 await seedReviewSession(ADO_SELECTION_SESSION_ID, "ado_decision_required", adoSelectionAuth.headers.cookie);
-await seedPreviewSession(ADO_CREATE_PREVIEW_SESSION_ID, { mode: "create", title: `TA Drawing Governance - ${f3Report.workbook.fileName}` }, adoCreatePreviewAuth.headers.cookie);
+await seedPreviewSession(ADO_CREATE_PREVIEW_SESSION_ID, { mode: "create", title: `[TA Requirement][Project][Phase] Update Drawing Requirements for ${f3Report.workbook.fileName}`, sponsorEmail: "sponsor@example.com" }, adoCreatePreviewAuth.headers.cookie);
 await seedPreviewSession(ADO_UPDATE_PREVIEW_SESSION_ID, { mode: "existing", workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42" }, adoUpdatePreviewAuth.headers.cookie);
 await seedFailedExecutionSession(PRODUCT_EXPORT_FAILED_SESSION_ID, productExportFailedAuth.headers.cookie);
 await seedReviewSession(F6_CHAT_INPUT_SESSION_ID, "analysis_context_decision_required", f6ChatInputAuth.headers.cookie);
@@ -462,7 +462,7 @@ async function seedPreviewSession(sessionId, target, cookie) {
     expectedRevision: beforeDecision.revision,
     command: "confirm_ado_decision",
     payload: target.mode === "create"
-      ? { decision: "create_new" }
+      ? { decision: "create_new", title: target.title, sponsorEmail: target.sponsorEmail }
       : { decision: "use_existing", workItemReference: target.workItemReference },
   });
   const adoSnapshot = await waitForSessionState(sessionId, cookie, "ado_action_pending");
@@ -809,7 +809,7 @@ function previewConfirmation(target, nextContent, confirmationHash, factorCount)
   return {
     status: "confirmation_required",
     workItemReference: target.mode === "create" ? "WI-900" : "WI-42",
-    ownerReference: "owner-1",
+    ownerReference: target.mode === "create" ? target.sponsorEmail : "owner-1",
     commentReference: "C0",
     expectedVersion: target.mode === "create" ? "1" : "7",
     beforeContentHash: "b".repeat(64),

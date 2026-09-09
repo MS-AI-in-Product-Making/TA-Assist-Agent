@@ -52,7 +52,7 @@ export interface EngineeringWorkspaceProps {
   readonly f3Report?: DrawingGovernanceResultV2;
   readonly adoDecisionRequired?: boolean;
   readonly adoProjection?: F8AdoProjection;
-  readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
+  readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string, createInput?: { readonly title: string; readonly sponsorEmail: string }) => Promise<void>;
   readonly onAdoConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
   readonly onAdoReconcile?: () => Promise<void>;
   readonly onAdoStartNewWriteGeneration?: () => Promise<void>;

@@ -282,7 +282,7 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     try {
       const decisionPayload = validation.request.prepareRequest.mode === "existing"
         ? { decision: "use_existing" as const, workItemReference: validation.request.prepareRequest.workItemReference }
-        : { decision: "create_new" as const };
+        : { decision: "create_new" as const, title: validation.request.prepareRequest.title, sponsorEmail: validation.request.prepareRequest.sponsorEmail };
 
       const resetCommand: F8SessionCommand = {
         contractVersion: "f8-session-command-v1",
@@ -303,7 +303,10 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       };
       const nextSnapshot = await context.sessions.applyCommand(regenerateCommand);
       const nextValidationActionId = `ado-validation:${sessionId}:${nextSnapshot.revision}`;
-      const confirmationHash = createHash("sha256").update(JSON.stringify(validation.request.prepareRequest)).digest("hex");
+      const regeneratedPrepareRequest = validation.request.prepareRequest.mode === "create"
+        ? { ...validation.request.prepareRequest, workItemReference: write.request.confirmation.workItemReference }
+        : validation.request.prepareRequest;
+      const confirmationHash = createHash("sha256").update(JSON.stringify(regeneratedPrepareRequest)).digest("hex");
       const created = await context.hostActions.create({
         contractVersion: "f8-host-action-request-v1",
         actionId: nextValidationActionId,
@@ -312,7 +315,7 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
         kind: "surface_validate",
         confirmationHash,
         expectedTargetVersion: validation.request.expectedTargetVersion,
-        prepareRequest: validation.request.prepareRequest,
+        prepareRequest: regeneratedPrepareRequest,
         expiresAt: new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString(),
       });
       if (created === undefined) {
