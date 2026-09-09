@@ -258,8 +258,17 @@ describe("process requirement queries", () => {
 
   it("treats request-side all values literally rather than as wildcards", () => {
     const knowledge = loadProcessRequirements({ version: "process-requirements-v1" });
-    const actorResult = knowledge.evaluateProcessRequirements({ actor: "all" });
-    const methodResult = knowledge.evaluateProcessRequirements({ analysisMethod: "all" });
+    const actorResult = knowledge.evaluateProcessRequirements({
+      actor: "all",
+      priority: "P0",
+      lifecycleStage: "asr",
+    });
+    const methodResult = knowledge.evaluateProcessRequirements({
+      analysisMethod: "all",
+      toleranceCount: 11,
+      hasThreeDimensionalSensitivity: true,
+      subject: "camera-fov-clearance",
+    });
 
     expect(entryIds(actorResult)).toContain("requirement-input-completeness");
     expect(entryIds(actorResult)).not.toContain("milestone-odm-p0-asr");
