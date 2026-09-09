@@ -8,9 +8,10 @@ export type SurfaceMcpCapability =
 
 export interface SurfaceMcpDrawingGovernanceClient {
   listCapabilities(): Promise<readonly SurfaceMcpCapability[]>;
-  createWorkItem(input: { readonly title: string }): Promise<{ readonly workItemReference: string }>;
+  createWorkItem(input: { readonly title: string; readonly sponsorEmail: string }): Promise<{ readonly workItemReference: string }>;
   readWorkItem(reference: string): Promise<{
     readonly version: string;
+    readonly title?: string;
     readonly ownerReference?: string;
     readonly requestByReference?: string;
   }>;
@@ -35,6 +36,8 @@ export type SurfaceMcpPrepareRequest = {
 } | {
   readonly mode: "create";
   readonly title: string;
+  readonly sponsorEmail: string;
+  readonly workItemReference?: string | undefined;
   readonly nextContent: string;
   readonly factorCount: number;
 };
@@ -58,7 +61,7 @@ export interface SurfaceMcpConfirmationPayload {
 
 export type SurfaceMcpPrepareResult = SurfaceMcpConfirmationPayload | {
   readonly status: "blocked";
-  readonly reasonCode: "surface_mcp_capability_missing" | "owner_reference_missing" | "comment_zero_unavailable";
+  readonly reasonCode: "surface_mcp_capability_missing" | "owner_reference_missing" | "sponsor_assignment_mismatch" | "title_readback_mismatch" | "comment_zero_unavailable";
   readonly missingCapabilities?: readonly SurfaceMcpCapability[];
   readonly workItemReference?: string;
 };
@@ -105,8 +108,8 @@ function validateRequest(input: SurfaceMcpPrepareRequest): void {
   if (input.mode === "existing" && !nonempty(input.workItemReference)) {
     throw codedError("validation_error", "An existing Work Item reference is required.");
   }
-  if (input.mode === "create" && !nonempty(input.title)) {
-    throw codedError("validation_error", "A Work Item title is required.");
+  if (input.mode === "create" && (!nonempty(input.title) || !isEmail(input.sponsorEmail))) {
+    throw codedError("validation_error", "A Work Item title and valid sponsor email are required.");
   }
 }
 
@@ -116,7 +119,7 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
       validateRequest(input);
       const capabilities = new Set(await client.listCapabilities());
       const required: SurfaceMcpCapability[] = [
-        ...(input.mode === "create" ? ["workItems.create" as const] : []),
+        ...(input.mode === "create" && input.workItemReference === undefined ? ["workItems.create" as const] : []),
         "workItems.read",
         "workItems.comments.read",
         "workItems.comments.update",
@@ -126,10 +129,21 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
         return { status: "blocked", reasonCode: "surface_mcp_capability_missing", missingCapabilities };
       }
 
-      const workItemReference = input.mode === "create"
-        ? (await client.createWorkItem({ title: input.title })).workItemReference
-        : input.workItemReference;
+      let workItemReference: string;
+      if (input.mode === "existing") {
+        workItemReference = input.workItemReference;
+      } else if (input.workItemReference !== undefined) {
+        workItemReference = input.workItemReference;
+      } else {
+        workItemReference = (await client.createWorkItem({ title: input.title, sponsorEmail: input.sponsorEmail })).workItemReference;
+      }
       const workItem = await client.readWorkItem(workItemReference);
+      if (input.mode === "create" && workItem.title !== input.title) {
+        return { status: "blocked", reasonCode: "title_readback_mismatch", workItemReference };
+      }
+      if (input.mode === "create" && workItem.ownerReference?.trim().toLowerCase() !== input.sponsorEmail.trim().toLowerCase()) {
+        return { status: "blocked", reasonCode: "sponsor_assignment_mismatch", workItemReference };
+      }
       const ownerReference = nonempty(workItem.ownerReference)
         ? workItem.ownerReference
         : nonempty(workItem.requestByReference) ? workItem.requestByReference : undefined;
@@ -209,4 +223,8 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
       };
     },
   };
+}
+
+function isEmail(value: string | undefined): value is string {
+  return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.trim());
 }

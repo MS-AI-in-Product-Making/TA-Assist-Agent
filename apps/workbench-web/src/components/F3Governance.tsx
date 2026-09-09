@@ -9,7 +9,7 @@ interface F3GovernanceProps {
   readonly language?: UiCatalogLanguage;
   readonly adoDecisionRequired?: boolean;
   readonly adoProjection?: F8AdoProjection;
-  readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
+  readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string, createInput?: { readonly title: string; readonly sponsorEmail: string }) => Promise<void>;
   readonly onAdoConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
   readonly onAdoReconcile?: () => Promise<void>;
   readonly onStartNewAdoWriteGeneration?: () => Promise<void>;
@@ -37,7 +37,7 @@ export function F3Governance({ report, language = "en", adoDecisionRequired = fa
         <div className="governance-workspace__counts"><strong>{factorCount} Factors</strong><strong>{groups.length} Groups</strong></div>
       </header>
       <div className="governance-groups">{groups.map((group) => <details key={group.partSubsystem}><summary><strong>{group.partSubsystem}</strong><span>{group.factorCount} Factors</span><span>Drawing missing {group.missingDrawingNumberCount}</span><span>DIM ID missing {group.missingDimIdCount}</span></summary><table><thead><tr><th>Worksheet Source</th><th>Device Level Dim</th><th>Dimension Description</th><th>Part / Subsystem</th><th>Drawing Number</th><th>Dim ID</th><th>Factor Description</th><th>Nominal</th><th>Upper Tolerance (+)</th><th>Lower Tolerance (-)</th><th>σ Level</th><th>Governance issue</th></tr></thead><tbody>{group.rows.map((row) => <tr key={row.factorInstanceId}><td>{cellText(row.source.worksheetName)}</td><td>{cellText(row.deviceLevelDim)}</td><td>{cellText(row.dimensionDescription)}</td><td>{partSubsystemLabel(row.partSubsystem)}</td><td>{cellText(row.drawingNumber)}</td><td>{cellText(row.dimId)}</td><td>{cellText(row.factorDescription)}</td><td>{cellText(row.nominal)}</td><td>{cellText(row.upperTolerance)}</td><td>{cellText(row.lowerTolerance)}</td><td>{cellText(row.sigmaLevel)}</td><td>{governanceIssue(row)}</td></tr>)}</tbody></table></details>)}</div>
-      <AdoWorkspaceDecision visible={adoDecisionRequired || adoProjection !== undefined || report.ado.status !== "not_requested"} language={language} projection={adoProjection} onSubmit={onAdoDecision ?? (async () => undefined)} onConfirm={onAdoConfirm} onReconcile={onAdoReconcile} onStartNewWriteGeneration={onStartNewAdoWriteGeneration} onReset={onAdoReset} />
+      <AdoWorkspaceDecision visible={adoDecisionRequired || adoProjection !== undefined || report.ado.status !== "not_requested"} workbookFileName={report.workbook.fileName} language={language} projection={adoProjection} onSubmit={onAdoDecision ?? (async () => undefined)} onConfirm={onAdoConfirm} onReconcile={onAdoReconcile} onStartNewWriteGeneration={onStartNewAdoWriteGeneration} onReset={onAdoReset} />
     </section>
   );
 }

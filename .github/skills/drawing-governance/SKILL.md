@@ -95,7 +95,11 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- validate organization -> project -> work item type via Surface MCP.
 	- Apply candidate correction for each failed lookup.
 	- Default: Task.
-	- Collect title.
+	- Default the editable title to `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>` and replace `<TA Excel Name>` with the uploaded TA workbook file name.
+	- Show `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>` as a copyable title example.
+	- Require a valid sponsor email before preview and final write confirmation. Do not create the Work Item from a missing or invalid sponsor email.
+	- Create the Task with both `System.Title` and `System.AssignedTo`; set `System.AssignedTo` to the sponsor email.
+	- Read back the created Work Item and require its title to match exactly and its assigned owner to match the sponsor email case-insensitively. Fail closed on mismatch.
 	- no unvalidated create.
 2. existing mode:
 	- Existing target URL call - vscode_askQuestions
@@ -140,7 +144,7 @@ Surface MCP entity calls may start only after Question call 1 returns
 4. The exact confirmation choice must be:
 	- `Confirm write`
 5. Confirmation payload must include:
-	- org/project/ID/title/factor/governance/complete preview/write effect
+	- org/project/ID/title/sponsor assignment/factor/governance/complete preview/write effect
 6. Question call 1 and Question call 2 MUST be separate and never combined.
 7. If user cancels or does not confirm in Question call 2, use schema-compatible local fallback and do not write to Surface:
 	- `npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code user_declined_write`

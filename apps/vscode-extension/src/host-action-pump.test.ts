@@ -8,7 +8,7 @@ const SESSION_ID = "30303030-3030-4303-8303-303030303030";
 
 describe("pumpOneHostAction", () => {
   it("claims only a scoped action and submits one hashed terminal result", async () => {
-    const action = { contractVersion: "f8-host-action-request-v1" as const, actionId: "action-a", sessionId: SESSION_ID, expectedRevision: 1, expiresAt: "2026-08-25T01:00:00.000Z", kind: "surface_validate" as const, confirmationHash: "a".repeat(64), expectedTargetVersion: "ado-decision-v1", prepareRequest: { mode: "create" as const, title: "TA Drawing Governance", nextContent: "next", factorCount: 1 } };
+    const action = { contractVersion: "f8-host-action-request-v1" as const, actionId: "action-a", sessionId: SESSION_ID, expectedRevision: 1, expiresAt: "2026-08-25T01:00:00.000Z", kind: "surface_validate" as const, confirmationHash: "a".repeat(64), expectedTargetVersion: "ado-decision-v1", prepareRequest: { mode: "create" as const, title: "TA Drawing Governance", sponsorEmail: "sponsor@example.com", nextContent: "next", factorCount: 1 } };
     const claim = vi.fn(async () => ({ actionId: action.actionId, request: action, hostInstanceId: "vscode-host", leaseId: "lease-a" }));
     const execute = vi.fn(async () => ({ status: "completed" as const }));
     const submitted: HostActionTerminalResult[] = [];
@@ -113,7 +113,7 @@ describe("pumpOneHostAction", () => {
           kind: "surface_validate",
           confirmationHash: "a".repeat(64),
           expectedTargetVersion: "wrong-target-v1",
-          prepareRequest: { mode: "create", title: "TA Drawing Governance", nextContent: "next", factorCount: 1 },
+          prepareRequest: { mode: "create", title: "TA Drawing Governance", sponsorEmail: "sponsor@example.com", nextContent: "next", factorCount: 1 },
         },
         hostInstanceId: "vscode-host",
         leaseId: "lease-c",

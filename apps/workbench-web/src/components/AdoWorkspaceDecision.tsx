@@ -4,12 +4,14 @@ import { useState } from "react";
 import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 const PROJECTION_STATES_WITH_CONFIRMATION = ["preview_ready", "write_pending", "write_outcome_unknown", "completed"] as const;
+const CREATE_TITLE_EXAMPLE = "[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>";
 type ProjectionStateWithConfirmation = (typeof PROJECTION_STATES_WITH_CONFIRMATION)[number];
 
 interface AdoWorkspaceDecisionProps {
   readonly visible: boolean;
+  readonly workbookFileName?: string;
   readonly projection?: F8AdoProjection;
-  readonly onSubmit: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
+  readonly onSubmit: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string, createInput?: { readonly title: string; readonly sponsorEmail: string }) => Promise<void>;
   readonly onConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
   readonly onReconcile?: () => Promise<void>;
   readonly onReset?: () => Promise<void>;
@@ -17,8 +19,11 @@ interface AdoWorkspaceDecisionProps {
   readonly language?: UiCatalogLanguage;
 }
 
-export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm, onReconcile, onReset, onStartNewWriteGeneration, language = "en" }: AdoWorkspaceDecisionProps) {
+export function AdoWorkspaceDecision({ visible, workbookFileName, projection, onSubmit, onConfirm, onReconcile, onReset, onStartNewWriteGeneration, language = "en" }: AdoWorkspaceDecisionProps) {
   const [reference, setReference] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState(() => defaultCreateTitle(workbookFileName));
+  const [sponsorEmail, setSponsorEmail] = useState("");
   const metadata = inputMetadata(language).existing_work_item;
   const copy = language === "zh" ? {
     target: "ADO 目标",
@@ -26,6 +31,11 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
     description: "选择将此受治理的图纸治理提醒保留在本地，或通过 VS Code Surface MCP host 进行 Azure DevOps 校验。",
     local: "仅本地分析",
     create: "创建工作项",
+    createAndValidate: "创建并校验工作项",
+    title: "工作项标题",
+    sponsorEmail: "Sponsor 邮箱",
+    titleExample: "标题示例",
+    sponsorReminder: (email: string) => `必须提供 Sponsor 邮箱。此任务将指派给 ${email}。`,
     validate: "校验已有工作项",
     waitingValidation: "正在等待 VS Code Surface MCP host 校验目标并生成预览...",
     returnToSelection: "返回 ADO 目标选择",
@@ -43,6 +53,11 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
     description: "Choose whether this governed drawing-governance reminder stays local or moves through the VS Code Surface MCP host for Azure DevOps validation.",
     local: "Local analysis only",
     create: "Create work item",
+    createAndValidate: "Create and validate work item",
+    title: "Work item title",
+    sponsorEmail: "Sponsor email",
+    titleExample: "Title example",
+    sponsorReminder: (email: string) => `Sponsor email is required. This task is assigned to ${email}.`,
     validate: "Validate existing work item",
     waitingValidation: "Waiting for the VS Code Surface MCP host to validate the target and generate a preview...",
     returnToSelection: "Return to ADO target selection",
@@ -69,7 +84,15 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
           <p>{copy.description}</p>
           <div className="ado-workspace__actions">
             <button type="button" className="button" onClick={() => { void onSubmit("local_only"); }}>{copy.local}</button>
-            <button type="button" className="button" onClick={() => { void onSubmit("create_new"); }}>{copy.create}</button>
+            <button type="button" className="button" onClick={() => { setCreating(true); }}>{copy.create}</button>
+            {creating ? (
+              <div>
+                <label>{copy.title}<input aria-label={copy.title} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+                <label>{copy.titleExample}<input aria-label={copy.titleExample} readOnly value={CREATE_TITLE_EXAMPLE} onFocus={(event) => event.currentTarget.select()} /></label>
+                <label>{copy.sponsorEmail}<input aria-label={copy.sponsorEmail} type="email" value={sponsorEmail} onChange={(event) => setSponsorEmail(event.target.value)} /></label>
+                <button type="button" className="button button--primary" disabled={title.trim().length === 0 || !isEmail(sponsorEmail)} onClick={() => { void onSubmit("create_new", undefined, { title: title.trim(), sponsorEmail: sponsorEmail.trim() }); }}>{copy.createAndValidate}</button>
+              </div>
+            ) : null}
             <label>{metadata.title}<input aria-label={metadata.title} aria-describedby={inputGuidanceId("existing_work_item")} data-user-input-id="existing_work_item" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="https://dev.azure.com/org/project/_workitems/edit/123" /></label>
             <InputGuidance inputId="existing_work_item" language={language} />
             <button type="button" className="button" disabled={!isAdoWorkItemUrl(reference)} onClick={() => { void onSubmit("use_existing", reference.trim()); }}>{copy.validate}</button>
@@ -82,6 +105,7 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
           <dl><div><dt>{copy.workItem}</dt><dd>{confirmation.workItemReference}</dd></div><div><dt>{copy.owner}</dt><dd>{confirmation.ownerReference}</dd></div><div><dt>{copy.version}</dt><dd>{confirmation.expectedVersion}</dd></div><div><dt>{copy.factors}</dt><dd>{confirmation.factorCount}</dd></div></dl>
           <h3>{copy.fullPreview}</h3><pre>{confirmation.nextContent}</pre>
           <h3>{copy.diff}</h3><div className="ado-workspace__diff">{confirmation.diff.map((entry, index) => <div key={index}><del>{entry.before ?? ""}</del><ins>{entry.after ?? ""}</ins></div>)}</div>
+          {previewTarget?.mode === "create" ? <p role="alert">{copy.sponsorReminder(previewTarget.sponsorEmail)}</p> : null}
           {projection?.state === "preview_ready" && previewTarget !== undefined && previewContentHash !== undefined ? <button type="button" className="button button--primary" onClick={() => { void onConfirm?.({ contractVersion: "f8-ado-write-confirmation-v1", validationActionId: projection.actionId, expectedRevision: projection.expectedRevision, target: previewTarget, contentHash: previewContentHash, confirmationHash: confirmation.confirmationHash, confirmed: true }); }}>{copy.confirm}</button> : null}
         </div>
       )}
@@ -110,4 +134,12 @@ function isAdoWorkItemUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function defaultCreateTitle(workbookFileName: string | undefined): string {
+  return CREATE_TITLE_EXAMPLE.replace("<TA Excel Name>", workbookFileName?.trim() || "<TA Excel Name>");
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.trim());
 }

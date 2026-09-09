@@ -896,7 +896,7 @@ test("matches the current F3 grouped rows and previews create or update targets 
       return response.json();
     }).toMatchObject({
       state: "preview_ready",
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" },
+      target: { mode: "create", title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
       confirmation: { factorCount: 3 },
     });
     const createProjectionResponse = await createPage.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(ADO_CREATE_PREVIEW_SESSION_ID)}/ado`);
@@ -905,6 +905,7 @@ test("matches the current F3 grouped rows and previews create or update targets 
     await expect(createSection.getByRole("heading", { name: "Full governance preview" })).toBeVisible();
     await expect(createSection.getByText("WI-900", { exact: true })).toBeVisible();
     await expect(readPreviewDetails(createSection)).resolves.toMatchObject({ "Work Item": "WI-900", Factors: "3" });
+    await expect(createSection.getByRole("alert")).toContainText("This task is assigned to sponsor@example.com.");
     await expect(createSection.getByRole("button", { name: "Confirm ADO write" })).toBeVisible();
     await expect(createSection.locator("pre")).toContainText("## F3 DIM ID / Drawing Governance Reminder");
 

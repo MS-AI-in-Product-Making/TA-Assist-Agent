@@ -421,6 +421,10 @@ describe("Drawing Governance skill contract", () => {
     expect(skill).toContain("candidate correction");
     expect(skill).toContain("Default: Task");
     expect(skill).toContain("title");
+    expect(skill).toContain("[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>");
+    expect(skill).toContain("replace `<TA Excel Name>` with the uploaded TA workbook file name");
+    expect(skill).toContain("Require a valid sponsor email before preview and final write confirmation");
+    expect(skill).toContain("System.AssignedTo");
     expect(skill).toContain("no unvalidated create");
 
     expect(skill).toContain("read back ID, title, type, state, assigned owner");
@@ -442,7 +446,7 @@ describe("Drawing Governance skill contract", () => {
 
     expect(skill).toContain("Question call 2 - final write confirmation: vscode_askQuestions");
     expect(skill).toContain("Confirm write");
-    expect(skill).toContain("org/project/ID/title/factor/governance/complete preview/write effect");
+    expect(skill).toContain("org/project/ID/title/sponsor assignment/factor/governance/complete preview/write effect");
     expect(skill).toContain("schema-compatible local fallback");
 
     expect(skill).toContain("write exactly once");
