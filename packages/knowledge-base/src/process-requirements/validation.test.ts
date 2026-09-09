@@ -137,6 +137,32 @@ describe("F0 process requirement snapshots", () => {
     expectValidationError(seed);
   });
 
+  it("rejects conditional applicability without required facts", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      analysisMethod: "one-dimensional-rss",
+      requiredFacts: [],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    const error = getValidationError(() => createProcessRequirementSnapshot(seed));
+    expect(error).toMatchObject({
+      code: "validation_error",
+      affectedInputReferences: ["process-requirements-entries"],
+    });
+    expect(JSON.stringify(error)).not.toContain("one-dimensional-rss");
+  });
+
+  it("accepts an unconditional informational definition without required facts", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[1]!.entryType = "definition";
+    seed.entries[1]!.normativeStrength = "informational";
+    seed.entries[1]!.applicability = { requiredFacts: [] };
+    refreshProcessRequirementManifest(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
   it.each([
     ["absolute Windows path", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.provenance.changeSummary = "C:\\controlled\\source.xlsx";
@@ -149,6 +175,9 @@ describe("F0 process requirement snapshots", () => {
     }],
     ["absolute Unix path", (seed: ProcessRequirementSeedPackage) => {
       seed.manifest.changeSummary = "/srv/controlled/source.xlsx";
+    }],
+    ["embedded absolute Unix path", (seed: ProcessRequirementSeedPackage) => {
+      seed.manifest.changeSummary = "prefix=/srv/controlled/source.xlsx";
     }],
     ["file URL", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.message = "file:///srv/controlled/source.xlsx";

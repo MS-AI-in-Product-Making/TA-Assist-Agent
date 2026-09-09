@@ -25,7 +25,7 @@ const ENTRY_TYPES = [
 const FORBIDDEN_PROPERTY_NAMES = new Set(["sourcetext", "rawtext", "verbatim"]);
 const URL_PATTERN = /\b(?:file|https?):\/+/i;
 const ABSOLUTE_WINDOWS_PATH_PATTERN = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\|\\(?=[^\\/]))/;
-const ABSOLUTE_UNIX_PATH_PATTERN = /(?:^|[\s"'(])\/(?!\/)/;
+const ABSOLUTE_UNIX_PATH_PATTERN = /(?:^|[^A-Za-z0-9/])\/(?!\/)/;
 
 export function createProcessRequirementSnapshot(input: unknown): ProcessRequirementSnapshot {
   return failClosed(() => {
@@ -37,6 +37,7 @@ export function createProcessRequirementSnapshot(input: unknown): ProcessRequire
     validateUniqueValues(seed.entries, (entry) => entry.entryId, ENTRIES_REFERENCE);
     validateProvenance(seed);
     validateManifest(seed);
+    validateApplicability(seed.entries);
     validateRelations(seed.entries);
     if (containsForbiddenContent(seed)) throw validationError([]);
 
@@ -97,6 +98,15 @@ function validateManifest(seed: ProcessRequirementSeedPackage): void {
     || seed.manifest.entriesHash !== entriesHash
     || seed.manifest.contentHash !== packageHash) {
     throw validationError([MANIFEST_REFERENCE]);
+  }
+}
+
+function validateApplicability(entries: readonly ProcessRequirementEntry[]): void {
+  for (const entry of entries) {
+    const { requiredFacts, ...predicates } = entry.applicability;
+    if (Object.keys(predicates).length > 0 && requiredFacts.length === 0) {
+      throw validationError([ENTRIES_REFERENCE]);
+    }
   }
 }
 
