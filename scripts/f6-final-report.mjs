@@ -192,6 +192,14 @@ function f0Recommendation(row) {
   return { band: NA, distribution: NA, knowledge: row.f0InformationReason ?? NA };
 }
 
+function f0GuidanceText(row, recommendation) {
+  const parts = [`Capability: ${clean(row.capabilityStatus)}`];
+  if (recommendation.band !== NA) parts.push(`Recommended tolerance band or range: ${clean(recommendation.band)}`);
+  if (recommendation.distribution !== NA) parts.push(`Recommended distribution: ${clean(recommendation.distribution)}`);
+  if (recommendation.knowledge !== NA) parts.push(`Knowledge: ${clean(recommendation.knowledge)}`);
+  return parts.join("; ");
+}
+
 function v3CompleteFactorRows(worksheet, interpretation) {
   const interpreted = new Map(v3FactorRows(interpretation).map((factor) => [
     factorSourceKey(factor.tableId, factor.sourceRow), factor,
@@ -257,17 +265,16 @@ function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, 
   ];
 }
 
-function renderF6V3WorkbookSummary(worksheets, catalog, language) {
+function renderF6V3WorkbookSummary(worksheets, catalog) {
   const lines = [
     `## 2. ${catalog.workbook}`, "",
-    "| Worksheet | Tolerance Loop Description | Key Finding | Disposition |", "|---|---|---|---|",
+    "| Worksheet | Tolerance Loop Description | Key Finding |", "|---|---|---|",
   ];
-  for (const worksheet of worksheets) lines.push(row([
-    clean(worksheet.worksheetName),
+  worksheets.forEach((worksheet, index) => lines.push(row([
+    `[${clean(worksheet.worksheetName)}](#worksheet-${index + 1})`,
     clean(worksheet.f2Worksheet.toleranceLoopDescription),
-    worksheet.f2Worksheet.status === "ready" ? primaryFinding(worksheet) : blockedWorksheetFinding(worksheet, language),
-    dispositionText(worksheet.disposition),
-  ]));
+    worksheet.f2Worksheet.status === "ready" ? v3PrimaryFinding(worksheet) : blockedWorksheetFinding(worksheet, "en"),
+  ])));
   return lines;
 }
 
@@ -287,11 +294,12 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   const statistical = projection.margins.statistical;
   const worstCase = projection.margins.worstCase;
   const lines = [
+    `<a id="worksheet-${ordinal}"></a>`, "",
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`, "",
-    `## ${prefix}.1 ${catalog.image}`, "", imageLink, "",
-    `## ${prefix}.2 ${catalog.factors}`, "",
-    `| Ordinal | Row | Factor Description | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | Part Category | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | Long Term/Safety Factor | ${catalog.sigmaLevel} | ${catalog.distribution} | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability Library Result | Knowledge Library Recommendation |`,
-    "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|---|",
+    `## ${prefix}-1 ${catalog.image}`, "", imageLink, "", paragraph(interpretation.imageTableInterpretation), "",
+    `## ${prefix}-2 ${catalog.factors}`, "",
+    `| Ordinal | Row | Factor Description | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | Part Category | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | Long Term/Safety Factor | ${catalog.sigmaLevel} | ${catalog.distribution} | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |`,
+    "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|",
   ];
   for (const { f2Row, modelRow, calculation: factor, f0 } of factors) {
     const actual = f2Row.actualFields;
@@ -302,13 +310,11 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
       engineeringText(factor.input.lowerTolerance, factor.unit), numberText(factor.input.longTermSafetyFactor),
       numberText(factor.input.sigmaLevel), clean(factor.input.distribution), engineeringText(factor.mean, factor.unit),
       engineeringText(factor.halfTolerance, factor.unit), engineeringText(factor.sigma, factor.unit),
-      percentText(factor.contribution), clean(actual.notes), clean(f2Row.capabilityStatus), clean(f0.knowledge),
+      percentText(factor.contribution), clean(actual.notes), f0GuidanceText(f2Row, f0),
     ]));
   }
-  lines.push("", `## ${prefix}.3 ${catalog.interpretation}`, "", clean(interpretation.imageTableInterpretation));
-  for (const { modelRow } of factors) lines.push(`- ${clean(modelRow.factorName)}: ${clean(modelRow.rowInterpretation)}`);
   lines.push(
-    "", `## ${prefix}.4 ${catalog.results}`, "",
+    "", `## ${prefix}-3 ${catalog.results}`, "",
     "| Requirement | Value |", "|---|---:|",
     row(["Design Nominal", engineeringText(calculation.system.designNominal, unit)]),
     row(["LSL", engineeringText(calculation.capability.lowerSpecLimit, unit)]),
@@ -335,13 +341,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution)]));
   }
-  lines.push("", `## ${prefix}.5 ${catalog.f0Guidance}`, "",
-    "| Factor | Capability Library Result | Recommended Tolerance Band or Range | Recommended Distribution | Knowledge Recommendation |",
-    "|---|---|---|---|---|");
-  for (const { f2Row, modelRow, f0 } of factors) lines.push(row([
-    clean(modelRow.factorName), clean(f2Row.capabilityStatus), clean(f0.band), clean(f0.distribution), clean(f0.knowledge),
-  ]));
-  lines.push("", `## ${prefix}.6 ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
+  lines.push("", `## ${prefix}-4 ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
   if (center.status !== "clarification_required") {
     lines.push(`- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
       `- Specification Center: ${fixedEngineering(center.specificationMidpoint, unit)}`,
@@ -349,15 +349,15 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   }
   if (center.status === "offset") lines.push(`- ${catalog.nominalReminder}`, `- ${clean(center.interpretation)}`);
   if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
-  lines.push("", `## ${prefix}.7 ${catalog.contributors}`, "",
+  lines.push("", `## ${prefix}-5 ${catalog.contributors}`, "",
     `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---:|---:|---|---|");
   for (const item of contributors.priorities) {
     const factor = v3CalculationFactor(calculation, item.factor);
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution),
-      v3PriorityLabel(item.rank, contributors.priorities.length, catalog), clean(item.guidance)]));
+      v3PriorityLabel(item.rank, contributors.priorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
   }
-  lines.push("", catalog.topThree, "", `## ${prefix}.8 ${catalog.specifications}`, "");
+  lines.push("", catalog.topThree, "", `## ${prefix}-6 ${catalog.specifications}`, "");
   if (specifications.proposals.length === 0) lines.push(catalog.noProposal);
   else {
     lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
@@ -366,7 +366,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     }
   }
   for (const item of specifications.clarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
-  lines.push("", `## ${prefix}.9 ${catalog.toleranceOptions}`, "", `- ${catalog.policy}: ${clean(toleranceOptimization.policyId)}`);
+  lines.push("", `## ${prefix}-7 ${catalog.toleranceOptions}`, "", `- ${catalog.policy}: ${clean(toleranceOptimization.policyId)}`);
   if (toleranceOptimization.options.length === 0) lines.push(`- ${catalog.noToleranceOption}`);
   else {
     lines.push(
@@ -390,6 +390,8 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
 function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog, language) {
   const prefix = `3-${ordinal}`;
   return [
+    `<a id="worksheet-${ordinal}"></a>`,
+    "",
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`,
     "",
     `- Status: FAIL`,
@@ -405,8 +407,8 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   }
   const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
   const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
-  const language = f6Optimization.interactionLanguage.uiCatalogLanguage;
-  const catalog = F6_V3_REPORT_CATALOG[language];
+  const language = "en";
+  const catalog = F6_V3_REPORT_CATALOG.en;
   const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = { workbookDisposition, worksheetDispositions };
@@ -415,7 +417,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
     "",
     ...renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog),
     "",
-    ...renderF6V3WorkbookSummary(worksheets, catalog, language),
+    ...renderF6V3WorkbookSummary(worksheets, catalog),
   ];
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
@@ -427,7 +429,6 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
     schemaVersion: "ta-engineering-report-projection-v1", title: catalog.title, workbookDisposition, worksheetDispositions,
     workbook: { fileName: f2Report.workbook.fileName, ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }), contentHash: f2Report.workbook.contentHash },
     worksheets: worksheets.map((worksheet) => {
-      const interpretation = interpretations.get(worksheet.worksheetName);
       const calculation = worksheet.f4Calculation;
       const base = {
         worksheetName: worksheet.worksheetName,
@@ -435,7 +436,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
         disposition: worksheet.disposition,
         requiredAction: requiredAction(worksheet),
         findings: [worksheet.f2Worksheet.status === "ready"
-          ? primaryFinding(worksheet)
+          ? v3PrimaryFinding(worksheet)
           : blockedWorksheetFinding(worksheet, language)],
         assumptions: [],
         clarifications: [],
@@ -446,7 +447,6 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
       if (calculation === undefined || worksheet.f6Worksheet === undefined) return base;
       return {
         ...base,
-        findings: [clean(interpretation?.imageTableInterpretation)],
         clarifications: worksheet.f6Worksheet.steps.flatMap((step) => step.step === "centerAssessment" && step.status === "clarification_required"
           ? [step.reasonCode]
           : step.step === "specificationChanges"
@@ -746,6 +746,11 @@ function clean(value, fallback = NA) {
   return safeText(value);
 }
 
+function paragraph(value, fallback = NA) {
+  if (value === null || value === undefined || value === "") return fallback;
+  return safeText(String(value).replace(/\s+/gu, " ").trim());
+}
+
 function dispositionText(value) {
   return F6_DISPOSITION_RANK[value] === undefined ? "FAIL" : value;
 }
@@ -803,6 +808,40 @@ function primaryFinding(context) {
   if (context.disposition === "INCOMPLETE") return "计算已完成，但 CpkL、CpkU 或规格范围未达到 worksheet 要求。";
   if (context.disposition === "CONDITIONAL_PASS") return "数值达到要求，但仍需补齐 Drawing Number、DIM ID 或完成图像与工程复核。";
   return INSUFFICIENT_EVIDENCE;
+}
+
+function v3PrimaryFinding(context) {
+  const calculation = context.f4Calculation;
+  if (calculation === undefined) return "Required input, image, or calculation evidence is blocked; a complete analysis cannot be formed.";
+
+  const lowerCpk = calculation.capability.lowerCpk;
+  const upperCpk = calculation.capability.upperCpk;
+  const targetCpk = calculation.capability.targetCpk;
+  const failedSides = [
+    calculation.capability.lowerCpkStatus === "FAIL" ? `CpkL ${numberText(lowerCpk)}` : undefined,
+    calculation.capability.upperCpkStatus === "FAIL" ? `CpkU ${numberText(upperCpk)}` : undefined,
+  ].filter(Boolean);
+  if (failedSides.length > 0) {
+    return `${failedSides.join(" and ")} ${failedSides.length === 1 ? "does" : "do"} not meet Target Cpk ${numberText(targetCpk)}; ME review of the TA result is required.`;
+  }
+
+  if (context.disposition === "INCOMPLETE") {
+    return "The statistical or worst-case range does not meet the worksheet specification; ME review of the TA result is required.";
+  }
+
+  const governanceRows = context.f3Worksheet?.rows ?? [];
+  const missingDrawing = governanceRows.filter(({ drawingNumber }) => drawingNumber == null || drawingNumber === "").length;
+  const missingDimId = governanceRows.filter(({ dimId }) => dimId == null || dimId === "").length;
+  const openDrawingDefinition = governanceRows.some(({ governanceStatus }) => governanceStatus !== "complete");
+  if (context.disposition === "CONDITIONAL_PASS" || missingDrawing > 0 || missingDimId > 0 || openDrawingDefinition) {
+    const gaps = [];
+    if (missingDrawing > 0) gaps.push(`${missingDrawing} Drawing Number${missingDrawing === 1 ? "" : "s"}`);
+    if (missingDimId > 0) gaps.push(`${missingDimId} DIM ID${missingDimId === 1 ? "" : "s"}`);
+    if (openDrawingDefinition || gaps.length === 0) gaps.push("drawing dimension definition or engineering review");
+    return `Capability meets Target Cpk ${numberText(targetCpk)}, but ${gaps.join(", ")} remains incomplete; analysis closure is not complete.`;
+  }
+
+  return `CpkL ${numberText(lowerCpk)} and CpkU ${numberText(upperCpk)} meet Target Cpk ${numberText(targetCpk)}; required inputs and reviews are complete.`;
 }
 
 const BLOCKED_FINDING_CATALOG = {
@@ -907,7 +946,14 @@ function blockedWorksheetFinding(context, language) {
 
 function reportTimestamp(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? NOT_PROVIDED : date.toISOString().slice(0, 19).replace("T", " ");
+  if (Number.isNaN(date.getTime())) return NOT_PROVIDED;
+  const pad = (part) => String(part).padStart(2, "0");
+  const offsetMinutes = -date.getTimezoneOffset();
+  const offsetSign = offsetMinutes >= 0 ? "+" : "-";
+  const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+  const offsetRemainder = Math.abs(offsetMinutes) % 60;
+  const offset = `${offsetSign}${offsetHours}${offsetRemainder === 0 ? "" : `:${pad(offsetRemainder)}`}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} (UTC ${offset})`;
 }
 
 function requiredAction(context) {

@@ -621,7 +621,7 @@ describe("F6 real artifact full flow", () => {
       ]),
     }));
     expect(finalMarkdown).toContain("Analysis-A");
-    expect(finalMarkdown).toContain("2026-08-17 01:02:03");
+    expect(finalMarkdown).toMatch(/\| Report Generated At \| 2026-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(UTC [+-]\d{1,2}(?::\d{2})?\) \|/u);
     expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
     const imageLink = /\[Open tolerance path image\]\(<([^>]+)>\)/u.exec(finalMarkdown);
     expect(imageLink).not.toBeNull();
