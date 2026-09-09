@@ -17,6 +17,22 @@ export interface F0Dependencies {
 
 const DEFAULT_VERSIONS = ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"] as const;
 type ManifestVersionField = "effectiveVersion" | "version";
+type InjectedLoaders = {
+  readonly [Loader in keyof Required<F0Dependencies>]: F0Dependencies[Loader];
+};
+
+function readInjectedLoaders(dependencies: F0Dependencies): InjectedLoaders {
+  try {
+    return {
+      loadKnowledgeBase: dependencies.loadKnowledgeBase,
+      loadInternalToleranceGuidance: dependencies.loadInternalToleranceGuidance,
+      loadInterpretationRules: dependencies.loadInterpretationRules,
+      loadProcessRequirements: dependencies.loadProcessRequirements,
+    };
+  } catch {
+    throw new Error("F0 dependency injection failed unexpectedly.");
+  }
+}
 
 function validateExactVersion(
   value: unknown,
@@ -47,11 +63,12 @@ function throwIfAborted(context: RunContext, stage: string): void {
 
 export function validateF0Capabilities(context: RunContext, dependencies: F0Dependencies = {}): F0ValidationResult {
   const stage = "validate_capabilities";
-  const injectedKnowledgeBaseLoader = dependencies.loadKnowledgeBase;
-  const injectedInternalGuidanceLoader = dependencies.loadInternalToleranceGuidance;
-  const injectedInterpretationRulesLoader = dependencies.loadInterpretationRules;
-  const injectedProcessRequirementsLoader = dependencies.loadProcessRequirements;
   try {
+    const injectedLoaders = readInjectedLoaders(dependencies);
+    const injectedKnowledgeBaseLoader = injectedLoaders.loadKnowledgeBase;
+    const injectedInternalGuidanceLoader = injectedLoaders.loadInternalToleranceGuidance;
+    const injectedInterpretationRulesLoader = injectedLoaders.loadInterpretationRules;
+    const injectedProcessRequirementsLoader = injectedLoaders.loadProcessRequirements;
     throwIfAborted(context, stage);
     context.emit({ kind: "stage_started", featureId: "F0", stage, timestamp: new Date().toISOString() });
     const knowledgeBase = (injectedKnowledgeBaseLoader ?? loadKnowledgeBase)({ version: "v1" });

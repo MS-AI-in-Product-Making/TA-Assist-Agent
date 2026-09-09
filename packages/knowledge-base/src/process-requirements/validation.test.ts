@@ -174,6 +174,33 @@ describe("F0 process requirement snapshots", () => {
     expect(JSON.stringify(error)).not.toContain("one-dimensional-rss");
   });
 
+  it("rejects applicability predicates omitted from required facts", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      actor: "odm",
+      requiredFacts: ["priority"],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    const error = getValidationError(() => createProcessRequirementSnapshot(seed));
+    expect(error).toMatchObject({
+      code: "validation_error",
+      affectedInputReferences: ["process-requirements-entries"],
+    });
+    expect(JSON.stringify(error)).not.toContain("odm");
+  });
+
+  it("maps the minimum tolerance predicate to the toleranceCount required fact", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      minimumToleranceCountExclusive: 1,
+      requiredFacts: ["priority"],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
   it("accepts an unconditional informational definition without required facts", () => {
     const seed = createValidProcessRequirementSeedPackage();
     seed.entries[1]!.entryType = "definition";
@@ -224,6 +251,21 @@ describe("F0 process requirement snapshots", () => {
     ["HTTP URL without slashes", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.message = "https:example.test/source";
     }],
+    ["bare www URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "www.example.test/confidential";
+    }],
+    ["workbook filename", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "controlled-template.xlsx";
+    }],
+    ["multi-dot workbook filename", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "TA.v2.xlsx";
+    }],
+    ["Markdown-linked workbook filename", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "[controlled-template.xlsx]";
+    }],
+    ["workbook filename before a colon", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "controlled-template.xlsx: restricted";
+    }],
   ])("recursively rejects %s leakage", (_description, mutate) => {
     const seed = createValidProcessRequirementSeedPackage();
     mutate(seed);
@@ -237,6 +279,14 @@ describe("F0 process requirement snapshots", () => {
   ])("accepts ordinary slash text: %s", (message) => {
     const seed = createValidProcessRequirementSeedPackage();
     seed.entries[0]!.message = message;
+    refreshProcessRequirementManifest(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
+  it("accepts generic workbook extension guidance without a filename", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.message = "Supported formats: .xlsx and .xlsm";
     refreshProcessRequirementManifest(seed);
 
     expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();

@@ -1,8 +1,10 @@
 import {
   createTypedError,
   processRequirementSeedPackageSchema,
+  type ProcessRequirementApplicability,
   type ProcessRequirementEntry,
   type ProcessRequirementEntryType,
+  type ProcessRequirementFactReference,
   type ProcessRequirementSeedPackage,
 } from "@ai-assist/contracts";
 import { contentHash } from "../validation.js";
@@ -23,9 +25,24 @@ const ENTRY_TYPES = [
   "definition",
 ] as const satisfies readonly ProcessRequirementEntryType[];
 const FORBIDDEN_PROPERTY_NAMES = new Set(["sourcetext", "rawtext", "verbatim"]);
-const URL_PATTERN = /(?:\b[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:^|[^A-Za-z0-9+.-])(?:file|https?):(?=\S)|(?:^|[\s"'(=])\/\/(?=\S))/i;
+const URL_PATTERN = /(?:\b[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:^|[^A-Za-z0-9+.-])(?:file|https?):(?=\S)|(?:^|[\s"'(=])\/\/(?=\S)|\bwww\.[A-Za-z0-9])/i;
+const WORKBOOK_FILENAME_PATTERN = /(?:^|[\s["'(=])[^\s[\]"'()=.:][^\s[\]"'()=:]*\.(?:xlsx|xlsm|xlsb|xls)(?=$|[\s\]"'),.:;])/i;
 const ABSOLUTE_WINDOWS_PATH_PATTERN = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\|\\(?=[^\\/]))/;
 const ABSOLUTE_UNIX_PATH_PATTERN = /(?:^|[^A-Za-z0-9/])\/(?![/\s])/;
+type ApplicabilityPredicate = Exclude<keyof ProcessRequirementApplicability, "requiredFacts">;
+const APPLICABILITY_FACT_BY_PREDICATE = {
+  actor: "actor",
+  analysisMethod: "analysisMethod",
+  characteristicClass: "characteristicClass",
+  priority: "priority",
+  lifecycleStage: "lifecycleStage",
+  subject: "subject",
+  factorRepresentation: "factorRepresentation",
+  requirementGapPresent: "requirementGapPresent",
+  workbookArea: "workbookArea",
+  minimumToleranceCountExclusive: "toleranceCount",
+  hasThreeDimensionalSensitivity: "hasThreeDimensionalSensitivity",
+} as const satisfies Record<ApplicabilityPredicate, ProcessRequirementFactReference>;
 
 export function createProcessRequirementSnapshot(input: unknown): ProcessRequirementSnapshot {
   return failClosed(() => {
@@ -137,7 +154,10 @@ function validateManifest(seed: ProcessRequirementSeedPackage): void {
 function validateApplicability(entries: readonly ProcessRequirementEntry[]): void {
   for (const entry of entries) {
     const { requiredFacts, ...predicates } = entry.applicability;
-    if (Object.keys(predicates).length > 0 && requiredFacts.length === 0) {
+    const predicateReferences = Object.keys(predicates).map((predicate) => (
+      APPLICABILITY_FACT_BY_PREDICATE[predicate as ApplicabilityPredicate]
+    ));
+    if (predicateReferences.some((reference) => !requiredFacts.includes(reference))) {
       throw validationError([ENTRIES_REFERENCE]);
     }
   }
@@ -171,6 +191,7 @@ function validateRelations(entries: readonly ProcessRequirementEntry[]): void {
 function containsForbiddenContent(value: unknown): boolean {
   if (typeof value === "string") {
     return URL_PATTERN.test(value)
+      || WORKBOOK_FILENAME_PATTERN.test(value)
       || ABSOLUTE_WINDOWS_PATH_PATTERN.test(value)
       || ABSOLUTE_UNIX_PATH_PATTERN.test(value);
   }

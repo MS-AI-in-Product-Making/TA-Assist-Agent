@@ -86,6 +86,31 @@ describe("validateF0Capabilities", () => {
     expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
   });
 
+  it("normalizes a throwing dependency getter without leaking raw details", () => {
+    const runnerContext = context();
+    const dependencies = validDependencies();
+    Object.defineProperty(dependencies, "loadProcessRequirements", {
+      enumerable: true,
+      get: () => { throw new Error("Missing C:\\confidential\\source.xlsx"); },
+    });
+
+    let thrown: unknown;
+    try {
+      validateF0Capabilities(runnerContext, dependencies);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "Error",
+      code: "internal_error",
+      summary: "Workflow runner failed unexpectedly.",
+      retryable: false,
+    });
+    expect(JSON.stringify(thrown)).not.toContain("confidential");
+    expect(runnerContext.emit).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["knowledge base", "loadKnowledgeBase", "effectiveVersion"],
     ["internal guidance", "loadInternalToleranceGuidance", "effectiveVersion"],
