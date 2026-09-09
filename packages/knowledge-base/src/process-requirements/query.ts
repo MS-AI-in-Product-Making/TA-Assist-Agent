@@ -68,22 +68,24 @@ function evaluate(
   const evaluableEntries = entries.filter(({ entryType }) => entryType !== "definition");
   const matchedEntries = sortEntries(evaluableEntries.filter((entry) => matchesEntry(entry, facts)));
   const resolvedTargets = resolveTargets(facts);
+  const relevantEntries = evaluableEntries.filter((entry) => isPotentiallyRelevant(entry, facts));
+  const missingFacts = uniqueSorted(relevantEntries.flatMap(({ applicability }) => (
+    applicability.requiredFacts.filter((reference) => !hasFact(facts, reference))
+  )));
 
   if (matchedEntries.length > 0) {
     return immutableEvaluation({
       version: VERSION,
       status: "matched",
       resolvedTargets,
-      factsUsed: uniqueSorted(matchedEntries.flatMap(({ applicability }) => applicability.requiredFacts)),
+      factsUsed: uniqueSorted([...matchedEntries, ...relevantEntries].flatMap(({ applicability }) => (
+        applicability.requiredFacts.filter((reference) => hasFact(facts, reference))
+      ))),
       matchedEntries: matchedEntries.map(toMatchedEntry),
-      missingFacts: [],
+      missingFacts,
     });
   }
 
-  const relevantEntries = evaluableEntries.filter((entry) => isPotentiallyRelevant(entry, facts));
-  const missingFacts = uniqueSorted(relevantEntries.flatMap(({ applicability }) => (
-    applicability.requiredFacts.filter((reference) => !hasFact(facts, reference))
-  )));
   if (missingFacts.length > 0) {
     return immutableEvaluation({
       version: VERSION,

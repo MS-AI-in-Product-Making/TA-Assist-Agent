@@ -228,7 +228,7 @@ export const processRequirementMatchedEvaluationSchema = z
     ...evaluationFields,
     status: z.literal("matched"),
     matchedEntries: z.array(processRequirementMatchedEntrySchema).min(1),
-    missingFacts: z.array(processRequirementFactReferenceSchema).max(0),
+    missingFacts: z.array(processRequirementFactReferenceSchema),
   })
   .strict();
 export const processRequirementInsufficientFactsEvaluationSchema = z

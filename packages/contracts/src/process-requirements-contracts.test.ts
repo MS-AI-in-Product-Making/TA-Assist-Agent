@@ -184,7 +184,7 @@ describe("F0 process requirement contracts", () => {
       resolvedTargets: { sigma: 6 as const },
       factsUsed: ["characteristicClass"],
       matchedEntries: [validMatchedEntry()],
-      missingFacts: [],
+      missingFacts: ["subject"],
     },
     {
       status: "insufficient-facts" as const,

@@ -68,8 +68,16 @@ describe("process requirement queries", () => {
       "milestone-odm-p0-asr",
     ],
     [
+      { actor: "odm", priority: "P1", lifecycleStage: "asr" },
+      "milestone-odm-p1-asr",
+    ],
+    [
       { actor: "odm", priority: "P2", lifecycleStage: "before-tooling" },
       "milestone-odm-p2-before-tooling",
+    ],
+    [
+      { actor: "odm", priority: "P3", lifecycleStage: "before-tooling" },
+      "milestone-odm-p3-before-tooling",
     ],
     [
       { actor: "odm", lifecycleStage: "after-tooling-trial-or-build" },
@@ -80,10 +88,26 @@ describe("process requirement queries", () => {
       "milestone-subsystem-dfm-cts",
     ],
     [
+      { actor: "subsystem-supplier", characteristicClass: "ctf", lifecycleStage: "dfm" },
+      "milestone-subsystem-dfm-ctf",
+    ],
+    [
       { requirementGapPresent: true },
       "requirement-gap-ado-notice",
     ],
   ] as const)("matches controlled process scenario %#", (facts, expectedEntryId) => {
+    const result = loadProcessRequirements({ version: "process-requirements-v1" })
+      .evaluateProcessRequirements(facts);
+
+    expect(entryIds(result)).toContain(expectedEntryId);
+  });
+
+  it.each([
+    [{ factorRepresentation: "pin-hole-float" }, "instruction-model-pin-hole-float"],
+    [{ factorRepresentation: "mean-shift" }, "instruction-model-mean-shift"],
+    [{ workbookArea: "auto-summary" }, "instruction-auto-summary-operations"],
+    [{ workbookArea: "part-sub-required-dimensions" }, "instruction-required-dimensions-operations"],
+  ] as const)("matches controlled instruction %#", (facts, expectedEntryId) => {
     const result = loadProcessRequirements({ version: "process-requirements-v1" })
       .evaluateProcessRequirements(facts);
 
@@ -158,6 +182,21 @@ describe("process requirement queries", () => {
       missingFacts: ["hasThreeDimensionalSensitivity", "subject", "toleranceCount"],
       factsUsed: ["analysisMethod"],
     });
+    expect(processRequirementEvaluationSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("preserves relevant missing facts alongside matched entries", () => {
+    const result = loadProcessRequirements({ version: "process-requirements-v1" })
+      .evaluateProcessRequirements({
+        analysisMethod: "one-dimensional-rss",
+        toleranceCount: 11,
+      });
+
+    expect(result).toMatchObject({
+      status: "matched",
+      missingFacts: ["hasThreeDimensionalSensitivity", "subject"],
+    });
+    expect(entryIds(result)).toContain("method-escalation-complex-stack");
     expect(processRequirementEvaluationSchema.safeParse(result).success).toBe(true);
   });
 
