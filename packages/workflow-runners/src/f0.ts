@@ -47,17 +47,21 @@ function throwIfAborted(context: RunContext, stage: string): void {
 
 export function validateF0Capabilities(context: RunContext, dependencies: F0Dependencies = {}): F0ValidationResult {
   const stage = "validate_capabilities";
+  const injectedKnowledgeBaseLoader = dependencies.loadKnowledgeBase;
+  const injectedInternalGuidanceLoader = dependencies.loadInternalToleranceGuidance;
+  const injectedInterpretationRulesLoader = dependencies.loadInterpretationRules;
+  const injectedProcessRequirementsLoader = dependencies.loadProcessRequirements;
   try {
     throwIfAborted(context, stage);
     context.emit({ kind: "stage_started", featureId: "F0", stage, timestamp: new Date().toISOString() });
-    const knowledgeBase = (dependencies.loadKnowledgeBase ?? loadKnowledgeBase)({ version: "v1" });
-    const internal = (dependencies.loadInternalToleranceGuidance ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
-    const interpretation = (dependencies.loadInterpretationRules ?? loadInterpretationRules)({ version: "interpretation-rules-v2" });
-    const processRequirements = (dependencies.loadProcessRequirements ?? loadProcessRequirements)({ version: "process-requirements-v1" });
-    if (dependencies.loadKnowledgeBase !== undefined) validateExactVersion(knowledgeBase, "v1", "knowledge base", "effectiveVersion");
-    if (dependencies.loadInternalToleranceGuidance !== undefined) validateExactVersion(internal, "internal-v1", "internal guidance", "effectiveVersion");
-    if (dependencies.loadInterpretationRules !== undefined) validateExactVersion(interpretation, "interpretation-rules-v2", "interpretation rules", "effectiveVersion");
-    if (dependencies.loadProcessRequirements !== undefined) validateExactVersion(processRequirements, "process-requirements-v1", "process requirements", "version");
+    const knowledgeBase = (injectedKnowledgeBaseLoader ?? loadKnowledgeBase)({ version: "v1" });
+    const internal = (injectedInternalGuidanceLoader ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
+    const interpretation = (injectedInterpretationRulesLoader ?? loadInterpretationRules)({ version: "interpretation-rules-v2" });
+    const processRequirements = (injectedProcessRequirementsLoader ?? loadProcessRequirements)({ version: "process-requirements-v1" });
+    if (injectedKnowledgeBaseLoader !== undefined) validateExactVersion(knowledgeBase, "v1", "knowledge base", "effectiveVersion");
+    if (injectedInternalGuidanceLoader !== undefined) validateExactVersion(internal, "internal-v1", "internal guidance", "effectiveVersion");
+    if (injectedInterpretationRulesLoader !== undefined) validateExactVersion(interpretation, "interpretation-rules-v2", "interpretation rules", "effectiveVersion");
+    if (injectedProcessRequirementsLoader !== undefined) validateExactVersion(processRequirements, "process-requirements-v1", "process requirements", "version");
     throwIfAborted(context, stage);
     const result: F0ValidationResult = {
       featureId: "F0",
