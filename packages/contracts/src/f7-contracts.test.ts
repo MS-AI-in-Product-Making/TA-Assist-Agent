@@ -726,6 +726,22 @@ describe("F7 report contracts", () => {
     const changedControlledOptionSourceHash = structuredClone(report);
     changedControlledOptionSourceHash.analysis!.controlledOptions[0]!.sourceFileHash = "d".repeat(64);
     expect(f7ReportProjectionSchema.safeParse(changedControlledOptionSourceHash).success).toBe(false);
+
+    const missingNarrativeRootCauseSourceAlias = structuredClone(report);
+    delete missingNarrativeRootCauseSourceAlias.analysis!.narrative.rootCauseAnalysis[0]!.sourceAlias;
+    expect(f7ReportProjectionSchema.safeParse(missingNarrativeRootCauseSourceAlias).success).toBe(false);
+
+    const missingNarrativeRootCauseSourceHash = structuredClone(report);
+    delete missingNarrativeRootCauseSourceHash.analysis!.narrative.rootCauseAnalysis[0]!.sourceFileHash;
+    expect(f7ReportProjectionSchema.safeParse(missingNarrativeRootCauseSourceHash).success).toBe(false);
+
+    const missingNarrativeActionSourceAlias = structuredClone(report);
+    delete missingNarrativeActionSourceAlias.analysis!.narrative.suggestedActionSequence[0]!.sourceAlias;
+    expect(f7ReportProjectionSchema.safeParse(missingNarrativeActionSourceAlias).success).toBe(false);
+
+    const missingNarrativeActionSourceHash = structuredClone(report);
+    delete missingNarrativeActionSourceHash.analysis!.narrative.suggestedActionSequence[0]!.sourceFileHash;
+    expect(f7ReportProjectionSchema.safeParse(missingNarrativeActionSourceHash).success).toBe(false);
   });
 
   it("requires strict specification input origins for every Monte Carlo specification field", () => {

@@ -3941,8 +3941,8 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         rootCauseAnalysis: z.ZodArray<z.ZodEffects<z.ZodObject<{
             ruleId: z.ZodString;
             title: z.ZodString;
-            sourceAlias: z.ZodOptional<z.ZodString>;
-            sourceFileHash: z.ZodOptional<z.ZodString>;
+            sourceAlias: z.ZodString;
+            sourceFileHash: z.ZodString;
             hypothesis: z.ZodLiteral<true>;
             explanation: z.ZodString;
             completeEvidence: z.ZodBoolean;
@@ -3950,42 +3950,42 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
             quantitativeEvidenceLabels: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
         }, "strict", z.ZodTypeAny, {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }, {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }>, {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }, {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }>, "many">;
@@ -3993,24 +3993,24 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         suggestedActionSequence: z.ZodArray<z.ZodObject<{
             optionId: z.ZodString;
             title: z.ZodString;
-            sourceAlias: z.ZodOptional<z.ZodString>;
-            sourceFileHash: z.ZodOptional<z.ZodString>;
+            sourceAlias: z.ZodString;
+            sourceFileHash: z.ZodString;
             narrative: z.ZodString;
             validationSteps: z.ZodArray<z.ZodString, "many">;
         }, "strict", z.ZodTypeAny, {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }, {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }>, "many">;
         validationRequirements: z.ZodArray<z.ZodString, "many">;
         evidenceDisclosure: z.ZodString;
@@ -4032,23 +4032,23 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         engineeringSummary: string;
         rootCauseAnalysis: {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }[];
         engineeringRisk: string;
         suggestedActionSequence: {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }[];
         validationRequirements: string[];
         evidenceDisclosure: string;
@@ -4070,23 +4070,23 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         engineeringSummary: string;
         rootCauseAnalysis: {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }[];
         engineeringRisk: string;
         suggestedActionSequence: {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }[];
         validationRequirements: string[];
         evidenceDisclosure: string;
@@ -4136,23 +4136,23 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         engineeringSummary: string;
         rootCauseAnalysis: {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }[];
         engineeringRisk: string;
         suggestedActionSequence: {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }[];
         validationRequirements: string[];
         evidenceDisclosure: string;
@@ -4218,23 +4218,23 @@ export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [
         engineeringSummary: string;
         rootCauseAnalysis: {
             ruleId: string;
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             hypothesis: true;
             explanation: string;
             completeEvidence: boolean;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
             quantitativeEvidence?: Record<string, string | number> | undefined;
             quantitativeEvidenceLabels?: Record<string, string> | undefined;
         }[];
         engineeringRisk: string;
         suggestedActionSequence: {
+            sourceAlias: string;
+            sourceFileHash: string;
             title: string;
             validationSteps: string[];
             optionId: string;
             narrative: string;
-            sourceAlias?: string | undefined;
-            sourceFileHash?: string | undefined;
         }[];
         validationRequirements: string[];
         evidenceDisclosure: string;
@@ -4997,8 +4997,8 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             rootCauseAnalysis: z.ZodArray<z.ZodEffects<z.ZodObject<{
                 ruleId: z.ZodString;
                 title: z.ZodString;
-                sourceAlias: z.ZodOptional<z.ZodString>;
-                sourceFileHash: z.ZodOptional<z.ZodString>;
+                sourceAlias: z.ZodString;
+                sourceFileHash: z.ZodString;
                 hypothesis: z.ZodLiteral<true>;
                 explanation: z.ZodString;
                 completeEvidence: z.ZodBoolean;
@@ -5006,42 +5006,42 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
                 quantitativeEvidenceLabels: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             }, "strict", z.ZodTypeAny, {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }, {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }>, {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }, {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }>, "many">;
@@ -5049,24 +5049,24 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             suggestedActionSequence: z.ZodArray<z.ZodObject<{
                 optionId: z.ZodString;
                 title: z.ZodString;
-                sourceAlias: z.ZodOptional<z.ZodString>;
-                sourceFileHash: z.ZodOptional<z.ZodString>;
+                sourceAlias: z.ZodString;
+                sourceFileHash: z.ZodString;
                 narrative: z.ZodString;
                 validationSteps: z.ZodArray<z.ZodString, "many">;
             }, "strict", z.ZodTypeAny, {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }, {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }>, "many">;
             validationRequirements: z.ZodArray<z.ZodString, "many">;
             evidenceDisclosure: z.ZodString;
@@ -5088,23 +5088,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -5126,23 +5126,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -5192,23 +5192,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -5274,23 +5274,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -5654,23 +5654,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -5867,23 +5867,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -6080,23 +6080,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;
@@ -6293,23 +6293,23 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             engineeringSummary: string;
             rootCauseAnalysis: {
                 ruleId: string;
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 hypothesis: true;
                 explanation: string;
                 completeEvidence: boolean;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
                 quantitativeEvidence?: Record<string, string | number> | undefined;
                 quantitativeEvidenceLabels?: Record<string, string> | undefined;
             }[];
             engineeringRisk: string;
             suggestedActionSequence: {
+                sourceAlias: string;
+                sourceFileHash: string;
                 title: string;
                 validationSteps: string[];
                 optionId: string;
                 narrative: string;
-                sourceAlias?: string | undefined;
-                sourceFileHash?: string | undefined;
             }[];
             validationRequirements: string[];
             evidenceDisclosure: string;

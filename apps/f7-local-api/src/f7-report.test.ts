@@ -705,6 +705,31 @@ describe("createF7ReportProjection", () => {
     expect(report.analysis.narrative).toEqual(buildExpectedReportNarrative(snapshot));
   });
 
+  it("rejects report projections when narrative provenance is deleted independently from root causes or action items", () => {
+    const report = createF7ReportProjection(createSnapshot("BELOW_TARGET"), GENERATED_AT);
+
+    expect(report.analysis?.status).toBe("available");
+    if (report.analysis?.status !== "available") {
+      throw new Error("Expected available analysis for provenance rejection test");
+    }
+
+    const missingRootCauseSourceAlias = structuredClone(report);
+    delete missingRootCauseSourceAlias.analysis!.narrative.rootCauseAnalysis[0]!.sourceAlias;
+    expect(f7ReportProjectionSchema.safeParse(missingRootCauseSourceAlias).success).toBe(false);
+
+    const missingRootCauseSourceHash = structuredClone(report);
+    delete missingRootCauseSourceHash.analysis!.narrative.rootCauseAnalysis[0]!.sourceFileHash;
+    expect(f7ReportProjectionSchema.safeParse(missingRootCauseSourceHash).success).toBe(false);
+
+    const missingActionSourceAlias = structuredClone(report);
+    delete missingActionSourceAlias.analysis!.narrative.suggestedActionSequence[0]!.sourceAlias;
+    expect(f7ReportProjectionSchema.safeParse(missingActionSourceAlias).success).toBe(false);
+
+    const missingActionSourceHash = structuredClone(report);
+    delete missingActionSourceHash.analysis!.narrative.suggestedActionSequence[0]!.sourceFileHash;
+    expect(f7ReportProjectionSchema.safeParse(missingActionSourceHash).success).toBe(false);
+  });
+
   it("does not project setup contribution evidence as measured Monte Carlo contributor hypotheses", () => {
     const snapshot = createSnapshot("BELOW_TARGET");
     snapshot.factors[0]!.evidence!.percentContributionToSigma = 0.8;
@@ -748,12 +773,19 @@ describe("createF7ReportProjection", () => {
       lowerSpecLimit: -0.5,
       upperSpecLimit: 0.5,
       rootCauseRules: [
-        { ruleId: "root-cause-excessive-variation", title: "RC01 Excessive variation hypothesis" },
+        {
+          ruleId: "root-cause-excessive-variation",
+          title: "RC01 Excessive variation hypothesis",
+          sourceAlias: "kb://root-cause-excessive-variation",
+          sourceFileHash: "a".repeat(64),
+        },
       ],
       controlledOptions: [
         {
           ruleId: "improvement-reduce-variation",
           title: "Reduce total variation",
+          sourceAlias: "kb://improvement-reduce-variation",
+          sourceFileHash: "b".repeat(64),
           validationSteps: ["Re-run capability validation."],
         },
       ],

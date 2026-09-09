@@ -1559,8 +1559,8 @@ const f7ReportNarrativeEvidenceValueSchema = z.union([z.string().min(1), finiteN
 const f7ReportNarrativeRootCauseItemSchema = z.object({
   ruleId: z.string().min(1),
   title: z.string().min(1),
-  sourceAlias: z.string().min(1).optional(),
-  sourceFileHash: sha256LowerSchema.optional(),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
   hypothesis: z.literal(true),
   explanation: z.string().min(1),
   completeEvidence: z.boolean(),
@@ -1602,8 +1602,8 @@ const f7ReportNarrativeRootCauseItemSchema = z.object({
 const f7ReportNarrativeActionItemSchema = z.object({
   optionId: z.string().min(1),
   title: z.string().min(1),
-  sourceAlias: z.string().min(1).optional(),
-  sourceFileHash: sha256LowerSchema.optional(),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
   narrative: z.string().min(1),
   validationSteps: z.array(z.string().min(1)),
 }).strict();
@@ -1901,7 +1901,7 @@ export const f7ReportProjectionSchema = z
               "analysis rootCauseSignals title must match the ordered narrative rootCauseAnalysis title",
             );
           }
-          if (narrativeItem.sourceAlias !== undefined && signal.sourceAlias !== narrativeItem.sourceAlias) {
+          if (signal.sourceAlias !== narrativeItem.sourceAlias) {
             addArrayProjectionMismatchIssue(
               context,
               ["analysis", "rootCauseSignals"],
@@ -1910,7 +1910,7 @@ export const f7ReportProjectionSchema = z
               "analysis rootCauseSignals sourceAlias must match the ordered narrative rootCauseAnalysis sourceAlias",
             );
           }
-          if (narrativeItem.sourceFileHash !== undefined && signal.sourceFileHash !== narrativeItem.sourceFileHash) {
+          if (signal.sourceFileHash !== narrativeItem.sourceFileHash) {
             addArrayProjectionMismatchIssue(
               context,
               ["analysis", "rootCauseSignals"],
@@ -1951,7 +1951,7 @@ export const f7ReportProjectionSchema = z
               "analysis controlledOptions title must match the ordered narrative suggestedActionSequence title",
             );
           }
-          if (narrativeItem.sourceAlias !== undefined && option.sourceAlias !== narrativeItem.sourceAlias) {
+          if (option.sourceAlias !== narrativeItem.sourceAlias) {
             addArrayProjectionMismatchIssue(
               context,
               ["analysis", "controlledOptions"],
@@ -1960,7 +1960,7 @@ export const f7ReportProjectionSchema = z
               "analysis controlledOptions sourceAlias must match the ordered narrative suggestedActionSequence sourceAlias",
             );
           }
-          if (narrativeItem.sourceFileHash !== undefined && option.sourceFileHash !== narrativeItem.sourceFileHash) {
+          if (option.sourceFileHash !== narrativeItem.sourceFileHash) {
             addArrayProjectionMismatchIssue(
               context,
               ["analysis", "controlledOptions"],

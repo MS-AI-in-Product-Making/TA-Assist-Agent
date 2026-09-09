@@ -16,6 +16,19 @@ function formatSigned(value: number, digits: number): string {
   return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
 }
 
+function requireNarrativeProvenance(item: {
+  readonly sourceAlias?: string;
+  readonly sourceFileHash?: string;
+}, itemLabel: string): { sourceAlias: string; sourceFileHash: string } {
+  if (item.sourceAlias === undefined || item.sourceFileHash === undefined) {
+    throw new Error(`${itemLabel} must include sourceAlias and sourceFileHash provenance.`);
+  }
+  return {
+    sourceAlias: item.sourceAlias,
+    sourceFileHash: item.sourceFileHash,
+  };
+}
+
 export function projectF7EngineeringNarrativeForReport(
   narrative: ReturnType<typeof buildF7EngineeringNarrative>,
 ): AvailableF7ReportAnalysis["narrative"] {
@@ -37,38 +50,44 @@ export function projectF7EngineeringNarrativeForReport(
         : { nearerSpecificationSide: narrative.resultJudgment.nearerSpecificationSide }),
     },
     engineeringSummary: narrative.engineeringSummary,
-    rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => ({
-      ruleId: item.ruleId,
-      title: item.title,
-      ...(item.sourceAlias === undefined ? {} : { sourceAlias: item.sourceAlias }),
-      ...(item.sourceFileHash === undefined ? {} : { sourceFileHash: item.sourceFileHash }),
-      hypothesis: true,
-      explanation: item.narrative,
-      completeEvidence: item.completeEvidence,
-      ...(item.quantitativeEvidence === undefined
-        ? {}
-        : {
-            quantitativeEvidence: Object.fromEntries(
-              Object.entries(item.quantitativeEvidence).map(([key, value]) => [key, value]),
-            ),
-          }),
-      ...(item.quantitativeEvidenceLabels === undefined
-        ? {}
-        : {
-            quantitativeEvidenceLabels: Object.fromEntries(
-              Object.entries(item.quantitativeEvidenceLabels).map(([key, value]) => [key, value]),
-            ),
-          }),
-    })),
+    rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => {
+      const provenance = requireNarrativeProvenance(item, `Root cause ${item.ruleId}`);
+      return {
+        ruleId: item.ruleId,
+        title: item.title,
+        sourceAlias: provenance.sourceAlias,
+        sourceFileHash: provenance.sourceFileHash,
+        hypothesis: true,
+        explanation: item.narrative,
+        completeEvidence: item.completeEvidence,
+        ...(item.quantitativeEvidence === undefined
+          ? {}
+          : {
+              quantitativeEvidence: Object.fromEntries(
+                Object.entries(item.quantitativeEvidence).map(([key, value]) => [key, value]),
+              ),
+            }),
+        ...(item.quantitativeEvidenceLabels === undefined
+          ? {}
+          : {
+              quantitativeEvidenceLabels: Object.fromEntries(
+                Object.entries(item.quantitativeEvidenceLabels).map(([key, value]) => [key, value]),
+              ),
+            }),
+      };
+    }),
     engineeringRisk: narrative.engineeringRisk,
-    suggestedActionSequence: narrative.suggestedActionSequence.map((item) => ({
-      optionId: item.optionId,
-      title: item.title,
-      ...(item.sourceAlias === undefined ? {} : { sourceAlias: item.sourceAlias }),
-      ...(item.sourceFileHash === undefined ? {} : { sourceFileHash: item.sourceFileHash }),
-      narrative: item.narrative,
-      validationSteps: item.validationSteps.map((step) => step),
-    })),
+    suggestedActionSequence: narrative.suggestedActionSequence.map((item) => {
+      const provenance = requireNarrativeProvenance(item, `Suggested action ${item.optionId}`);
+      return {
+        optionId: item.optionId,
+        title: item.title,
+        sourceAlias: provenance.sourceAlias,
+        sourceFileHash: provenance.sourceFileHash,
+        narrative: item.narrative,
+        validationSteps: item.validationSteps.map((step) => step),
+      };
+    }),
     validationRequirements: narrative.validationRequirements.map((step) => step),
     evidenceDisclosure: narrative.evidenceDisclosure,
   };
