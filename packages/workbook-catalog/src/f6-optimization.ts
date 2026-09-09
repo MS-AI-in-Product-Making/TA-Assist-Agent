@@ -1559,6 +1559,82 @@ function specificationChangesV3(
   return { step: "specificationChanges", proposals, clarifications };
 }
 
+function toleranceOptimizationV3(
+  request: F6OptimizationRequest,
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
+  calculateScenario: typeof calculateF6Scenario,
+): F6OptimizationResultV3["worksheets"][number]["steps"][3] {
+  const baseline = worksheet.baselineCalculation;
+  const failedSides = [
+    ...(baseline.capability.lowerCpk < baseline.capability.targetCpk ? ["lowerCpk" as const] : []),
+    ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upperCpk" as const] : []),
+  ];
+  const options = builtInTop3Options(request, worksheet, baselineRequest, calculateScenario).map((option) => {
+    if (option.status !== "completed" && option.status !== "calculation_failed") {
+      throw new Error("Built-in Top 3 policy produced an unsupported option status.");
+    }
+    const policy = option.policyContext;
+    if (policy === undefined) throw new Error("Built-in Top 3 policy context is required.");
+    const reductionRatios = policy.reductions.map(({ reductionRatio }) => reductionRatio);
+    const reductions = policy.reductions.map((reduction) => {
+      const factor = exactFactor(baseline, reduction.factor);
+      return {
+        ...reduction,
+        baselineLowerTolerance: factor.input.lowerTolerance,
+        baselineUpperTolerance: factor.input.upperTolerance,
+      };
+    });
+    if (option.status === "completed") {
+      const factorOverrides = option.scenarioEvidence.factorOverrides.map((override) => {
+        if (override.lowerTolerance === undefined || override.upperTolerance === undefined) {
+          throw new Error("Built-in Top 3 policy requires both tolerance bounds.");
+        }
+        return {
+          factor: override.factor,
+          lowerTolerance: override.lowerTolerance,
+          upperTolerance: override.upperTolerance,
+        };
+      });
+      return {
+        optionCode: policy.optionCode,
+        status: option.status,
+        reductionRatios,
+        reductions,
+        baselineMetrics: option.baselineMetrics,
+        resultMetrics: option.resultMetrics,
+        scenarioEvidence: {
+          targetId: option.scenarioEvidence.targetId,
+          baselineIdentity: option.scenarioEvidence.baselineIdentity,
+          factorOverrides,
+          calculationReference: option.scenarioEvidence.calculationReference,
+          formulaReferences: option.scenarioEvidence.formulaReferences,
+        },
+      };
+    }
+    return {
+      optionCode: policy.optionCode,
+      status: option.status,
+      reductionRatios,
+      reductions,
+      reasonCode: option.reasonCode,
+      baselineMetrics: option.baselineMetrics,
+      calculationReference: artifactReference(request.f4Reference),
+    };
+  });
+  return {
+    step: "toleranceOptimization",
+    policyId: BUILT_IN_TOP3_POLICY_ID,
+    trigger: {
+      lowerCpk: baseline.capability.lowerCpk,
+      upperCpk: baseline.capability.upperCpk,
+      targetCpk: baseline.capability.targetCpk,
+      failedSides,
+    },
+    options,
+  };
+}
+
 export function createF6OptimizationV3(
   input: unknown,
   inputs: F6OptimizationV3Inputs,
@@ -1580,7 +1656,10 @@ export function createF6OptimizationV3(
       guidance: "tighten_tolerance" as const,
     }));
     const specificationChanges = specificationChangesV3(request, worksheet, baselineRequests[index]!, calculateScenario);
-    const runStatus = centerAssessment.status === "clarification_required" || specificationChanges.clarifications.length > 0
+    const toleranceOptimization = toleranceOptimizationV3(request, worksheet, baselineRequests[index]!, calculateScenario);
+    const runStatus = centerAssessment.status === "clarification_required"
+      || specificationChanges.clarifications.length > 0
+      || toleranceOptimization.options.some(({ status }) => status === "calculation_failed")
       ? "CLARIFICATION_REQUIRED" as const
       : "COMPLETED" as const;
     return {
@@ -1588,7 +1667,12 @@ export function createF6OptimizationV3(
       tableId: baseline.worksheetSelection.tableId,
       runStatus,
       baselineIdentity: inputBaselineIdentity(baseline),
-      steps: [centerAssessment, { step: "contributorPriorities" as const, priorities }, specificationChanges] as const,
+      baselineCapability: {
+        lowerCpk: baseline.capability.lowerCpk,
+        upperCpk: baseline.capability.upperCpk,
+        targetCpk: baseline.capability.targetCpk,
+      },
+      steps: [centerAssessment, { step: "contributorPriorities" as const, priorities }, specificationChanges, toleranceOptimization] as const,
     };
   });
   const completedWorksheetCount = worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length;
@@ -1596,6 +1680,9 @@ export function createF6OptimizationV3(
     worksheetCount: worksheets.length,
     completedWorksheetCount,
     clarificationRequiredWorksheetCount: worksheets.length - completedWorksheetCount,
+    candidateOptionCount: 0 as const,
+    completedOptionCount: worksheets.flatMap(({ steps }) => steps[3].options).filter(({ status }) => status === "completed").length,
+    calculationFailedOptionCount: worksheets.flatMap(({ steps }) => steps[3].options).filter(({ status }) => status === "calculation_failed").length,
   };
   return immutable(f6OptimizationResultV3Schema.parse({
     contractVersion: request.contractVersion,

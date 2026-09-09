@@ -8695,15 +8695,105 @@ const f6SpecificationChangesV3Schema = z.object({
   });
 });
 
+const f6ToleranceReductionV3Schema = z.object({
+  factor: f6FactorIdentitySchema,
+  rank: z.number().int().min(1).max(3),
+  reductionRatio: z.number().finite().positive().lt(1),
+  scale: z.number().finite().positive().lt(1),
+  baselineLowerTolerance: z.number().finite(),
+  baselineUpperTolerance: z.number().finite(),
+}).strict();
+
+const f6ToleranceScenarioEvidenceV3Schema = z.object({
+  targetId: z.string().min(1),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  factorOverrides: z.array(z.object({
+    factor: f6FactorIdentitySchema,
+    lowerTolerance: z.number().finite(),
+    upperTolerance: z.number().finite(),
+  }).strict()).min(1).max(3),
+  calculationReference: f6ArtifactReferenceSchema,
+  formulaReferences: z.array(f6V2FormulaReferenceSchema),
+}).strict();
+
+const f6ToleranceOptionV3Schema = z.discriminatedUnion("status", [
+  z.object({
+    optionCode: z.enum(["OP1", "OP2", "OP3"]),
+    status: z.literal("completed"),
+    reductionRatios: z.array(z.number().finite().positive().lt(1)).min(1).max(3),
+    reductions: z.array(f6ToleranceReductionV3Schema).min(1).max(3),
+    baselineMetrics: f6MetricsV2Schema,
+    resultMetrics: f6MetricsV2Schema,
+    scenarioEvidence: f6ToleranceScenarioEvidenceV3Schema,
+  }).strict(),
+  z.object({
+    optionCode: z.enum(["OP1", "OP2", "OP3"]),
+    status: z.literal("calculation_failed"),
+    reductionRatios: z.array(z.number().finite().positive().lt(1)).min(1).max(3),
+    reductions: z.array(f6ToleranceReductionV3Schema).min(1).max(3),
+    reasonCode: z.string().min(1),
+    baselineMetrics: f6MetricsV2Schema,
+    calculationReference: f6ArtifactReferenceSchema,
+  }).strict(),
+]);
+
+const f6ToleranceOptimizationV3Schema = z.object({
+  step: z.literal("toleranceOptimization"),
+  policyId: z.literal("f6-top3-tolerance-policy-v1"),
+  trigger: z.object({
+    lowerCpk: z.number().finite(),
+    upperCpk: z.number().finite(),
+    targetCpk: z.number().finite().positive(),
+    failedSides: z.array(z.enum(["lowerCpk", "upperCpk"])).max(2),
+  }).strict(),
+  options: z.array(f6ToleranceOptionV3Schema).max(3),
+}).strict().superRefine((step, context) => {
+  const expectedFailedSides = [
+    ...(step.trigger.lowerCpk < step.trigger.targetCpk ? ["lowerCpk" as const] : []),
+    ...(step.trigger.upperCpk < step.trigger.targetCpk ? ["upperCpk" as const] : []),
+  ];
+  if (step.trigger.failedSides.length !== expectedFailedSides.length
+    || step.trigger.failedSides.some((side, index) => side !== expectedFailedSides[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance policy trigger must match failed capability sides", path: ["trigger", "failedSides"] });
+  }
+  if ((expectedFailedSides.length > 0) !== (step.options.length === 3)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "failed capability requires exactly OP1, OP2, and OP3", path: ["options"] });
+  }
+  step.options.forEach((option, optionIndex) => {
+    const expectedCode = `OP${optionIndex + 1}`;
+    const expectedRatios = option.optionCode === "OP1" ? [0.25, 0.1, 0.1]
+      : option.optionCode === "OP2" ? [0.2, 0.15, 0.15]
+        : [0.4, 0.05, 0.05];
+    if (option.optionCode !== expectedCode
+      || option.reductions.length !== option.reductionRatios.length
+      || option.reductionRatios.some((ratio, index) => !f6NearlyEqual(ratio, expectedRatios[index]!))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance option identity or reduction matrix is invalid", path: ["options", optionIndex] });
+    }
+    option.reductions.forEach((reduction, reductionIndex) => {
+      if (reduction.rank !== reductionIndex + 1
+        || !f6NearlyEqual(reduction.reductionRatio, option.reductionRatios[reductionIndex]!)
+        || !f6NearlyEqual(reduction.scale, 1 - reduction.reductionRatio)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance reduction must match its governed rank and ratio", path: ["options", optionIndex, "reductions", reductionIndex] });
+      }
+    });
+  });
+});
+
 const f6OptimizationWorksheetV3Schema = z.object({
   worksheetName: z.string().min(1),
   tableId: z.string().min(1),
   runStatus: z.enum(["COMPLETED", "CLARIFICATION_REQUIRED"]),
   baselineIdentity: f6InputBaselineIdentitySchema,
+  baselineCapability: z.object({
+    lowerCpk: z.number().finite(),
+    upperCpk: z.number().finite(),
+    targetCpk: z.number().finite().positive(),
+  }).strict(),
   steps: z.tuple([
     f6CenterAssessmentV3Schema,
     f6ContributorPrioritiesV3Schema,
     f6SpecificationChangesV3Schema,
+    f6ToleranceOptimizationV3Schema,
   ]),
 }).strict().superRefine((worksheet, context) => {
   if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName
@@ -8711,9 +8801,16 @@ const f6OptimizationWorksheetV3Schema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match worksheet and table", path: ["baselineIdentity"] });
   }
   const clarificationRequired = worksheet.steps[0].status === "clarification_required"
-    || worksheet.steps[2].clarifications.length > 0;
+    || worksheet.steps[2].clarifications.length > 0
+    || worksheet.steps[3].options.some(({ status }) => status === "calculation_failed");
   if ((worksheet.runStatus === "CLARIFICATION_REQUIRED") !== clarificationRequired) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match sequential step clarifications", path: ["runStatus"] });
+  }
+  const toleranceStep = worksheet.steps[3];
+  if (!f6NearlyEqual(toleranceStep.trigger.lowerCpk, worksheet.baselineCapability.lowerCpk)
+    || !f6NearlyEqual(toleranceStep.trigger.upperCpk, worksheet.baselineCapability.upperCpk)
+    || !f6NearlyEqual(toleranceStep.trigger.targetCpk, worksheet.baselineCapability.targetCpk)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance trigger must match baseline capability", path: ["steps", 3, "trigger"] });
   }
   worksheet.steps[2].proposals.forEach((proposal, index) => {
     const evidenceBaseline = proposal.scenarioEvidence.baselineIdentity;
@@ -8727,12 +8824,52 @@ const f6OptimizationWorksheetV3Schema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 scenario baseline must match worksheet baseline", path: ["steps", 2, "proposals", index, "scenarioEvidence", "baselineIdentity"] });
     }
   });
+  worksheet.steps[3].options.forEach((option, index) => {
+    const worksheetBaseline = worksheet.baselineIdentity;
+    option.reductions.forEach((reduction, reductionIndex) => {
+      const priority = worksheet.steps[1].priorities[reductionIndex];
+      if (priority === undefined || f6FactorIdentityKey(priority.factor) !== f6FactorIdentityKey(reduction.factor)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance reductions must use the ranked top contributors", path: ["steps", 3, "options", index, "reductions", reductionIndex, "factor"] });
+      }
+    });
+    if (option.status !== "completed") return;
+    const evidence = option.scenarioEvidence;
+    const evidenceBaseline = evidence.baselineIdentity;
+    if (evidence.targetId !== `${toleranceStep.policyId}:${option.optionCode}`
+      || evidenceBaseline.calculationVersion !== worksheetBaseline.calculationVersion
+      || evidenceBaseline.projectReference !== worksheetBaseline.projectReference
+      || evidenceBaseline.runReference !== worksheetBaseline.runReference
+      || evidenceBaseline.workbookContentHash !== worksheetBaseline.workbookContentHash
+      || evidenceBaseline.worksheetName !== worksheetBaseline.worksheetName
+      || evidenceBaseline.tableId !== worksheetBaseline.tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance scenario baseline must match worksheet baseline", path: ["steps", 3, "options", index, "scenarioEvidence", "baselineIdentity"] });
+    }
+    if (evidence.factorOverrides.length !== option.reductions.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance overrides must match policy reductions", path: ["steps", 3, "options", index, "scenarioEvidence", "factorOverrides"] });
+    }
+    option.reductions.forEach((reduction, reductionIndex) => {
+      const override = evidence.factorOverrides[reductionIndex];
+      const baselineCenter = (reduction.baselineLowerTolerance + reduction.baselineUpperTolerance) / 2;
+      const expectedLower = baselineCenter + (reduction.baselineLowerTolerance - baselineCenter) * reduction.scale;
+      const expectedUpper = baselineCenter + (reduction.baselineUpperTolerance - baselineCenter) * reduction.scale;
+      if (override === undefined
+        || f6FactorIdentityKey(override.factor) !== f6FactorIdentityKey(reduction.factor)
+        || !f6NearlyEqual(override.lowerTolerance, expectedLower)
+        || !f6NearlyEqual(override.upperTolerance, expectedUpper)
+        || !f6NearlyEqual((override.lowerTolerance + override.upperTolerance) / 2, baselineCenter)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance override must preserve the governed band center and reduction scale", path: ["steps", 3, "options", index, "scenarioEvidence", "factorOverrides", reductionIndex] });
+      }
+    });
+  });
 });
 
 const f6OptimizationSummaryV3Schema = z.object({
   worksheetCount: z.number().int().nonnegative(),
   completedWorksheetCount: z.number().int().nonnegative(),
   clarificationRequiredWorksheetCount: z.number().int().nonnegative(),
+  candidateOptionCount: z.literal(0),
+  completedOptionCount: z.number().int().nonnegative(),
+  calculationFailedOptionCount: z.number().int().nonnegative(),
 }).strict();
 
 const f6ProvenanceV3Schema = z.object({
@@ -8788,20 +8925,27 @@ export const f6OptimizationResultV3Schema = z.object({
     if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet baseline workbook must match root workbook", path: ["worksheets", index, "baselineIdentity", "workbookContentHash"] });
     }
+    worksheet.steps[3].options.forEach((option, optionIndex) => {
+      const calculationReference = option.status === "completed" ? option.scenarioEvidence.calculationReference : option.calculationReference;
+      if (calculationReference.artifact !== result.provenance.f4Reference.artifact
+        || calculationReference.contentHash !== result.provenance.f4Reference.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance option must reference the governed F4 calculation", path: ["worksheets", index, "steps", 3, "options", optionIndex] });
+      }
+    });
   });
   const completedWorksheetCount = result.worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length;
   const clarificationRequiredWorksheetCount = result.worksheets.length - completedWorksheetCount;
+  const toleranceOptions = result.worksheets.flatMap(({ steps }) => steps[3].options);
   if (result.summary.worksheetCount !== result.worksheets.length
     || result.summary.completedWorksheetCount !== completedWorksheetCount
-    || result.summary.clarificationRequiredWorksheetCount !== clarificationRequiredWorksheetCount) {
+    || result.summary.clarificationRequiredWorksheetCount !== clarificationRequiredWorksheetCount
+    || result.summary.completedOptionCount !== toleranceOptions.filter(({ status }) => status === "completed").length
+    || result.summary.calculationFailedOptionCount !== toleranceOptions.filter(({ status }) => status === "calculation_failed").length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "summary must match worksheet results", path: ["summary"] });
   }
   const expectedStatus = clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED";
   if (result.runStatus !== expectedStatus) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "root runStatus must match worksheet statuses", path: ["runStatus"] });
-  }
-  if (containsForbiddenF6V3Token(result)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 v3 must not contain legacy option policy tokens", path: [] });
   }
 });
 
@@ -8815,14 +8959,6 @@ function f6CompareFactorIdentity(left: z.infer<typeof f6FactorIdentitySchema>, r
     || left.sourceRow - right.sourceRow
     || left.factorName.localeCompare(right.factorName)
     || left.unit.localeCompare(right.unit);
-}
-
-function containsForbiddenF6V3Token(value: unknown): boolean {
-  if (typeof value === "string") return /\bOP[123]\b|BUILT_IN_POLICY|f6-top3-tolerance-policy-v1/u.test(value);
-  if (Array.isArray(value)) return value.some(containsForbiddenF6V3Token);
-  if (typeof value !== "object" || value === null) return false;
-  return Object.entries(value).some(([key, child]) => /^(?:optionCodes?|optionSources?|policyContexts?|ratios?|reductionRatios?|reductions|scales?)$/iu.test(key)
-    || containsForbiddenF6V3Token(child));
 }
 
 export const f6ReadableOptimizationResultSchema = z.union([

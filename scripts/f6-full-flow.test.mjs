@@ -68,13 +68,22 @@ function setup({ status = "completed" } = {}) {
       tableId: "table-1",
       runStatus: clarificationRequired ? "CLARIFICATION_REQUIRED" : "COMPLETED",
       baselineIdentity: { calculationVersion: "excel-ta-v1", projectReference: "project", runReference: "run", workbookContentHash: HASH, worksheetName: "Analysis-A", tableId: "table-1" },
+      baselineCapability: { lowerCpk: 1, upperCpk: 1, targetCpk: 1 },
       steps: [
         { step: "centerAssessment", status: "aligned", adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
         { step: "contributorPriorities", priorities: [] },
         { step: "specificationChanges", proposals: [], clarifications: clarificationRequired ? [{ reasonCode: "verification_required", requiredInputs: ["valid_f4_scenario_calculation"] }] : [] },
+        { step: "toleranceOptimization", policyId: "f6-top3-tolerance-policy-v1", trigger: { lowerCpk: 1, upperCpk: 1, targetCpk: 1, failedSides: [] }, options: [] },
       ],
     }],
-    summary: { worksheetCount: 1, completedWorksheetCount: clarificationRequired ? 0 : 1, clarificationRequiredWorksheetCount: clarificationRequired ? 1 : 0 },
+    summary: {
+      worksheetCount: 1,
+      completedWorksheetCount: clarificationRequired ? 0 : 1,
+      clarificationRequiredWorksheetCount: clarificationRequired ? 1 : 0,
+      candidateOptionCount: 0,
+      completedOptionCount: 0,
+      calculationFailedOptionCount: 0,
+    },
     provenance: {
       f2Reference: { artifact: "f2.json", contentHash: HASH },
       f3Reference: { artifact: "f3.json", contentHash: HASH },
@@ -597,7 +606,14 @@ describe("F6 real artifact full flow", () => {
 
     expect(optimization.optimizationVersion).toBe("f6-optimization-v3");
     expect(optimization.worksheets.every(({ steps }) =>
-      steps.map(({ step }) => step).join(",") === "centerAssessment,contributorPriorities,specificationChanges")).toBe(true);
+      steps.map(({ step }) => step).join(",") === "centerAssessment,contributorPriorities,specificationChanges,toleranceOptimization")).toBe(true);
+    expect(optimization.worksheets.every(({ steps }) => {
+      const tolerance = steps[3];
+      return tolerance.policyId === "f6-top3-tolerance-policy-v1"
+        && (tolerance.trigger.failedSides.length === 0
+          ? tolerance.options.length === 0
+          : tolerance.options.map(({ optionCode }) => optionCode).join(",") === "OP1,OP2,OP3");
+    })).toBe(true);
     expect(summary.reportSummary).toEqual(expect.objectContaining({
       workbookDisposition: expect.any(String),
       worksheetDispositions: expect.arrayContaining([
@@ -745,7 +761,17 @@ describe("F6 real artifact full flow", () => {
     expect(result.status).toBe("completed");
     expect(readdirSync(runRoot)).toHaveLength(4);
     expect(optimization.optimizationVersion).toBe("f6-optimization-v3");
-    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges"]);
+    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges", "toleranceOptimization"]);
+    expect(worksheet.steps[3]).toEqual(expect.objectContaining({
+      policyId: "f6-top3-tolerance-policy-v1",
+      options: worksheet.steps[3].trigger.failedSides.length === 0
+        ? []
+        : expect.arrayContaining([
+            expect.objectContaining({ optionCode: "OP1" }),
+            expect.objectContaining({ optionCode: "OP2" }),
+            expect.objectContaining({ optionCode: "OP3" }),
+          ]),
+    }));
     expect(summary.inputDecisions).toEqual({
       analysisContext: { outcome: "NOT_PROVIDED" },
       optimizationTargets: { outcome: "NOT_PROVIDED" },

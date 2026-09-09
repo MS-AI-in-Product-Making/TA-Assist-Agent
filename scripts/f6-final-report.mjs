@@ -118,12 +118,15 @@ const F6_V3_REPORT_CATALOG = {
     image: "Tolerance Path Image", openImage: "Open tolerance path image", factors: "Complete Factor Table",
     interpretation: "Image and Factor Table Context Interpretation", results: "Requirements and Statistical Results",
     f0Guidance: "F0 Capability and Knowledge Guidance", center: "Adjusted Mean to Spec Center Shift",
-    contributors: "Contributor Priorities", specifications: "Specification Changes", factor: "Factor", part: "Part Name",
+    contributors: "Contributor Priorities", specifications: "Specification Changes", toleranceOptions: "Tolerance Optimization Options",
+    factor: "Factor", part: "Part Name",
     drawing: "Drawing Number", dimId: "DIM ID", nominal: "Design Nominal", upperTolerance: "+ Tolerance",
     lowerTolerance: "- Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "Status",
     rank: "Rank", priority: "Priority", guidance: "Guidance", side: "Side", currentLimit: "Current Limit",
     proposedLimit: "Proposed Limit", targetCpk: "Target Cpk", approval: "Approval",
     approvalRequired: "Engineering approval required", noProposal: "No specification change is proposed.",
+    noToleranceOption: "Capability meets the worksheet target; no built-in tolerance option is required.",
+    option: "Option", factorsLabel: "Top 3 Factors", reductionRatios: "Reduction Ratios", resultCpk: "Result Cpk", policy: "Policy",
     clarification: "Clarification required", modelUnavailable: "Model interpretation unavailable",
     high: "High", medium: "Medium", lower: "Lower", topThree: "Focus tolerance-range review on the first three priorities.",
     nominalReminder: "The adjusted mean is off the specification center; optimize Factor nominal values before changing specifications.",
@@ -132,11 +135,13 @@ const F6_V3_REPORT_CATALOG = {
     title: "TA 工程分析报告", document: "文档概览", workbook: "工作簿摘要", worksheet: "工作表", image: "公差路径图片",
     openImage: "打开公差路径图片", factors: "完整 Factor 表", interpretation: "图片与 Factor 表上下文解读",
     results: "要求与统计结果", f0Guidance: "F0 能力与知识库建议", center: "Adjusted Mean to Spec Center Shift",
-    contributors: "贡献因子优先级", specifications: "规格变更建议", factor: "Factor",
+    contributors: "贡献因子优先级", specifications: "规格变更建议", toleranceOptions: "公差优化方案", factor: "Factor",
     part: "Part Name", drawing: "Drawing Number", dimId: "DIM ID", nominal: "Design Nominal", upperTolerance: "+ Tolerance",
     lowerTolerance: "- Tolerance", distribution: "Distribution", sigmaLevel: "Sigma Level", status: "状态", rank: "排序",
     priority: "优先级", guidance: "建议", side: "规格侧", currentLimit: "当前限值", proposedLimit: "建议限值",
     targetCpk: "目标 Cpk", approval: "审批", approvalRequired: "需要工程审批", noProposal: "无需提出规格变更。",
+    noToleranceOption: "能力满足工作表目标，无需运行内置公差方案。", option: "方案", factorsLabel: "Top 3 Factors",
+    reductionRatios: "缩减比例", resultCpk: "结果 Cpk", policy: "策略",
     clarification: "需要澄清", modelUnavailable: "模型解读 unavailable",
     high: "高", medium: "中", lower: "较低", topThree: "请着重检查前三优先级 Factor 的公差范围。",
     nominalReminder: "Adjusted Mean 偏离规格中心，请先优化 Factor nominal 值，再评估规格变更。",
@@ -147,6 +152,14 @@ function v3PriorityLabel(rank, count, catalog) {
   if (rank === 1) return catalog.high;
   if (rank <= Math.max(2, Math.ceil(count / 2))) return catalog.medium;
   return catalog.lower;
+}
+
+function v3CalculationFactor(calculation, identity) {
+  return calculation.factors.find((factor) => factor.source.worksheetName === identity.worksheetName
+    && factor.source.tableId === identity.tableId
+    && factor.source.sourceRow === identity.sourceRow
+    && factor.factorName === identity.factorName
+    && factor.unit === identity.unit);
 }
 
 function v3FactorRows(interpretation) {
@@ -260,7 +273,7 @@ function renderF6V3WorkbookSummary(worksheets, catalog, language) {
 
 function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
   const prefix = `3-${ordinal}`;
-  const [center, contributors, specifications] = worksheet.f6Worksheet.steps;
+  const [center, contributors, specifications, toleranceOptimization] = worksheet.f6Worksheet.steps;
   const verifiedRelativePath = imageLinks?.get(worksheet.worksheetName);
   const relativePath = verifiedRelativePath ?? interpretation?.request?.image?.artifactPath;
   const imageLink = typeof relativePath === "string"
@@ -318,7 +331,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     "", "| Rank | Factor | One Sigma | Variance Contribution |", "|---:|---|---:|---:|",
   );
   for (const item of contributors.priorities) {
-    const factor = calculation.factors.find(({ source }) => source.tableId === item.factor.tableId && source.sourceRow === item.factor.sourceRow);
+    const factor = v3CalculationFactor(calculation, item.factor);
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution)]));
   }
@@ -339,7 +352,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   lines.push("", `## ${prefix}.7 ${catalog.contributors}`, "",
     `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---:|---:|---|---|");
   for (const item of contributors.priorities) {
-    const factor = calculation.factors.find(({ source }) => source.tableId === item.factor.tableId && source.sourceRow === item.factor.sourceRow);
+    const factor = v3CalculationFactor(calculation, item.factor);
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution),
       v3PriorityLabel(item.rank, contributors.priorities.length, catalog), clean(item.guidance)]));
@@ -353,6 +366,24 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     }
   }
   for (const item of specifications.clarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
+  lines.push("", `## ${prefix}.9 ${catalog.toleranceOptions}`, "", `- ${catalog.policy}: ${clean(toleranceOptimization.policyId)}`);
+  if (toleranceOptimization.options.length === 0) lines.push(`- ${catalog.noToleranceOption}`);
+  else {
+    lines.push(
+      "",
+      `| ${catalog.option} | ${catalog.factorsLabel} | ${catalog.reductionRatios} | ${catalog.status} | ${catalog.resultCpk} |`,
+      "|---|---|---|---|---:|",
+    );
+    for (const option of toleranceOptimization.options) {
+      lines.push(row([
+        option.optionCode,
+        option.reductions.map(({ factor }) => clean(factor.factorName)).join(", "),
+        option.reductionRatios.map(percentText).join(", "),
+        option.status,
+        option.status === "completed" ? numberText(option.resultMetrics.cpk) : NA,
+      ]));
+    }
+  }
   return lines;
 }
 
@@ -417,7 +448,12 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
         ...base,
         findings: [clean(interpretation?.imageTableInterpretation)],
         clarifications: worksheet.f6Worksheet.steps.flatMap((step) => step.step === "centerAssessment" && step.status === "clarification_required"
-          ? [step.reasonCode] : step.step === "specificationChanges" ? step.clarifications.map(({ reasonCode }) => reasonCode) : []),
+          ? [step.reasonCode]
+          : step.step === "specificationChanges"
+            ? step.clarifications.map(({ reasonCode }) => reasonCode)
+            : step.step === "toleranceOptimization"
+              ? step.options.filter(({ status }) => status === "calculation_failed").map(({ reasonCode }) => reasonCode)
+              : []),
         metrics: { mean: calculation.system.mean, rssSigma: calculation.system.rssSigma,
           worstCaseLower: calculation.system.worstCaseLower, worstCaseUpper: calculation.system.worstCaseUpper,
           ...(calculation.capability.cp === undefined ? {} : { cp: calculation.capability.cp }),

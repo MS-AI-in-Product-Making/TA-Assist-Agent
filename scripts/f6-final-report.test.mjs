@@ -1052,13 +1052,13 @@ describe("createF6FinalReportProjection v3", () => {
     expect(markdown).not.toMatch(/^\|[^\n]*\|\s*(?:Source|Evidence|来源|证据)\s*\|[^\n]*$/imu);
   });
 
-  it("renders qualitative priorities without fixed percentages and suppresses an aligned-center warning", () => {
+  it("renders qualitative priorities and suppresses an aligned-center warning", () => {
     const inputs = loadRealF6Inputs();
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
     expect(report.markdown).toContain("| 1 | Factor Analysis-A | 0.050000 mm | 100.0% | High | tighten\\_tolerance |");
     expect(report.markdown).toContain("- Status: aligned");
-    expect(report.markdown).not.toMatch(/OP[123]|20%|30%|center warning/iu);
+    expect(report.markdown).not.toMatch(/center warning/iu);
   });
 
   it("marks deterministic specification proposals as approval-required", () => {
@@ -1076,6 +1076,47 @@ describe("createF6FinalReportProjection v3", () => {
     expect(proposals.length).toBeGreaterThan(0);
     expect(report.markdown).toContain("Engineering approval required");
     expect(report.markdown).not.toContain("capability improvement");
+  });
+
+  it("renders governed Top 3 tolerance options with ratios and F4 results", () => {
+    const inputs = loadRealF6Inputs({
+      systemSpecificationOverrides: {
+        targetSigmaLevel: {
+          status: "available", actualValue: 20, displayValue: "20",
+          sourceLabel: "Target sigma", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal",
+        },
+      },
+    });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("## 3-1.9 Tolerance Optimization Options");
+    expect(report.markdown).toContain("f6-top3-tolerance-policy-v1");
+    expect(report.markdown).toContain("OP1");
+    expect(report.markdown).toContain("25.0%");
+    expect(report.markdown).toContain("OP2");
+    expect(report.markdown).toContain("20.0%");
+    expect(report.markdown).toContain("OP3");
+    expect(report.markdown).toContain("40.0%");
+    expect(report.markdown).toContain("Result Cpk");
+  });
+
+  it("rejects contributor Factor identity drift against F4 evidence", () => {
+    const inputs = loadRealF6Inputs({
+      systemSpecificationOverrides: {
+        targetSigmaLevel: {
+          status: "available", actualValue: 20, displayValue: "20",
+          sourceLabel: "Target sigma", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal",
+        },
+      },
+    });
+    const priority = inputs.f6Optimization.worksheets[0].steps[1].priorities[0];
+    priority.factor.factorName = "Drifted Factor";
+    for (const option of inputs.f6Optimization.worksheets[0].steps[3].options) {
+      option.reductions[0].factor.factorName = "Drifted Factor";
+      if (option.status === "completed") option.scenarioEvidence.factorOverrides[0].factor.factorName = "Drifted Factor";
+    }
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(/contributor Factor identity/i);
   });
 
   it("does not expose provenance columns while preserving governed input provenance", () => {

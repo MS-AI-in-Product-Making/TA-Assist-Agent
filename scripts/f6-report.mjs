@@ -282,8 +282,8 @@ export function renderF6Report(result, options = {}) {
   if (parsed.optimizationVersion === "f6-optimization-v3") {
     const language = parsed.interactionLanguage.uiCatalogLanguage;
     const labels = language === "zh"
-      ? { title: "Feature 6 顺序优化报告 V3", status: "运行状态", workbook: "工作簿", center: "中心评估", contributors: "贡献因子优先级", specifications: "规格变更建议", noProposal: "无需提出规格变更。", approval: "需要工程审批", clarification: "需要澄清" }
-      : { title: "Feature 6 Sequential Optimization Report V3", status: "Run status", workbook: "Workbook", center: "Center Assessment", contributors: "Contributor Priorities", specifications: "Specification Changes", noProposal: "No specification change is proposed.", approval: "Engineering approval required", clarification: "Clarification required" };
+      ? { title: "Feature 6 顺序优化报告 V3", status: "运行状态", workbook: "工作簿", center: "中心评估", contributors: "贡献因子优先级", specifications: "规格变更建议", tolerance: "公差优化", noProposal: "无需提出规格变更。", noTolerance: "能力满足目标，无需内置公差方案。", approval: "需要工程审批", clarification: "需要澄清" }
+      : { title: "Feature 6 Sequential Optimization Report V3", status: "Run status", workbook: "Workbook", center: "Center Assessment", contributors: "Contributor Priorities", specifications: "Specification Changes", tolerance: "Tolerance Optimization", noProposal: "No specification change is proposed.", noTolerance: "Capability meets target; no built-in tolerance option is required.", approval: "Engineering approval required", clarification: "Clarification required" };
     const v3Lines = [
       `# ${labels.title}`,
       "",
@@ -291,7 +291,7 @@ export function renderF6Report(result, options = {}) {
       `- ${labels.workbook}: ${cell(parsed.workbook.fileName)}`,
     ];
     for (const worksheet of parsed.worksheets) {
-      const [center, contributors, specifications] = worksheet.steps;
+      const [center, contributors, specifications, tolerance] = worksheet.steps;
       v3Lines.push("", `## ${cell(worksheet.worksheetName)}`, "", `### 1. ${labels.center}`, "", `- ${cell(center.status)}`);
       if (center.status === "offset") v3Lines.push(`- Offset: ${center.offset}. ${cell(center.interpretation)}`);
       if (center.status === "clarification_required") v3Lines.push(`- ${labels.clarification}: ${cell(center.reasonCode)}`);
@@ -308,6 +308,17 @@ export function renderF6Report(result, options = {}) {
         }
       }
       for (const clarification of specifications.clarifications) v3Lines.push(`- ${labels.clarification}: ${cell(clarification.reasonCode)}`);
+      v3Lines.push("", `### 4. ${labels.tolerance}`, "", `- Policy: ${cell(tolerance.policyId)}`);
+      if (tolerance.options.length === 0) v3Lines.push(`- ${labels.noTolerance}`);
+      else {
+        v3Lines.push("", "| Option | Factors | Reduction | Status | Result Cpk |", "|---|---|---|---|---:|");
+        for (const option of tolerance.options) {
+          const factors = option.reductions.map(({ factor }) => cell(factor.factorName)).join(", ");
+          const reductions = option.reductionRatios.map((ratio) => formatPercent(ratio * 100, 1)).join(", ");
+          const resultCpk = option.status === "completed" ? option.resultMetrics.cpk : "n/a";
+          v3Lines.push(`| ${option.optionCode} | ${factors} | ${reductions} | ${option.status} | ${resultCpk} |`);
+        }
+      }
     }
     return `${v3Lines.join("\n").trimEnd()}\n`;
   }

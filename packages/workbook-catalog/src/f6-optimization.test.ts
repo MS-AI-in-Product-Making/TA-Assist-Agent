@@ -39,8 +39,9 @@ function calculationRequest(
     targetCpk: 1.33,
     targetSigmaLevel: 4,
   },
+  factorCount = 4,
 ): CalculationRequest {
-  const tolerances = [[-1.5, 2.5], [-1, 1], [-0.75, 0.75], [-0.5, 0.5]] as const;
+  const tolerances = ([[-1.5, 2.5], [-1, 1], [-0.75, 0.75], [-0.5, 0.5]] as const).slice(0, factorCount);
   const rows = tolerances.map(([lower, upper], index) => {
     const row = index + 2;
     return {
@@ -72,7 +73,7 @@ function calculationRequest(
         factorTables: [{
           tableId: "table-a",
           headerRow: 1,
-          dataRange: { startRow: 2, endRow: 5 },
+          dataRange: { startRow: 2, endRow: factorCount + 1 },
           columns: [
             { semanticField: "factorName", headerText: "Factor", sourceColumn: "A" },
             { semanticField: "nominalValue", headerText: "Nominal", sourceColumn: "B" },
@@ -96,7 +97,7 @@ function calculationRequest(
       status: "readyForNextCheck",
       blockingIssues: [],
       advisoryIssues: [],
-      summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 4, blockingIssueCount: 0, advisoryIssueCount: 0 },
+      summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: factorCount, blockingIssueCount: 0, advisoryIssueCount: 0 },
     },
     exceptionResolution: {
       contractVersion: "v1",
@@ -126,8 +127,9 @@ function calculationRequest(
 function request(
   worksheetName = "Analysis-A",
   specification?: { readonly lowerSpecLimit: number; readonly upperSpecLimit: number; readonly targetCpk: number; readonly targetSigmaLevel: number },
+  factorCount = 4,
 ): F6OptimizationRequest {
-  const baselineRequest = calculationRequest(worksheetName, specification);
+  const baselineRequest = calculationRequest(worksheetName, specification, factorCount);
   const calculation = createCalculation(baselineRequest);
   if (calculation.status !== "completed") throw new Error("fixture calculation failed");
   const imageReference = {
@@ -1798,18 +1800,22 @@ describe("createF6Optimization V3", () => {
     };
   }
 
-  it("emits the fixed sequential policy with stable contributor ordering and no legacy option fields", () => {
+  it("emits the fixed sequential policy with stable contributor ordering and V3-native tolerance options", () => {
     const input = request("Analysis-A", { lowerSpecLimit: -5, upperSpecLimit: 20, targetCpk: 1.33, targetSigmaLevel: 4 });
     const result = createF6OptimizationV3(input, v3Inputs(input));
     const worksheet = result.worksheets[0]!;
 
     expect(f6OptimizationResultV3Schema.parse(result)).toEqual(result);
-    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges"]);
+    expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges", "toleranceOptimization"]);
     expect(worksheet.steps[0]).toEqual(expect.objectContaining({ status: "offset", interpretation: expect.stringContaining("complete Factor table") }));
     expect(worksheet.steps[1].priorities.map(({ factor }) => factor.sourceRow)).toEqual([2, 3, 4, 5]);
     expect(worksheet.steps[2].proposals.map(({ side }) => side)).toEqual(["lower"]);
     expect(worksheet.steps[2].proposals[0]).toEqual(expect.objectContaining({ approvalRequired: true, capabilityImprovementClaim: false }));
-    expect(JSON.stringify(result)).not.toMatch(/OP[123]|BUILT_IN_POLICY|reductionRatio|policyContext|"ratio"/u);
+    expect(worksheet.steps[3]).toEqual(expect.objectContaining({
+      policyId: "f6-top3-tolerance-policy-v1",
+      options: expect.any(Array),
+    }));
+    expect(JSON.stringify(result)).not.toMatch(/BUILT_IN_POLICY|policyContext|"options":\[\{"optionId"/u);
   });
 
   it("preserves the complete governed report scope including blocked worksheets", () => {
@@ -1831,6 +1837,61 @@ describe("createF6Optimization V3", () => {
 
     expect(result.worksheets[0]!.steps[0]).toEqual({ step: "centerAssessment", status: "aligned", adjustedMean: 0.5, specificationMidpoint: 0.5, offset: 0 });
     expect(result.worksheets[0]!.steps[2].proposals.map(({ side }) => side)).toEqual(["lower", "upper"]);
+  });
+
+  it("runs governed Top 3 tolerance options when either side Cpk is below target", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -4.5, upperSpecLimit: 5.5, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+
+    expect(result.worksheets[0]!.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        step: "toleranceOptimization",
+        policyId: "f6-top3-tolerance-policy-v1",
+        options: [
+          expect.objectContaining({ optionCode: "OP1", reductionRatios: [0.25, 0.1, 0.1], status: "completed" }),
+          expect.objectContaining({ optionCode: "OP2", reductionRatios: [0.2, 0.15, 0.15], status: "completed" }),
+          expect.objectContaining({ optionCode: "OP3", reductionRatios: [0.4, 0.05, 0.05], status: "completed" }),
+        ],
+      }),
+    ]));
+  });
+
+  it.each([
+    { factorCount: 1, expectedRatios: [[0.25], [0.2], [0.4]] },
+    { factorCount: 2, expectedRatios: [[0.25, 0.1], [0.2, 0.15], [0.4, 0.05]] },
+  ])("applies each governed option to all $factorCount available contributors", ({ factorCount, expectedRatios }) => {
+    const input = request("Analysis-A", { lowerSpecLimit: -1, upperSpecLimit: 1, targetCpk: 10, targetSigmaLevel: 30 }, factorCount);
+    const result = createF6OptimizationV3(input, v3Inputs(input));
+    const options = result.worksheets[0]!.steps[3].options;
+
+    expect(options.map(({ optionCode }) => optionCode)).toEqual(["OP1", "OP2", "OP3"]);
+    expect(options.map(({ reductionRatios }) => reductionRatios)).toEqual(expectedRatios);
+    expect(options.every((option) => option.reductions.length === factorCount)).toBe(true);
+    expect(options.every((option) => option.status !== "completed" || option.scenarioEvidence.factorOverrides.length === factorCount)).toBe(true);
+  });
+
+  it.each([
+    ["capability trigger", (result: any) => {
+      result.worksheets[0].steps[3].trigger = { lowerCpk: 2, upperCpk: 2, targetCpk: 1.33, failedSides: [] };
+      result.worksheets[0].steps[3].options = [];
+      result.summary.completedOptionCount = 0;
+    }],
+    ["specification override", (result: any) => {
+      result.worksheets[0].steps[3].options[0].scenarioEvidence.systemSpecification = { lowerSpecLimit: -5 };
+    }],
+    ["ranked Factor identity", (result: any) => {
+      result.worksheets[0].steps[3].options[0].reductions[0].factor = result.worksheets[0].steps[1].priorities[1].factor;
+    }],
+    ["center-preserving tolerance override", (result: any) => {
+      result.worksheets[0].steps[3].options[0].scenarioEvidence.factorOverrides[0].upperTolerance += 0.01;
+    }],
+  ])("rejects tampered V3 %s evidence", (_label, mutate) => {
+    const input = request("Analysis-A", { lowerSpecLimit: -4.5, upperSpecLimit: 5.5, targetCpk: 1.33, targetSigmaLevel: 4 });
+    const result = structuredClone(createF6OptimizationV3(input, v3Inputs(input)));
+
+    mutate(result);
+
+    expect(f6OptimizationResultV3Schema.safeParse(result).success).toBe(false);
   });
 
   it.each([

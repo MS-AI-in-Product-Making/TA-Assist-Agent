@@ -542,4 +542,43 @@ describe("renderF6Report V2", () => {
     expect(toleranceRow).not.toContain(String.raw`optimization\_target\_required`);
     expect(toleranceRow).not.toContain(String.raw`system\_specification\_target\_required`);
   });
+
+  it("renders the V3 tolerance optimization policy step", () => {
+    const baselineIdentity = { calculationVersion: "excel-ta-v1", projectReference: "project-a", runReference: "run-a", workbookContentHash: HASH, worksheetName: "Analysis-A", tableId: "table-a" };
+    const markdown = renderF6ReportV2({
+      contractVersion: "v1",
+      outputClassification: "confidential",
+      featureId: "F6",
+      optimizationVersion: "f6-optimization-v3",
+      sequentialPolicyId: "f6-sequential-optimization-policy-v1",
+      interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false },
+      runStatus: "COMPLETED",
+      workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        runStatus: "COMPLETED",
+        baselineIdentity,
+        baselineCapability: { lowerCpk: 1, upperCpk: 1, targetCpk: 1 },
+        steps: [
+          { step: "centerAssessment", status: "aligned", adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
+          { step: "contributorPriorities", priorities: [] },
+          { step: "specificationChanges", proposals: [], clarifications: [] },
+          { step: "toleranceOptimization", policyId: "f6-top3-tolerance-policy-v1", trigger: { lowerCpk: 1, upperCpk: 1, targetCpk: 1, failedSides: [] }, options: [] },
+        ],
+      }],
+      summary: { worksheetCount: 1, completedWorksheetCount: 1, clarificationRequiredWorksheetCount: 0, candidateOptionCount: 0, completedOptionCount: 0, calculationFailedOptionCount: 0 },
+      provenance: {
+        f2Reference: { artifact: "Feature2-Report.json", contentHash: HASH },
+        f3Reference: { artifact: "Feature3-Report.json", contentHash: HASH },
+        f4Reference: { artifact: "Feature4-Calculation.json", contentHash: HASH },
+        f5Reference: { artifact: "Feature5-Report.json", contentHash: HASH },
+        multimodalReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: HASH },
+        reportScope: { worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] },
+      },
+    });
+
+    expect(markdown).toContain("### 4. Tolerance Optimization");
+    expect(markdown).toContain("f6-top3-tolerance-policy-v1");
+  });
 });
