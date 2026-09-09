@@ -107,6 +107,11 @@ function sameNullable(left, right) {
   return (left ?? null) === (right ?? null);
 }
 
+function sameNullableIdentifier(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  return String(left) === String(right);
+}
+
 function detectImageMediaType(bytes) {
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
@@ -168,7 +173,7 @@ function buildFactorRows(worksheetName, f2Worksheet, f3Worksheet, calculation) {
       || actual.partName !== f3Row.partSubsystem
       || actual.partCategory !== f3Row.partCategory
       || !sameNullable(actual.drawingNumber, f3Row.drawingNumber)
-      || !sameNullable(actual.dimCharacteristicId, f3Row.dimId)
+      || !sameNullableIdentifier(actual.dimCharacteristicId, f3Row.dimId)
       || actual.nominalValue !== factor.input.nominalValue
       || actual.upperTolerance !== factor.input.upperTolerance
       || actual.lowerTolerance !== factor.input.lowerTolerance
@@ -185,7 +190,7 @@ function buildFactorRows(worksheetName, f2Worksheet, f3Worksheet, calculation) {
       partName: actual.partName,
       partCategory: actual.partCategory,
       drawingNumber: actual.drawingNumber,
-      dimId: actual.dimCharacteristicId,
+      dimId: actual.dimCharacteristicId == null ? null : String(actual.dimCharacteristicId),
       nominal: factor.input.nominalValue,
       upperTolerance: factor.input.upperTolerance,
       lowerTolerance: factor.input.lowerTolerance,
