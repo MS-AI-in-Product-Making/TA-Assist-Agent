@@ -41,17 +41,24 @@ const REQUIRED_RULE_IDS = [
   "requirement-post-build-real-part-data",
   "milestone-subsystem-dfm-cts",
   "milestone-subsystem-dfm-ctf",
-  "requirement-gap-ado-notice",
   "requirement-input-completeness",
   "requirement-output-completeness",
+  "requirement-gap-ado-notice",
+  "warning-priority-review-alignment",
   "instruction-establish-tolerance-loop",
   "instruction-model-pin-hole-float",
   "instruction-model-position-half-total",
   "instruction-model-profile-half-total",
   "instruction-model-mean-shift",
+  "instruction-select-capability-distribution",
+  "warning-long-term-multiplier-guidance",
+  "instruction-review-model-output",
   "instruction-auto-summary-operations",
   "instruction-required-dimensions-operations",
 ] as const;
+const EXPECTED_SOURCES_HASH = "2f6d38e4bef1dd9362cef295fd17891d8af16bdc1465703e70fbc4163d1cbebd";
+const EXPECTED_ENTRIES_HASH = "a9310c07917ce82056a280c1dbb3d93fea39cc2fa6bb377b199450adc5d5abbd";
+const EXPECTED_CONTENT_HASH = "256e3387542c2362e80a0450697c41e27fc6dfdbe2962d1872c663b8f44e6421";
 const DEFINITION_IDS = [
   "definition-cp",
   "definition-cpk",
@@ -64,6 +71,7 @@ const DEFINITION_IDS = [
   "definition-three-dimensional-variation-analysis",
   "definition-worst-case",
 ] as const;
+const EXPECTED_ENTRY_IDS = [...REQUIRED_RULE_IDS, ...DEFINITION_IDS] as const;
 
 function entryById(entries: readonly ProcessRequirementEntry[], entryId: string): ProcessRequirementEntry {
   const entry = entries.find((candidate) => candidate.entryId === entryId);
@@ -93,14 +101,12 @@ describe("reviewed process-requirements-v1 seed", () => {
         sources: 1,
         entries: seed.entries.length,
       },
-      sourcesHash: contentHash(seed.sources),
-      entriesHash: contentHash(seed.entries),
+      sourcesHash: EXPECTED_SOURCES_HASH,
+      entriesHash: EXPECTED_ENTRIES_HASH,
     });
-    expect(seed.manifest.contentHash).toBe(contentHash({
-      version: seed.manifest.version,
-      sourcesHash: seed.manifest.sourcesHash,
-      entriesHash: seed.manifest.entriesHash,
-    }));
+    expect(seed.manifest.contentHash).toBe(EXPECTED_CONTENT_HASH);
+    expect(contentHash(seed.sources)).toBe(EXPECTED_SOURCES_HASH);
+    expect(contentHash(seed.entries)).toBe(EXPECTED_ENTRIES_HASH);
     expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
   });
 
@@ -111,7 +117,7 @@ describe("reviewed process-requirements-v1 seed", () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(seed.entries.map(({ entryType }) => entryType))).toEqual(new Set(ENTRY_TYPES));
-    expect(ids).toEqual(expect.arrayContaining([...REQUIRED_RULE_IDS, ...DEFINITION_IDS]));
+    expect(ids).toEqual(EXPECTED_ENTRY_IDS);
     expect(definitions.map(({ entryId }) => entryId)).toEqual(DEFINITION_IDS);
     expect(definitions).toHaveLength(10);
     expect(definitions.every((entry) => (
@@ -221,7 +227,7 @@ describe("reviewed process-requirements-v1 seed", () => {
         confidence: "reviewed",
       });
       expect(entry.message.length).toBeLessThanOrEqual(180);
-      expect(entry.message).not.toMatch(/[\r\n]/);
+      expect(entry.message).not.toMatch(/[\r\n\t]|^\s|\s$| {2,}/);
     }
   });
 
@@ -244,5 +250,9 @@ describe("reviewed process-requirements-v1 seed", () => {
     ];
 
     for (const marker of forbiddenMarkers) expect(serialized).not.toContain(marker);
+    expect(serialized).not.toMatch(/\.(?:xlsx|xlsm)\b/i);
+    expect(serialized).not.toMatch(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/);
+    expect(serialized).not.toMatch(/(?:\b[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:^|[\s"'(=])\/\/)/i);
+    expect(serialized).not.toMatch(/(?:[A-Za-z]:[\\/]|\\\\|(?:^|[\s"'(=])\/(?![\s/]))/);
   });
 });
