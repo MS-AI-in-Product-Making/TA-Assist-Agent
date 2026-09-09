@@ -742,6 +742,10 @@ describe("F7 report contracts", () => {
     const missingNarrativeActionSourceHash = structuredClone(report);
     delete missingNarrativeActionSourceHash.analysis!.narrative.suggestedActionSequence[0]!.sourceFileHash;
     expect(f7ReportProjectionSchema.safeParse(missingNarrativeActionSourceHash).success).toBe(false);
+
+    const driftedValidationRequirements = structuredClone(report);
+    driftedValidationRequirements.analysis!.validationRequirements = ["Different validation step"];
+    expect(f7ReportProjectionSchema.safeParse(driftedValidationRequirements).success).toBe(false);
   });
 
   it("requires strict specification input origins for every Monte Carlo specification field", () => {

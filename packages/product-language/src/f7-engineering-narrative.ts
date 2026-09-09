@@ -94,6 +94,19 @@ const ACTION_ORDER: Readonly<Record<string, number>> = Object.freeze({
   "improvement-reduce-contributor": 2,
 });
 
+function assertSupportedRuleIds(input: BuildF7EngineeringNarrativeInput): void {
+  for (const rule of input.rootCauseRules) {
+    if (!Object.prototype.hasOwnProperty.call(ROOT_CAUSE_ORDER, rule.ruleId)) {
+      throw new Error(`Unsupported F7 narrative root-cause rule: ${rule.ruleId}.`);
+    }
+  }
+  for (const option of input.controlledOptions) {
+    if (!Object.prototype.hasOwnProperty.call(ACTION_ORDER, option.ruleId)) {
+      throw new Error(`Unsupported F7 narrative action rule: ${option.ruleId}.`);
+    }
+  }
+}
+
 const INCOMPLETE_EVIDENCE_MESSAGE = "Evidence is incomplete for this matched hypothesis.";
 const BALANCED_DISTANCE_SCALE = Number.EPSILON * 32;
 const DEFAULT_DISPLAY_DECIMALS = 2;
@@ -250,6 +263,11 @@ function formatNarrativeNumber(value: number, plan: NarrativeDisplayPlan): strin
   }
 
   return formatScientificNumber(value, plan.significantDigits ?? MAX_SHARED_SCIENTIFIC_SIGNIFICANT_DIGITS);
+}
+
+export function formatF7NarrativeEvidenceValue(value: number): string {
+  assertFiniteNumber("evidenceValue", value);
+  return formatNarrativeNumber(value, resolveNarrativeDisplayPlan([value]));
 }
 
 function formatDeltaNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS): string {
@@ -503,21 +521,23 @@ function buildContributorNarrative(input: BuildF7EngineeringNarrativeInput, rule
   }
 
   const quantitativeEvidenceLabels = pickEvidenceLabels(["contributorName", "contributorReference", "contributionPercent"]);
-  return {
-    ruleId: rule.ruleId,
-    title: rule.title,
-    ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
-    ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
-    hypothesisStatus: "hypothesis",
-    narrative: `${dominantContributor.name} contributes ${formatNumber(dominantContributor.contributionPercent)}% of the modeled variation, indicating contributor concentration that requires validation against representative evidence.`,
-    completeEvidence: true,
-    quantitativeEvidence: {
-      contributorName: dominantContributor.name,
-      contributorReference: dominantContributor.reference,
-      contributionPercent: dominantContributor.contributionPercent,
-    },
-    ...(quantitativeEvidenceLabels === undefined ? {} : { quantitativeEvidenceLabels }),
-  };
+    return {
+      ruleId: rule.ruleId,
+      title: rule.title,
+      ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+      ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
+      hypothesisStatus: "hypothesis",
+      narrative: `${dominantContributor.name} contributes ${formatF7NarrativeEvidenceValue(
+        dominantContributor.contributionPercent
+      )}% of the modeled variation, indicating contributor concentration that requires validation against representative evidence.`,
+      completeEvidence: true,
+      quantitativeEvidence: {
+        contributorName: dominantContributor.name,
+        contributorReference: dominantContributor.reference,
+        contributionPercent: dominantContributor.contributionPercent,
+      },
+      ...(quantitativeEvidenceLabels === undefined ? {} : { quantitativeEvidenceLabels }),
+    };
 }
 
 function buildRootCauseAnalysis(input: BuildF7EngineeringNarrativeInput): F7NarrativeRootCauseItem[] {
@@ -647,6 +667,7 @@ export function buildF7EngineeringNarrative(input: BuildF7EngineeringNarrativeIn
   for (const contributor of input.contributors) {
     assertFiniteNumber(`contributors.${contributor.reference}.contributionPercent`, contributor.contributionPercent);
   }
+  assertSupportedRuleIds(input);
 
   const resultJudgment = buildResultJudgment(input);
   const rootCauseAnalysis = resultJudgment.status === "meets-target" ? [] : buildRootCauseAnalysis(input);

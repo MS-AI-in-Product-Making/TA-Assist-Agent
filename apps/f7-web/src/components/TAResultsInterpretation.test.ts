@@ -289,4 +289,31 @@ describe("TAResultsInterpretation", () => {
     expect(rootCauseText).not.toContain("contributorName");
     expect(rootCauseText).not.toContain("contributionPercent");
   });
+
+  it("does not render a small nonzero quantitative evidence value as zero", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      narrative: {
+        ...available.narrative,
+        rootCauseAnalysis: available.narrative.rootCauseAnalysis.map((item, index) => (index === 0
+          ? {
+              ...item,
+              quantitativeEvidence: { contributionPercent: 0.0000001 },
+              quantitativeEvidenceLabels: { contributionPercent: "Contribution (%)" },
+            }
+          : item)),
+      },
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const evidenceText = wrapper.findAll("[data-root-cause-item]")[0]?.text();
+    expect(evidenceText).toContain("Contribution (%)");
+    expect(evidenceText).toContain("0.0000001%");
+    expect(evidenceText).not.toContain("Contribution (%)0.00%");
+  });
 });

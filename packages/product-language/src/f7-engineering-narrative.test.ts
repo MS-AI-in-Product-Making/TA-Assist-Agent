@@ -341,6 +341,22 @@ describe("buildF7EngineeringNarrative", () => {
     expectNoZeroRepresentation(narrative.engineeringRisk);
   });
 
+  it("renders subprecision contributor percentages without collapsing them to zero prose", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      rootCauseRules: [
+        { ruleId: "root-cause-contributor-concentration", title: "RC03 Dominant contributor hypothesis" },
+      ],
+      controlledOptions: [],
+      contributors: [
+        { name: "Factor A", reference: "factor-a", contributionPercent: 0.0000001 },
+      ],
+    });
+
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("contributes 0.0000001%");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).not.toContain("contributes 0%");
+  });
+
   it("keeps near-target positive endpoints distinguishable and relation-consistent in judgment summary and risk", () => {
     const narrative = buildF7EngineeringNarrative({
       ...combinedCauseInput(),
@@ -606,6 +622,22 @@ describe("buildF7EngineeringNarrative", () => {
       contributorReference: "Contributor reference",
       contributionPercent: "Contribution (%)",
     });
+  });
+
+  it("rejects unsupported governed root-cause and action rule IDs", () => {
+    expect(() => buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      rootCauseRules: [{ ruleId: "root-cause-unknown", title: "Unknown root cause" }],
+    })).toThrowError("Unsupported F7 narrative root-cause rule: root-cause-unknown.");
+
+    expect(() => buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      controlledOptions: [{
+        ruleId: "improvement-unknown",
+        title: "Unknown action",
+        validationSteps: [],
+      }],
+    })).toThrowError("Unsupported F7 narrative action rule: improvement-unknown.");
   });
 
   it("exports the builder from the package root", () => {

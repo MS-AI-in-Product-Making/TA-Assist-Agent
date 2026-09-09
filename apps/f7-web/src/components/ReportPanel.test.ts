@@ -213,7 +213,7 @@ function createReport(
             },
           ],
           validationRequirements: [
-            "Update representative variation evidence.",
+            "Confirm the measured variation evidence remains representative.",
           ],
         },
     evidence: {

@@ -1970,6 +1970,17 @@ export const f7ReportProjectionSchema = z
             );
           }
         });
+
+        if (analysis.validationRequirements.length !== analysis.narrative.validationRequirements.length
+          || analysis.validationRequirements.some((step, index) => (
+            step !== analysis.narrative.validationRequirements[index]
+          ))) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis validationRequirements must match narrative validationRequirements in order",
+            path: ["analysis", "validationRequirements"],
+          });
+        }
       }
     }
 

@@ -79,5 +79,6 @@ describe("assumption results enhanced interpretation", () => {
     expect(result.validationRequirements).toContain("Confirm physical centering feasibility through ME review.");
     expect(result.validationRequirements).toContain("Validate the dominant contributor evidence before changing its tolerance or process controls.");
     expect(new Set(result.validationRequirements).size).toBe(result.validationRequirements.length);
+    expect(result.validationRequirements).toEqual(result.narrative.validationRequirements);
   });
 });

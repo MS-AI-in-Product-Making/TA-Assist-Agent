@@ -155,9 +155,10 @@ function createF0Analysis(
         upperSpecLimit: simulation.upperSpecLimit,
       },
     });
-  const performanceRule = evaluation.status === "matched"
-    ? evaluation.matchedRules.find(({ entryType }) => entryType === "performance-rule")
-    : undefined;
+  const performanceRules = evaluation.status === "matched"
+    ? evaluation.matchedRules.filter(({ entryType }) => entryType === "performance-rule")
+    : [];
+  const performanceRule = performanceRules.length === 1 ? performanceRules[0] : undefined;
   if (evaluation.knowledgeBaseVersion !== "interpretation-rules-v2"
     || evaluation.resolvedTargets?.cpk?.value !== target
     || evaluation.resolvedTargets.cpk.source !== targetSource

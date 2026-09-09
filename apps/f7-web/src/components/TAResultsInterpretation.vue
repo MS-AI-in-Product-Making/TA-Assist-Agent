@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, type DeepReadonly } from "vue";
+import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
 
@@ -9,17 +10,10 @@ const props = defineProps<{
 
 const interpretation = computed(() => buildAssumptionResultsInterpretation(props.session));
 
-function formatContribution(value: number): string {
-  return `${value.toFixed(2)}%`;
-}
-
 function formatEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
-  return /percent/i.test(key) ? formatContribution(value) : formatCapability(value);
-}
-
-function formatCapability(value: number): string {
-  return value.toFixed(4);
+  const formattedValue = formatF7NarrativeEvidenceValue(value);
+  return /percent/i.test(key) ? `${formattedValue}%` : formattedValue;
 }
 
 function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<string, string>> }, key: string): string {

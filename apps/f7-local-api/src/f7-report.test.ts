@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   f7ReportProjectionSchema,
   f7SessionSnapshotSchema,
@@ -10,6 +10,30 @@ import {
   createF7ReportProjection,
   projectF7EngineeringNarrativeForReport,
 } from "./f7-report.js";
+
+const interpretationTestState = vi.hoisted(() => ({ duplicatePerformanceRule: false }));
+
+vi.mock("@ai-assist/knowledge-base/interpretation-rules", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ai-assist/knowledge-base/interpretation-rules")>();
+  return {
+    ...actual,
+    loadInterpretationRules: (...loadArgs: Parameters<typeof actual.loadInterpretationRules>) => {
+      const loaded = actual.loadInterpretationRules(...loadArgs);
+      return {
+        ...loaded,
+        evaluateInterpretationRules: (
+          ...evaluationArgs: Parameters<typeof loaded.evaluateInterpretationRules>
+        ) => {
+          const evaluation = loaded.evaluateInterpretationRules(...evaluationArgs);
+          const performanceRule = evaluation.matchedRules.find(({ entryType }) => entryType === "performance-rule");
+          return interpretationTestState.duplicatePerformanceRule && performanceRule !== undefined
+            ? { ...evaluation, matchedRules: [...evaluation.matchedRules, performanceRule] }
+            : evaluation;
+        },
+      };
+    },
+  };
+});
 
 const WORKBOOK_HASH = "a".repeat(64);
 const BASELINE_FACTOR_ID = "b".repeat(64);
@@ -691,6 +715,21 @@ describe("createF7ReportProjection", () => {
     expect(report.markdown).toContain("root-cause-excessive-variation");
     expect(report.markdown).toContain("improvement-reduce-variation");
     expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
+  });
+
+  it("fails closed when F0 returns multiple matching performance rules", () => {
+    interpretationTestState.duplicatePerformanceRule = true;
+    try {
+      const report = createF7ReportProjection(createSnapshot("BELOW_TARGET"), GENERATED_AT);
+
+      expect(report.analysis).toEqual({
+        status: "unavailable",
+        reason: "The governed F0 Cpk interpretation rule is unavailable.",
+        optimizationDirections: [],
+      });
+    } finally {
+      interpretationTestState.duplicatePerformanceRule = false;
+    }
   });
 
   it("keeps report analysis narrative exactly aligned with the report-mapped shared builder result", () => {

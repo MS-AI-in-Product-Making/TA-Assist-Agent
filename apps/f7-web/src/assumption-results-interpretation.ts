@@ -352,7 +352,7 @@ export function buildAssumptionResultsInterpretation(
       concentrationHypothesisMatched: concentrationMatched,
       engineeringInterpretations,
       improvementOptions: improvementRules.map((rule) => controlledTitle(rule.entryId)),
-      validationRequirements: [...new Set(improvementRules.flatMap((rule) => rule.validationSteps ?? []))],
+      validationRequirements: narrative.validationRequirements.map((step) => step),
       assumptions: concentrationMatched
         ? [ASSUMPTION_DISCLOSURE, CONCENTRATION_DISCLOSURE]
         : [ASSUMPTION_DISCLOSURE],
