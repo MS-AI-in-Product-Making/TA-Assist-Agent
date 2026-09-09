@@ -130,16 +130,25 @@ describe("reviewed process-requirements-v1 seed", () => {
       minimumToleranceCountExclusive: 10,
       requiredFacts: ["analysisMethod", "toleranceCount"],
     });
+    expect(entryById(entries, "method-escalation-complex-stack").message).toMatch(
+      /Dimensional Management.*three-dimensional analysis/i,
+    );
     expect(entryById(entries, "method-escalation-three-dimensional-sensitivity").applicability).toEqual({
       analysisMethod: "one-dimensional-rss",
       hasThreeDimensionalSensitivity: true,
       requiredFacts: ["analysisMethod", "hasThreeDimensionalSensitivity"],
     });
+    expect(entryById(entries, "method-escalation-three-dimensional-sensitivity").message).toMatch(
+      /Dimensional Management.*three-dimensional analysis/i,
+    );
     expect(entryById(entries, "camera-fov-escalation").applicability).toEqual({
       analysisMethod: "one-dimensional-rss",
       subject: "camera-fov-clearance",
       requiredFacts: ["analysisMethod", "subject"],
     });
+    expect(entryById(entries, "camera-fov-escalation").message).toMatch(
+      /Dimensional Management.*three-dimensional analysis/i,
+    );
     expect(entryById(entries, "target-cts-six-sigma")).toMatchObject({
       message: "Use a 6-sigma target for CTS characteristics.",
       applicability: { characteristicClass: "cts", requiredFacts: ["characteristicClass"] },

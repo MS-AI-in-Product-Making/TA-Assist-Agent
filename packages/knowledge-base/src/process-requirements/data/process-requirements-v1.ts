@@ -57,7 +57,7 @@ export function createReviewedProcessRequirementsV1SeedPackage(): ProcessRequire
     entryType: "escalation",
     topic: "analysis-method",
     title: "Escalate complex one-dimensional stacks",
-    message: "Escalate a one-dimensional analysis with more than 10 tolerances for three-dimensional method review.",
+    message: "Consult Dimensional Management for three-dimensional analysis when a one-dimensional stack has more than 10 tolerances.",
     normativeStrength: "must",
     applicability: {
       analysisMethod: "one-dimensional-rss",
@@ -70,7 +70,7 @@ export function createReviewedProcessRequirementsV1SeedPackage(): ProcessRequire
     entryType: "escalation",
     topic: "analysis-method",
     title: "Escalate three-dimensional sensitivity",
-    message: "Escalate a one-dimensional analysis with potential three-dimensional geometry sensitivity for method review.",
+    message: "Consult Dimensional Management for three-dimensional analysis when geometry sensitivity may invalidate a one-dimensional method.",
     normativeStrength: "must",
     applicability: {
       analysisMethod: "one-dimensional-rss",
@@ -83,7 +83,7 @@ export function createReviewedProcessRequirementsV1SeedPackage(): ProcessRequire
     entryType: "escalation",
     topic: "analysis-method",
     title: "Escalate camera FOV clearance",
-    message: "Do not evaluate camera FOV clearance with one-dimensional TA; obtain Dimensional Management support.",
+    message: "Consult Dimensional Management for three-dimensional analysis; do not evaluate camera FOV clearance with one-dimensional TA.",
     normativeStrength: "must",
     applicability: {
       analysisMethod: "one-dimensional-rss",
