@@ -9,6 +9,7 @@ import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/s
 import { createReviewContextId, openSessionStore } from "@ai-assist/workbench";
 import { buildWorkbenchServer as buildWorkbenchServerBase, startWorkbenchServer as startWorkbenchServerBase } from "./server.js";
 import { createBrowserBootstrapRendezvous } from "./bootstrap.js";
+import { isSessionProductionArtifactPath } from "./routes/artifacts.js";
 
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
 
@@ -25,6 +26,13 @@ function testRoot(name: string): string {
 }
 
 describe("workbench server security boundary", () => {
+  it("binds derived report paths to the authenticated session production root", () => {
+    const rootDir = resolve(".tmp", "workbench-server-root");
+    expect(isSessionProductionArtifactPath(rootDir, "session-a", resolve(rootDir, "runtime", "workbench", "runner-output", "session-a", "production", "f6", "Feature6-Report.md"))).toBe(true);
+    expect(isSessionProductionArtifactPath(rootDir, "session-a", resolve(rootDir, "runtime", "workbench", "runner-output", "session-b", "production", "f6", "Feature6-Report.md"))).toBe(false);
+    expect(isSessionProductionArtifactPath(rootDir, "session-a", resolve(rootDir, "managed", "f6", "Feature6-Report.md"))).toBe(false);
+  });
+
   it("binds loopback and rejects hostile Host or missing CSRF", async () => {
     const rootDir = testRoot("workbench-server-security");
     const server = await buildWorkbenchServer({ rootDir });
@@ -427,7 +435,8 @@ describe("workbench server security boundary", () => {
   it("serves persisted current f6 report as markdown with safe filename and hash/path/session guards", async () => {
     const rootDir = testRoot("workbench-server-f6-report-security");
     await rm(rootDir, { recursive: true, force: true });
-    const server = await buildWorkbenchServer({ rootDir });
+    const renderPdf = vi.fn(async () => Buffer.from("%PDF-1.7\nvalidated-pdf", "utf8"));
+    const server = await buildWorkbenchServer({ rootDir, f6PdfService: { render: renderPdf } });
     try {
       const sessionId = "96969696-9696-4969-8969-969696969696";
       const auth = await server.testAuthenticate(sessionId);
@@ -438,7 +447,7 @@ describe("workbench server security boundary", () => {
         baselineRunReference: "f4-run-current",
       };
       const reviewContextId = createReviewContextId(reviewContext);
-      const reportRelativePath = "managed/f6/Feature6-Report.md";
+      const reportRelativePath = `runtime/workbench/runner-output/${sessionId}/production/f6/Feature6-Report.md`;
       const reportPath = join(rootDir, reportRelativePath);
       const reportBody = "# Final report\n\nValidated content.";
       await mkdir(dirname(reportPath), { recursive: true });
@@ -528,12 +537,36 @@ describe("workbench server security boundary", () => {
       expect(ok.headers["content-disposition"]).toContain("attachment; filename=\"Feature6-Report.md\"");
       expect(ok.body).toContain("Validated content.");
 
+      const pdf = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: auth.headers });
+      expect(pdf.statusCode).toBe(200);
+      expect(pdf.headers["content-type"]).toContain("application/pdf");
+      expect(pdf.headers["content-disposition"]).toContain("attachment; filename=\"Feature6-Report.pdf\"");
+      expect(pdf.rawPayload.subarray(0, 8).toString("utf8")).toBe("%PDF-1.7");
+      expect(renderPdf).toHaveBeenCalledWith(expect.objectContaining({
+        markdown: reportBody,
+        sourceHash: createHash("sha256").update(reportBody).digest("hex"),
+      }));
+
+      renderPdf.mockRejectedValueOnce(Object.assign(new Error("Image escaped managed root."), { code: "pdf_artifact_invalid" }));
+      const invalidPdfSource = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: auth.headers });
+      expect(invalidPdfSource.statusCode).toBe(409);
+      expect(invalidPdfSource.json()).toEqual({ error: "pdf_artifact_invalid" });
+
+      renderPdf.mockRejectedValueOnce(Object.assign(new Error("Chromium is unavailable."), { code: "pdf_render_unavailable" }));
+      const unavailableRenderer = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: auth.headers });
+      expect(unavailableRenderer.statusCode).toBe(503);
+      expect(unavailableRenderer.json()).toEqual({ error: "pdf_render_unavailable" });
+
       const crossSession = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: other.headers });
       expect(crossSession.statusCode).toBe(403);
+      const crossSessionPdf = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: other.headers });
+      expect(crossSessionPdf.statusCode).toBe(403);
 
       await writeFile(reportPath, "# Final report\n\nTampered.", "utf8");
       const hashMismatch = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: auth.headers });
       expect(hashMismatch.statusCode).toBe(409);
+      const hashMismatchPdf = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: auth.headers });
+      expect(hashMismatchPdf.statusCode).toBe(409);
 
       const staleStore = await openSessionStore({ rootDir, sessionId });
       try {

@@ -11,8 +11,13 @@ export function ReportLink({ sessionId, report }: ReportLinkProps) {
   }
 
   return (
-    <a className="button button--ghost" href={`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(report.artifactId)}`}>
-      {report.label}
-    </a>
+    <div className="report-actions">
+      <a className="button button--ghost" href={`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(report.artifactId)}`}>
+        {report.label}
+      </a>
+      <a className="button button--ghost" href={`/api/sessions/${encodeURIComponent(sessionId)}/reports/f6.pdf`}>
+        Download PDF
+      </a>
+    </div>
   );
 }

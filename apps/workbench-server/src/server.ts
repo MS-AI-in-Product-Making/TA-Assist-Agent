@@ -70,6 +70,7 @@ import { reviewContextFor, runProductionStage, type ProductionRoots } from "./pr
 import { createTaRuntimeSkillFacades } from "./ta-runtime-skill-facades.js";
 import { writeSessionRecord } from "./session-records.js";
 import { storeUpload } from "./uploads.js";
+import { createF6PdfService, type F6PdfService } from "./f6-pdf-service.js";
 
 type HostActionClaim = ReturnType<typeof hostActionClaimSchema.parse>;
 type HostActionRequest = ReturnType<typeof hostActionRequestSchema.parse>;
@@ -89,6 +90,7 @@ export interface StartWorkbenchServerOptions {
   readonly surfacePrepareService?: SurfacePrepareService;
   readonly orchestrator?: TaWorkbookOrchestrator;
   readonly resumeSessionId?: string;
+  readonly f6PdfService?: F6PdfService;
 }
 
 export interface SurfacePrepareService {
@@ -185,6 +187,7 @@ export interface WorkbenchServerContext {
   readonly events: EventSource;
   readonly queue: PersistentWorkerQueue;
   readonly inflightHostImports: Map<string, Promise<HostWorkbookImportReceipt>>;
+  readonly f6PdfService: F6PdfService;
   calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]>; readonly signedDirectionEvidence?: true }): Promise<F8ScenarioDraft>;
   calculateWorksheetWhatIf(sessionId: string, input: F8WorksheetWhatIfCalculationRequest): Promise<F8ScenarioDraft>;
   createWhatIfPromotion(sessionId: string, draftId: string): Promise<{ readonly draft: F8ScenarioDraft; readonly promotionPreview: F6OptimizationTargets }>;
@@ -221,6 +224,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     options.orchestrator,
     options.allowInternalFixtureAutoConfirmation === true,
     options.interactionLanguage,
+    options.f6PdfService,
   );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
@@ -316,7 +320,7 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined, f6PdfService: F6PdfService | undefined): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir, interactionLanguage);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
@@ -340,6 +344,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     events,
     queue,
     inflightHostImports,
+    f6PdfService: f6PdfService ?? createF6PdfService(),
     async calculateWhatIf(sessionId, input) {
       const snapshot = await sessions.read(sessionId);
       if (snapshot === undefined || snapshot.state !== "review_required" || snapshot.inputRevision !== input.inputRevision) {
