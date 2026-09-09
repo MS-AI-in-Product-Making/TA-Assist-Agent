@@ -1,7 +1,7 @@
 ## What
 
 
-A TA assistant agent enables Microsoft ME and ODM partner PD teams to deliver high-quality tolerance analysis.
+This is TA assistant agent enables Microsoft ME and ODM partner PD teams to deliver high-quality tolerance analysis.
 
 
 It does this by automatically reviewing the rationality of TA inputs against identified tolerance loops, generating evidence-based insights from TA results, and driving proposed-and-connected dimensional requirements with iterative TA cycles to support effective risk mitigation and OK2Ramp decisions.
