@@ -593,14 +593,25 @@ describe("workbench server routes", () => {
       const reopened = await openSessionStore({ rootDir, sessionId });
       try {
         const snapshot = await reopened.readSnapshot();
-        const f4Reference = await reopened.readArtifactReference("f4-calculation");
+        expect(snapshot.state).toBe("ado_decision_required");
+        expectedRevision = snapshot.revision;
+      } finally {
+        await reopened.close();
+      }
+
+      expect((await submit("ado-local-only", "confirm_ado_decision", { decision: "local_only" })).statusCode).toBe(202);
+
+      const reviewed = await openSessionStore({ rootDir, sessionId });
+      try {
+        const snapshot = await reviewed.readSnapshot();
+        const f4Reference = await reviewed.readArtifactReference("f4-calculation");
         expect(snapshot.state).toBe("review_required");
         expect(snapshot.artifactRefs?.map((artifact) => artifact.revision)).toEqual([1, 1, 1, 1]);
         expect(f4Reference?.metadata?.reviewContext).toEqual(REVIEW_CONTEXT);
         expect(selectCompleteReviewContext(snapshot)?.reviewContextId).toMatch(/^[a-f0-9]{64}$/);
         expect(projectWorksheetReview({ sessionId, snapshot, f4Report: { calculations: [] }, f5Report: { worksheets: [] }, f6Report: { worksheets: [] } }, "Analysis-A").worksheets).toHaveLength(1);
       } finally {
-        await reopened.close();
+        await reviewed.close();
       }
       expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f6_running"]);
       expect(runner.mock.calls.map(([job]) => job.payload)).toEqual([
@@ -2672,9 +2683,8 @@ describe("workbench server routes", () => {
       const writePayload = { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: createHash("sha256").update(prepareRequest.nextContent).digest("hex") } } };
       const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
-      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).not.toMatchObject({ state: "image_decision_required" });
-      expect(runner).toHaveBeenCalled();
-      expect(runner).toHaveBeenCalledWith(expect.objectContaining({ stage: "f4_running" }));
+      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "review_required" });
+      expect(runner).not.toHaveBeenCalled();
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

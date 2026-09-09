@@ -333,7 +333,7 @@ describe("workbench state machine", () => {
     });
   });
 
-  it("enters the ADO branch only for governance_required outcomes", () => {
+  it("continues from F3 directly to F4 regardless of governance outcome", () => {
     const api = requireApi();
 
     expect(api.acceptAttemptResult(
@@ -344,10 +344,19 @@ describe("workbench state machine", () => {
     expect(api.acceptAttemptResult(
       runningSnapshot("f3_running"),
       completedAttemptResult({ governance: { status: "governance_required" } }),
+    ).state).toBe("f4_running");
+  });
+
+  it("enters the ADO decision after F6 completes", () => {
+    const api = requireApi();
+
+    expect(api.acceptAttemptResult(
+      runningSnapshot("f6_running"),
+      completedAttemptResult(),
     ).state).toBe("ado_decision_required");
   });
 
-  it("records local-only governance as not requested and proceeds directly to F4", () => {
+  it("records local-only governance as not requested and proceeds to review", () => {
     const api = requireApi();
     const result = api.reduceSessionCommand(
       baseSnapshot({ state: "ado_decision_required", revision: 4 }),
@@ -361,8 +370,8 @@ describe("workbench state machine", () => {
       },
     );
 
-    expect(result.state).toBe("f4_running");
-    expect(result.activeAttempt).toMatchObject({ stage: "f4_running", status: "running" });
+    expect(result.state).toBe("review_required");
+    expect(result.activeAttempt).toBeNull();
     expect(result.priorRunReferences).toEqual([
       expect.objectContaining({ featureId: "F3", referenceId: "ado-not-requested" }),
     ]);

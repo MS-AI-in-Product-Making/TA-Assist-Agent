@@ -118,7 +118,6 @@ describe("Design Optimization skill contract", () => {
       "### Phase W2 - Confirm and run F1 plus F2",
       "### Phase W3 - Select ready downstream worksheets",
       "### Phase W4 - Run and validate current F3",
-      "### Phase W4A - Govern optional F3 ADO publishing",
       "### Phase W5 - Run F4",
       "### Phase W6 - Evaluate optional F5 v2 image evidence",
       "### Phase W7 - Run and validate F5",
@@ -128,6 +127,7 @@ describe("Design Optimization skill contract", () => {
       "### Phase W8B - Collect optional Optimization Targets",
       "Confirm optimization targets",
       "### Phase W9 - Run and validate F6",
+      "### Phase W9A - Govern optional F3 ADO publishing",
       "### Phase W10 - Present every Feature output",
     ]);
     expect(internal).toContain("F1/F2 scope call");
@@ -162,19 +162,19 @@ describe("Design Optimization skill contract", () => {
     expect(internal).not.toContain("reduce_top_contributor_20");
   });
 
-  it("requires current-run F3 execution before the optional ADO gate and F4", () => {
+  it("runs current-run F3 before F4 and defers the optional ADO gate until after F6", () => {
     const { internal } = splitSkillSections(readSkill());
     expectOrdered(internal, [
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "Feature3-Report.json",
-      "`governance_required`",
-      "### Phase W4A - Govern optional F3 ADO publishing",
       "### Phase W5 - Run F4",
+      "### Phase W9 - Run and validate F6",
+      "### Phase W9A - Govern optional F3 ADO publishing",
     ]);
     expect(internal).toContain("must execute F3 for the current confirmed run");
     expect(internal).toContain("Never reuse a historical F3 root");
-    expect(internal).toContain("Only `governance_required` enters W4A");
-    expect(internal).toContain("A completed F3 skips W4A");
+    expect(internal).toContain("Every validated F3 result enters W9A after F6 validation");
+    expect(internal).toContain("F3 governance status does not bypass W9A");
   });
 
   it("reuses the governed drawing governance protocol without automatic or implicit writes", () => {
@@ -193,7 +193,7 @@ describe("Design Optimization skill contract", () => {
       "read back",
     ]) expect(internal).toContain(marker);
     expect(internal).toContain("Never publish automatically or implicitly");
-    expect(internal).toContain("W4A outcome does not change the validated F3 analysis result");
+    expect(internal).toContain("W9A outcome does not change the validated F3 analysis result");
   });
 
   it("requires immutable F5 v2 observations and target-gated F6 scenarios", () => {

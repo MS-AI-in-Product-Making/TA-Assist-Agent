@@ -74,7 +74,7 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
     case "reset_ado_decision":
       return nextSnapshot(snapshot, { state: "ado_decision_required", activeAttempt: null });
     case "accept_surface_write":
-      return transitionWithAttempt(snapshot, command, "f4_running");
+      return nextSnapshot(snapshot, { state: "review_required", activeAttempt: null });
     case "confirm_image_decision":
       return transitionWithAttempt(snapshot, command, "f5_running");
     case "confirm_analysis_context":
@@ -231,7 +231,7 @@ export function acceptAttemptResult(snapshotInput: F8SessionSnapshot, result: Se
   switch (terminalStatus) {
     case "completed": {
       if (activeAttempt.stage === "f5_running") assertCompletedF5MultimodalReference(snapshot, result.result);
-      const nextState = resolveCompletionState(activeAttempt.stage, result.result);
+      const nextState = resolveCompletionState(activeAttempt.stage);
       const transitioned = transitionAfterCompletion(snapshot, activeAttempt.stage, nextState, activeAttempt.commandId ?? result.attemptId);
       return annotateSnapshot(transitioned, undefined);
     }
@@ -314,7 +314,7 @@ function transitionAfterCompletion(
   });
 }
 
-function resolveCompletionState(stage: F8SessionState, result: unknown): F8SessionState {
+function resolveCompletionState(stage: F8SessionState): F8SessionState {
   switch (stage) {
     case "workbook_validating":
       return "f0_validating";
@@ -323,7 +323,7 @@ function resolveCompletionState(stage: F8SessionState, result: unknown): F8Sessi
     case "f1_f2_running":
       return "downstream_scope_required";
     case "f3_running":
-      return governanceRequired(result) ? "ado_decision_required" : "f4_running";
+      return "f4_running";
     case "ado_action_pending":
       return "ado_action_pending";
     case "f4_running":
@@ -331,7 +331,7 @@ function resolveCompletionState(stage: F8SessionState, result: unknown): F8Sessi
     case "f5_running":
       return "analysis_context_decision_required";
     case "f6_running":
-      return "review_required";
+      return "ado_decision_required";
     case "f7_running":
       return "feedback_review_required";
     case "created":
@@ -359,15 +359,6 @@ function resolveCompletionState(stage: F8SessionState, result: unknown): F8Sessi
     default:
       throw new Error(`Unhandled stage: ${stage}`);
   }
-}
-
-function governanceRequired(result: unknown): boolean {
-  if (typeof result !== "object" || result === null) {
-    return false;
-  }
-
-  const governance = (result as { governance?: { status?: unknown } }).governance;
-  return governance?.status === "governance_required";
 }
 
 function nextSnapshot(
@@ -431,7 +422,9 @@ function reduceConfirmAdoDecision(snapshot: F8SessionSnapshot, command: F8Sessio
     });
   }
 
-  return transitionWithAttempt(snapshot, command, "f4_running", {
+  return nextSnapshot(snapshot, {
+    state: "review_required",
+    activeAttempt: null,
     priorRunReferences: [
       ...snapshot.priorRunReferences,
       {

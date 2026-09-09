@@ -164,9 +164,9 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   Agent Skill 入口“使用F6分析报告”受 `f6-skill-contract-check`、`f0-f6-real-workbook-flow` 和
   `f6-final-report-check` 治理。该入口由 agent 负责 workbook 与 two worksheet confirmations，按 F0-F6
   顺序调用既有确定性 runners；显式 `feature6` CLI 仍只消费 F2-F5 roots 和精确 worksheet set，不得伪装成交互式
-  orchestrator。Skill 必须执行并验证 current-run F3；只有 `governance_required` 可进入复用 F3 完整双确认协议的
+  orchestrator。Skill 必须执行并验证 current-run F3，并在 F4、F5 与 F6 完成后让每个已验证 F3 结果进入复用 F3 完整双确认协议的
   optional ADO publishing gate，发布 never automatic or implicit。Skill 展示 F1-F6 output ledger，并在缺少 evidence 时保留
-  `insufficient_evidence` / `not_computed`。F6 原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions，最终报告使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
+  `insufficient_evidence` / `not_computed`。F6 原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions，最终报告使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态进入 review，只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
 - F8 的 `available` 表示本地 `confidential` TA Assist Workbench 已登记：CLI、VS Code 与 Web 共享受治理 session 和 TA Assist 自有 history；不导入其他 Copilot history。浏览器只通过 structured API 推进独立确认，源 workbook 与 F0-F6 工件只读，What-if 不写回，ADO 仅允许 Surface MCP 两阶段确认，F7 保持 unavailable placeholder。
 - F8 产品导出门禁要求 execution status 为 `completed` 且 source lineage 已验证。`failed` 或 `cancelled` session 必须 fail closed，不得生成新的 product export root。该约束由 `test/f8-e2e/product-output.spec.ts` 的 `f8-product-output-fail-closed-e2e` 验收覆盖，并使用 test-only seeded execution failure session 进行校验。
 - `F8.public-smoke` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、

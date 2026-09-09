@@ -31,7 +31,7 @@ Plan and communicate using product capability names only:
 1. Knowledge Library: confirm required controlled knowledge versions are available.
 2. Data Parsing: complete workbook path and worksheet-selection governance with the first worksheet confirmation.
 3. Data Cleaning: validate selected scope and build ready downstream worksheet candidates.
-4. Drawing Governance: execute current-run drawing governance analysis and, when required, run the optional ADO publishing gate.
+4. Drawing Governance: execute current-run drawing governance analysis and preserve its validated result for the optional post-report ADO publishing gate.
 5. TA Calculation: execute governed calculation for the confirmed downstream scope.
 6. Result Interpretation: optionally collect image observations, then execute and validate interpreted outputs.
 7. Design Optimization: collect optional Analysis Context and optional Optimization Targets through two independent confirmations, run optimization, and validate final outputs.
@@ -77,25 +77,7 @@ F6 workbook mode must execute F3 for the current confirmed run once with `npm ru
 
 Read and validate the newly generated `Feature3-Report.json` before any publishing decision. Validate the exact worksheet set, workbook hash, image references, table IDs, source rows, and factor identities against the current F1/F2 artifacts. `governance_required` is a valid nonfailed analysis result and must remain visible as a governance signal. The `F3` output is the validated current-run F3 root and report.
 
-Only `governance_required` enters W4A. A completed F3 skips W4A and proceeds directly to W5. Any failed, malformed, identity-mismatched, historical, or unvalidated F3 result stops the run.
-
-### Phase W4A - Govern optional F3 ADO publishing
-
-This phase is an optional external side effect after the current F3 analysis has passed validation. Never publish automatically or implicitly.
-
-REQUIRED SUB-SKILL: Use drawing-governance.
-
-Follow the drawing-governance ADO publishing protocol with identical controls: organization/project/target validation, deterministic preview, explicit mode choice, separate final write confirmation, single write, and single readback verification.
-
-Make F3 `Question call 1` with exactly these choices:
-
-- `Create a new ADO work item`
-- `Use an existing ADO work item`
-- `Do not publish to ADO`
-
-Surface MCP entity calls may start only after Question call 1 selects a publishing mode. The `Do not publish to ADO` branch records the F3 `not_requested` local fallback and proceeds to W5. Create and existing modes must use organization/project/target validation, capability gate, complete deterministic preview, and a separate `Question call 2` with the exact `Confirm write` choice. Credentials, tokens, verification codes, and MFA responses never pass through chat or tool arguments.
-
-After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W4A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue deterministic analysis at W5. An invalid or unverifiable local fallback artifact stops the run.
+Every validated F3 result proceeds directly to W5. Keep `governance_required` visible as a governance signal, but do not start any ADO interaction before F4, F5, and F6 complete. Any failed, malformed, identity-mismatched, historical, or unvalidated F3 result stops the run.
 
 ### Phase W5 - Run F4
 
@@ -157,6 +139,24 @@ Validate `Feature6-Optimization.json` as `f6-optimization-v3` with `f6Optimizati
 
 The `F6` output is the validated F6 root, optimization JSON, final report Markdown, run summary, and manifest. Each worksheet's `3-N.1` section contains only the verified tolerance-path image and its link. Section 3-N.3 consumes only the accepted W8 multimodal v3 interpretation; it never regenerates or mechanically reconstructs interpretation prose. Warn that model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME. Never hard-code screenshot-specific labels, values, loads, or conclusions into the report template. Do not call the model again or recalculate Factor values while composing F6 output.
 
+### Phase W9A - Govern optional F3 ADO publishing
+
+This phase is an optional external side effect after the current F6 report has passed validation. Never publish automatically or implicitly. Every validated F3 result enters W9A after F6 validation; F3 governance status does not bypass W9A.
+
+REQUIRED SUB-SKILL: Use drawing-governance.
+
+Follow the drawing-governance ADO publishing protocol with identical controls: organization/project/target validation, deterministic preview, explicit mode choice, separate final write confirmation, single write, and single readback verification.
+
+Make F3 `Question call 1` with exactly these choices:
+
+- `Create a new ADO work item`
+- `Use an existing ADO work item`
+- `Do not publish to ADO`
+
+Surface MCP entity calls may start only after Question call 1 selects a publishing mode. The `Do not publish to ADO` branch records the F3 `not_requested` local fallback and proceeds to W10. Create and existing modes must use organization/project/target validation, capability gate, complete deterministic preview, and a separate `Question call 2` with the exact `Confirm write` choice. Credentials, tokens, verification codes, and MFA responses never pass through chat or tool arguments.
+
+After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W9A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue to W10. An invalid or unverifiable local fallback artifact stops the run.
+
 ### Phase W10 - Present every Feature output
 
 Present one concise run ledger containing:
@@ -202,7 +202,7 @@ W4A does not add F3 ADO commands to this local runner list. When W4A is entered,
 - No REST, browser network, shell HTTP, curl, or Invoke-WebRequest for ADO.
 - Never modify the source workbook.
 - F3 and F6 repository runners remain deterministic and network-free.
-- Never publish automatically or implicitly; optional ADO publishing is available only through W4A and the required drawing-governance protocol.
+- Never publish automatically or implicitly; optional ADO publishing is available only through W9A and the required drawing-governance protocol.
 - Treat all inputs and outputs as confidential.
 - Validate canonical containment, linked-path ancestry, artifact identity, contracts, manifests, and hashes before use.
 - Run commands only in the documented phase order.

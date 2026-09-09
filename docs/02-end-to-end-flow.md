@@ -19,7 +19,7 @@ F1 remains the sole physical image owner. New v2 artifacts are immutable, create
 
 ### F6 Governed Optimization Contract
 
-The `/ta-assist-agent` Skill starts the governed workbook sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`; users do not assemble commands manually. The Skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate current-run F3. Only `governance_required` enters an optional ADO publishing gate that reuses the F3 two-confirmation protocol; publishing is never automatic or implicit. F4, F5, and F6 then continue in order. New image mode creates only immutable `f5-image-observation-v2` evidence.
+The `/ta-assist-agent` Skill starts the governed workbook sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`; users do not assemble commands manually. The Skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate current-run F3, then continue through F4, F5, and F6; `governance_required` remains a visible non-blocking F3 result and does not trigger an early ADO interaction. After the F6 report passes validation, every validated F3 result enters an optional ADO publishing gate that reuses the F3 two-confirmation protocol; publishing is never automatic or implicit. New image mode creates only immutable `f5-image-observation-v2` evidence.
 
 After F5, the Skill collects optional Analysis Context and Optimization Targets in order. Valid inputs require separate confirmations; neither may be combined with the F3 ADO confirmation. Declined or rejected context continues with explicit gaps. F6 v3 then evaluates adjusted mean to specification-center shift, ranks every contributor, and produces F4-verified specification-change proposals. It does not generate fixed OP1/OP2/OP3 percentage scenarios.
 
@@ -37,10 +37,7 @@ The product capability name is Design Optimization.
 
 ```mermaid
 flowchart TB
-    A["Upload one or more TA .xlsx files (F1)<br>Manual upload is required · unique file names"] --> ADO{"Create or link an ADO work item? (F3)"}
-    ADO -- Yes --> ADO1["Create or link task (F3)<br>Resolve project path and owner<br>Output: ADO ID, hyperlink, storage location, and version history"]
-    ADO -- No --> A1["Scan all workbooks and worksheets for TA content (F1)<br>Output: file name, worksheet, version/date, tolerance-loop description, and worksheet list"]
-    ADO1 --> A1
+    A["Upload one or more TA .xlsx files (F1)<br>Manual upload is required · unique file names"] --> A1["Scan all workbooks and worksheets for TA content (F1)<br>Output: file name, worksheet, version/date, tolerance-loop description, and worksheet list"]
     A1 --> A2{"Confirm analysis scope (F1)<br>Single select · multi-select · select all · cancel"}
     A2 -- Confirmed worksheets --> P["Parse factor tables in parallel (F1)<br>Output: normalized JSON and processing trace"]
     A2 -- Cancel --> X["End run without analysis"]
@@ -59,11 +56,7 @@ flowchart TB
     CHOICE -- Continue with recorded exception --> LINK
     LINK -- No --> G{"Method recommendation (F4)<br>Based on factor count"}
     LINK -- Yes --> GROUP["Group by Lib 3 part category / drawing (F3)<br>Output: dimension-chain list with part, join number, DIM ID, exact location, and part category"]
-    GROUP --> ADOREM{"Was an ADO work item created or linked? (F3)<br>Use the prior user choice internally"}
-    ADOREM -- Yes --> NOW["After user confirmation, send ADO reminder (F3)<br>@mention owner to complete DIM ID and write the missing list to Comment 0"]
-    ADOREM -- No --> LOCAL["Save the missing DIM ID / PN list locally (F3)"]
-    NOW --> G
-    LOCAL --> G
+    GROUP --> G
     G -- Fewer than 4 factors --> H1["Recommend Worst Case (WC) (F4)<br>Arithmetic tolerance sum"]
     G -- 4 to 10 factors --> H2["Recommend 1D RSS (F4)<br>sqrt(sum R^2)"]
     G -- More than 10 factors --> DM["Notify DM team for 3D VA follow-up (F4)<br>Flag cumulative tolerance risk"]
@@ -82,7 +75,12 @@ flowchart TB
     L --> M5["Parallel improvement options (delegated F6)<br>Not synthesized by F5"]
     M4 --> M6["Governed optimization after F5 (F6)<br>options · reverse solve · RSS apportionment<br>feasibility · Highest Impact · cost-gated ROI"]
     M5 --> M6
-    M6 --> N
+    M6 --> ADO{"Create or link an ADO work item after report validation? (F3)"}
+    ADO -- Yes --> ADO1["Validate the ADO target and owner<br>Preview the F3 governance list and confirm the write"]
+    ADO -- No --> LOCAL["Save the F3 governance list locally"]
+    ADO1 --> NOW["Write the confirmed F3 governance list through Surface MCP"]
+    NOW --> N
+    LOCAL --> N
     M1 --> N["User view (F8)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
     M2 --> N
     M3 --> N
@@ -111,7 +109,6 @@ flowchart TB
     CHOICE:::dec
     G:::dec
     GROUP:::link
-    ADOREM:::dec
     NOW:::orch
     LOCAL:::warn
     H1:::proc
@@ -146,7 +143,7 @@ flowchart TB
 
 ## F8 Workbench Confirmation Order
 
-The local Workbench preserves the governed order: upload/F0 validation -> initial worksheet confirmation -> F1/F2 -> downstream ready-worksheet confirmation -> F3 -> optional Surface MCP validation and independent final write -> F4 -> image decision -> F5 -> Analysis Context decision -> Optimization Targets decision -> F6 -> evidence review and one What-if Draft. No browser or chat message can merge or bypass these confirmations.
+The local Workbench preserves the governed order: upload/F0 validation -> initial worksheet confirmation -> F1/F2 -> downstream ready-worksheet confirmation -> F3 -> F4 -> image decision -> F5 -> Analysis Context decision -> Optimization Targets decision -> F6 -> optional Surface MCP validation and independent final write -> evidence review and one What-if Draft. No browser or chat message can merge or bypass these confirmations.
 
 What-if calculation replays the current validated F2/F4 lineage and calls the F4 kernel. It never writes to the source workbook. Tolerance-only changes may produce a separate F6 targets preview; nominal or mean-shift changes stay in `WHAT_IF`. F7 remains `feature_not_available / in_development`, so the first Workbench release shows no measured import or result controls.
 
@@ -154,12 +151,12 @@ What-if calculation replays the current validated F2/F4 lineage and calls the F4
 
 | Node | Decision | Branch handling |
 |---|---|---|
-| ADO orchestration | Whether an ADO task is created or linked | ADO is optional. When linked, resolve the owner, return its ID/link, and enable reminders; without ADO, analysis still runs. |
+| ADO orchestration | Whether an ADO task is created or linked after the F6 report is validated | ADO is optional. When linked, resolve the owner, return its ID/link, and publish the governed F3 list after confirmation; without ADO, continue to review with the local list. |
 | Worksheet confirmation | Which worksheets enter the analysis | The prompt returns options and a workbook content hash. The user explicitly confirms one or more worksheets against that hash; a changed workbook makes the confirmation stale and fails closed. |
 | Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are complete | Missing evidence blocks only the affected worksheet. Ready worksheets continue and each emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number remain non-blocking governance signals. |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged at once. The user can edit the source Excel or continue with a recorded exception. |
 | DIM ID association | Whether the factor is linked to a drawing dimension | Linked factors go directly to method recommendation; missing IDs are grouped by Lib 3 category/drawing before governance. |
-| ADO governance | Whether a grouped missing-item list has an ADO work item | Reuse the upload-stage ADO choice. With ADO, the user confirms a reminder and the list is added to Comment 0; otherwise, save the list locally. Current F3 provides no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation. |
+| ADO governance | Whether the validated F3 governance list is published after F6 | Every validated F3 result reaches the optional post-report gate. With ADO, the user confirms the prepared list and it is added to Comment 0; otherwise, save the list locally and continue to review. Current F3 provides no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation. |
 | Method recommendation | Factor count | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies the DM team for 3D VA. The core engine always calculates both WC and RSS. |
 | Evidence sufficiency | Whether the required F1 image exists and datum-face, stack-start, or cross-subsystem evidence is ambiguous | Missing physical image/reference fails the worksheet closed. Skipped optional observation produces `not_evaluated`; ambiguity creates an assumption and clarification that pause only dependent conclusions. |
 | Optimization and versioning | Whether design or capability changes are needed | F5 remains `delegated_to_f6`; the available F6 workflow generates deterministic centering/tolerance/reverse/RSS options from bound F2-F5 evidence. Supplier/datum/cost gaps remain explicit, and the legacy comparison placeholder alone returns `feature_not_available`. Future roadmap: any ADO date/milestone/version persistence remains outside current F3 scope. |

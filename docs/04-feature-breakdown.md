@@ -98,7 +98,7 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 ### F8 - User Interaction, Read-Only Pane & Output
 
-Delivered as a confidential local TA Assist Workbench. CLI `agent analyze|resume|status|workbench` and VS Code `@ta-assist` open or resume the same session. The browser provides upload, two worksheet confirmations, F3/ADO decisions, F4-F6 progress, three-pane evidence review, report links, conversation, and one F4-backed What-if Draft. Shared history is limited to TA Assist-owned turns; unrelated Copilot history is never synchronized. The source workbook is read-only, Surface MCP is the only ADO path, and F7 is an explicit unavailable placeholder.
+Delivered as a confidential local TA Assist Workbench. CLI `agent analyze|resume|status|workbench` and VS Code `@ta-assist` open or resume the same session. The browser provides upload, two worksheet confirmations, F3-F6 progress, a post-report ADO decision, three-pane evidence review, report links, conversation, and one F4-backed What-if Draft. Shared history is limited to TA Assist-owned turns; unrelated Copilot history is never synchronized. The source workbook is read-only, Surface MCP is the only ADO path, and F7 is an explicit unavailable placeholder.
 
 **Feature:** Give the engineer a complete, trustworthy TA result without silently changing the uploaded source data.
 
@@ -120,7 +120,7 @@ Delivered as a confidential local TA Assist Workbench. CLI `agent analyze|resume
 ### Acceptance Criteria
 
 1. Build formal `(Drawing Number, DIM ID)` anchors for valid identifiers (F3).
-2. Allow the engineer to create or link an optional ADO work item after manually uploading the `.xlsx` file (F3).
+2. Allow the engineer to create or link an optional ADO work item after the F6 report is validated (F3).
 3. Automatically bind an owner when an ADO work item is linked; block the governed reminder workflow and prompt when no owner can be resolved (F3).
 4. Update ADO Comment 0 through Surface MCP only after explicit confirmation of the prepared diff (F3).
 5. Generate per-part dimension-chain lists and package them by category for drawing markup (F3).
