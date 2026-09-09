@@ -125,6 +125,130 @@ import type {
   CalculationMethod,
 } from "./index.js";
 
+describe("F7 report narrative contracts", () => {
+  it("accepts available report analysis with governed narrative and rejects extra fields", () => {
+    const analysis = {
+      status: "available" as const,
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2" as const,
+        ruleId: "performance-cpk-below-target" as const,
+        threshold: 1.33,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.1, cpk: 0.95 },
+        monteCarlo: { mean: 0.08, standardDeviation: 0.12, cp: 1.18, cpk: 0.92 },
+      },
+      targetAssessment: "Monte Carlo Cpk 0.920 is below the resolved target of 1.33.",
+      interpretations: ["Mean changed from Setup 0.0000 to Monte Carlo 0.0800 (+0.0800)."],
+      optimizationDirections: ["Reduce total variation only after representative variation evidence confirms the modeled shortfall."],
+      rootCauseSignals: [{
+        ruleId: "root-cause-excessive-variation",
+        title: "Excessive variation",
+        sourceAlias: "interpretation-rules",
+        sourceFileHash: "a".repeat(64),
+      }],
+      controlledOptions: [{
+        ruleId: "improvement-reduce-variation",
+        title: "Reduce variation",
+        sourceAlias: "interpretation-rules",
+        sourceFileHash: "b".repeat(64),
+      }],
+      validationRequirements: ["Confirm representative measured variation before changing tolerance or process controls."],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 0.92 is 0.41 below the resolved target of 1.33.",
+          cpk: 0.92,
+          targetCpk: 1.33,
+          margin: -0.41,
+          display: {
+            cpk: "0.92",
+            targetCpk: "1.33",
+            margin: "-0.41",
+          },
+          nearerSpecificationSide: "USL",
+        },
+        engineeringSummary: "Capability is below target by 0.41 and requires validation before any corrective change.",
+        rootCauseAnalysis: [{
+          ruleId: "root-cause-mean-shift",
+          title: "Mean shift",
+          hypothesis: true,
+          explanation: "Cp exceeds Cpk and indicates a centering-loss hypothesis that requires validation.",
+          completeEvidence: true,
+            sourceAlias: "interpretation-rules",
+            sourceFileHash: "a".repeat(64),
+          quantitativeEvidence: {
+            cpCpkGap: 0.26,
+            specificationMidpoint: 0,
+            meanOffset: 0.08,
+            direction: "USL",
+          },
+          quantitativeEvidenceLabels: {
+            cpCpkGap: "Cp-Cpk gap",
+            specificationMidpoint: "Specification midpoint",
+            meanOffset: "Mean offset",
+            direction: "Direction",
+          },
+        }],
+        engineeringRisk: "The capability shortfall indicates below-target performance and requires validation.",
+        suggestedActionSequence: [{
+          optionId: "improvement-center-mean",
+          title: "Center the mean",
+          narrative: "Confirm mean-centering feasibility before changing the process centerline.",
+            sourceAlias: "interpretation-rules",
+            sourceFileHash: "b".repeat(64),
+          validationSteps: ["Validate mean-centering feasibility with representative evidence."],
+        }],
+        validationRequirements: ["Validate mean-centering feasibility with representative evidence."],
+        evidenceDisclosure: "Measured Monte Carlo evidence was supplied for this narrative projection. Provenance: interpretation-rules-v2. Matched rule IDs: root-cause-mean-shift. This output does not replace ME review or F6 optimization.",
+      },
+    };
+
+    const parsed = contractExports.f7ReportAnalysisSchema.parse(analysis);
+    expect(parsed).toEqual(analysis);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: { ...analysis.narrative, extra: true },
+    }).success).toBe(false);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: {
+        ...analysis.narrative,
+        rootCauseAnalysis: [{
+          ...analysis.narrative.rootCauseAnalysis[0],
+          hypothesisStatus: "hypothesis",
+        }],
+      },
+    }).success).toBe(false);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...analysis,
+      narrative: {
+        ...analysis.narrative,
+        rootCauseAnalysis: [{
+          ...analysis.narrative.rootCauseAnalysis[0],
+          narrative: "shared internal name should be rejected",
+        }],
+      },
+    }).success).toBe(false);
+  });
+
+  it("keeps unavailable report analysis unchanged without narrative", () => {
+    const unavailable = {
+      status: "unavailable" as const,
+      reason: "TA comparison is unavailable because Monte Carlo capability is not evaluable.",
+      optimizationDirections: ["Resolve zero or invalid variation evidence, then rerun Monte Carlo capability."],
+    };
+
+    expect(contractExports.f7ReportAnalysisSchema.parse(unavailable)).toEqual(unavailable);
+    expect(contractExports.f7ReportAnalysisSchema.safeParse({
+      ...unavailable,
+      narrative: {},
+    }).success).toBe(false);
+  });
+});
+
 describe("F8 Web ADO contracts", () => {
   const confirmation = {
     status: "confirmation_required" as const,
@@ -8920,6 +9044,7 @@ describe("interpretation rules contracts", () => {
     matchedRules: [{
       entryId: "performance-cpk",
       entryType: "performance-rule" as const,
+      title: "Cpk meets target",
       effectiveVersion: "interpretation-rules-v1" as const,
       applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
       relatedFactReferences: ["cpk", "targetCpk"],
@@ -8930,6 +9055,7 @@ describe("interpretation rules contracts", () => {
 
   it("accepts the version, every entry discriminant, a strict seed package, and a version-only load request", () => {
     expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
+    expect(interpretationRuleVersionSchema.parse("interpretation-rules-v2")).toBe("interpretation-rules-v2");
     expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
       entries.map((entry) => entry.entryType),
     );
@@ -8941,6 +9067,9 @@ describe("interpretation rules contracts", () => {
     expect(interpretationKnowledgeSeedPackageSchema.parse(seedPackage)).toEqual(seedPackage);
     expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v1" })).toEqual({
       version: "interpretation-rules-v1",
+    });
+    expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v2" })).toEqual({
+      version: "interpretation-rules-v2",
     });
     expect(interpretationRuleLoadRequestSchema.safeParse({
       version: "interpretation-rules-v1",
@@ -9019,6 +9148,46 @@ describe("interpretation rules contracts", () => {
       ...evaluation,
       resolvedTargets: { ...evaluation.resolvedTargets, unexpected: true },
     }).success).toBe(false);
+  });
+
+  it("accepts V2 capability and centering facts and rejects inverted specification limits", () => {
+    const request = {
+      analysisDimension: "one-dimensional" as const,
+      method: "rss" as const,
+      facts: {
+        cp: 1.1,
+        cpk: 0.9,
+        targetCpk: { value: 1.33, source: "project" as const },
+        mean: 0.2,
+        lowerSpecLimit: -0.5,
+        upperSpecLimit: 0.5,
+      },
+    };
+
+    expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, lowerSpecLimit: 0.5, upperSpecLimit: -0.5 },
+    }).success).toBe(false);
+  });
+
+  it("accepts V2 variation and mean-shift root-cause conditions", () => {
+    const rootSignal = entries.find(({ entryType }) => entryType === "root-cause-signal")!;
+
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...rootSignal,
+      requiredFacts: ["cp", "targetCpk"],
+      activationCondition: { kind: "cp-below-target" },
+    }).success).toBe(true);
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...rootSignal,
+      requiredFacts: ["cp", "cpk", "mean", "lowerSpecLimit", "upperSpecLimit"],
+      activationCondition: {
+        kind: "mean-off-center",
+        minimumCpCpkGap: 1e-12,
+        minimumMeanOffset: 1e-12,
+      },
+    }).success).toBe(true);
   });
 
   it.each([

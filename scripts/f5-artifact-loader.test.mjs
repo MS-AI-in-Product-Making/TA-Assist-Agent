@@ -532,7 +532,7 @@ describe("loadF5ArtifactBundle", () => {
         contractVersion: "v1",
         inputClassification: "confidential",
         workbook: { fileName: "anonymous.xlsx", contentHash: WORKBOOK_HASH },
-        knowledgeBaseVersion: "interpretation-rules-v1",
+        knowledgeBaseVersion: "interpretation-rules-v2",
         worksheets: [{ worksheetName: "Analysis-A", imageObservations: [] }],
       },
       rejectedWorksheets: [],

@@ -140,7 +140,7 @@ function result() {
         worksheetNames: ["Analysis|<script>[x](javascript:alert(1))"],
         blockedWorksheetNames: [],
       },
-      f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "internal-v1", interpretationVersion: "interpretation-rules-v1" },
+      f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "internal-v1", interpretationVersion: "interpretation-rules-v2" },
       scenarioPolicyVersion: "f6-scenario-policy-v1",
     },
   });

@@ -159,7 +159,7 @@ describe("loadF6ArtifactBundle", () => {
     expect(result.request.f0Versions).toEqual({
       knowledgeBaseVersion: "v1",
       capabilityVersion: "internal-v1",
-      interpretationVersion: "interpretation-rules-v1",
+      interpretationVersion: "interpretation-rules-v2",
     });
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
     expect(result.request.worksheets[0].f4CalculationIndex).toBe(1);
@@ -820,7 +820,7 @@ function installV2Evidence(bundle) {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: artifact.worksheets.map((worksheet, index) => ({
       worksheetName: worksheet.worksheetName,
       imageReference: worksheet.imageReference,

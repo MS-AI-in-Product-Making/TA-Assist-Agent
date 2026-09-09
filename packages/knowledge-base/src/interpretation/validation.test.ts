@@ -83,7 +83,14 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
 
   it("rejects the wrong package version", () => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
-    seed.manifest.version = "interpretation-rules-v2" as "interpretation-rules-v1";
+    seed.manifest.version = "interpretation-rules-v3" as "interpretation-rules-v1";
+    expectDependencyError(seed);
+  });
+
+  it("rejects entry provenance from a different interpretation version", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    seed.entries[0]!.provenance.effectiveVersion = "interpretation-rules-v2";
+    refreshInterpretationKnowledgeManifest(seed);
     expectDependencyError(seed);
   });
 

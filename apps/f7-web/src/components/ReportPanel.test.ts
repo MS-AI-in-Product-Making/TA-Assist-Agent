@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
+import { f7ReportProjectionSchema } from "@ai-assist/contracts";
 import type { F7ReportProjection } from "../api/f7-client";
 import ReportPanel from "./ReportPanel.vue";
 import REPORT_PANEL_SOURCE from "./ReportPanel.vue?raw";
@@ -30,13 +31,22 @@ function createReport(
     ? { status: "not_available" as const, reason: "zero_variance" as const, targetCpk }
     : {
         status: "available" as const,
-        cp: 5 / 3,
-        lowerCpk: 5 / 3,
-        upperCpk: 5 / 3,
-        cpk: 5 / 3,
+        cp: (0.5 - -0.5) / (6 * standardDeviation),
+        lowerCpk: (0.012345 - -0.5) / (3 * standardDeviation),
+        upperCpk: (0.5 - 0.012345) / (3 * standardDeviation),
+        cpk: Math.min((0.012345 - -0.5) / (3 * standardDeviation), (0.5 - 0.012345) / (3 * standardDeviation)),
         targetCpk,
         targetStatus: assessment === "MEETS_TARGET" ? "meets_target" as const : "below_target" as const,
       };
+  const narrativeStatus = capability.status === "available" && capability.cpk >= capability.targetCpk
+    ? "meets-target"
+    : "below-target";
+  const narrativeHeadline = narrativeStatus === "meets-target"
+    ? "Capability meets target"
+    : "Capability is below target";
+  const narrativeCpk = capability.status === "available" ? capability.cpk : 0;
+  const narrativeTargetCpk = capability.targetCpk;
+  const narrativeMargin = narrativeCpk - narrativeTargetCpk;
   const simulation: F7ReportProjection["simulation"] = {
     methodId: "F7_MONTE_CARLO_V1",
     status: "complete",
@@ -76,7 +86,7 @@ function createReport(
     factorManifest,
   };
 
-  return {
+  return f7ReportProjectionSchema.parse({
     contractId: "f7-report-v1",
     outputClassification: "confidential",
     sessionId: "session-1",
@@ -118,7 +128,7 @@ function createReport(
           provenance: {
             knowledgeBaseVersion: "v1",
             ruleId: "default-cpk-target",
-            threshold: 1.33,
+            threshold: narrativeTargetCpk,
             applicability: "public demo process capability",
           },
           comparison: {
@@ -130,9 +140,81 @@ function createReport(
               cpk: capability.status === "available" ? capability.cpk : 0,
             },
           },
-          targetAssessment: "Monte Carlo Cpk 1.667 meets the F0 default target of 1.33.",
+          narrative: {
+            resultJudgment: {
+              status: narrativeStatus,
+              headline: narrativeHeadline,
+              judgment: narrativeMargin >= 0
+                ? `Cpk ${narrativeCpk.toFixed(3)} is ${narrativeMargin.toFixed(3)} above the resolved target of ${narrativeTargetCpk.toFixed(2)}.`
+                : `Cpk ${narrativeCpk.toFixed(3)} is ${Math.abs(narrativeMargin).toFixed(3)} below the resolved target of ${narrativeTargetCpk.toFixed(2)}.`,
+              cpk: narrativeCpk,
+              targetCpk: narrativeTargetCpk,
+              margin: narrativeMargin,
+              display: {
+                cpk: narrativeCpk.toFixed(3),
+                targetCpk: narrativeTargetCpk.toFixed(2),
+                margin: `${narrativeMargin >= 0 ? "+" : ""}${narrativeMargin.toFixed(3)}`,
+              },
+              nearerSpecificationSide: "balanced",
+            },
+            engineeringSummary: "Monte Carlo capability meets target for this fixture while remaining subject to governed validation requirements.",
+            rootCauseAnalysis: [
+              {
+                ruleId: "root-cause-excessive-variation",
+                sourceAlias: "F0",
+                sourceFileHash: WORKBOOK_HASH,
+                title: "RC01 Excessive variation hypothesis",
+                hypothesis: true,
+                explanation: "Variation evidence should still be validated before reusing this interpretation beyond the fixture.",
+                completeEvidence: true,
+                quantitativeEvidence: {
+                  cpk: narrativeCpk,
+                  targetCpk: narrativeTargetCpk,
+                },
+                quantitativeEvidenceLabels: {
+                  cpk: "Cpk",
+                  targetCpk: "Target Cpk",
+                },
+              },
+            ],
+            engineeringRisk: "Even when capability meets target, governed validation is still required before operational use.",
+            suggestedActionSequence: [
+              {
+                sourceAlias: "F0",
+                sourceFileHash: WORKBOOK_HASH,
+                title: "Reduce total variation",
+                validationSteps: ["Confirm the measured variation evidence remains representative."],
+                optionId: "improvement-reduce-variation",
+                narrative: "Preserve the current margin by keeping measured variation stable and rerunning the governed evaluation when inputs change.",
+              },
+            ],
+            validationRequirements: ["Confirm the measured variation evidence remains representative."],
+            evidenceDisclosure: "Measured Monte Carlo evidence is scenario-specific and still requires governed validation.",
+          },
+          targetAssessment: narrativeMargin >= 0
+            ? `Monte Carlo Cpk ${narrativeCpk.toFixed(3)} meets the F0 default target of ${narrativeTargetCpk.toFixed(2)}.`
+            : `Monte Carlo Cpk ${narrativeCpk.toFixed(3)} is below the F0 default target of ${narrativeTargetCpk.toFixed(2)}.`,
           interpretations: ["Measured variation is wider than the Factor Setup assumption."],
           optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+          rootCauseSignals: [
+            {
+              ruleId: "root-cause-excessive-variation",
+              title: "RC01 Excessive variation hypothesis",
+              sourceAlias: "F0",
+              sourceFileHash: WORKBOOK_HASH,
+            },
+          ],
+          controlledOptions: [
+            {
+              ruleId: "improvement-reduce-variation",
+              title: "Reduce total variation",
+              sourceAlias: "F0",
+              sourceFileHash: WORKBOOK_HASH,
+            },
+          ],
+          validationRequirements: [
+            "Confirm the measured variation evidence remains representative.",
+          ],
         },
     evidence: {
       workbookContentHash: WORKBOOK_HASH,
@@ -157,7 +239,7 @@ function createReport(
       factorManifest,
     },
     markdown: "# F7 Report\n\nExact markdown bytes: π\n",
-  };
+  });
 }
 
 function mountReport(report = createReport()) {

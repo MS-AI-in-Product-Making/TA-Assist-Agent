@@ -1537,15 +1537,125 @@ const f7ReportTaMetricsSchema = z.object({
   cpk: finiteNumberSchema,
 }).strict();
 
+const f7ReportNarrativeSpecificationSideSchema = z.enum(["LSL", "USL", "balanced"]);
+
+const f7ReportNarrativeResultJudgmentSchema = z.object({
+  status: z.enum(["meets-target", "below-target"]),
+  headline: z.string().min(1),
+  judgment: z.string().min(1),
+  cpk: finiteNumberSchema,
+  targetCpk: finiteNumberSchema,
+  margin: finiteNumberSchema,
+  display: z.object({
+    cpk: z.string().min(1),
+    targetCpk: z.string().min(1),
+    margin: z.string().min(1),
+  }).strict(),
+  nearerSpecificationSide: f7ReportNarrativeSpecificationSideSchema.optional(),
+}).strict();
+
+const f7ReportNarrativeEvidenceValueSchema = z.union([z.string().min(1), finiteNumberSchema]);
+
+const f7ReportNarrativeRootCauseItemSchema = z.object({
+  ruleId: z.string().min(1),
+  title: z.string().min(1),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
+  hypothesis: z.literal(true),
+  explanation: z.string().min(1),
+  completeEvidence: z.boolean(),
+  quantitativeEvidence: z.record(z.string().min(1), f7ReportNarrativeEvidenceValueSchema).optional(),
+  quantitativeEvidenceLabels: z.record(z.string().min(1), z.string().min(1)).optional(),
+}).strict().superRefine((item, context) => {
+  if (item.quantitativeEvidence === undefined) {
+    if (item.quantitativeEvidenceLabels !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "quantitativeEvidenceLabels requires quantitativeEvidence",
+        path: ["quantitativeEvidenceLabels"],
+      });
+    }
+    return;
+  }
+
+  if (item.quantitativeEvidenceLabels === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "quantitativeEvidenceLabels is required when quantitativeEvidence is present",
+      path: ["quantitativeEvidenceLabels"],
+    });
+    return;
+  }
+
+  const evidenceKeys = Object.keys(item.quantitativeEvidence).sort();
+  const labelKeys = Object.keys(item.quantitativeEvidenceLabels).sort();
+  if (evidenceKeys.length !== labelKeys.length
+    || evidenceKeys.some((key, index) => key !== labelKeys[index])) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "quantitativeEvidenceLabels must match quantitativeEvidence keys",
+      path: ["quantitativeEvidenceLabels"],
+    });
+  }
+});
+
+const f7ReportNarrativeActionItemSchema = z.object({
+  optionId: z.string().min(1),
+  title: z.string().min(1),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
+  narrative: z.string().min(1),
+  validationSteps: z.array(z.string().min(1)),
+}).strict();
+
+const f7ReportNarrativeSchema = z.object({
+  resultJudgment: f7ReportNarrativeResultJudgmentSchema,
+  engineeringSummary: z.string().min(1),
+  rootCauseAnalysis: z.array(f7ReportNarrativeRootCauseItemSchema),
+  engineeringRisk: z.string().min(1),
+  suggestedActionSequence: z.array(f7ReportNarrativeActionItemSchema),
+  validationRequirements: z.array(z.string().min(1)),
+  evidenceDisclosure: z.string().min(1),
+}).strict();
+
+const f7ReportMatchedInterpretationSchema = z.object({
+  ruleId: z.string().min(1),
+  title: z.string().min(1),
+  sourceAlias: z.string().min(1),
+  sourceFileHash: sha256LowerSchema,
+}).strict();
+
+const addArrayProjectionMismatchIssue = (
+  context: z.RefinementCtx,
+  basePath: readonly (string | number)[],
+  index: number,
+  field: string,
+  message: string,
+): void => {
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message,
+    path: [...basePath, index, field],
+  });
+};
+
 export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("available"),
-    provenance: z.object({
-      knowledgeBaseVersion: z.literal("v1"),
-      ruleId: z.literal("default-cpk-target"),
-      threshold: finitePositiveNumberSchema,
-      applicability: z.string().min(1),
-    }).strict(),
+    provenance: z.union([
+      z.object({
+        knowledgeBaseVersion: z.literal("v1"),
+        ruleId: z.literal("default-cpk-target"),
+        threshold: finitePositiveNumberSchema,
+        applicability: z.string().min(1),
+      }).strict(),
+      z.object({
+        knowledgeBaseVersion: z.literal("interpretation-rules-v2"),
+        ruleId: z.enum(["performance-cpk", "performance-cpk-below-target"]),
+        threshold: finitePositiveNumberSchema,
+        applicability: z.string().min(1),
+      }).strict(),
+    ]),
     comparison: z.object({
       setup: f7ReportTaMetricsSchema,
       monteCarlo: f7ReportTaMetricsSchema,
@@ -1553,6 +1663,10 @@ export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
     targetAssessment: z.string().min(1),
     interpretations: z.array(z.string().min(1)).min(1),
     optimizationDirections: z.array(z.string().min(1)).min(1),
+    rootCauseSignals: z.array(f7ReportMatchedInterpretationSchema),
+    controlledOptions: z.array(f7ReportMatchedInterpretationSchema),
+    validationRequirements: z.array(z.string().min(1)),
+    narrative: f7ReportNarrativeSchema,
   }).strict(),
   z.object({
     status: z.literal("unavailable"),
@@ -1668,6 +1782,206 @@ export const f7ReportProjectionSchema = z
         message: "evidence iterations must match simulation iterations",
         path: ["evidence", "iterations"],
       });
+    }
+
+    if (report.analysis?.status === "available") {
+      const analysis = report.analysis;
+
+      if (capability.status !== "available") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "analysis status available requires simulation capability to be available",
+          path: ["analysis", "status"],
+        });
+      } else {
+        const expectedNarrativeStatus = capability.cpk >= capability.targetCpk
+          ? "meets-target"
+          : "below-target";
+        const expectedNarrativeHeadline = expectedNarrativeStatus === "meets-target"
+          ? "Capability meets target"
+          : "Capability is below target";
+        const expectedNarrativeMargin = capability.cpk - capability.targetCpk;
+
+        if (!nearlyEqual(analysis.narrative.resultJudgment.cpk, capability.cpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment cpk must match simulation capability cpk",
+            path: ["analysis", "narrative", "resultJudgment", "cpk"],
+          });
+        }
+        if (!nearlyEqual(analysis.narrative.resultJudgment.targetCpk, capability.targetCpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment targetCpk must match simulation capability targetCpk",
+            path: ["analysis", "narrative", "resultJudgment", "targetCpk"],
+          });
+        }
+        if (!nearlyEqual(analysis.narrative.resultJudgment.margin, expectedNarrativeMargin)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment margin must equal cpk minus targetCpk",
+            path: ["analysis", "narrative", "resultJudgment", "margin"],
+          });
+        }
+        if (analysis.narrative.resultJudgment.status !== expectedNarrativeStatus) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment status must match simulation capability versus target",
+            path: ["analysis", "narrative", "resultJudgment", "status"],
+          });
+        }
+        if (analysis.narrative.resultJudgment.headline !== expectedNarrativeHeadline) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment headline must match the governed status headline",
+            path: ["analysis", "narrative", "resultJudgment", "headline"],
+          });
+        }
+        const expectedProvenanceRuleId = analysis.narrative.resultJudgment.status === "meets-target"
+          ? "performance-cpk"
+          : "performance-cpk-below-target";
+        if (analysis.provenance.knowledgeBaseVersion === "interpretation-rules-v2"
+          && analysis.provenance.ruleId !== expectedProvenanceRuleId) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis provenance ruleId must match the governed narrative result status",
+            path: ["analysis", "provenance", "ruleId"],
+          });
+        }
+        if (!nearlyEqual(analysis.provenance.threshold, capability.targetCpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis provenance threshold must match simulation capability targetCpk",
+            path: ["analysis", "provenance", "threshold"],
+          });
+        }
+
+        for (const [field, actual, expected] of [
+          ["mean", analysis.comparison.monteCarlo.mean, report.simulation.mean],
+          ["standardDeviation", analysis.comparison.monteCarlo.standardDeviation, report.simulation.standardDeviation],
+          ["cp", analysis.comparison.monteCarlo.cp, capability.cp],
+          ["cpk", analysis.comparison.monteCarlo.cpk, capability.cpk],
+        ] as const) {
+          if (!nearlyEqual(actual, expected)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `analysis comparison.monteCarlo ${field} must match simulation`,
+              path: ["analysis", "comparison", "monteCarlo", field],
+            });
+          }
+        }
+
+        if (analysis.rootCauseSignals.length !== analysis.narrative.rootCauseAnalysis.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis rootCauseSignals must match narrative rootCauseAnalysis length",
+            path: ["analysis", "rootCauseSignals"],
+          });
+        }
+        analysis.rootCauseSignals.forEach((signal, index) => {
+          const narrativeItem = analysis.narrative.rootCauseAnalysis[index];
+          if (narrativeItem === undefined) {
+            return;
+          }
+          if (signal.ruleId !== narrativeItem.ruleId) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "ruleId",
+              "analysis rootCauseSignals ruleId must match the ordered narrative rootCauseAnalysis ruleId",
+            );
+          }
+          if (signal.title !== narrativeItem.title) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "title",
+              "analysis rootCauseSignals title must match the ordered narrative rootCauseAnalysis title",
+            );
+          }
+          if (signal.sourceAlias !== narrativeItem.sourceAlias) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "sourceAlias",
+              "analysis rootCauseSignals sourceAlias must match the ordered narrative rootCauseAnalysis sourceAlias",
+            );
+          }
+          if (signal.sourceFileHash !== narrativeItem.sourceFileHash) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "sourceFileHash",
+              "analysis rootCauseSignals sourceFileHash must match the ordered narrative rootCauseAnalysis sourceFileHash",
+            );
+          }
+        });
+
+        if (analysis.controlledOptions.length !== analysis.narrative.suggestedActionSequence.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis controlledOptions must match narrative suggestedActionSequence length",
+            path: ["analysis", "controlledOptions"],
+          });
+        }
+        analysis.controlledOptions.forEach((option, index) => {
+          const narrativeItem = analysis.narrative.suggestedActionSequence[index];
+          if (narrativeItem === undefined) {
+            return;
+          }
+          if (option.ruleId !== narrativeItem.optionId) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "ruleId",
+              "analysis controlledOptions ruleId must match the ordered narrative suggestedActionSequence optionId",
+            );
+          }
+          if (option.title !== narrativeItem.title) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "title",
+              "analysis controlledOptions title must match the ordered narrative suggestedActionSequence title",
+            );
+          }
+          if (option.sourceAlias !== narrativeItem.sourceAlias) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "sourceAlias",
+              "analysis controlledOptions sourceAlias must match the ordered narrative suggestedActionSequence sourceAlias",
+            );
+          }
+          if (option.sourceFileHash !== narrativeItem.sourceFileHash) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "sourceFileHash",
+              "analysis controlledOptions sourceFileHash must match the ordered narrative suggestedActionSequence sourceFileHash",
+            );
+          }
+        });
+
+        if (analysis.validationRequirements.length !== analysis.narrative.validationRequirements.length
+          || analysis.validationRequirements.some((step, index) => (
+            step !== analysis.narrative.validationRequirements[index]
+          ))) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis validationRequirements must match narrative validationRequirements in order",
+            path: ["analysis", "validationRequirements"],
+          });
+        }
+      }
     }
 
     const simulationManifest = report.simulation.factorManifest;

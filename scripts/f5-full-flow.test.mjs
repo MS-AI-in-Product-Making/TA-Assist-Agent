@@ -128,7 +128,7 @@ function request() {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: [{
       worksheetName: "Analysis-A",
       imageReference,

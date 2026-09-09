@@ -262,7 +262,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: calculations.map((calculation, index) => ({
       worksheetName: calculation.worksheetSelection.worksheetName,
       imageReference: f3Worksheets[index].rows[0].imageReference,
@@ -371,7 +371,7 @@ export function installF6V2Evidence(bundle) {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: artifact.worksheets.map((worksheet, index) => ({
       worksheetName: worksheet.worksheetName,
       imageReference: worksheet.imageReference,
@@ -393,7 +393,7 @@ export function installF5CurrentObservationLedger(bundle) {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: artifact.worksheets.map((worksheet, index) => ({
       worksheetName: worksheet.worksheetName,
       imageReference: worksheet.imageReference,

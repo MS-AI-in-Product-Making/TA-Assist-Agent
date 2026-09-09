@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
+import { f7ReportProjectionSchema } from "@ai-assist/contracts";
 import App from "./App.vue";
 import DimensionChainPanel from "./components/DimensionChainPanel.vue";
 import type {
@@ -516,11 +517,11 @@ function completedMonteCarloSnapshot(): F7SessionSnapshot {
       },
       capability: {
         status: "available",
-        cp: 0.8333333333,
-        lowerCpk: 1.0833333333,
-        upperCpk: 0.5833333333,
-        cpk: 0.5833333333,
-        targetCpk: 1.3333333333,
+        cp: (0.05 - -0.15) / (6 * 0.04),
+        lowerCpk: (-0.02 - -0.15) / (3 * 0.04),
+        upperCpk: (0.05 - -0.02) / (3 * 0.04),
+        cpk: Math.min((-0.02 - -0.15) / (3 * 0.04), (0.05 - -0.02) / (3 * 0.04)),
+        targetCpk: 4 / 3,
         targetStatus: "below_target",
       },
       normalModel: {
@@ -542,7 +543,10 @@ function completedMonteCarloSnapshot(): F7SessionSnapshot {
 function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportProjection {
   const simulation = snapshot.monteCarloResult!;
   const capability = simulation.capability;
-  return {
+  const narrativeCpk = capability.status === "available" ? capability.cpk : 0;
+  const narrativeTargetCpk = capability.targetCpk;
+  const narrativeMargin = narrativeCpk - narrativeTargetCpk;
+  return f7ReportProjectionSchema.parse({
     contractId: "f7-report-v1",
     outputClassification: snapshot.outputClassification,
     sessionId: snapshot.sessionId,
@@ -581,7 +585,7 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
           provenance: {
             knowledgeBaseVersion: "v1",
             ruleId: "default-cpk-target",
-            threshold: 1.33,
+            threshold: narrativeTargetCpk,
             applicability: "public demo process capability",
           },
           comparison: {
@@ -593,9 +597,77 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
               cpk: capability.cpk,
             },
           },
-          targetAssessment: "Monte Carlo Cpk is below the F0 default target of 1.33.",
+          narrative: {
+            resultJudgment: {
+              status: "below-target",
+              headline: "Capability is below target",
+              judgment: `Cpk ${narrativeCpk.toFixed(2)} is ${Math.abs(narrativeMargin).toFixed(2)} below the resolved target of ${narrativeTargetCpk.toFixed(2)}.`,
+              cpk: narrativeCpk,
+              targetCpk: narrativeTargetCpk,
+              margin: narrativeMargin,
+              display: {
+                cpk: narrativeCpk.toFixed(2),
+                targetCpk: narrativeTargetCpk.toFixed(2),
+                margin: narrativeMargin.toFixed(2),
+              },
+              nearerSpecificationSide: "USL",
+            },
+            engineeringSummary: "Monte Carlo capability remains below target and requires governed validation before acting on the hypotheses below.",
+            rootCauseAnalysis: [
+              {
+                ruleId: "root-cause-excessive-variation",
+                sourceAlias: "F0",
+                sourceFileHash: HASH_A,
+                title: "RC01 Excessive variation hypothesis",
+                hypothesis: true,
+                explanation: "Observed spread remains too large for the resolved specification window.",
+                completeEvidence: true,
+                quantitativeEvidence: {
+                  cpk: narrativeCpk,
+                  targetCpk: narrativeTargetCpk,
+                },
+                quantitativeEvidenceLabels: {
+                  cpk: "Cpk",
+                  targetCpk: "Target Cpk",
+                },
+              },
+            ],
+            engineeringRisk: "Capability is below target, so downstream decisions require validation before release use.",
+            suggestedActionSequence: [
+              {
+                sourceAlias: "F0",
+                sourceFileHash: HASH_A,
+                title: "Reduce total variation",
+                validationSteps: ["Update representative variation evidence."],
+                optionId: "improvement-reduce-variation",
+                narrative: "Reduce total variation first, then rerun the governed evaluation.",
+              },
+            ],
+            validationRequirements: ["Update representative variation evidence."],
+            evidenceDisclosure: "Assumption-based RSS evidence; this is not measured capability evidence.",
+          },
+          targetAssessment: `Monte Carlo Cpk is below the F0 default target of ${narrativeTargetCpk.toFixed(2)}.`,
           interpretations: ["Measured-data Monte Carlo variation is wider than the Factor Setup assumption."],
           optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+          rootCauseSignals: [
+            {
+              ruleId: "root-cause-excessive-variation",
+              title: "RC01 Excessive variation hypothesis",
+              sourceAlias: "F0",
+              sourceFileHash: HASH_A,
+            },
+          ],
+          controlledOptions: [
+            {
+              ruleId: "improvement-reduce-variation",
+              title: "Reduce total variation",
+              sourceAlias: "F0",
+              sourceFileHash: HASH_A,
+            },
+          ],
+          validationRequirements: [
+            "Update representative variation evidence.",
+          ],
         }
       : {
           status: "unavailable",
@@ -631,7 +703,7 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
       factorManifest: simulation.factorManifest,
     },
     markdown: "# F7 analysis report\n",
-  };
+  });
 }
 
 function createMockClient(

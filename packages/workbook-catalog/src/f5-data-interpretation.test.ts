@@ -150,7 +150,7 @@ function request(options: {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: CONTENT_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: [{
       worksheetName: "Analysis-A",
       imageReference,
@@ -500,8 +500,8 @@ describe("createF5DataInterpretation", () => {
           type: "RULE",
           content: expect.objectContaining({
             entryId: "performance-cpk-below-target",
-            effectiveVersion: "interpretation-rules-v1",
-            applicability: { analysisDimension: "one-dimensional", method: "rss" },
+            effectiveVersion: "interpretation-rules-v2",
+            applicability: { analysisDimension: "one-dimensional" },
             evidence: expect.any(Object),
           }),
         }),
@@ -1066,3 +1066,18 @@ describe("createF5DataInterpretation", () => {
     expect(output.trim()).toBe("function");
   });
 });
+
+  it("uses the requested V1 rules without labeling V2 evidence as V1", () => {
+    const input = request();
+    input.knowledgeBaseVersion = "interpretation-rules-v1";
+
+    const result = createF5DataInterpretation(input);
+    expect(result.knowledgeBaseVersion).toBe("interpretation-rules-v1");
+    if (result.status !== "completed") throw new Error("expected completed F5 interpretation");
+    const derivedStatements = result.worksheets.flatMap(({ statements }) => statements)
+      .filter(({ type }) => type !== "FACT");
+    expect(derivedStatements.length).toBeGreaterThan(0);
+    expect(derivedStatements.every(({ content }) => (
+      "effectiveVersion" in content && content.effectiveVersion === "interpretation-rules-v1"
+    ))).toBe(true);
+  });

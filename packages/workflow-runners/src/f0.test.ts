@@ -18,7 +18,7 @@ describe("validateF0Capabilities", () => {
     expect(validateF0Capabilities(context())).toMatchObject({
       featureId: "F0",
       status: "completed",
-      versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2"],
     });
   });
 
@@ -27,13 +27,13 @@ describe("validateF0Capabilities", () => {
     const result = await validateF0Capabilities(runnerContext, {
       loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v1" } })),
+      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
     });
 
     expect(result).toEqual(expect.objectContaining({
       status: "completed",
       featureId: "F0",
-      versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2"],
       artifactRoot: undefined,
     }));
     expect(runnerContext.emit).toHaveBeenCalled();
@@ -43,7 +43,7 @@ describe("validateF0Capabilities", () => {
     expect(() => validateF0Capabilities(context(), {
       loadKnowledgeBase: vi.fn(() => ({ manifest: {} })),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "wrong" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v1" } })),
+      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "evidence_mismatch",
@@ -55,7 +55,7 @@ describe("validateF0Capabilities", () => {
     expect(() => validateF0Capabilities(context(), {
       loadKnowledgeBase: vi.fn(() => { throw new Error("Cannot find module '@ai-assist/knowledge-base'."); }),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v1" } })),
+      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "dependency_error",
@@ -67,7 +67,7 @@ describe("validateF0Capabilities", () => {
     expect(() => validateF0Capabilities(context(), {
       loadKnowledgeBase: vi.fn(() => { throw "secret-token=abc"; }),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v1" } })),
+      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "internal_error",

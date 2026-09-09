@@ -6,26 +6,97 @@ import {
   type F7ReportSpecificationSourceCells,
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
-import { getPublicEngineeringRule } from "@ai-assist/knowledge-base/public-engineering-rules";
+import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
+import { buildF7EngineeringNarrative } from "@ai-assist/product-language/f7-engineering-narrative";
 
 type ReportWithoutMarkdown = Omit<F7ReportProjection, "markdown">;
+type AvailableF7ReportAnalysis = Extract<NonNullable<F7ReportProjection["analysis"]>, { status: "available" }>;
 
 function formatSigned(value: number, digits: number): string {
   return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
+}
+
+function requireNarrativeProvenance(item: {
+  readonly sourceAlias?: string;
+  readonly sourceFileHash?: string;
+}, itemLabel: string): { sourceAlias: string; sourceFileHash: string } {
+  if (item.sourceAlias === undefined || item.sourceFileHash === undefined) {
+    throw new Error(`${itemLabel} must include sourceAlias and sourceFileHash provenance.`);
+  }
+  return {
+    sourceAlias: item.sourceAlias,
+    sourceFileHash: item.sourceFileHash,
+  };
+}
+
+export function projectF7EngineeringNarrativeForReport(
+  narrative: ReturnType<typeof buildF7EngineeringNarrative>,
+): AvailableF7ReportAnalysis["narrative"] {
+  return {
+    resultJudgment: {
+      status: narrative.resultJudgment.status,
+      headline: narrative.resultJudgment.headline,
+      judgment: narrative.resultJudgment.judgment,
+      cpk: narrative.resultJudgment.cpk,
+      targetCpk: narrative.resultJudgment.targetCpk,
+      margin: narrative.resultJudgment.margin,
+      display: {
+        cpk: narrative.resultJudgment.display.cpk,
+        targetCpk: narrative.resultJudgment.display.targetCpk,
+        margin: narrative.resultJudgment.display.margin,
+      },
+      ...(narrative.resultJudgment.nearerSpecificationSide === undefined
+        ? {}
+        : { nearerSpecificationSide: narrative.resultJudgment.nearerSpecificationSide }),
+    },
+    engineeringSummary: narrative.engineeringSummary,
+    rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => {
+      const provenance = requireNarrativeProvenance(item, `Root cause ${item.ruleId}`);
+      return {
+        ruleId: item.ruleId,
+        title: item.title,
+        sourceAlias: provenance.sourceAlias,
+        sourceFileHash: provenance.sourceFileHash,
+        hypothesis: true,
+        explanation: item.narrative,
+        completeEvidence: item.completeEvidence,
+        ...(item.quantitativeEvidence === undefined
+          ? {}
+          : {
+              quantitativeEvidence: Object.fromEntries(
+                Object.entries(item.quantitativeEvidence).map(([key, value]) => [key, value]),
+              ),
+            }),
+        ...(item.quantitativeEvidenceLabels === undefined
+          ? {}
+          : {
+              quantitativeEvidenceLabels: Object.fromEntries(
+                Object.entries(item.quantitativeEvidenceLabels).map(([key, value]) => [key, value]),
+              ),
+            }),
+      };
+    }),
+    engineeringRisk: narrative.engineeringRisk,
+    suggestedActionSequence: narrative.suggestedActionSequence.map((item) => {
+      const provenance = requireNarrativeProvenance(item, `Suggested action ${item.optionId}`);
+      return {
+        optionId: item.optionId,
+        title: item.title,
+        sourceAlias: provenance.sourceAlias,
+        sourceFileHash: provenance.sourceFileHash,
+        narrative: item.narrative,
+        validationSteps: item.validationSteps.map((step) => step),
+      };
+    }),
+    validationRequirements: narrative.validationRequirements.map((step) => step),
+    evidenceDisclosure: narrative.evidenceDisclosure,
+  };
 }
 
 function createF0Analysis(
   snapshot: F7SessionSnapshot,
   simulation: F7SessionSnapshot["monteCarloResult"] & {},
 ): NonNullable<F7ReportProjection["analysis"]> {
-  const rule = getPublicEngineeringRule({ ruleId: "default-cpk-target" });
-  if (
-    rule.status !== "matched"
-    || rule.entry.ruleId !== "default-cpk-target"
-    || rule.entry.ruleType !== "cpk"
-  ) {
-    return { status: "unavailable", reason: "The governed F0 Cpk rule is unavailable.", optimizationDirections: [] };
-  }
   if (simulation.capability.status !== "available") {
     return {
       status: "unavailable",
@@ -65,43 +136,96 @@ function createF0Analysis(
     (setupMean - simulation.lowerSpecLimit) / (3 * setupStandardDeviation),
   );
   const monteCarlo = simulation.capability;
+  const target = monteCarlo.targetCpk;
+  const targetEvidence = snapshot.systemSpecification?.targetSigmaLevel;
+  const targetSource = targetEvidence?.status === "available"
+    && targetEvidence.valueOrigin === "defaulted"
+    ? "template"
+    : "project";
+  const evaluation = loadInterpretationRules({ version: "interpretation-rules-v2" })
+    .evaluateInterpretationRules({
+      analysisDimension: "one-dimensional",
+      method: "monte-carlo",
+      facts: {
+        cp: monteCarlo.cp,
+        cpk: monteCarlo.cpk,
+        targetCpk: { value: target, source: targetSource },
+        mean: simulation.mean,
+        lowerSpecLimit: simulation.lowerSpecLimit,
+        upperSpecLimit: simulation.upperSpecLimit,
+      },
+    });
+  const performanceRules = evaluation.status === "matched"
+    ? evaluation.matchedRules.filter(({ entryType }) => entryType === "performance-rule")
+    : [];
+  const performanceRule = performanceRules.length === 1 ? performanceRules[0] : undefined;
+  if (evaluation.knowledgeBaseVersion !== "interpretation-rules-v2"
+    || evaluation.resolvedTargets?.cpk?.value !== target
+    || evaluation.resolvedTargets.cpk.source !== targetSource
+    || performanceRule === undefined || (
+    performanceRule.entryId !== "performance-cpk"
+    && performanceRule.entryId !== "performance-cpk-below-target"
+  )) {
+    return { status: "unavailable", reason: "The governed F0 Cpk interpretation rule is unavailable.", optimizationDirections: [] };
+  }
   const meanDelta = simulation.mean - setupMean;
   const sigmaRelativeChange = (simulation.standardDeviation - setupStandardDeviation) / setupStandardDeviation;
   const cpDelta = monteCarlo.cp - setupCp;
   const cpkDelta = monteCarlo.cpk - setupCpk;
-  const target = rule.entry.threshold;
+  const rootCauseRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "root-cause-signal");
+  const improvementRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "improvement-option");
+  const projectRule = (rule: (typeof evaluation.matchedRules)[number]) => ({
+    ruleId: rule.entryId,
+    title: rule.title,
+    sourceAlias: rule.evidence.sourceAlias,
+    sourceFileHash: rule.evidence.sourceFileHash,
+  });
   const targetAssessment = monteCarlo.cpk >= target
-    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the F0 default target of ${target}.`
-    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the F0 default target of ${target}.`;
+    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the resolved target of ${target}.`
+    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the resolved target of ${target}.`;
   const interpretations = [
     `Mean changed from Setup ${setupMean.toFixed(4)} to Monte Carlo ${simulation.mean.toFixed(4)} (${formatSigned(meanDelta, 4)}).`,
     `Standard deviation changed from Setup ${setupStandardDeviation.toFixed(4)} to Monte Carlo ${simulation.standardDeviation.toFixed(4)} (${formatSigned(sigmaRelativeChange * 100, 1)}%).`,
     `Cp changed from Setup ${setupCp.toFixed(3)} to Monte Carlo ${monteCarlo.cp.toFixed(3)} (${formatSigned(cpDelta, 3)}).`,
     `Cpk changed from Setup ${setupCpk.toFixed(3)} to Monte Carlo ${monteCarlo.cpk.toFixed(3)} (${formatSigned(cpkDelta, 3)}); ${targetAssessment}`,
   ];
-  const optimizationDirections: string[] = [];
-  if (Math.abs(meanDelta) >= 0.00005 || monteCarlo.cp - monteCarlo.cpk >= 0.0005) {
-    optimizationDirections.push("Review process centering against the Factor Setup mean and specification midpoint before changing tolerances.");
-  }
-  if (sigmaRelativeChange > 0.0005) {
-    optimizationDirections.push("Prioritize reducing and stabilizing measured within-factor variation, then confirm with a new representative sample.");
-  } else if (sigmaRelativeChange < -0.0005) {
-    optimizationDirections.push("Confirm the lower measured variation is repeatable with a new representative sample.");
-  }
-  if (monteCarlo.cpk < target || cpDelta < -0.0005 || cpkDelta < -0.0005) {
-    optimizationDirections.push("After corrective action, rerun Monte Carlo and compare Cpk with the F0 target before any Release/Hold decision.");
-  }
+  const optimizationDirections = improvementRules.map(({ title }) => title);
   if (optimizationDirections.length === 0) {
     optimizationDirections.push("Maintain the current setup and verify capability remains stable with the next representative measurement sample.");
   }
+  const narrative = projectF7EngineeringNarrativeForReport(buildF7EngineeringNarrative({
+    evidenceBasis: "measured",
+    method: "monte-carlo",
+    cp: monteCarlo.cp,
+    cpk: monteCarlo.cpk,
+    targetCpk: target,
+    mean: simulation.mean,
+    lowerSpecLimit: simulation.lowerSpecLimit,
+    upperSpecLimit: simulation.upperSpecLimit,
+    rootCauseRules: rootCauseRules.map((rule) => ({
+      ruleId: rule.entryId,
+      title: rule.title,
+      sourceAlias: rule.evidence.sourceAlias,
+      sourceFileHash: rule.evidence.sourceFileHash,
+    })),
+    controlledOptions: improvementRules.map((rule) => ({
+      ruleId: rule.entryId,
+      title: rule.title,
+      sourceAlias: rule.evidence.sourceAlias,
+      sourceFileHash: rule.evidence.sourceFileHash,
+      validationSteps: rule.validationSteps ?? [],
+    })),
+    contributors: [],
+    knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+  }));
 
   return {
     status: "available",
     provenance: {
-      knowledgeBaseVersion: rule.knowledgeBaseVersion,
-      ruleId: rule.entry.ruleId,
+      knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+      ruleId: performanceRule.entryId,
       threshold: target,
-      applicability: rule.entry.applicability,
+      applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
     },
     comparison: {
       setup: { mean: setupMean, standardDeviation: setupStandardDeviation, cp: setupCp, cpk: setupCpk },
@@ -115,6 +239,10 @@ function createF0Analysis(
     targetAssessment,
     interpretations,
     optimizationDirections,
+    rootCauseSignals: rootCauseRules.map(projectRule),
+    controlledOptions: improvementRules.map(projectRule),
+    validationRequirements: [...new Set(improvementRules.flatMap(({ validationSteps }) => validationSteps ?? []))],
+    narrative,
   };
 }
 
@@ -144,6 +272,17 @@ function escapeMarkdownTableText(value: string): string {
 
 function renderValue(value: string | number): string {
   return escapeMarkdownTableText(String(value));
+}
+
+function renderNarrativeEvidence(item: AvailableF7ReportAnalysis["narrative"]["rootCauseAnalysis"][number]): string | undefined {
+  if (item.quantitativeEvidence === undefined) {
+    return undefined;
+  }
+
+  return Object.entries(item.quantitativeEvidence)
+    .map(([key, value]) => `${item.quantitativeEvidenceLabels?.[key] ?? key}: ${String(value)}`)
+    .map(escapeMarkdownTableText)
+    .join("; ");
 }
 
 function renderMarkdown(report: ReportWithoutMarkdown): string {
@@ -179,21 +318,63 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
         `| Cp | ${renderValue(report.analysis.comparison.setup.cp)} | ${renderValue(report.analysis.comparison.monteCarlo.cp)} |`,
         `| Cpk | ${renderValue(report.analysis.comparison.setup.cpk)} | ${renderValue(report.analysis.comparison.monteCarlo.cpk)} |`,
         "",
-        "## F0 Interpretation and Optimization Direction",
-        "",
-        `F0 ${report.analysis.provenance.knowledgeBaseVersion} / ${report.analysis.provenance.ruleId}`,
-        "",
-        `**${report.analysis.targetAssessment}**`,
+        `**Assessment:** ${escapeMarkdownTableText(report.analysis.targetAssessment)}`,
         "",
         ...report.analysis.interpretations.map((item) => `- ${escapeMarkdownTableText(item)}`),
         "",
-        "### Optimization direction",
+        "### Result Judgment",
         "",
-        ...report.analysis.optimizationDirections.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        `**${escapeMarkdownTableText(report.analysis.narrative.resultJudgment.headline)}**`,
+        "",
+        `- Cpk: ${renderValue(report.analysis.narrative.resultJudgment.cpk)} (${renderValue(report.analysis.narrative.resultJudgment.display.cpk)})`,
+        `- Target Cpk: ${renderValue(report.analysis.narrative.resultJudgment.targetCpk)} (${renderValue(report.analysis.narrative.resultJudgment.display.targetCpk)})`,
+        `- Margin: ${renderValue(report.analysis.narrative.resultJudgment.margin)} (${renderValue(report.analysis.narrative.resultJudgment.display.margin)})`,
+        ...(report.analysis.narrative.resultJudgment.nearerSpecificationSide === undefined
+          ? []
+          : [`- Nearer specification side: ${escapeMarkdownTableText(report.analysis.narrative.resultJudgment.nearerSpecificationSide)}`]),
+        "",
+        escapeMarkdownTableText(report.analysis.narrative.resultJudgment.judgment),
+        "",
+        `**Summary:** ${escapeMarkdownTableText(report.analysis.narrative.engineeringSummary)}`,
+        "",
+        "### Root Cause Analysis",
+        "",
+        ...(report.analysis.narrative.rootCauseAnalysis.length === 0
+          ? ["No governed root-cause hypothesis matched."]
+          : report.analysis.narrative.rootCauseAnalysis.flatMap((item) => [
+              `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.ruleId)})`,
+              `  Hypothesis: ${item.hypothesis ? "true" : "false"}.`,
+              `  Explanation: ${escapeMarkdownTableText(item.explanation)}`,
+              `  Evidence completeness: ${item.completeEvidence ? "complete" : "incomplete"}.`,
+              ...(renderNarrativeEvidence(item) === undefined
+                ? []
+                : [`  Quantitative evidence: ${renderNarrativeEvidence(item)!}`]),
+              "",
+            ])),
+        "",
+        "### Engineering Risk",
+        "",
+        escapeMarkdownTableText(report.analysis.narrative.engineeringRisk),
+        "",
+        "### Suggested Action Sequence",
+        "",
+        ...(report.analysis.narrative.suggestedActionSequence.length === 0
+          ? ["No controlled improvement action matched."]
+          : report.analysis.narrative.suggestedActionSequence.map((item) => (
+              `- ${escapeMarkdownTableText(item.title)} (${escapeMarkdownTableText(item.optionId)}): ${escapeMarkdownTableText(item.narrative)}`
+            ))),
+        "",
+        "### Verification Requirements",
+        "",
+        ...report.analysis.narrative.validationRequirements.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+        "### Evidence Disclosure",
+        "",
+        escapeMarkdownTableText(report.analysis.narrative.evidenceDisclosure),
         "",
       ]
     : [
-        "## F0 Interpretation and Optimization Direction",
+        "## F0 Interpretation",
         "",
         report.analysis?.reason ?? "F0 analysis is unavailable.",
         "",
@@ -208,7 +389,7 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
     "",
     `**${report.assessment}**`,
     "",
-    "This statistical assessment is not a design or production release decision and does not confirm physical root cause.",
+    "This statistical assessment does not authorize design or production release and does not confirm physical root cause.",
     "",
     ...analysisLines,
     "## Key Metrics",

@@ -501,7 +501,7 @@ export function loadF5ArtifactBundle({
       contractVersion: "v1",
       inputClassification: "confidential",
       workbook: { fileName: workbook.fileName, contentHash: workbook.contentHash },
-      knowledgeBaseVersion: "interpretation-rules-v1",
+      knowledgeBaseVersion: "interpretation-rules-v2",
       worksheets: [requestWorksheet],
     });
     if (!imageReference || !table || !factorsExistInF1 || !governanceImagesMatch || !singleWorksheetRequest.success) {
@@ -519,7 +519,7 @@ export function loadF5ArtifactBundle({
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: workbook.fileName, contentHash: workbook.contentHash },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: acceptedWorksheets,
   });
 

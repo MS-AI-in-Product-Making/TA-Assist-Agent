@@ -223,7 +223,7 @@ function completedReport({
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: CONTENT_HASH },
-    knowledgeBaseVersion: "interpretation-rules-v1",
+    knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: [worksheet],
   });
 }
@@ -621,7 +621,7 @@ describe("renderF5Report", () => {
     expect(toleranceChapter).toContain("| FACT | f5-image-fact-stack_start |");
     expect(capabilityChapter).toContain("#### RULE performance-rule-performance-cpk-below-target");
     expect(capabilityChapter).toContain("| entryId | performance-cpk-below-target |");
-    expect(capabilityChapter).toContain("| effectiveVersion | interpretation-rules-v1 |");
+    expect(capabilityChapter).toContain("| effectiveVersion | interpretation-rules-v2 |");
     expect(capabilityChapter).toContain("sourceAlias=ta-interpretation-rules-v4-2");
     expect(capabilityChapter).toContain("sheetName=02_Performance_Rules");
     expect(capabilityChapter).toContain("sourceRange=A2:H4");
@@ -653,7 +653,7 @@ describe("renderF5Report", () => {
     expect(contributorChapter).toContain("root-cause-signal-root-cause-contributor-concentration");
     expect(contributorChapter).toContain("#### SIGNAL root-cause-signal-root-cause-contributor-concentration");
     expect(contributorChapter).toContain("| entryId | root-cause-contributor-concentration |");
-    expect(contributorChapter).toContain("| effectiveVersion | interpretation-rules-v1 |");
+    expect(contributorChapter).toContain("| effectiveVersion | interpretation-rules-v2 |");
     expect(contributorChapter).toContain("| applicability | analysisDimension=one-dimensional; method=rss |");
     expect(contributorChapter).toContain("| requiresEngineeringReview | true |");
     expect(contributorChapter).toContain("| relatedFactReferences | contributors |");
