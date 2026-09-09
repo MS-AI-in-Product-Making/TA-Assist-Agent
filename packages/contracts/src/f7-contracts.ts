@@ -1559,6 +1559,8 @@ const f7ReportNarrativeEvidenceValueSchema = z.union([z.string().min(1), finiteN
 const f7ReportNarrativeRootCauseItemSchema = z.object({
   ruleId: z.string().min(1),
   title: z.string().min(1),
+  sourceAlias: z.string().min(1).optional(),
+  sourceFileHash: sha256LowerSchema.optional(),
   hypothesis: z.literal(true),
   explanation: z.string().min(1),
   completeEvidence: z.boolean(),
@@ -1600,6 +1602,8 @@ const f7ReportNarrativeRootCauseItemSchema = z.object({
 const f7ReportNarrativeActionItemSchema = z.object({
   optionId: z.string().min(1),
   title: z.string().min(1),
+  sourceAlias: z.string().min(1).optional(),
+  sourceFileHash: sha256LowerSchema.optional(),
   narrative: z.string().min(1),
   validationSteps: z.array(z.string().min(1)),
 }).strict();
@@ -1620,6 +1624,20 @@ const f7ReportMatchedInterpretationSchema = z.object({
   sourceAlias: z.string().min(1),
   sourceFileHash: sha256LowerSchema,
 }).strict();
+
+const addArrayProjectionMismatchIssue = (
+  context: z.RefinementCtx,
+  basePath: readonly (string | number)[],
+  index: number,
+  field: string,
+  message: string,
+): void => {
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message,
+    path: [...basePath, index, field],
+  });
+};
 
 export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
   z.object({
@@ -1819,6 +1837,17 @@ export const f7ReportProjectionSchema = z
             path: ["analysis", "narrative", "resultJudgment", "headline"],
           });
         }
+        const expectedProvenanceRuleId = analysis.narrative.resultJudgment.status === "meets-target"
+          ? "performance-cpk"
+          : "performance-cpk-below-target";
+        if (analysis.provenance.knowledgeBaseVersion === "interpretation-rules-v2"
+          && analysis.provenance.ruleId !== expectedProvenanceRuleId) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis provenance ruleId must match the governed narrative result status",
+            path: ["analysis", "provenance", "ruleId"],
+          });
+        }
         if (!nearlyEqual(analysis.provenance.threshold, capability.targetCpk)) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
@@ -1841,6 +1870,106 @@ export const f7ReportProjectionSchema = z
             });
           }
         }
+
+        if (analysis.rootCauseSignals.length !== analysis.narrative.rootCauseAnalysis.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis rootCauseSignals must match narrative rootCauseAnalysis length",
+            path: ["analysis", "rootCauseSignals"],
+          });
+        }
+        analysis.rootCauseSignals.forEach((signal, index) => {
+          const narrativeItem = analysis.narrative.rootCauseAnalysis[index];
+          if (narrativeItem === undefined) {
+            return;
+          }
+          if (signal.ruleId !== narrativeItem.ruleId) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "ruleId",
+              "analysis rootCauseSignals ruleId must match the ordered narrative rootCauseAnalysis ruleId",
+            );
+          }
+          if (signal.title !== narrativeItem.title) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "title",
+              "analysis rootCauseSignals title must match the ordered narrative rootCauseAnalysis title",
+            );
+          }
+          if (narrativeItem.sourceAlias !== undefined && signal.sourceAlias !== narrativeItem.sourceAlias) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "sourceAlias",
+              "analysis rootCauseSignals sourceAlias must match the ordered narrative rootCauseAnalysis sourceAlias",
+            );
+          }
+          if (narrativeItem.sourceFileHash !== undefined && signal.sourceFileHash !== narrativeItem.sourceFileHash) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "rootCauseSignals"],
+              index,
+              "sourceFileHash",
+              "analysis rootCauseSignals sourceFileHash must match the ordered narrative rootCauseAnalysis sourceFileHash",
+            );
+          }
+        });
+
+        if (analysis.controlledOptions.length !== analysis.narrative.suggestedActionSequence.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis controlledOptions must match narrative suggestedActionSequence length",
+            path: ["analysis", "controlledOptions"],
+          });
+        }
+        analysis.controlledOptions.forEach((option, index) => {
+          const narrativeItem = analysis.narrative.suggestedActionSequence[index];
+          if (narrativeItem === undefined) {
+            return;
+          }
+          if (option.ruleId !== narrativeItem.optionId) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "ruleId",
+              "analysis controlledOptions ruleId must match the ordered narrative suggestedActionSequence optionId",
+            );
+          }
+          if (option.title !== narrativeItem.title) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "title",
+              "analysis controlledOptions title must match the ordered narrative suggestedActionSequence title",
+            );
+          }
+          if (narrativeItem.sourceAlias !== undefined && option.sourceAlias !== narrativeItem.sourceAlias) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "sourceAlias",
+              "analysis controlledOptions sourceAlias must match the ordered narrative suggestedActionSequence sourceAlias",
+            );
+          }
+          if (narrativeItem.sourceFileHash !== undefined && option.sourceFileHash !== narrativeItem.sourceFileHash) {
+            addArrayProjectionMismatchIssue(
+              context,
+              ["analysis", "controlledOptions"],
+              index,
+              "sourceFileHash",
+              "analysis controlledOptions sourceFileHash must match the ordered narrative suggestedActionSequence sourceFileHash",
+            );
+          }
+        });
       }
     }
 

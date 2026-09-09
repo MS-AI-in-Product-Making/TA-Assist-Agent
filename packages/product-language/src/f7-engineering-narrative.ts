@@ -7,6 +7,8 @@ export type F7NarrativeJudgmentStatus = "meets-target" | "below-target";
 export interface F7NarrativeRule {
   readonly ruleId: string;
   readonly title: string;
+  readonly sourceAlias?: string;
+  readonly sourceFileHash?: string;
 }
 
 export interface F7NarrativeOption extends F7NarrativeRule {
@@ -52,6 +54,8 @@ export interface F7NarrativeResultJudgment {
 export interface F7NarrativeRootCauseItem {
   readonly ruleId: string;
   readonly title: string;
+  readonly sourceAlias?: string;
+  readonly sourceFileHash?: string;
   readonly hypothesisStatus: "hypothesis";
   readonly narrative: string;
   readonly completeEvidence: boolean;
@@ -62,6 +66,8 @@ export interface F7NarrativeRootCauseItem {
 export interface F7NarrativeActionItem {
   readonly optionId: string;
   readonly title: string;
+  readonly sourceAlias?: string;
+  readonly sourceFileHash?: string;
   readonly narrative: string;
   readonly validationSteps: readonly string[];
 }
@@ -388,6 +394,8 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     return {
       ruleId: rule.ruleId,
       title: rule.title,
+      ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+      ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
       hypothesisStatus: "hypothesis",
       narrative: INCOMPLETE_EVIDENCE_MESSAGE,
       completeEvidence: false,
@@ -399,6 +407,8 @@ function buildVariationNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
   return {
     ruleId: rule.ruleId,
     title: rule.title,
+    ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+    ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
     hypothesisStatus: "hypothesis",
     narrative: `Cp is ${formatNumber(input.cp)} versus the target Cpk of ${formatNumber(input.targetCpk)}, a ${formatDeltaNumber(Math.abs(cpTargetGap))} ${cpTargetGap >= 0 ? "surplus" : "shortfall"} that indicates variation-related exposure and requires validation.`,
     completeEvidence: true,
@@ -421,6 +431,8 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     return {
       ruleId: rule.ruleId,
       title: rule.title,
+      ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+      ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
       hypothesisStatus: "hypothesis",
       narrative: INCOMPLETE_EVIDENCE_MESSAGE,
       completeEvidence: false,
@@ -438,6 +450,8 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
     return {
       ruleId: rule.ruleId,
       title: rule.title,
+      ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+      ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
       hypothesisStatus: "hypothesis",
       narrative: INCOMPLETE_EVIDENCE_MESSAGE,
       completeEvidence: false,
@@ -448,6 +462,8 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
   return {
     ruleId: rule.ruleId,
     title: rule.title,
+    ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+    ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
     hypothesisStatus: "hypothesis",
     narrative: direction === "balanced"
       ? `Cp exceeds Cpk by ${formatDeltaNumber(cpCpkGap)} and ${buildMeanShiftDirectionNarrative(meanOffset, direction)}, indicating a midpoint-balance mean-shift hypothesis that requires validation.`
@@ -478,6 +494,8 @@ function buildContributorNarrative(input: BuildF7EngineeringNarrativeInput, rule
     return {
       ruleId: rule.ruleId,
       title: rule.title,
+      ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+      ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
       hypothesisStatus: "hypothesis",
       narrative: INCOMPLETE_EVIDENCE_MESSAGE,
       completeEvidence: false,
@@ -488,6 +506,8 @@ function buildContributorNarrative(input: BuildF7EngineeringNarrativeInput, rule
   return {
     ruleId: rule.ruleId,
     title: rule.title,
+    ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+    ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
     hypothesisStatus: "hypothesis",
     narrative: `${dominantContributor.name} contributes ${formatNumber(dominantContributor.contributionPercent)}% of the modeled variation, indicating contributor concentration that requires validation against representative evidence.`,
     completeEvidence: true,
@@ -514,6 +534,8 @@ function buildRootCauseAnalysis(input: BuildF7EngineeringNarrativeInput): F7Narr
         return {
           ruleId: rule.ruleId,
           title: rule.title,
+          ...(rule.sourceAlias === undefined ? {} : { sourceAlias: rule.sourceAlias }),
+          ...(rule.sourceFileHash === undefined ? {} : { sourceFileHash: rule.sourceFileHash }),
           hypothesisStatus: "hypothesis",
           narrative: INCOMPLETE_EVIDENCE_MESSAGE,
           completeEvidence: false,
@@ -535,6 +557,8 @@ function buildSuggestedActions(input: BuildF7EngineeringNarrativeInput): F7Narra
     return {
       optionId: option.ruleId,
       title: option.title,
+      ...(option.sourceAlias === undefined ? {} : { sourceAlias: option.sourceAlias }),
+      ...(option.sourceFileHash === undefined ? {} : { sourceFileHash: option.sourceFileHash }),
       narrative,
       validationSteps: [...option.validationSteps],
     };

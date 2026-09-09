@@ -40,6 +40,8 @@ export function projectF7EngineeringNarrativeForReport(
     rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => ({
       ruleId: item.ruleId,
       title: item.title,
+      ...(item.sourceAlias === undefined ? {} : { sourceAlias: item.sourceAlias }),
+      ...(item.sourceFileHash === undefined ? {} : { sourceFileHash: item.sourceFileHash }),
       hypothesis: true,
       explanation: item.narrative,
       completeEvidence: item.completeEvidence,
@@ -62,6 +64,8 @@ export function projectF7EngineeringNarrativeForReport(
     suggestedActionSequence: narrative.suggestedActionSequence.map((item) => ({
       optionId: item.optionId,
       title: item.title,
+      ...(item.sourceAlias === undefined ? {} : { sourceAlias: item.sourceAlias }),
+      ...(item.sourceFileHash === undefined ? {} : { sourceFileHash: item.sourceFileHash }),
       narrative: item.narrative,
       validationSteps: item.validationSteps.map((step) => step),
     })),
@@ -178,10 +182,17 @@ function createF0Analysis(
     mean: simulation.mean,
     lowerSpecLimit: simulation.lowerSpecLimit,
     upperSpecLimit: simulation.upperSpecLimit,
-    rootCauseRules: rootCauseRules.map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+    rootCauseRules: rootCauseRules.map((rule) => ({
+      ruleId: rule.entryId,
+      title: rule.title,
+      sourceAlias: rule.evidence.sourceAlias,
+      sourceFileHash: rule.evidence.sourceFileHash,
+    })),
     controlledOptions: improvementRules.map((rule) => ({
       ruleId: rule.entryId,
       title: rule.title,
+      sourceAlias: rule.evidence.sourceAlias,
+      sourceFileHash: rule.evidence.sourceFileHash,
       validationSteps: rule.validationSteps ?? [],
     })),
     contributors: [],

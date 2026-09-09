@@ -482,6 +482,252 @@ describe("F7 report contracts", () => {
     expect(f7ReportProjectionSchema.safeParse(mismatchedCpk).success).toBe(false);
   });
 
+  it("rejects available analysis when provenance ruleId is inconsistent with the narrative status", () => {
+    const meetsTargetReport = createReportFixture();
+    meetsTargetReport.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk",
+        threshold: meetsTargetReport.simulation.capability.status === "available" ? meetsTargetReport.simulation.capability.targetCpk : 1,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: {
+          mean: meetsTargetReport.simulation.mean,
+          standardDeviation: meetsTargetReport.simulation.standardDeviation,
+          cp: meetsTargetReport.simulation.capability.status === "available" ? meetsTargetReport.simulation.capability.cp : 1.2,
+          cpk: meetsTargetReport.simulation.capability.status === "available" ? meetsTargetReport.simulation.capability.cpk : 1.1,
+        },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.667 meets the resolved target of 1.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [],
+      controlledOptions: [],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "meets-target",
+          headline: "Capability meets target",
+          judgment: "Cpk 1.667 meets target 1.000.",
+          cpk: meetsTargetReport.simulation.capability.status === "available" ? meetsTargetReport.simulation.capability.cpk : 1.667,
+          targetCpk: meetsTargetReport.simulation.capability.status === "available" ? meetsTargetReport.simulation.capability.targetCpk : 1,
+          margin: meetsTargetReport.simulation.capability.status === "available"
+            ? meetsTargetReport.simulation.capability.cpk - meetsTargetReport.simulation.capability.targetCpk
+            : 0.667,
+          display: { cpk: "1.667", targetCpk: "1.000", margin: "+0.667" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    const mismatchedMeetsTarget = structuredClone(meetsTargetReport);
+    mismatchedMeetsTarget.analysis!.provenance.ruleId = "performance-cpk-below-target";
+    expect(f7ReportProjectionSchema.safeParse(mismatchedMeetsTarget).success).toBe(false);
+
+    const belowTargetReport = createReportFixture("BELOW_TARGET");
+    belowTargetReport.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk-below-target",
+        threshold: belowTargetReport.simulation.capability.status === "available" ? belowTargetReport.simulation.capability.targetCpk : 2,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: {
+          mean: belowTargetReport.simulation.mean,
+          standardDeviation: belowTargetReport.simulation.standardDeviation,
+          cp: belowTargetReport.simulation.capability.status === "available" ? belowTargetReport.simulation.capability.cp : 1.2,
+          cpk: belowTargetReport.simulation.capability.status === "available" ? belowTargetReport.simulation.capability.cpk : 1.1,
+        },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.667 is below the resolved target of 2.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [],
+      controlledOptions: [],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 1.667 is 0.333 below the resolved target of 2.",
+          cpk: belowTargetReport.simulation.capability.status === "available" ? belowTargetReport.simulation.capability.cpk : 1.667,
+          targetCpk: belowTargetReport.simulation.capability.status === "available" ? belowTargetReport.simulation.capability.targetCpk : 2,
+          margin: belowTargetReport.simulation.capability.status === "available"
+            ? belowTargetReport.simulation.capability.cpk - belowTargetReport.simulation.capability.targetCpk
+            : -0.333,
+          display: { cpk: "1.667", targetCpk: "2.000", margin: "-0.333" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    const mismatchedBelowTarget = structuredClone(belowTargetReport);
+    mismatchedBelowTarget.analysis!.provenance.ruleId = "performance-cpk";
+    expect(f7ReportProjectionSchema.safeParse(mismatchedBelowTarget).success).toBe(false);
+  });
+
+  it("rejects available analysis when legacy rootCauseSignals or controlledOptions drift from the ordered narrative projection", () => {
+    const report = createReportFixture();
+    report.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk",
+        threshold: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 1,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: {
+          mean: report.simulation.mean,
+          standardDeviation: report.simulation.standardDeviation,
+          cp: report.simulation.capability.status === "available" ? report.simulation.capability.cp : 1.2,
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.1,
+        },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.667 meets the resolved target of 1.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [
+        {
+          ruleId: "root-cause-1",
+          title: "Root cause 1",
+          sourceAlias: "kb://root-cause-1",
+          sourceFileHash: SHA256,
+        },
+        {
+          ruleId: "root-cause-2",
+          title: "Root cause 2",
+          sourceAlias: "kb://root-cause-2",
+          sourceFileHash: SHA256_2,
+        },
+      ],
+      controlledOptions: [
+        {
+          ruleId: "action-1",
+          title: "Action 1",
+          sourceAlias: "kb://action-1",
+          sourceFileHash: SHA256,
+        },
+        {
+          ruleId: "action-2",
+          title: "Action 2",
+          sourceAlias: "kb://action-2",
+          sourceFileHash: SHA256_2,
+        },
+      ],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "meets-target",
+          headline: "Capability meets target",
+          judgment: "Cpk 1.667 meets target 1.000.",
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.667,
+          targetCpk: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 1,
+          margin: report.simulation.capability.status === "available"
+            ? report.simulation.capability.cpk - report.simulation.capability.targetCpk
+            : 0.667,
+          display: { cpk: "1.667", targetCpk: "1.000", margin: "+0.667" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [
+          {
+            ruleId: "root-cause-1",
+            title: "Root cause 1",
+            sourceAlias: "kb://root-cause-1",
+            sourceFileHash: SHA256,
+            hypothesis: true,
+            explanation: "Explanation 1",
+            completeEvidence: true,
+          },
+          {
+            ruleId: "root-cause-2",
+            title: "Root cause 2",
+            sourceAlias: "kb://root-cause-2",
+            sourceFileHash: SHA256_2,
+            hypothesis: true,
+            explanation: "Explanation 2",
+            completeEvidence: false,
+          },
+        ],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [
+          {
+            optionId: "action-1",
+            title: "Action 1",
+            sourceAlias: "kb://action-1",
+            sourceFileHash: SHA256,
+            narrative: "Action narrative 1",
+            validationSteps: ["Validate 1"],
+          },
+          {
+            optionId: "action-2",
+            title: "Action 2",
+            sourceAlias: "kb://action-2",
+            sourceFileHash: SHA256_2,
+            narrative: "Action narrative 2",
+            validationSteps: ["Validate 2"],
+          },
+        ],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    expect(f7ReportProjectionSchema.safeParse(report).success).toBe(true);
+
+    const reorderedRootCauses = structuredClone(report);
+    reorderedRootCauses.analysis!.rootCauseSignals.reverse();
+    expect(f7ReportProjectionSchema.safeParse(reorderedRootCauses).success).toBe(false);
+
+    const retitledRootCause = structuredClone(report);
+    retitledRootCause.analysis!.rootCauseSignals[0]!.title = "Different root cause title";
+    expect(f7ReportProjectionSchema.safeParse(retitledRootCause).success).toBe(false);
+
+    const changedRootCauseSourceAlias = structuredClone(report);
+    changedRootCauseSourceAlias.analysis!.rootCauseSignals[0]!.sourceAlias = "kb://different-root-cause-1";
+    expect(f7ReportProjectionSchema.safeParse(changedRootCauseSourceAlias).success).toBe(false);
+
+    const changedRootCauseSourceHash = structuredClone(report);
+    changedRootCauseSourceHash.analysis!.rootCauseSignals[0]!.sourceFileHash = "c".repeat(64);
+    expect(f7ReportProjectionSchema.safeParse(changedRootCauseSourceHash).success).toBe(false);
+
+    const reorderedControlledOptions = structuredClone(report);
+    reorderedControlledOptions.analysis!.controlledOptions.reverse();
+    expect(f7ReportProjectionSchema.safeParse(reorderedControlledOptions).success).toBe(false);
+
+    const retitledControlledOption = structuredClone(report);
+    retitledControlledOption.analysis!.controlledOptions[0]!.title = "Different action title";
+    expect(f7ReportProjectionSchema.safeParse(retitledControlledOption).success).toBe(false);
+
+    const changedControlledOptionSourceAlias = structuredClone(report);
+    changedControlledOptionSourceAlias.analysis!.controlledOptions[0]!.sourceAlias = "kb://different-action-1";
+    expect(f7ReportProjectionSchema.safeParse(changedControlledOptionSourceAlias).success).toBe(false);
+
+    const changedControlledOptionSourceHash = structuredClone(report);
+    changedControlledOptionSourceHash.analysis!.controlledOptions[0]!.sourceFileHash = "d".repeat(64);
+    expect(f7ReportProjectionSchema.safeParse(changedControlledOptionSourceHash).success).toBe(false);
+  });
+
   it("requires strict specification input origins for every Monte Carlo specification field", () => {
     const report = createReportFixture();
     const { specificationInputOrigins: _missing, ...evidenceWithoutOrigins } = report.evidence;

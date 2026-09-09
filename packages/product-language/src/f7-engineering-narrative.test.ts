@@ -167,6 +167,41 @@ describe("buildF7EngineeringNarrative", () => {
     expect(narrative.evidenceDisclosure).toContain("interpretation-rules-v2");
   });
 
+  it("preserves matched rule provenance on ordered root causes and suggested actions", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      rootCauseRules: [
+        {
+          ruleId: "root-cause-excessive-variation",
+          title: "RC01 Excessive variation hypothesis",
+          sourceAlias: "kb://root-cause-excessive-variation",
+          sourceFileHash: "a".repeat(64),
+        },
+      ],
+      controlledOptions: [
+        {
+          ruleId: "improvement-reduce-variation",
+          title: "Reduce total variation",
+          sourceAlias: "kb://improvement-reduce-variation",
+          sourceFileHash: "b".repeat(64),
+          validationSteps: ["Update representative variation evidence."],
+        },
+      ],
+      contributors: [],
+    });
+
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
+      ruleId: "root-cause-excessive-variation",
+      sourceAlias: "kb://root-cause-excessive-variation",
+      sourceFileHash: "a".repeat(64),
+    });
+    expect(narrative.suggestedActionSequence[0]).toMatchObject({
+      optionId: "improvement-reduce-variation",
+      sourceAlias: "kb://improvement-reduce-variation",
+      sourceFileHash: "b".repeat(64),
+    });
+  });
+
   it("returns a meets-target judgment without inventing causes or actions", () => {
     const narrative = buildF7EngineeringNarrative({
       ...combinedCauseInput(),

@@ -498,12 +498,19 @@ function buildExpectedReportNarrative(snapshot: F7SessionSnapshot) {
     upperSpecLimit: simulation.upperSpecLimit,
     rootCauseRules: evaluation.matchedRules
       .filter(({ entryType }) => entryType === "root-cause-signal")
-      .map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+      .map((rule) => ({
+        ruleId: rule.entryId,
+        title: rule.title,
+        sourceAlias: rule.evidence.sourceAlias,
+        sourceFileHash: rule.evidence.sourceFileHash,
+      })),
     controlledOptions: evaluation.matchedRules
       .filter(({ entryType }) => entryType === "improvement-option")
       .map((rule) => ({
         ruleId: rule.entryId,
         title: rule.title,
+        sourceAlias: rule.evidence.sourceAlias,
+        sourceFileHash: rule.evidence.sourceFileHash,
         validationSteps: rule.validationSteps ?? [],
       })),
     contributors: [],
@@ -643,9 +650,13 @@ describe("createF7ReportProjection", () => {
     expect(report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
       "root-cause-excessive-variation",
     ]);
+    expect(report.analysis.narrative.rootCauseAnalysis[0]?.sourceAlias).toBeDefined();
+    expect(report.analysis.narrative.rootCauseAnalysis[0]?.sourceFileHash).toBeDefined();
     expect(report.analysis.narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-excessive-variation",
       title: "RC01 Excessive variation hypothesis",
+      sourceAlias: expect.any(String),
+      sourceFileHash: expect.any(String),
       hypothesis: true,
       completeEvidence: true,
       quantitativeEvidenceLabels: {
@@ -660,6 +671,13 @@ describe("createF7ReportProjection", () => {
     expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
       "improvement-reduce-variation",
     ]);
+    expect(report.analysis.narrative.suggestedActionSequence[0]?.sourceAlias).toBeDefined();
+    expect(report.analysis.narrative.suggestedActionSequence[0]?.sourceFileHash).toBeDefined();
+    expect(report.analysis.narrative.suggestedActionSequence[0]).toMatchObject({
+      optionId: "improvement-reduce-variation",
+      sourceAlias: expect.any(String),
+      sourceFileHash: expect.any(String),
+    });
     expect(report.analysis.narrative.validationRequirements.length).toBeGreaterThan(0);
     expect(report.analysis.narrative.evidenceDisclosure).toContain("Measured Monte Carlo evidence was supplied for this narrative projection.");
     expect(report.analysis.narrative.evidenceDisclosure).toContain("interpretation-rules-v2");
