@@ -1766,6 +1766,84 @@ export const f7ReportProjectionSchema = z
       });
     }
 
+    if (report.analysis?.status === "available") {
+      const analysis = report.analysis;
+
+      if (capability.status !== "available") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "analysis status available requires simulation capability to be available",
+          path: ["analysis", "status"],
+        });
+      } else {
+        const expectedNarrativeStatus = capability.cpk >= capability.targetCpk
+          ? "meets-target"
+          : "below-target";
+        const expectedNarrativeHeadline = expectedNarrativeStatus === "meets-target"
+          ? "Capability meets target"
+          : "Capability is below target";
+        const expectedNarrativeMargin = capability.cpk - capability.targetCpk;
+
+        if (!nearlyEqual(analysis.narrative.resultJudgment.cpk, capability.cpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment cpk must match simulation capability cpk",
+            path: ["analysis", "narrative", "resultJudgment", "cpk"],
+          });
+        }
+        if (!nearlyEqual(analysis.narrative.resultJudgment.targetCpk, capability.targetCpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment targetCpk must match simulation capability targetCpk",
+            path: ["analysis", "narrative", "resultJudgment", "targetCpk"],
+          });
+        }
+        if (!nearlyEqual(analysis.narrative.resultJudgment.margin, expectedNarrativeMargin)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment margin must equal cpk minus targetCpk",
+            path: ["analysis", "narrative", "resultJudgment", "margin"],
+          });
+        }
+        if (analysis.narrative.resultJudgment.status !== expectedNarrativeStatus) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment status must match simulation capability versus target",
+            path: ["analysis", "narrative", "resultJudgment", "status"],
+          });
+        }
+        if (analysis.narrative.resultJudgment.headline !== expectedNarrativeHeadline) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis narrative resultJudgment headline must match the governed status headline",
+            path: ["analysis", "narrative", "resultJudgment", "headline"],
+          });
+        }
+        if (!nearlyEqual(analysis.provenance.threshold, capability.targetCpk)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "analysis provenance threshold must match simulation capability targetCpk",
+            path: ["analysis", "provenance", "threshold"],
+          });
+        }
+
+        for (const [field, actual, expected] of [
+          ["mean", analysis.comparison.monteCarlo.mean, report.simulation.mean],
+          ["standardDeviation", analysis.comparison.monteCarlo.standardDeviation, report.simulation.standardDeviation],
+          ["cp", analysis.comparison.monteCarlo.cp, capability.cp],
+          ["cpk", analysis.comparison.monteCarlo.cpk, capability.cpk],
+        ] as const) {
+          if (!nearlyEqual(actual, expected)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `analysis comparison.monteCarlo ${field} must match simulation`,
+              path: ["analysis", "comparison", "monteCarlo", field],
+            });
+          }
+        }
+      }
+    }
+
     const simulationManifest = report.simulation.factorManifest;
     const evidenceManifest = report.evidence.factorManifest;
     const simulationFactorIds = simulationManifest.map((entry) => entry.factorId);

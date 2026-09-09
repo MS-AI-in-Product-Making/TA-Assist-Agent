@@ -16,39 +16,25 @@ function formatSigned(value: number, digits: number): string {
   return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
 }
 
-function buildAvailableContributorFacts(snapshot: F7SessionSnapshot): readonly {
-  readonly name: string;
-  readonly reference: string;
-  readonly contributionPercent: number;
-}[] {
-  return snapshot.factors
-    .flatMap((factor) => {
-      const evidence = factor.evidence;
-      if (evidence === undefined
-        || !Number.isFinite(evidence.percentContributionToSigma)
-        || evidence.percentContributionToSigma < 0
-        || evidence.percentContributionToSigma > 1) {
-        return [];
-      }
-      return [{
-        name: evidence.factorName,
-        reference: JSON.stringify([evidence.worksheetName, evidence.tableId, evidence.sourceRow]),
-        contributionPercent: evidence.percentContributionToSigma * 100,
-      }];
-    })
-    .sort((left, right) => (
-      right.contributionPercent - left.contributionPercent
-      || (left.reference === right.reference ? 0 : left.reference < right.reference ? -1 : 1)
-    ));
-}
-
 export function projectF7EngineeringNarrativeForReport(
   narrative: ReturnType<typeof buildF7EngineeringNarrative>,
 ): AvailableF7ReportAnalysis["narrative"] {
   return {
     resultJudgment: {
-      ...narrative.resultJudgment,
-      display: { ...narrative.resultJudgment.display },
+      status: narrative.resultJudgment.status,
+      headline: narrative.resultJudgment.headline,
+      judgment: narrative.resultJudgment.judgment,
+      cpk: narrative.resultJudgment.cpk,
+      targetCpk: narrative.resultJudgment.targetCpk,
+      margin: narrative.resultJudgment.margin,
+      display: {
+        cpk: narrative.resultJudgment.display.cpk,
+        targetCpk: narrative.resultJudgment.display.targetCpk,
+        margin: narrative.resultJudgment.display.margin,
+      },
+      ...(narrative.resultJudgment.nearerSpecificationSide === undefined
+        ? {}
+        : { nearerSpecificationSide: narrative.resultJudgment.nearerSpecificationSide }),
     },
     engineeringSummary: narrative.engineeringSummary,
     rootCauseAnalysis: narrative.rootCauseAnalysis.map((item) => ({
@@ -59,17 +45,27 @@ export function projectF7EngineeringNarrativeForReport(
       completeEvidence: item.completeEvidence,
       ...(item.quantitativeEvidence === undefined
         ? {}
-        : { quantitativeEvidence: { ...item.quantitativeEvidence } }),
+        : {
+            quantitativeEvidence: Object.fromEntries(
+              Object.entries(item.quantitativeEvidence).map(([key, value]) => [key, value]),
+            ),
+          }),
       ...(item.quantitativeEvidenceLabels === undefined
         ? {}
-        : { quantitativeEvidenceLabels: { ...item.quantitativeEvidenceLabels } }),
+        : {
+            quantitativeEvidenceLabels: Object.fromEntries(
+              Object.entries(item.quantitativeEvidenceLabels).map(([key, value]) => [key, value]),
+            ),
+          }),
     })),
     engineeringRisk: narrative.engineeringRisk,
     suggestedActionSequence: narrative.suggestedActionSequence.map((item) => ({
-      ...item,
-      validationSteps: [...item.validationSteps],
+      optionId: item.optionId,
+      title: item.title,
+      narrative: item.narrative,
+      validationSteps: item.validationSteps.map((step) => step),
     })),
-    validationRequirements: [...narrative.validationRequirements],
+    validationRequirements: narrative.validationRequirements.map((step) => step),
     evidenceDisclosure: narrative.evidenceDisclosure,
   };
 }
@@ -123,7 +119,6 @@ function createF0Analysis(
     && targetEvidence.valueOrigin === "defaulted"
     ? "template"
     : "project";
-  const availableContributors = buildAvailableContributorFacts(snapshot);
   const evaluation = loadInterpretationRules({ version: "interpretation-rules-v2" })
     .evaluateInterpretationRules({
       analysisDimension: "one-dimensional",
@@ -135,14 +130,6 @@ function createF0Analysis(
         mean: simulation.mean,
         lowerSpecLimit: simulation.lowerSpecLimit,
         upperSpecLimit: simulation.upperSpecLimit,
-        ...(availableContributors.length === 0
-          ? {}
-          : {
-              contributors: availableContributors.map(({ reference, contributionPercent }) => ({
-                reference,
-                contributionPercent,
-              })),
-            }),
       },
     });
   const performanceRule = evaluation.status === "matched"
@@ -197,7 +184,7 @@ function createF0Analysis(
       title: rule.title,
       validationSteps: rule.validationSteps ?? [],
     })),
-    contributors: availableContributors,
+    contributors: [],
     knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
   }));
 

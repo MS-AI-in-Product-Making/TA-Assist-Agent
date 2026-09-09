@@ -305,6 +305,183 @@ describe("F7 report contracts", () => {
     }).success).toBe(false);
   });
 
+  it("rejects available analysis when narrative judgment cpk and target drift from simulation capability", () => {
+    const report = createReportFixture("BELOW_TARGET");
+    report.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk-below-target",
+        threshold: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 2,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: { mean: report.simulation.mean, standardDeviation: report.simulation.standardDeviation, cp: 1.2, cpk: 1.1 },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.100 is below the resolved target of 2.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [],
+      controlledOptions: [],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 1.100 is below target 2.000.",
+          cpk: 1.1,
+          targetCpk: 2,
+          margin: -0.9,
+          display: { cpk: "1.100", targetCpk: "2.000", margin: "-0.900" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    const mismatched = structuredClone(report);
+    mismatched.analysis!.narrative.resultJudgment.cpk += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatched).success).toBe(false);
+
+    const mismatchedTarget = structuredClone(report);
+    mismatchedTarget.analysis!.narrative.resultJudgment.targetCpk += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedTarget).success).toBe(false);
+  });
+
+  it("rejects available analysis when narrative margin, status, or headline do not agree with simulation capability", () => {
+    const report = createReportFixture("BELOW_TARGET");
+    report.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk-below-target",
+        threshold: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 2,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: {
+          mean: report.simulation.mean,
+          standardDeviation: report.simulation.standardDeviation,
+          cp: report.simulation.capability.status === "available" ? report.simulation.capability.cp : 1.2,
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.1,
+        },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.667 is below the resolved target of 2.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [],
+      controlledOptions: [],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 1.667 is 0.333 below the resolved target of 2.",
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.667,
+          targetCpk: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 2,
+          margin: report.simulation.capability.status === "available"
+            ? report.simulation.capability.cpk - report.simulation.capability.targetCpk
+            : -0.333,
+          display: { cpk: "1.667", targetCpk: "2.000", margin: "-0.333" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    const mismatchedMargin = structuredClone(report);
+    mismatchedMargin.analysis!.narrative.resultJudgment.margin = -0.5;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedMargin).success).toBe(false);
+
+    const mismatchedStatus = structuredClone(report);
+    mismatchedStatus.analysis!.narrative.resultJudgment.status = "meets-target";
+    expect(f7ReportProjectionSchema.safeParse(mismatchedStatus).success).toBe(false);
+
+    const mismatchedHeadline = structuredClone(report);
+    mismatchedHeadline.analysis!.narrative.resultJudgment.headline = "Capability meets target";
+    expect(f7ReportProjectionSchema.safeParse(mismatchedHeadline).success).toBe(false);
+  });
+
+  it("rejects available analysis when provenance threshold or Monte Carlo comparison metrics drift from simulation", () => {
+    const report = createReportFixture("BELOW_TARGET");
+    report.analysis = {
+      status: "available",
+      provenance: {
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        ruleId: "performance-cpk-below-target",
+        threshold: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 2,
+        applicability: "one-dimensional interpretation applied to the resolved Monte Carlo capability result",
+      },
+      comparison: {
+        setup: { mean: 0, standardDeviation: 0.1, cp: 1.2, cpk: 1.1 },
+        monteCarlo: {
+          mean: report.simulation.mean,
+          standardDeviation: report.simulation.standardDeviation,
+          cp: report.simulation.capability.status === "available" ? report.simulation.capability.cp : 1.2,
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.1,
+        },
+      },
+      targetAssessment: "Monte Carlo Cpk 1.667 is below the resolved target of 2.",
+      interpretations: ["Interpretation"],
+      optimizationDirections: ["Direction"],
+      rootCauseSignals: [],
+      controlledOptions: [],
+      validationRequirements: [],
+      narrative: {
+        resultJudgment: {
+          status: "below-target",
+          headline: "Capability is below target",
+          judgment: "Cpk 1.667 is 0.333 below the resolved target of 2.",
+          cpk: report.simulation.capability.status === "available" ? report.simulation.capability.cpk : 1.667,
+          targetCpk: report.simulation.capability.status === "available" ? report.simulation.capability.targetCpk : 2,
+          margin: report.simulation.capability.status === "available"
+            ? report.simulation.capability.cpk - report.simulation.capability.targetCpk
+            : -0.333,
+          display: { cpk: "1.667", targetCpk: "2.000", margin: "-0.333" },
+          nearerSpecificationSide: "balanced",
+        },
+        engineeringSummary: "Summary",
+        rootCauseAnalysis: [],
+        engineeringRisk: "Risk",
+        suggestedActionSequence: [],
+        validationRequirements: [],
+        evidenceDisclosure: "Disclosure",
+      },
+    };
+
+    const mismatchedThreshold = structuredClone(report);
+    mismatchedThreshold.analysis!.provenance.threshold += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedThreshold).success).toBe(false);
+
+    const mismatchedMean = structuredClone(report);
+    mismatchedMean.analysis!.comparison.monteCarlo.mean += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedMean).success).toBe(false);
+
+    const mismatchedStdDev = structuredClone(report);
+    mismatchedStdDev.analysis!.comparison.monteCarlo.standardDeviation += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedStdDev).success).toBe(false);
+
+    const mismatchedCp = structuredClone(report);
+    mismatchedCp.analysis!.comparison.monteCarlo.cp += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedCp).success).toBe(false);
+
+    const mismatchedCpk = structuredClone(report);
+    mismatchedCpk.analysis!.comparison.monteCarlo.cpk += 0.01;
+    expect(f7ReportProjectionSchema.safeParse(mismatchedCpk).success).toBe(false);
+  });
+
   it("requires strict specification input origins for every Monte Carlo specification field", () => {
     const report = createReportFixture();
     const { specificationInputOrigins: _missing, ...evidenceWithoutOrigins } = report.evidence;

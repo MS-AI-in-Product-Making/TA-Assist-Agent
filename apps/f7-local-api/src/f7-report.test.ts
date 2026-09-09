@@ -468,26 +468,6 @@ function buildExpectedReportNarrative(snapshot: F7SessionSnapshot) {
   if (simulation === undefined || simulation.capability.status !== "available") {
     throw new Error("Expected available Monte Carlo capability for report narrative parity test");
   }
-
-  const availableContributors = snapshot.factors
-    .flatMap((factor) => {
-      const evidence = factor.evidence;
-      if (evidence === undefined
-        || !Number.isFinite(evidence.percentContributionToSigma)
-        || evidence.percentContributionToSigma < 0
-        || evidence.percentContributionToSigma > 1) {
-        return [];
-      }
-      return [{
-        name: evidence.factorName,
-        reference: JSON.stringify([evidence.worksheetName, evidence.tableId, evidence.sourceRow]),
-        contributionPercent: evidence.percentContributionToSigma * 100,
-      }];
-    })
-    .sort((left, right) => (
-      right.contributionPercent - left.contributionPercent
-      || (left.reference === right.reference ? 0 : left.reference < right.reference ? -1 : 1)
-    ));
   const targetEvidence = snapshot.systemSpecification?.targetSigmaLevel;
   const targetSource = targetEvidence?.status === "available"
     && targetEvidence.valueOrigin === "defaulted"
@@ -504,14 +484,6 @@ function buildExpectedReportNarrative(snapshot: F7SessionSnapshot) {
         mean: simulation.mean,
         lowerSpecLimit: simulation.lowerSpecLimit,
         upperSpecLimit: simulation.upperSpecLimit,
-        ...(availableContributors.length === 0
-          ? {}
-          : {
-              contributors: availableContributors.map(({ reference, contributionPercent }) => ({
-                reference,
-                contributionPercent,
-              })),
-            }),
       },
     });
 
@@ -534,7 +506,7 @@ function buildExpectedReportNarrative(snapshot: F7SessionSnapshot) {
         title: rule.title,
         validationSteps: rule.validationSteps ?? [],
       })),
-    contributors: availableContributors,
+    contributors: [],
     knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
   }));
 }
@@ -670,7 +642,6 @@ describe("createF7ReportProjection", () => {
     });
     expect(report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
       "root-cause-excessive-variation",
-      "root-cause-contributor-concentration",
     ]);
     expect(report.analysis.narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-excessive-variation",
@@ -686,21 +657,8 @@ describe("createF7ReportProjection", () => {
     expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.cp).toBeCloseTo(1.6666666666666667, 12);
     expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.targetCpk).toBeCloseTo(2, 12);
     expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.33333333333333326, 12);
-    expect(report.analysis.narrative.rootCauseAnalysis[1]).toMatchObject({
-      ruleId: "root-cause-contributor-concentration",
-      title: expect.any(String),
-      hypothesis: true,
-      completeEvidence: true,
-      quantitativeEvidenceLabels: {
-        contributorName: "Contributor",
-        contributorReference: "Contributor reference",
-        contributionPercent: "Contribution (%)",
-      },
-    });
-    expect((report.analysis.narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { contributionPercent?: number } | undefined)?.contributionPercent).toBeCloseTo(100, 12);
     expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
       "improvement-reduce-variation",
-      "improvement-reduce-contributor",
     ]);
     expect(report.analysis.narrative.validationRequirements.length).toBeGreaterThan(0);
     expect(report.analysis.narrative.evidenceDisclosure).toContain("Measured Monte Carlo evidence was supplied for this narrative projection.");
@@ -727,6 +685,84 @@ describe("createF7ReportProjection", () => {
     }
 
     expect(report.analysis.narrative).toEqual(buildExpectedReportNarrative(snapshot));
+  });
+
+  it("does not project setup contribution evidence as measured Monte Carlo contributor hypotheses", () => {
+    const snapshot = createSnapshot("BELOW_TARGET");
+    snapshot.factors[0]!.evidence!.percentContributionToSigma = 0.8;
+    snapshot.factors[1]!.evidence!.percentContributionToSigma = 0.7;
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.analysis?.status).toBe("available");
+    if (report.analysis?.status !== "available") {
+      throw new Error("Expected available analysis for measured narrative governance test");
+    }
+
+    expect(report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
+      "root-cause-excessive-variation",
+    ]);
+    expect(report.analysis.narrative.rootCauseAnalysis).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ruleId: "root-cause-contributor-concentration" }),
+      ]),
+    );
+    expect(report.analysis.narrative.rootCauseAnalysis).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          quantitativeEvidence: expect.objectContaining({ contributorName: expect.any(String) }),
+        }),
+      ]),
+    );
+    expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
+      "improvement-reduce-variation",
+    ]);
+  });
+
+  it("drops extra enumerable narrative fields at the report projection boundary", () => {
+    const baseNarrative = buildF7EngineeringNarrative({
+      evidenceBasis: "measured",
+      method: "monte-carlo",
+      cp: 1.1,
+      cpk: 0.92,
+      targetCpk: 1.33,
+      mean: 0.08,
+      lowerSpecLimit: -0.5,
+      upperSpecLimit: 0.5,
+      rootCauseRules: [
+        { ruleId: "root-cause-excessive-variation", title: "RC01 Excessive variation hypothesis" },
+      ],
+      controlledOptions: [
+        {
+          ruleId: "improvement-reduce-variation",
+          title: "Reduce total variation",
+          validationSteps: ["Re-run capability validation."],
+        },
+      ],
+      contributors: [],
+      knowledgeBaseVersion: "interpretation-rules-v2",
+    });
+    const leakyNarrative = Object.assign({}, baseNarrative, {
+      extraTopLevelField: "should-not-leak",
+      resultJudgment: Object.assign({}, baseNarrative.resultJudgment, {
+        display: Object.assign({}, baseNarrative.resultJudgment.display, {
+          leakedDisplayField: "should-not-leak",
+        }),
+      }),
+      rootCauseAnalysis: baseNarrative.rootCauseAnalysis.map((item) => Object.assign({}, item, {
+        leakedExplanationField: true,
+      })),
+      suggestedActionSequence: baseNarrative.suggestedActionSequence.map((item) => Object.assign({}, item, {
+        leakedActionField: "x",
+      })),
+    }) as ReturnType<typeof buildF7EngineeringNarrative> & Record<string, unknown>;
+
+    const projected = projectF7EngineeringNarrativeForReport(leakyNarrative);
+
+    expect(projected).not.toHaveProperty("extraTopLevelField");
+    expect(projected.resultJudgment.display).not.toHaveProperty("leakedDisplayField");
+    expect(projected.rootCauseAnalysis[0]).not.toHaveProperty("leakedExplanationField");
+    expect(projected.suggestedActionSequence[0]).not.toHaveProperty("leakedActionField");
   });
 
   it("keeps unavailable analysis unchanged when Monte Carlo capability is not evaluable", () => {
