@@ -141,14 +141,26 @@ describe("F0 process requirement snapshots", () => {
     ["absolute Windows path", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.provenance.changeSummary = "C:\\controlled\\source.xlsx";
     }],
+    ["root-relative Windows path", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.provenance.changeSummary = "\\controlled\\source.xlsx";
+    }],
+    ["embedded absolute Windows path", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.provenance.changeSummary = "prefix=C:\\controlled\\source.xlsx";
+    }],
     ["absolute Unix path", (seed: ProcessRequirementSeedPackage) => {
       seed.manifest.changeSummary = "/srv/controlled/source.xlsx";
     }],
     ["file URL", (seed: ProcessRequirementSeedPackage) => {
-      seed.sources[0]!.owner = "file:///srv/controlled/source.xlsx";
+      seed.entries[0]!.message = "file:///srv/controlled/source.xlsx";
+    }],
+    ["malformed file URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "file:/srv/source.xlsx";
     }],
     ["HTTP URL", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.message = "https://example.test/controlled/source";
+    }],
+    ["malformed HTTP URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "http:/example.test/source";
     }],
   ])("recursively rejects %s leakage", (_description, mutate) => {
     const seed = createValidProcessRequirementSeedPackage();
