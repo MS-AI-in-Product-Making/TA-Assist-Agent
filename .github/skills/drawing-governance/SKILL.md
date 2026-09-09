@@ -97,9 +97,10 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- Default: Task.
 	- Default the editable title to `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>` and replace `<TA Excel Name>` with the uploaded TA workbook file name.
 	- Show `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>` as a copyable title example.
-	- Require a valid sponsor email before preview and final write confirmation. Do not create the Work Item from a missing or invalid sponsor email.
-	- Create the Task with both `System.Title` and `System.AssignedTo`; set `System.AssignedTo` to the sponsor email.
-	- Read back the created Work Item and require its title to match exactly and its assigned owner to match the sponsor email case-insensitively. Fail closed on mismatch.
+	- Require a valid task owner personal email before preview and final write confirmation. In Chinese, ask exactly `请输入可在 <organization> 中验证的 task owner 的个人邮箱。`, replacing `<organization>` with the validated organization. Do not create the Work Item from a missing or syntactically invalid email.
+	- Identity search is optional candidate assistance. It must not block creation when identity search returns no result, because Surface identity search can omit a valid organization user.
+	- Create the Task with both `System.Title` and `System.AssignedTo`; set `System.AssignedTo` to the task owner personal email. Keep `sponsorEmail` only as the internal contract field name.
+	- Read back the created Work Item and require its title to match exactly and its `System.AssignedTo` unique name to match the task owner personal email case-insensitively. This readback is the authoritative owner validation. Fail closed on mismatch.
 	- no unvalidated create.
 2. existing mode:
 	- Existing target URL call - vscode_askQuestions

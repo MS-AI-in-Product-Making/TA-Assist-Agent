@@ -423,7 +423,7 @@ describe("Drawing Governance skill contract", () => {
     expect(skill).toContain("title");
     expect(skill).toContain("[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>");
     expect(skill).toContain("replace `<TA Excel Name>` with the uploaded TA workbook file name");
-    expect(skill).toContain("Require a valid sponsor email before preview and final write confirmation");
+    expect(skill).toContain("Require a valid task owner personal email before preview and final write confirmation");
     expect(skill).toContain("System.AssignedTo");
     expect(skill).toContain("no unvalidated create");
 
@@ -431,6 +431,19 @@ describe("Drawing Governance skill contract", () => {
     expect(skill).toContain("ask user to confirm target");
 
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested");
+  });
+
+  it("uses task-owner email and does not reject identity-search false negatives", () => {
+    const skill = readUtf8(skillPath);
+    const reference = readUtf8(referencePath);
+
+    for (const document of [skill, reference]) {
+      expect(document).toContain("task owner personal email");
+      expect(document).toContain("请输入可在 <organization> 中验证的 task owner 的个人邮箱。");
+      expect(document).toContain("must not block creation when identity search returns no result");
+      expect(document).toContain("System.AssignedTo");
+      expect(document).toContain("case-insensitively");
+    }
   });
 
   it("requires deterministic English preview and governed write contract", () => {
