@@ -191,11 +191,34 @@ describe("F0 process requirement snapshots", () => {
     ["malformed HTTP URL", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.message = "http:/example.test/source";
     }],
+    ["FTP URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "ftp://example.test/controlled/source";
+    }],
+    ["protocol-relative URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "//example.test/controlled/source";
+    }],
+    ["relative file URL", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "file:relative.xlsx";
+    }],
+    ["HTTP URL without slashes", (seed: ProcessRequirementSeedPackage) => {
+      seed.entries[0]!.message = "https:example.test/source";
+    }],
   ])("recursively rejects %s leakage", (_description, mutate) => {
     const seed = createValidProcessRequirementSeedPackage();
     mutate(seed);
     refreshProcessRequirementManifest(seed);
     expectValidationError(seed);
+  });
+
+  it.each([
+    "See input / output guidance.",
+    "Use and/or only when the source permits either option.",
+  ])("accepts ordinary slash text: %s", (message) => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.message = message;
+    refreshProcessRequirementManifest(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
   });
 
   it.each(["sourceText", "rawText", "verbatim"])(

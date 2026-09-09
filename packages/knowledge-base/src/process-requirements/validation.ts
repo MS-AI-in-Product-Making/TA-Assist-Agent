@@ -23,9 +23,9 @@ const ENTRY_TYPES = [
   "definition",
 ] as const satisfies readonly ProcessRequirementEntryType[];
 const FORBIDDEN_PROPERTY_NAMES = new Set(["sourcetext", "rawtext", "verbatim"]);
-const URL_PATTERN = /\b(?:file|https?):\/+/i;
+const URL_PATTERN = /(?:\b[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:^|[^A-Za-z0-9+.-])(?:file|https?):(?=\S)|(?:^|[\s"'(=])\/\/(?=\S))/i;
 const ABSOLUTE_WINDOWS_PATH_PATTERN = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\|\\(?=[^\\/]))/;
-const ABSOLUTE_UNIX_PATH_PATTERN = /(?:^|[^A-Za-z0-9/])\/(?!\/)/;
+const ABSOLUTE_UNIX_PATH_PATTERN = /(?:^|[^A-Za-z0-9/])\/(?![/\s])/;
 
 export function createProcessRequirementSnapshot(input: unknown): ProcessRequirementSnapshot {
   return failClosed(() => {
