@@ -305,6 +305,66 @@ describe("runF2ExcelWorkflow", () => {
     })).toThrow(expect.objectContaining({ code: "evidence_mismatch" }));
   });
 
+  it("resolves the uniquely matching completed selection when other completed scopes share the workbook hash", () => {
+    const setupResult = setup();
+    const managedOutputRoot = path.join(setupResult.repositoryRoot, "test", "demo-output");
+    const createCompletedSelection = (runId, selectedWorksheetNames) => {
+      const runRoot = path.join(managedOutputRoot, "f2-runs", "Demo", runId);
+      const f1Root = path.join(runRoot, "f1");
+      const f2Root = path.join(runRoot, "f2");
+      const validationRoot = path.join(runRoot, "validation");
+      const manifestPath = path.join(runRoot, "manifest.json");
+      const promptPath = path.join(validationRoot, "Feature1-Selection.json");
+      mkdirSync(f1Root, { recursive: true });
+      mkdirSync(f2Root, { recursive: true });
+      mkdirSync(validationRoot, { recursive: true });
+      writeFileSync(promptPath, JSON.stringify({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        status: "selectionRequired",
+        workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+        options: ["Analysis-A", "Analysis-B"].map((worksheetName, index) => ({
+          selectionIndex: index + 1,
+          worksheetName,
+          toleranceLoopDescription: worksheetName,
+          worksheetKind: "analysis",
+          source: { summarySheet: "Auto Summary", summaryRow: index + 10, worksheetAnchor: `${worksheetName}!A1` },
+        })),
+      }));
+      writeFileSync(manifestPath, JSON.stringify({
+        contractVersion: "v1",
+        runId,
+        status: "completed",
+        workbookPath: setupResult.workbookPath,
+        repositoryRoot: setupResult.repositoryRoot,
+        runRoot,
+        startedAt: "2026-08-05T01:02:03.000Z",
+        updatedAt: "2026-08-05T01:02:03.000Z",
+        outputs: { f1Root, f2Root, validationRoot },
+        selection: { status: "confirmed", promptPath, workbookContentHash: HASH, selectedWorksheetNames },
+        execution: { status: "completed" },
+        stages: { "f1-selection": { status: "completed" }, f1: { status: "completed" }, f2: { status: "completed" }, validation: { status: "completed" } },
+      }));
+      return { runId, runRoot, manifestPath, promptPath, workbookPath: setupResult.workbookPath, workbookContentHash: HASH, status: "completed" };
+    };
+    const matchingSelection = createCompletedSelection("2026-08-05T01-02-03-000Z", ["Analysis-A"]);
+    const otherSelection = createCompletedSelection("2026-08-04T01-02-03-000Z", ["Analysis-B"]);
+    writeFileSync(path.join(matchingSelection.runRoot, "f2", "Feature2-Report.json"), JSON.stringify(validF2Report(path.join(matchingSelection.runRoot, "f1"))));
+    writeFileSync(path.join(managedOutputRoot, "f2-selection-registry.json"), JSON.stringify({
+      contractVersion: "v1",
+      selections: [otherSelection, matchingSelection],
+    }));
+
+    const result = runF2ExcelWorkflow({
+      ...setupResult,
+      now: fixedNow,
+      worksheetSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.runId).toBe(matchingSelection.runId);
+  });
+
   it("accepts the documented README confirmation command without a selection manifest flag", () => {
     const setupResult = setup();
     const repositoryRoot = setupResult.repositoryRoot;
