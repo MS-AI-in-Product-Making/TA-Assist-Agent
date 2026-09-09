@@ -66,12 +66,45 @@ function validateProvenance(seed: ProcessRequirementSeedPackage): void {
       || entry.provenance.sourceFileHash !== source.hash
       || entry.provenance.sourceRevision !== source.revision
       || entry.provenance.sheetName !== source.sheet
-      || entry.provenance.sourceRange !== source.range
+      || !isContainedRange(entry.provenance.sourceRange, source.range)
       || entry.provenance.owner !== source.owner
       || entry.provenance.effectiveVersion !== seed.manifest.version) {
       throw validationError([ENTRIES_REFERENCE]);
     }
   }
+}
+
+function isContainedRange(candidateValue: string, containerValue: string): boolean {
+  const candidate = parseCellRange(candidateValue);
+  const container = parseCellRange(containerValue);
+  return candidate !== undefined
+    && container !== undefined
+    && candidate.startColumn >= container.startColumn
+    && candidate.startRow >= container.startRow
+    && candidate.endColumn <= container.endColumn
+    && candidate.endRow <= container.endRow;
+}
+
+function parseCellRange(value: string): {
+  startColumn: number;
+  startRow: number;
+  endColumn: number;
+  endRow: number;
+} | undefined {
+  const match = /^([A-Z]+)([1-9]\d*):([A-Z]+)([1-9]\d*)$/.exec(value);
+  if (match === null) return undefined;
+  const [, startColumn, startRow, endColumn, endRow] = match;
+  const range = {
+    startColumn: columnNumber(startColumn!),
+    startRow: Number(startRow),
+    endColumn: columnNumber(endColumn!),
+    endRow: Number(endRow),
+  };
+  return range.startColumn <= range.endColumn && range.startRow <= range.endRow ? range : undefined;
+}
+
+function columnNumber(column: string): number {
+  return [...column].reduce((value, character) => value * 26 + character.charCodeAt(0) - 64, 0);
 }
 
 function validateManifest(seed: ProcessRequirementSeedPackage): void {

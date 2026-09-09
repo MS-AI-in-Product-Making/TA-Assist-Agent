@@ -106,13 +106,34 @@ describe("F0 process requirement snapshots", () => {
     ["source sheet mismatch", (seed: ProcessRequirementSeedPackage) => {
       seed.entries[0]!.provenance.sheetName = "Other Sheet";
     }],
-    ["source range mismatch", (seed: ProcessRequirementSeedPackage) => {
-      seed.entries[0]!.provenance.sourceRange = "B7:B9";
-    }],
   ])("rejects provenance with %s", (_description, mutate) => {
     const seed = createValidProcessRequirementSeedPackage();
     mutate(seed);
     refreshProcessRequirementManifest(seed);
+    expectValidationError(seed);
+  });
+
+  it("accepts an entry source range contained by the registered source range", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.provenance.sourceRange = "B7:B9";
+    refreshProcessRequirementManifest(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
+  it("rejects an entry source range outside the registered source range", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.provenance.sourceRange = "A1:B9";
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
+  it("rejects a reversed entry source range", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.provenance.sourceRange = "T55:B7";
+    refreshProcessRequirementManifest(seed);
+
     expectValidationError(seed);
   });
 
