@@ -177,6 +177,8 @@ describe("F7 report narrative contracts", () => {
           hypothesis: true,
           explanation: "Cp exceeds Cpk and indicates a centering-loss hypothesis that requires validation.",
           completeEvidence: true,
+            sourceAlias: "interpretation-rules",
+            sourceFileHash: "a".repeat(64),
           quantitativeEvidence: {
             cpCpkGap: 0.26,
             specificationMidpoint: 0,
@@ -195,6 +197,8 @@ describe("F7 report narrative contracts", () => {
           optionId: "improvement-center-mean",
           title: "Center the mean",
           narrative: "Confirm mean-centering feasibility before changing the process centerline.",
+            sourceAlias: "interpretation-rules",
+            sourceFileHash: "b".repeat(64),
           validationSteps: ["Validate mean-centering feasibility with representative evidence."],
         }],
         validationRequirements: ["Validate mean-centering feasibility with representative evidence."],
