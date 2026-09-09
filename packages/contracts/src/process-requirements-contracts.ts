@@ -95,10 +95,10 @@ export const processRequirementApplicabilitySchema = z
 export const processRequirementSourceIdentitySchema = z
   .object({
     sourceAlias: nonEmptyStringSchema,
-    hash: sha256Schema,
-    revision: nonEmptyStringSchema,
-    sheet: nonEmptyStringSchema,
-    range: nonEmptyStringSchema,
+    sourceFileHash: sha256Schema,
+    sourceRevision: nonEmptyStringSchema,
+    sheetName: nonEmptyStringSchema,
+    sourceRange: nonEmptyStringSchema,
   })
   .strict();
 export const processRequirementSourceMetadataSchema = z
@@ -117,7 +117,7 @@ export const processRequirementSourceMetadataSchema = z
 export const processRequirementConfidenceSchema = z.enum(["reviewed", "verified"]);
 export const processRequirementProvenanceSchema = z
   .object({
-    source: processRequirementSourceIdentitySchema,
+    ...processRequirementSourceIdentitySchema.shape,
     effectiveVersion: processRequirementVersionSchema,
     owner: nonEmptyStringSchema,
     confidence: processRequirementConfidenceSchema,
@@ -181,7 +181,6 @@ export const processRequirementLoadRequestSchema = z
   .strict();
 export const processRequirementListRequestSchema = z
   .object({
-    version: processRequirementVersionSchema,
     topics: z.array(processRequirementTopicSchema).optional(),
     entryTypes: z.array(processRequirementEntryTypeSchema).optional(),
   })
@@ -201,12 +200,7 @@ export const processRequirementEvaluationFactsSchema = z
     hasThreeDimensionalSensitivity: z.boolean().optional(),
   })
   .strict();
-export const processRequirementEvaluationRequestSchema = z
-  .object({
-    version: processRequirementVersionSchema,
-    facts: processRequirementEvaluationFactsSchema,
-  })
-  .strict();
+export const processRequirementEvaluationRequestSchema = processRequirementEvaluationFactsSchema;
 
 export const processRequirementResolvedTargetsSchema = z
   .object({ sigma: z.union([z.literal(4), z.literal(6)]).optional() })

@@ -26,13 +26,11 @@ const validSource = () => ({
 });
 
 const validProvenance = () => ({
-  source: {
-    sourceAlias: "ta-process-requirements",
-    hash,
-    revision: "Beta",
-    sheet: "TA Process & Requirements",
-    range: "B7:B9",
-  },
+  sourceAlias: "ta-process-requirements",
+  sourceFileHash: hash,
+  sourceRevision: "Beta",
+  sheetName: "TA Process & Requirements",
+  sourceRange: "B7:B9",
   effectiveVersion: "process-requirements-v1" as const,
   owner: "Dimensional Management",
   confidence: "reviewed" as const,
@@ -107,6 +105,22 @@ describe("F0 process requirement contracts", () => {
     (entryType) => {
       expect(processRequirementEntrySchema.parse(validEntry(entryType)).entryType).toBe(entryType);
       expect(processRequirementEntrySchema.safeParse({ ...validEntry(entryType), unknown: true }).success).toBe(false);
+      expect(processRequirementEntrySchema.safeParse({
+        ...validEntry(entryType),
+        provenance: {
+          source: {
+            sourceAlias: "ta-process-requirements",
+            hash,
+            revision: "Beta",
+            sheet: "TA Process & Requirements",
+            range: "B7:B9",
+          },
+          effectiveVersion: "process-requirements-v1",
+          owner: "Dimensional Management",
+          confidence: "reviewed",
+          changeSummary: "Normalized controlled process requirement.",
+        },
+      }).success).toBe(false);
     },
   );
 
@@ -129,25 +143,21 @@ describe("F0 process requirement contracts", () => {
   it("accepts only strict structured load, list, and evaluation requests", () => {
     const loadRequest = { version: "process-requirements-v1" as const };
     const listRequest = {
-      version: "process-requirements-v1" as const,
       topics: ["inputs", "outputs"] as const,
       entryTypes: ["requirement", "instruction"] as const,
     };
     const evaluationRequest = {
-      version: "process-requirements-v1" as const,
-      facts: {
-        actor: "odm" as const,
-        analysisMethod: "one-dimensional-rss" as const,
-        characteristicClass: "cts" as const,
-        priority: "P0" as const,
-        lifecycleStage: "asr" as const,
-        subject: "camera-fov-clearance" as const,
-        factorRepresentation: "position" as const,
-        requirementGapPresent: true,
-        workbookArea: "auto-summary" as const,
-        toleranceCount: 11,
-        hasThreeDimensionalSensitivity: true,
-      },
+      actor: "odm" as const,
+      analysisMethod: "one-dimensional-rss" as const,
+      characteristicClass: "cts" as const,
+      priority: "P0" as const,
+      lifecycleStage: "asr" as const,
+      subject: "camera-fov-clearance" as const,
+      factorRepresentation: "position" as const,
+      requirementGapPresent: true,
+      workbookArea: "auto-summary" as const,
+      toleranceCount: 11,
+      hasThreeDimensionalSensitivity: true,
     };
 
     expect(processRequirementLoadRequestSchema.parse(loadRequest)).toEqual(loadRequest);
@@ -155,8 +165,17 @@ describe("F0 process requirement contracts", () => {
     expect(processRequirementEvaluationRequestSchema.parse(evaluationRequest)).toEqual(evaluationRequest);
     expect(processRequirementLoadRequestSchema.safeParse({ ...loadRequest, unknown: true }).success).toBe(false);
     expect(processRequirementListRequestSchema.safeParse({ ...listRequest, unknown: true }).success).toBe(false);
+    expect(processRequirementListRequestSchema.safeParse({ ...listRequest, version: "process-requirements-v1" }).success).toBe(false);
     expect(processRequirementEvaluationRequestSchema.safeParse({ ...evaluationRequest, rawProse: "forbidden" }).success).toBe(false);
-    expect(processRequirementEvaluationRequestSchema.safeParse({ ...evaluationRequest, facts: { ...evaluationRequest.facts, unknown: true } }).success).toBe(false);
+    expect(processRequirementEvaluationRequestSchema.safeParse({
+      ...evaluationRequest,
+      version: "process-requirements-v1",
+    }).success).toBe(false);
+    expect(processRequirementEvaluationRequestSchema.safeParse({ facts: evaluationRequest }).success).toBe(false);
+    expect(processRequirementEvaluationRequestSchema.safeParse({
+      version: "process-requirements-v1",
+      facts: evaluationRequest,
+    }).success).toBe(false);
   });
 
   it.each([
