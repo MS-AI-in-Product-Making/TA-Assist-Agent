@@ -234,6 +234,40 @@ describe("process requirement queries", () => {
     }
   });
 
+  it("fails closed for throwing getters and proxies without leaking their marker", () => {
+    const marker = "caller-private-proxy-marker";
+    const throwingGetter = Object.defineProperty({}, "version", {
+      enumerable: true,
+      get: () => { throw new Error(marker); },
+    });
+    const throwingProxy = new Proxy({}, {
+      get: () => { throw new Error(marker); },
+    });
+    const knowledge = loadProcessRequirements({ version: "process-requirements-v1" });
+
+    for (const { error, typedError } of [
+      captureTypedError(() => loadProcessRequirements(throwingGetter)),
+      captureTypedError(() => knowledge.listProcessRequirements(throwingProxy)),
+      captureTypedError(() => knowledge.evaluateProcessRequirements(throwingProxy)),
+    ]) {
+      expect(typedError.code).toBe("validation_error");
+      expect(JSON.stringify(error)).not.toContain(marker);
+      expect((error as Error).message).not.toContain(marker);
+    }
+  });
+
+  it("treats request-side all values literally rather than as wildcards", () => {
+    const knowledge = loadProcessRequirements({ version: "process-requirements-v1" });
+    const actorResult = knowledge.evaluateProcessRequirements({ actor: "all" });
+    const methodResult = knowledge.evaluateProcessRequirements({ analysisMethod: "all" });
+
+    expect(entryIds(actorResult)).toContain("requirement-input-completeness");
+    expect(entryIds(actorResult)).not.toContain("milestone-odm-p0-asr");
+    expect(entryIds(actorResult)).not.toContain("milestone-subsystem-dfm-cts");
+    expect(entryIds(methodResult)).not.toContain("method-escalation-complex-stack");
+    expect(entryIds(methodResult)).not.toContain("camera-fov-escalation");
+  });
+
   it("returns fresh deeply frozen list and evaluation results on repeat calls", () => {
     const knowledge = loadProcessRequirements({ version: "process-requirements-v1" });
     const firstList = knowledge.listProcessRequirements({ topics: ["analysis-method"] });

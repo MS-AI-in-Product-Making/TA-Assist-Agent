@@ -180,7 +180,7 @@ function toMatchedEntry(entry: SnapshotEntry): ProcessRequirementMatchedEntry {
     message: entry.message,
     normativeStrength: entry.normativeStrength,
     relatedFactReferences: [...entry.applicability.requiredFacts],
-    evidence: structuredClone(entry.provenance),
+    evidence: entry.provenance,
   };
 }
 
