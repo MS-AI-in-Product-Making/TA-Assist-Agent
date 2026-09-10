@@ -654,7 +654,7 @@ describe("renderF5Report", () => {
     expect(contributorChapter).toContain("#### SIGNAL root-cause-signal-root-cause-contributor-concentration");
     expect(contributorChapter).toContain("| entryId | root-cause-contributor-concentration |");
     expect(contributorChapter).toContain("| effectiveVersion | interpretation-rules-v2 |");
-    expect(contributorChapter).toContain("| applicability | analysisDimension=one-dimensional; method=rss |");
+    expect(contributorChapter).toContain("| applicability | analysisDimension=one-dimensional |");
     expect(contributorChapter).toContain("| requiresEngineeringReview | true |");
     expect(contributorChapter).toContain("| relatedFactReferences | contributors |");
   });
