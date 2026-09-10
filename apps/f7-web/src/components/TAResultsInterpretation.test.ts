@@ -79,10 +79,46 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mountWithActualInterpretation(enhancedInterpretationSnapshot());
 
     expect(wrapper.get("[data-result-judgment]").text()).toContain("Capability is below target");
-    expect(wrapper.get("[data-result-judgment]").text()).toContain("Cpk");
-    expect(wrapper.get("[data-result-judgment]").text()).toContain("Target");
-    expect(wrapper.get("[data-result-judgment]").text()).toContain("Margin");
-    expect(wrapper.get("[data-engineering-summary]").text()).toContain("Cpk");
+    expect(wrapper.findAll("[data-result-summary-header]").map((item) => item.text())).toEqual([
+      "Metric",
+      "Result",
+      "Specification / Reference",
+      "Difference",
+      "Assessment",
+      "Performance Context",
+    ]);
+    expect(wrapper.findAll("[data-result-summary-row]").map((item) => item.attributes("data-metric"))).toEqual([
+      "mean",
+      "standard-deviation",
+      "cp",
+      "cpk",
+      "lower-cpk",
+      "upper-cpk",
+    ]);
+    expect(wrapper.findAll('[data-result-summary-row][data-row-kind="comparison"]')).toHaveLength(6);
+    expect(wrapper.find("[data-reference-information]").exists()).toBe(false);
+    expect(wrapper.find('[data-result-summary-group="reference"]').exists()).toBe(false);
+    expect(wrapper.get("[data-result-summary-scroll]").text()).not.toContain("Reference Information");
+    expect(wrapper.get("[data-result-summary-scroll]").attributes()).toMatchObject({
+      tabindex: "0",
+      role: "region",
+      "aria-label": "TA result summary metrics",
+    });
+    expect(wrapper.get("[data-result-summary-caption]").text()).toContain("assumption-based RSS results");
+    expect(wrapper.get('[data-result-summary-row][data-metric="mean"] [data-reference-detail]').text()).toBe("System Design Nominal");
+    expect(wrapper.get('[data-result-summary-row][data-metric="standard-deviation"] [data-reference-detail]').text()).toContain("Derived from nearest specification limit");
+    expect(wrapper.get('[data-result-summary-row][data-metric="cpk"] [data-result-value]').classes()).toContain("numeric-value");
+    expect(wrapper.get('[data-result-summary-row][data-metric="cpk"] [data-assessment]').attributes("data-tone")).toBe("fail");
+    expect(wrapper.get('[data-result-summary-row][data-metric="cpk"]').text()).toContain("Below target");
+    expect(wrapper.get('[data-result-summary-row][data-metric="cpk"] [data-performance-context]').text()).toContain("of target");
+    expect(wrapper.findAll("[data-performance-context]")).toHaveLength(6);
+    expect(wrapper.get("[data-overall-assessment]").text()).toContain("Fail. Mean is centered");
+    expect(wrapper.get("[data-overall-assessment]").text()).toContain("Standard deviation is too high");
+    expect(wrapper.get("[data-overall-assessment]").text()).toContain("Cpk 0.23 is below target 1.33");
+    expect(wrapper.get("[data-overall-assessment]").text()).toContain("Lower- and upper-side capabilities are insufficient");
+    expect(wrapper.get("[data-overall-assessment]").text()).not.toContain("hypothesis");
+    expect(wrapper.find("[data-engineering-summary]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Engineering Summary");
     expect(wrapper.findAll("[data-root-cause-item]")).toHaveLength(3);
     expect(wrapper.findAll("[data-root-cause-item]").map((item) => item.text())).toEqual([
       expect.stringContaining("root-cause-excessive-variation"),
@@ -105,9 +141,8 @@ describe("TAResultsInterpretation", () => {
 
     const topLevelSections = wrapper.findAll(".narrative-flow > section");
     expect(topLevelSections[0]?.attributes("data-result-judgment")).toBe("");
-    expect(topLevelSections[1]?.attributes("data-engineering-summary")).toBe("");
-    expect(topLevelSections[3]?.attributes("data-engineering-risk")).toBe("");
-    expect(topLevelSections[5]?.attributes("data-assumption-disclosure")).toBe("");
+    expect(topLevelSections[2]?.attributes("data-engineering-risk")).toBe("");
+    expect(topLevelSections[4]?.attributes("data-assumption-disclosure")).toBe("");
     const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
     expect(panelChildren[panelChildren.length - 1]?.attributes("data-input-readiness")).toBe("");
   });
@@ -163,6 +198,10 @@ describe("TAResultsInterpretation", () => {
     if (available.status !== "available") throw new Error("expected available interpretation");
     buildAssumptionResultsInterpretationSpy.mockReturnValue({
       ...available,
+      overallAssessment: "Fail. Mean is centered. Standard deviation is too high. Cpk 1.3299999 is below target 1.3300000. Lower- and upper-side capabilities are insufficient.",
+      resultSummary: available.resultSummary.map((row) => row.key === "cpk"
+        ? { ...row, result: "1.3299999", reference: "Target 1.3300000", difference: "-0.0000001" }
+        : row),
       narrative: {
         ...available.narrative,
         resultJudgment: overrideResultJudgment(available.narrative.resultJudgment, {
@@ -186,11 +225,12 @@ describe("TAResultsInterpretation", () => {
     });
 
     const judgment = wrapper.get("[data-result-judgment]").text();
+    const cpkRow = wrapper.get('[data-result-summary-row][data-metric="cpk"]').text();
     expect(judgment).toContain("Capability is below target");
-    expect(judgment).toContain("Cpk 1.3299999");
-    expect(judgment).toContain("Target 1.3300000");
-    expect(judgment).toContain("Margin -0.0000001");
-    expect(judgment).toMatch(/Margin -0\.0000001(?!\d)/);
+    expect(cpkRow).toContain("Cpk");
+    expect(cpkRow).toContain("1.3299999");
+    expect(cpkRow).toContain("Target 1.3300000");
+    expect(cpkRow).toMatch(/-0\.0000001(?!\d)/);
   });
 
   it("renders near-target positive status and display strings without hiding the positive margin sign", () => {
@@ -198,6 +238,10 @@ describe("TAResultsInterpretation", () => {
     if (available.status !== "available") throw new Error("expected available interpretation");
     buildAssumptionResultsInterpretationSpy.mockReturnValue({
       ...available,
+      overallAssessment: "Pass. Mean is centered. Standard deviation is within target. Cpk 1.3300001 meets target 1.3300000. Lower- and upper-side capability meet target.",
+      resultSummary: available.resultSummary.map((row) => row.key === "cpk"
+        ? { ...row, result: "1.3300001", reference: "Target 1.3300000", difference: "+0.0000001", assessment: "Meets target", tone: "pass" }
+        : row),
       narrative: {
         ...available.narrative,
         resultJudgment: overrideResultJudgment(available.narrative.resultJudgment, {
@@ -221,11 +265,14 @@ describe("TAResultsInterpretation", () => {
     });
 
     const judgment = wrapper.get("[data-result-judgment]").text();
+    const cpkRow = wrapper.get('[data-result-summary-row][data-metric="cpk"]').text();
     expect(judgment).toContain("Capability meets target");
-    expect(judgment).toContain("Cpk 1.3300001");
-    expect(judgment).toContain("Target 1.3300000");
-    expect(judgment).toContain("Margin +0.0000001");
-    expect(judgment).toMatch(/Margin \+0\.0000001(?!\d)/);
+    expect(wrapper.get("[data-overall-assessment]").text()).toContain("Pass. Mean is centered");
+    expect(cpkRow).toContain("Cpk");
+    expect(cpkRow).toContain("1.3300001");
+    expect(cpkRow).toContain("Target 1.3300000");
+    expect(cpkRow).toMatch(/\+0\.0000001(?!\d)/);
+    expect(wrapper.get('[data-result-summary-row][data-metric="cpk"] [data-assessment]').attributes("data-tone")).toBe("pass");
   });
 
   it("renders explicit engineering evidence labels instead of raw camelCase keys", () => {

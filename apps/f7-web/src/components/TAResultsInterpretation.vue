@@ -34,27 +34,107 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
           class="narrative-section emphasis-card"
           data-result-judgment
         >
-          <h3>{{ interpretation.narrative.resultJudgment.headline }}</h3>
-          <p class="capability-line">
-            <span>
-              <strong>Cpk</strong> {{ interpretation.narrative.resultJudgment.display.cpk }}
+          <div class="result-summary-heading">
+            <h3>TA Result Summary</h3>
+            <span
+              class="result-status"
+              :class="`result-status--${interpretation.narrative.resultJudgment.status}`"
+            >
+              {{ interpretation.narrative.resultJudgment.headline }}
             </span>
-            <span>
-              <strong>Target</strong> {{ interpretation.narrative.resultJudgment.display.targetCpk }}
-            </span>
-            <span>
-              <strong>Margin</strong> {{ interpretation.narrative.resultJudgment.display.margin }}
-            </span>
-          </p>
-          <p>{{ interpretation.narrative.resultJudgment.judgment }}</p>
-        </section>
-
-        <section
-          class="narrative-section"
-          data-engineering-summary
-        >
-          <h3>Engineering Summary</h3>
-          <p>{{ interpretation.narrative.engineeringSummary }}</p>
+          </div>
+          <div
+            class="result-summary-scroll"
+            data-result-summary-scroll
+            role="region"
+            aria-label="TA result summary metrics"
+            tabindex="0"
+          >
+            <table class="result-summary-table">
+              <caption data-result-summary-caption>
+                Comparison of assumption-based RSS results with system specifications and derived targets
+              </caption>
+              <thead>
+                <tr>
+                  <th data-result-summary-header>
+                    Metric
+                  </th>
+                  <th data-result-summary-header>
+                    Result
+                  </th>
+                  <th data-result-summary-header>
+                    Specification / Reference
+                  </th>
+                  <th data-result-summary-header>
+                    Difference
+                  </th>
+                  <th data-result-summary-header>
+                    Assessment
+                  </th>
+                  <th data-result-summary-header>
+                    Performance Context
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in interpretation.resultSummary"
+                  :key="row.key"
+                  data-result-summary-row
+                  :data-metric="row.key"
+                  :data-row-kind="row.kind"
+                >
+                  <th scope="row">
+                    {{ row.metric }}
+                  </th>
+                  <td
+                    class="numeric-value"
+                    data-label="Result"
+                    data-result-value
+                  >
+                    {{ row.result }}
+                  </td>
+                  <td
+                    class="reference-value"
+                    data-label="Specification / Reference"
+                  >
+                    <span>{{ row.reference }}</span>
+                    <small
+                      v-if="row.referenceDetail"
+                      data-reference-detail
+                    >{{ row.referenceDetail }}</small>
+                  </td>
+                  <td
+                    class="numeric-difference"
+                    data-label="Difference"
+                  >
+                    {{ row.difference }}
+                  </td>
+                  <td data-label="Assessment">
+                    <span
+                      class="result-assessment"
+                      data-assessment
+                      :data-tone="row.tone"
+                    >{{ row.assessment }}</span>
+                  </td>
+                  <td
+                    class="performance-context"
+                    data-label="Performance Context"
+                    data-performance-context
+                  >
+                    {{ row.performanceContext }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div
+            class="overall-assessment"
+            data-overall-assessment
+          >
+            <strong>Overall assessment</strong>
+            <span>{{ interpretation.overallAssessment }}</span>
+          </div>
         </section>
 
         <section class="narrative-section">
@@ -256,8 +336,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
 }
 
 .narrative-flow > *,
-.validation-columns > *,
-.capability-line > * {
+.validation-columns > * {
   min-width: 0;
 }
 
@@ -276,12 +355,250 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   padding-left: 10px;
 }
 
-.capability-line {
+.result-summary-heading {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  margin-bottom: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
+.result-summary-heading h3 {
+  margin-bottom: 0;
+}
+
+.result-status {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.result-status--below-target {
+  border-color: var(--pending);
+  color: var(--pending);
+}
+
+.result-status--meets-target {
+  border-color: var(--success, #34785f);
+  color: var(--success, #34785f);
+}
+
+.result-summary-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.result-summary-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.result-summary-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+.result-summary-table caption {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.result-summary-table th,
+.result-summary-table td {
+  border-right: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.result-summary-table th:last-child,
+.result-summary-table td:last-child {
+  border-right: none;
+}
+
+.result-summary-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.result-summary-table thead th {
+  background: #eef2f4;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.result-summary-table tbody th {
+  background: #f8faf9;
+  font-weight: 700;
+}
+
+.result-summary-table tbody tr:hover > * {
+  background: #f7faf8;
+}
+
+.numeric-value,
+.numeric-difference {
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+.numeric-value {
+  color: #172d39;
+  font-size: 0.96rem;
+  font-weight: 750;
+}
+
+.reference-value {
+  min-width: 210px;
+}
+
+.performance-context {
+  min-width: 210px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.reference-value small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.result-assessment {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.result-assessment[data-tone="pass"] {
+  background: #edf8f4;
+  color: var(--success);
+}
+
+.result-assessment[data-tone="fail"] {
+  background: #fff1ef;
+  color: var(--danger);
+}
+
+.result-assessment[data-tone="warning"] {
+  background: #fff7e8;
+  color: #9a5b08;
+}
+
+.result-assessment[data-tone="info"] {
+  background: #eef3f7;
+  color: var(--ink-soft);
+}
+
+.overall-assessment {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) minmax(0, 1fr);
+  gap: 8px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .result-summary-scroll {
+    border: none;
+    overflow: visible;
+  }
+
+  .result-summary-table {
+    min-width: 0;
+  }
+
+  .result-summary-table caption {
+    border: 1px solid var(--line);
+    border-radius: 4px 4px 0 0;
+  }
+
+  .result-summary-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .result-summary-table tbody,
+  .result-summary-table tr,
+  .result-summary-table th,
+  .result-summary-table td {
+    display: block;
+  }
+
+  .result-summary-table tbody {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .result-summary-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.2fr);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #fff;
+  }
+
+  .result-summary-table tbody th {
+    grid-column: 1 / -1;
+    border-right: none;
+    padding: 8px 10px;
+  }
+
+  .result-summary-table tbody td {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.2fr);
+    grid-column: 1 / -1;
+    gap: 8px;
+    border-right: none;
+    padding: 7px 10px;
+    text-align: left !important;
+    white-space: normal;
+  }
+
+  .result-summary-table tbody td::before {
+    color: var(--ink-soft);
+    content: attr(data-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .reference-value small {
+    grid-column: 2;
+  }
+
+  .overall-assessment {
+    grid-template-columns: 1fr;
+  }
 }
 
 .narrative-list,

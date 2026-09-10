@@ -14,6 +14,7 @@ import type {
   F7SessionSnapshot,
   F7SetupDistribution,
 } from "./api/f7-client";
+import { buildTaOverallAssessment, buildTaResultSummary, type TaResultSummaryRow } from "./ta-result-summary";
 
 const UNAVAILABLE_REASONS = {
   "prerequisites-unavailable": "Complete and confirm Factor Setup inputs to interpret assumption-based results.",
@@ -102,6 +103,8 @@ export type AssumptionResultsInterpretation =
       readonly engineeringInterpretations: readonly string[];
       readonly improvementOptions: readonly string[];
       readonly validationRequirements: readonly string[];
+      readonly resultSummary: readonly TaResultSummaryRow[];
+      readonly overallAssessment: string;
       readonly assumptions: readonly string[];
       readonly inputReadiness: InputReadiness;
       readonly narrative: F7EngineeringNarrative;
@@ -335,6 +338,24 @@ export function buildAssumptionResultsInterpretation(
       })),
       knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
     });
+    const resultSummaryInput = {
+      designNominal: specification.designNominal.actualValue,
+      mean: calculation.system.mean,
+      standardDeviation: calculation.system.rssSigma,
+      lowerSpecLimit: calculation.capability.lowerSpecLimit,
+      upperSpecLimit: calculation.capability.upperSpecLimit,
+      cp: calculation.capability.cp,
+      cpk: calculation.capability.cpk,
+      lowerCpk: calculation.capability.lowerCpk,
+      upperCpk: calculation.capability.upperCpk,
+      targetCpk,
+      governedCpkDisplay: {
+        result: narrative.resultJudgment.display.cpk,
+        target: narrative.resultJudgment.display.targetCpk,
+        difference: narrative.resultJudgment.display.margin,
+        status: narrative.resultJudgment.status,
+      },
+    } as const;
 
     return {
       status: "available",
@@ -353,6 +374,8 @@ export function buildAssumptionResultsInterpretation(
       engineeringInterpretations,
       improvementOptions: improvementRules.map((rule) => controlledTitle(rule.entryId)),
       validationRequirements: narrative.validationRequirements.map((step) => step),
+      resultSummary: buildTaResultSummary(resultSummaryInput),
+      overallAssessment: buildTaOverallAssessment(resultSummaryInput),
       assumptions: concentrationMatched
         ? [ASSUMPTION_DISCLOSURE, CONCENTRATION_DISCLOSURE]
         : [ASSUMPTION_DISCLOSURE],

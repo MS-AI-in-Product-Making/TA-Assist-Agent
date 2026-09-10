@@ -36,6 +36,30 @@ function enhancedInterpretationSnapshot(): F7SessionSnapshot {
 }
 
 describe("assumption results enhanced interpretation", () => {
+  it("uses the governed system design nominal as the Mean reference", () => {
+    const snapshot = enhancedInterpretationSnapshot();
+    const specification = snapshot.systemSpecification;
+    if (specification?.status !== "available" || specification.designNominal?.status !== "available") {
+      throw new Error("expected available specification");
+    }
+
+    const result = buildAssumptionResultsInterpretation({
+      ...snapshot,
+      systemSpecification: {
+        ...specification,
+        designNominal: { ...specification.designNominal, actualValue: 0.04 },
+      },
+    });
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") return;
+    expect(result.resultSummary[0]).toMatchObject({
+      key: "mean",
+      reference: "Nominal 0.04",
+      referenceDetail: "System Design Nominal",
+    });
+  });
+
   it("renders coexisting V2 causes, options, and controlled validation requirements", () => {
     const result = buildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
 
@@ -43,6 +67,16 @@ describe("assumption results enhanced interpretation", () => {
     if (result.status !== "available") return;
     expect(result.narrative.resultJudgment.headline).toBe("Capability is below target");
     expect(result.narrative.resultJudgment.margin).toBeLessThan(0);
+    expect(result.overallAssessment).toMatch(/^Fail\. Mean is centered\. Standard deviation is too high\. Cpk /);
+    expect(result.overallAssessment).toMatch(/side capabilit(?:y is|ies are) insufficient/);
+    expect(result.resultSummary.map((row) => row.key)).toEqual([
+      "mean",
+      "standard-deviation",
+      "cp",
+      "cpk",
+      "lower-cpk",
+      "upper-cpk",
+    ]);
     expect(result.narrative.rootCauseAnalysis.map((item: NarrativeRuleLike) => item.ruleId)).toEqual([
       "root-cause-excessive-variation",
       "root-cause-mean-shift",
