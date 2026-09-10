@@ -1,10 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeepReadonly } from "vue";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base";
+import type {
+  ProcessRequirementEvaluationFacts,
+  ProcessRequirementMatchedEntry,
+} from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
 const VERSION = "process-requirements-v1" as const;
+
+interface FakeLoadedProcessRequirements {
+  readonly manifest: { readonly version: string };
+  readonly evaluateProcessRequirements: (
+    facts: ProcessRequirementEvaluationFacts,
+  ) => { readonly matchedEntries: readonly ProcessRequirementMatchedEntry[] };
+}
 
 function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSnapshot> {
   return {
@@ -65,6 +76,38 @@ describe("buildF0ProcessGuidance", () => {
     const load = vi.fn<typeof loadProcessRequirements>((request) => {
       expect(request).toEqual({ version: VERSION });
       throw new Error("boom");
+    });
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
+
+    expect(load).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "unavailable", entries: [] });
+  });
+
+  it("fails closed when evaluation throws after a successful load", () => {
+    const load = vi.fn<(request: { readonly version: typeof VERSION }) => FakeLoadedProcessRequirements>((request) => {
+      expect(request).toEqual({ version: VERSION });
+      return {
+        manifest: { version: VERSION },
+        evaluateProcessRequirements: () => {
+          throw new Error("evaluate failed");
+        },
+      };
+    });
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
+
+    expect(load).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "unavailable", entries: [] });
+  });
+
+  it("fails closed when the loaded manifest version does not match", () => {
+    const load = vi.fn<(request: { readonly version: typeof VERSION }) => FakeLoadedProcessRequirements>((request) => {
+      expect(request).toEqual({ version: VERSION });
+      return {
+        manifest: { version: "process-requirements-v0" },
+        evaluateProcessRequirements: () => ({ matchedEntries: [] }),
+      };
     });
 
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });

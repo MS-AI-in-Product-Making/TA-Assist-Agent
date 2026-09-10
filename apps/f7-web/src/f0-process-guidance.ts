@@ -1,4 +1,7 @@
-import type { ProcessRequirementMatchedEntry } from "@ai-assist/contracts";
+import type {
+  ProcessRequirementEvaluationFacts,
+  ProcessRequirementMatchedEntry,
+} from "@ai-assist/contracts";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base";
 import type { DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "./api/f7-client";
@@ -16,8 +19,21 @@ export type F0ProcessGuidance =
     readonly entries: readonly [];
   };
 
+type ProcessRequirementLoadRequest = { readonly version: typeof VERSION };
+
+interface LoadedProcessRequirements {
+  readonly manifest: {
+    readonly version: string;
+  };
+  readonly evaluateProcessRequirements: (
+    facts: ProcessRequirementEvaluationFacts,
+  ) => {
+    readonly matchedEntries: readonly ProcessRequirementMatchedEntry[];
+  };
+}
+
 interface Dependencies {
-  readonly load?: typeof loadProcessRequirements;
+  readonly load?: (request: ProcessRequirementLoadRequest) => LoadedProcessRequirements;
 }
 
 export function buildF0ProcessGuidance(
@@ -26,13 +42,17 @@ export function buildF0ProcessGuidance(
   dependencies: Dependencies = {},
 ): F0ProcessGuidance {
   try {
-    const evaluation = (dependencies.load ?? loadProcessRequirements)({ version: VERSION })
-      .evaluateProcessRequirements({
-        actor: "all",
-        analysisMethod: "one-dimensional-rss",
-        toleranceCount: session.factors.length,
-        ...(requirementGapPresent === undefined ? {} : { requirementGapPresent }),
-      });
+    const knowledge = (dependencies.load ?? loadProcessRequirements)({ version: VERSION });
+    if (knowledge.manifest.version !== VERSION) {
+      throw new Error("Process requirements manifest version mismatch.");
+    }
+
+    const evaluation = knowledge.evaluateProcessRequirements({
+      actor: "all",
+      analysisMethod: "one-dimensional-rss",
+      toleranceCount: session.factors.length,
+      ...(requirementGapPresent === undefined ? {} : { requirementGapPresent }),
+    });
 
     return {
       status: "available",
@@ -46,5 +66,3 @@ export function buildF0ProcessGuidance(
     };
   }
 }
-
-export default buildF0ProcessGuidance;
