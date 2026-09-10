@@ -23,6 +23,12 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 - If no path is supplied, ask for exactly one workbook path.
 - Never infer a workbook from editor state, prior runs, uploads, or similarly named files.
 
+## Execution Continuity
+
+- A tool timeout or background transition is not a command failure. Treat only a terminal nonzero exit, a structured failed result, or a governed validation failure as failure.
+- When a required command is moved to the background, retain the execution handle and continue retrieving its result until the command reaches a terminal state or requests input.
+- Do not send a final response while a required command is still running. Provide a progress update and keep the workflow active instead.
+
 ## Product Boundary
 
 Present the workflow as **TA Assist Agent** and use product capability names in user-facing communication. Do not expose internal feature IDs, runner names, schema names, or artifact implementation details.
