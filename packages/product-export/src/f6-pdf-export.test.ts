@@ -103,16 +103,14 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("break-after:page");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
-    expect(html).toContain("max-width:72mm");
     expect(html).toContain("gap:0");
-    expect(html).toContain("background:transparent");
-    expect(html).toContain("grid-template-columns:84mm minmax(0,1fr)");
+    expect(html).toContain("grid-template-columns:78mm minmax(0,1fr)");
     expect(html).toContain("grid-template-rows:auto auto");
-    expect(html).toContain(".analysis-panel--results .metric-dashboard { border-top:1px solid var(--line);");
+    expect(html).toContain(".analysis-panel--results { display:grid; grid-template-columns:1fr 1fr;");
     expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm;");
   });
 
-  it("keeps the complete Factor data in one readable table", () => {
+  it("builds a graph-first engineering brief while retaining complete Factor data in Markdown", () => {
     const markdown = [
       "# 3-1 Worksheet: Analysis-A",
       "",
@@ -120,45 +118,142 @@ describe("renderF6PdfSync", () => {
       "",
       "| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |",
       "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|",
-      "| 1 | 14 | Factor A | Part A | MISSING | 1 | CNC | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.025 mm | 60.0% | Preserve this note | Capability: f0\\_information\\_insufficient; Knowledge: missing\\_process\\_context |",
-      "| 2 | 15 | Factor B | Part B | DWG-2 | 21 | PCBA | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.020 mm | 40.0% | Preserve this note | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.2 mm; Knowledge: internal-v1 |",
+      "| 1 | 14 | Factor A | Part A | MISSING | 21 | CNC | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.025 mm | 60.0% | Preserve this note | Capability: f0\\_information\\_insufficient; Knowledge: missing\\_process\\_context |",
+      "| 2 | 15 | Factor B | Part B | DWG-2 | 1 | PCBA | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.020 mm | 40.0% | Preserve this note | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.2 mm; Knowledge: internal-v1 |",
       "| 3 | 16 | Factor C | Part C | DWG-3 | 202 | Other | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.015 mm | 10.0% | Preserve this note | Capability: non\\_f0\\_process\\_category |",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 3 sigma |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| Statistical Range | -0.120 mm | 0.040 mm | 0.010 mm | PASS |",
+      "| Worst-Case Range | -0.200 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive CpkL | 0.740 | FAIL |",
+      "| Predictive CpkU | 1.480 | PASS |",
+      "| Predictive Cpk | 0.740 | FAIL |",
+      "| Predicted Yield | 97.3% | N/A |",
+      "| Predicted DPM | 26500 | N/A |",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- Status: offset",
+      "- Adjusted Mean: -0.050 mm",
+      "- Specification Center: -0.050 mm",
+      "- Offset: 0.010 mm",
+      "",
+      "## Contributor Priorities",
+      "",
+      "| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |",
+      "|---:|---|---:|---:|---|---|",
+      "| 1 | Factor A | 0.025 mm | 60.0% | High | Tighten tolerance |",
+      "| 2 | Factor B | 0.020 mm | 30.0% | Medium | Review process |",
+      "| 3 | Factor C | 0.015 mm | 10.0% | Medium | Confirm input |",
+      "",
+      "## Specification Changes",
+      "",
+      "| Side | Current Limit | Proposed Limit | Target Cpk | Approval |",
+      "|---|---:|---:|---:|---|",
+      "| lower | -0.150 | -0.180 | 1.333 | Engineering approval required |",
+      "| upper | 0.050 | 0.080 | 1.333 | Engineering approval required |",
     ].join("\n");
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(html).toContain('<table class="factor-table">');
-    expect(html.match(/<table class="factor-table">/g)).toHaveLength(1);
     expect(markdown).toContain("| Ordinal | Row | Factor Description");
     expect(markdown).toContain("| Notes | Capability and Knowledge Guidance |");
     expect(markdown).toContain("Preserve this note");
-    expect(html).not.toContain("<th>Row</th>");
-    expect(html).not.toContain("<th>Notes</th>");
+    expect(html).not.toContain('<table class="factor-table">');
     expect(html).not.toContain("Preserve this note");
-    expect(html).toContain("0.000 mm");
-    expect(html).toContain("0.100 mm");
-    expect(html).toContain("-0.100 mm");
-    expect(html).toContain("Missing process context");
-    expect(html).toContain("Knowledge library: Recommended tolerance band or range: &lt;= 0.2 mm");
-    expect(html).toContain("No process category");
-    expect(html).toContain('<span class="field-alert">MISSING</span>');
-    expect(html).toContain('<span class="field-alert">1</span>');
-    expect(html).not.toContain('<span class="field-alert">21</span>');
-    expect(html).not.toContain('<span class="field-alert">202</span>');
-    expect(html).toContain(".field-alert { color:var(--fail); font-weight:700; }");
-    expect(html).not.toContain('class="factor-grid"');
-    expect(html).not.toContain('class="factor-card"');
-    expect(html).toContain("font-size:10pt; line-height:1.25; font-variant-numeric:tabular-nums");
-    expect(html).toContain("height:166mm; font-size:13pt;");
-    expect(html).toContain("max-height:84mm");
-    expect(html).toContain('content.style.transform = "scale(" + scale + ")"');
-    expect(html).toContain(".factor-table th,.factor-table td { text-align:center; font-size:7.5pt;");
-    expect(html).toContain(".analysis-grid { font-size:8pt;");
-    expect(html).toContain(".result-table { display:inline-table; width:auto; max-width:72mm; margin:0 1.5mm 1mm 0; font-size:8pt;");
-    expect(html).toContain(".metric-card>span,.metric-card>strong,.metric-card>small { font-size:8pt;");
-    expect(html).toContain("min-height:3.5mm; font-size:8pt;");
-    expect(html).not.toContain("Math.max(0.76");
-    expect(html).toContain("const heightScale = section.clientHeight / content.scrollHeight;");
-    expect(html).toContain("const widthScale = section.clientWidth / content.scrollWidth;");
-    expect(html).toContain("const scale = Math.min(1, heightScale, widthScale);");
+    expect(html).toContain('class="drawing-health"');
+    expect(html).toContain('data-missing-drawings="1"');
+    expect(html).toContain('data-invalid-dim-ids="1"');
+    expect(html).toContain("1 of 3 Factors have complete drawing identifiers.");
+    expect(html).toContain('class="capability-spectrum"');
+    expect(html).toContain('data-target-cpk="1.333"');
+    expect(html).toContain('class="spec-range-graph"');
+    expect(html).toContain('data-statistical-result="PASS"');
+    expect(html).toContain('data-worst-case-result="FAIL"');
+    expect(html).toContain('class="mean-offset-graph"');
+    expect(html).toContain('data-offset="0.010"');
+    expect(html).toContain('class="contribution-chart"');
+    expect(html).toContain('class="spec-change-graph"');
+    expect(html).not.toContain('<table class="result-table">');
+    expect(html).not.toContain('<table class="analysis-table">');
+    expect(html).toContain("Graph-first engineering brief");
+    expect(html).toContain(".report-content { padding:4mm; }");
+    expect(html).toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm;");
+  });
+
+  it("fails graph values closed instead of treating unsafe or unavailable evidence as zero", () => {
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | N/A |",
+      "| LSL | N/A |",
+      "| USL | N/A |",
+      "| Target Cpk | N/A |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| Statistical Range | N/A | N/A | N/A | PASS\" onmouseover=\"alert(1) |",
+      "| Worst-Case Range | N/A | N/A | N/A | N/A |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive Cpk | N/A | N/A |",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- Adjusted Mean: N/A",
+      "- Specification Center: N/A",
+      "- Offset: N/A",
+      "",
+      "## Specification Changes",
+      "",
+      "| Side | Current Limit | Proposed Limit | Target Cpk | Approval |",
+      "|---|---:|---:|---:|---|",
+      "| lower | N/A | N/A | N/A | Engineering approval required |",
+    ].join("\n");
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).not.toContain("onmouseover=");
+    expect(html).not.toContain('data-target-cpk="0.000"');
+    expect(html.match(/class="graph-unavailable"/g)).toHaveLength(4);
+    expect(html).toContain("Insufficient numeric evidence");
+  });
+
+  it("rejects malformed numeric evidence and clamps negative capability geometry", () => {
+    const malformed = [
+      "# 3-1 Worksheet: Analysis-A", "", "## Requirements and Statistical Results", "",
+      "| Requirement | Value |", "|---|---:|", "| LSL | -0.150 trailing |", "| USL | 0.050 mm |", "| Design Nominal | 0.000 mm |", "| Target Cpk | 1.333 |",
+      "", "| Metric | Lower | Upper | Minimum Margin | Result |", "|---|---:|---:|---:|---|", "| Statistical Range | -0.100 mm | 0.040 mm | 0.010 mm | PASS |",
+    ].join("\n");
+    const malformedHtml = renderF6PdfHtml({ markdown: malformed, sourceHash: createHash("sha256").update(malformed).digest("hex") });
+    expect(malformedHtml).toContain('class="spec-range-graph"');
+    expect(malformedHtml).toContain('class="graph-unavailable"');
+
+    const negative = [
+      "# 3-1 Worksheet: Analysis-A", "", "## Requirements and Statistical Results", "",
+      "| Requirement | Value |", "|---|---:|", "| Target Cpk | 1.333 |",
+      "", "| Capability Metric | Value | Result |", "|---|---:|---|", "| Predictive Cpk | -0.250 | FAIL |",
+    ].join("\n");
+    const negativeHtml = renderF6PdfHtml({ markdown: negative, sourceHash: createHash("sha256").update(negative).digest("hex") });
+    expect(negativeHtml).toContain("<strong>-0.250</strong>");
+    expect(negativeHtml).toContain('style="width:0%"');
+    expect(negativeHtml).not.toMatch(/style="width:-/u);
   });
 });

@@ -32,10 +32,29 @@ const REPORT = `# Tolerance Analysis Engineering Report
 
 ## Requirements and Statistical Results
 
+| Requirement | Value |
+|---|---:|
+| Design Nominal | 0.000 mm |
+| LSL | -0.150 mm |
+| USL | 0.050 mm |
+| Target Cpk | 1.33 |
+
+| Metric | Lower | Upper | Minimum Margin | Result |
+|---|---:|---:|---:|---|
+| Statistical Range | -0.120 mm | 0.040 mm | 0.010 mm | PASS |
+| Worst-Case Range | -0.200 mm | 0.100 mm | -0.050 mm | FAIL |
+
 | Capability Metric | Value | Result |
 |---|---:|---|
 | Predictive CpkL | 1.21 | WARNING |
 | Predictive CpkU | 1.48 | PASS |
+
+## Adjusted Mean to Spec Center Shift
+
+- Status: offset
+- Adjusted Mean: -0.050 mm
+- Specification Center: -0.050 mm
+- Offset: 0.010 mm
 
 ## Contributor Priorities
 
@@ -43,6 +62,13 @@ const REPORT = `# Tolerance Analysis Engineering Report
 |---:|---|---:|---:|---|---|
 | 1 | Frame Post Location | 0.050 mm | 50.5% | OP1 | Review frame process. |
 | 2 | Top Enclosure Height | 0.040 mm | 32.3% | OP2 | Review enclosure control. |
+
+## Specification Changes
+
+| Side | Current Limit | Proposed Limit | Target Cpk | Approval |
+|---|---:|---:|---:|---|
+| lower | -0.150 | -0.180 | 1.33 | Engineering approval required |
+| upper | 0.050 | 0.080 | 1.33 | Engineering approval required |
 `;
 
 describe("renderF6PdfHtml", () => {
@@ -68,17 +94,17 @@ describe("renderF6PdfHtml", () => {
     expect(html).not.toContain("border-radius:");
     expect(html).not.toContain("box-shadow:");
     expect(html).toContain("class=\"worksheet-section\"");
-    expect(html).toContain("class=\"factor-table\"");
+    expect(html).not.toContain("class=\"factor-table\"");
+    expect(html).toContain("class=\"drawing-health\"");
     expect(html).toContain("class=\"analysis-grid\"");
     expect(html).toContain("analysis-panel--image");
     expect(html).toContain("analysis-panel--results");
     expect(html).toContain("analysis-panel--contributors");
-    expect(html).not.toContain("class=\"factor-grid\"");
-    expect(html).not.toContain("class=\"factor-card\"");
-    expect(html).toContain("class=\"metric-dashboard\"");
-    expect(html).toContain("metric-card--warning");
-    expect(html).toContain("metric-card--pass");
+    expect(html).toContain("class=\"spec-range-graph\"");
+    expect(html).toContain("class=\"capability-spectrum\"");
+    expect(html).toContain("class=\"mean-offset-graph\"");
     expect(html).toContain("class=\"contribution-chart\"");
+    expect(html).toContain("class=\"spec-change-graph\"");
     expect(html).toContain("Frame Post Location");
     expect(html).toContain("width:50.5%");
   });
