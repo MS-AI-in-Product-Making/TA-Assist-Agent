@@ -7,6 +7,7 @@ import type {
   F7NarrativeResultJudgment,
   F7NarrativeRootCauseItem,
 } from "@ai-assist/product-language/f7-engineering-narrative";
+import type { ProcessRequirementMatchedEntry } from "@ai-assist/contracts";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
 let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
@@ -48,13 +49,6 @@ function unavailableInterpretationSnapshot(): F7SessionSnapshot {
   } as unknown as F7SessionSnapshot;
 }
 
-function mountWithActualInterpretation(session: F7SessionSnapshot) {
-  buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
-  return mount(TAResultsInterpretation, {
-    props: { session },
-  });
-}
-
 function overrideResultJudgment(
   resultJudgment: F7NarrativeResultJudgment,
   override: Partial<F7NarrativeResultJudgment>,
@@ -63,6 +57,111 @@ function overrideResultJudgment(
     ...resultJudgment,
     ...override,
   };
+}
+
+function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
+  return [
+    {
+      entryId: "guidance-escalation",
+      entryType: "escalation",
+      topic: "review",
+      title: "Escalate tolerance ownership",
+      message: "Escalate to the owning engineering lead before closing the worksheet review.",
+      normativeStrength: "must",
+      relatedFactReferences: ["analysisMethod"],
+      evidence: {
+        sourceAlias: "ta-process-requirements",
+        sourceFileHash: "a".repeat(64),
+        sourceRevision: "Seed",
+        sheetName: "TA Process Requirements",
+        sourceRange: "Escalations!A2",
+        effectiveVersion: "process-requirements-v1",
+        owner: "TA Governance",
+        confidence: "reviewed",
+        changeSummary: "Seeded guidance for escalation coverage.",
+      },
+    },
+    {
+      entryId: "guidance-warning",
+      entryType: "warning",
+      topic: "review",
+      title: "Check workbook evidence freshness",
+      message: "Warning entries should stay visible beside stronger guidance types.",
+      normativeStrength: "should",
+      relatedFactReferences: ["toleranceCount"],
+      evidence: {
+        sourceAlias: "ta-process-requirements",
+        sourceFileHash: "b".repeat(64),
+        sourceRevision: "Seed",
+        sheetName: "TA Process Requirements",
+        sourceRange: "Warnings!A3",
+        effectiveVersion: "process-requirements-v1",
+        owner: "TA Governance",
+        confidence: "reviewed",
+        changeSummary: "Seeded guidance for warning coverage.",
+      },
+    },
+    {
+      entryId: "guidance-requirement",
+      entryType: "requirement",
+      topic: "review",
+      title: "Capture governed requirement linkage",
+      message: "Requirement entries should retain their own semantic styling.",
+      normativeStrength: "must",
+      relatedFactReferences: ["requirementGapPresent"],
+      evidence: {
+        sourceAlias: "ta-process-requirements",
+        sourceFileHash: "c".repeat(64),
+        sourceRevision: "Seed",
+        sheetName: "TA Process Requirements",
+        sourceRange: "Requirements!A4",
+        effectiveVersion: "process-requirements-v1",
+        owner: "TA Governance",
+        confidence: "reviewed",
+        changeSummary: "Seeded guidance for requirement coverage.",
+      },
+    },
+    {
+      entryId: "guidance-milestone",
+      entryType: "milestone",
+      topic: "review",
+      title: "Schedule the next F0 review milestone",
+      message: "Milestone guidance should remain distinct from requirements and instructions.",
+      normativeStrength: "should",
+      relatedFactReferences: ["actor"],
+      evidence: {
+        sourceAlias: "ta-process-requirements",
+        sourceFileHash: "d".repeat(64),
+        sourceRevision: "Seed",
+        sheetName: "TA Process Requirements",
+        sourceRange: "Milestones!A5",
+        effectiveVersion: "process-requirements-v1",
+        owner: "TA Governance",
+        confidence: "reviewed",
+        changeSummary: "Seeded guidance for milestone coverage.",
+      },
+    },
+    {
+      entryId: "guidance-instruction",
+      entryType: "instruction",
+      topic: "review",
+      title: "Document the operator follow-up action",
+      message: "Instruction guidance should render after milestone entries in source order.",
+      normativeStrength: "should",
+      relatedFactReferences: ["analysisMethod", "toleranceCount"],
+      evidence: {
+        sourceAlias: "ta-process-requirements",
+        sourceFileHash: "e".repeat(64),
+        sourceRevision: "Seed",
+        sheetName: "TA Process Requirements",
+        sourceRange: "Instructions!A6",
+        effectiveVersion: "process-requirements-v1",
+        owner: "TA Governance",
+        confidence: "reviewed",
+        changeSummary: "Seeded guidance for instruction coverage.",
+      },
+    },
+  ];
 }
 
 describe("TAResultsInterpretation", () => {
@@ -76,7 +175,19 @@ describe("TAResultsInterpretation", () => {
   });
 
   it("renders the governed engineering narrative hierarchy in the required reading order", () => {
-    const wrapper = mountWithActualInterpretation(enhancedInterpretationSnapshot());
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v1",
+        entries: processGuidanceEntries(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
 
     expect(wrapper.get("[data-result-judgment]").text()).toContain("Capability is below target");
     expect(wrapper.findAll("[data-result-summary-header]").map((item) => item.text())).toEqual([
@@ -135,26 +246,120 @@ describe("TAResultsInterpretation", () => {
       expect.stringContaining("improvement-reduce-variation"),
       expect.stringContaining("improvement-reduce-contributor"),
     ]);
-    expect(wrapper.get("[data-evidence-disclosure]").text()).toContain("not measured capability evidence");
-    expect(wrapper.get("[data-evidence-disclosure]").text()).toContain("Matched rule IDs: root-cause-excessive-variation, root-cause-mean-shift, root-cause-contributor-concentration");
     expect(wrapper.find("[data-engineering-interpretation]").exists()).toBe(false);
+    expect(wrapper.find("[data-assumption-disclosure]").exists()).toBe(false);
+    expect(wrapper.find("[data-input-readiness]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Verification Requirements");
+    expect(wrapper.text()).not.toContain("Evidence Disclosure");
+    expect(wrapper.text()).not.toContain("Assumption Disclosure");
+    expect(wrapper.text()).not.toContain("Rule provenance");
+    expect(wrapper.text()).not.toContain("Input Readiness");
+
+    const processGuidance = wrapper.get("[data-process-guidance]");
+    expect(processGuidance.text()).toContain("F0 Process Guidance");
+    expect(processGuidance.text()).toContain("Triggered by the current TA worksheet and analysis state.");
+    expect(processGuidance.get("[data-process-guidance-version]").text()).toContain("process-requirements-v1");
+    expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(5);
+    expect(processGuidance.findAll("[data-process-guidance-entry]").map((item) => item.attributes("data-entry-type"))).toEqual([
+      "escalation",
+      "warning",
+      "requirement",
+      "milestone",
+      "instruction",
+    ]);
+    expect(processGuidance.findAll("[data-process-guidance-entry-id]").map((item) => item.text())).toEqual([
+      "guidance-escalation",
+      "guidance-warning",
+      "guidance-requirement",
+      "guidance-milestone",
+      "guidance-instruction",
+    ]);
+    expect(processGuidance.findAll("[data-process-guidance-entry-type-label]").map((item) => item.text())).toEqual([
+      "Escalation",
+      "Warning",
+      "Requirement",
+      "Milestone",
+      "Instruction",
+    ]);
+    expect(processGuidance.findAll("[data-process-guidance-entry-title]").map((item) => item.text())).toEqual([
+      "Escalate tolerance ownership",
+      "Check workbook evidence freshness",
+      "Capture governed requirement linkage",
+      "Schedule the next F0 review milestone",
+      "Document the operator follow-up action",
+    ]);
+    expect(processGuidance.findAll("[data-process-guidance-entry-message]").map((item) => item.text())).toEqual([
+      "Escalate to the owning engineering lead before closing the worksheet review.",
+      "Warning entries should stay visible beside stronger guidance types.",
+      "Requirement entries should retain their own semantic styling.",
+      "Milestone guidance should remain distinct from requirements and instructions.",
+      "Instruction guidance should render after milestone entries in source order.",
+    ]);
 
     const topLevelSections = wrapper.findAll(".narrative-flow > section");
     expect(topLevelSections[0]?.attributes("data-result-judgment")).toBe("");
     expect(topLevelSections[2]?.attributes("data-engineering-risk")).toBe("");
-    expect(topLevelSections[4]?.attributes("data-assumption-disclosure")).toBe("");
     const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
-    expect(panelChildren[panelChildren.length - 1]?.attributes("data-input-readiness")).toBe("");
+    expect(panelChildren[panelChildren.length - 1]?.attributes("data-process-guidance")).toBe("");
   });
 
-  it("keeps the unavailable behavior unchanged and shows input readiness last", () => {
-    const wrapper = mountWithActualInterpretation(unavailableInterpretationSnapshot());
+  it("keeps the unavailable interpretation message and can still show worksheet-supported guidance", () => {
+    const unavailable = actualBuildAssumptionResultsInterpretation(unavailableInterpretationSnapshot());
+    if (unavailable.status !== "unavailable") throw new Error("expected unavailable interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...unavailable,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v1",
+        entries: processGuidanceEntries(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: unavailableInterpretationSnapshot() },
+    });
 
     expect(wrapper.get("[data-interpretation-unavailable]").text()).toContain(
       "Complete and confirm Factor Setup inputs to interpret assumption-based results.",
     );
-    const sections = wrapper.findAll("section, div.input-readiness");
-    expect(sections[sections.length - 1]?.attributes("data-input-readiness")).toBe("");
+    expect(wrapper.find("[data-input-readiness]").exists()).toBe(false);
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
+    const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
+    expect(panelChildren[panelChildren.length - 1]?.attributes("data-process-guidance")).toBe("");
+  });
+
+  it("omits the entire guidance section when no process guidance entries are available", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v1",
+        entries: [],
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
+  });
+
+  it("omits the entire guidance section when process guidance is unavailable", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "unavailable",
+        entries: [],
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
   });
 
   it("shows the incomplete-evidence visual state when a matched hypothesis lacks dependent facts", () => {
@@ -181,16 +386,6 @@ describe("TAResultsInterpretation", () => {
 
     const incompleteItems = wrapper.findAll("[data-root-cause-item]").filter((item) => item.text().includes("Incomplete evidence"));
     expect(incompleteItems.length).toBeGreaterThan(0);
-  });
-
-  it("shows verification, provenance, assumptions, and evidence disclosure together in the narrative disclosure section", () => {
-    const wrapper = mountWithActualInterpretation(enhancedInterpretationSnapshot());
-
-    const disclosure = wrapper.get("[data-assumption-disclosure]").text();
-    expect(disclosure).toContain("Verification Requirements");
-    expect(disclosure).toContain("Evidence Disclosure");
-    expect(disclosure).toContain("Assumption Disclosure");
-    expect(wrapper.get("[data-f0-provenance]").text()).toBe("F0 interpretation-rules-v2");
   });
 
   it("renders near-target negative status and display strings without collapsing the margin sign", () => {

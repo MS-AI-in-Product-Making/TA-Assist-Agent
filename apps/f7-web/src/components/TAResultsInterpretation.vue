@@ -9,6 +9,20 @@ const props = defineProps<{
 }>();
 
 const interpretation = computed(() => buildAssumptionResultsInterpretation(props.session));
+const processGuidanceEntries = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.entries
+    : []
+));
+const processGuidanceVersion = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.version
+    : ""
+));
+const shouldRenderProcessGuidance = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+  && interpretation.value.processGuidance.entries.length > 0
+));
 
 function formatEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
@@ -18,6 +32,23 @@ function formatEvidenceValue(key: string, value: number | string): string {
 
 function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<string, string>> }, key: string): string {
   return item.quantitativeEvidenceLabels?.[key] ?? key;
+}
+
+function processGuidanceEntryTypeLabel(entryType: string): string {
+  switch (entryType) {
+    case "escalation":
+      return "Escalation";
+    case "warning":
+      return "Warning";
+    case "requirement":
+      return "Requirement";
+    case "milestone":
+      return "Milestone";
+    case "instruction":
+      return "Instruction";
+    default:
+      return entryType;
+  }
 }
 </script>
 
@@ -213,36 +244,6 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
             No controlled improvement option.
           </p>
         </section>
-
-        <section
-          class="narrative-section assumption-disclosure"
-          data-assumption-disclosure
-        >
-          <h3>Verification Requirements</h3>
-          <ul data-validation-requirements>
-            <li
-              v-for="requirement in interpretation.narrative.validationRequirements"
-              :key="requirement"
-            >
-              {{ requirement }}
-            </li>
-          </ul>
-          <h3>Evidence Disclosure</h3>
-          <p data-evidence-disclosure>
-            {{ interpretation.narrative.evidenceDisclosure }}
-          </p>
-          <h3>Assumption Disclosure</h3>
-          <p
-            v-for="assumption in interpretation.assumptions"
-            :key="assumption"
-          >
-            {{ assumption }}
-          </p>
-          <p class="provenance">
-            <strong>Rule provenance</strong>
-            <span data-f0-provenance>{{ interpretation.provenance }}</span>
-          </p>
-        </section>
       </div>
     </template>
 
@@ -256,63 +257,53 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
       {{ interpretation.reason }}
     </p>
 
-    <div
-      class="input-readiness"
-      data-input-readiness
+    <section
+      v-if="shouldRenderProcessGuidance"
+      class="narrative-section process-guidance-section"
+      data-process-guidance
     >
-      <h3>Input Readiness</h3>
-      <p
-        v-if="interpretation.inputReadiness.unevaluatedFactorNames.length > 0"
-        class="unevaluated-factors"
-      >
-        <strong>Not evaluated</strong> for factors: {{ interpretation.inputReadiness.unevaluatedFactorNames.join(", ") }}.
-      </p>
-      <div
-        v-if="interpretation.inputReadiness.evaluatedFactorCount > 0"
-        class="validation-columns"
-      >
-        <div>
-          <h4>Blocking</h4>
-          <ul>
-            <li
-              v-for="entry in interpretation.inputReadiness.blockingIssues"
-              :key="entry.key"
-              class="validation-issue"
-              :data-factor-id="entry.factorId"
-            >
-              <strong class="factor-name">{{ entry.factorName }} {{ entry.label }}</strong>
-              <span v-if="entry.rowNumbers.length"> rows: {{ entry.rowNumbers.join(",") }}</span>
-            </li>
-            <li
-              v-if="interpretation.inputReadiness.blockingIssues.length === 0 && interpretation.inputReadiness.evaluatedFactorCount > 0"
-              class="subtle"
-            >
-              {{ interpretation.inputReadiness.unevaluatedFactorNames.length > 0 ? "No blocking issues in evaluated datasets." : "No blocking issues." }}
-            </li>
-          </ul>
-        </div>
-        <div>
-          <h4>Advisory</h4>
-          <ul>
-            <li
-              v-for="entry in interpretation.inputReadiness.advisoryIssues"
-              :key="entry.key"
-              class="validation-issue"
-              :data-factor-id="entry.factorId"
-            >
-              <strong class="factor-name">{{ entry.factorName }} {{ entry.label }}</strong>
-              <span v-if="entry.rowNumbers.length"> rows: {{ entry.rowNumbers.join(",") }}</span>
-            </li>
-            <li
-              v-if="interpretation.inputReadiness.advisoryIssues.length === 0 && interpretation.inputReadiness.evaluatedFactorCount > 0"
-              class="subtle"
-            >
-              {{ interpretation.inputReadiness.unevaluatedFactorNames.length > 0 ? "No advisory issues in evaluated datasets." : "No advisory issues." }}
-            </li>
-          </ul>
-        </div>
+      <div class="process-guidance-heading">
+        <h3>F0 Process Guidance</h3>
+        <span
+          class="process-guidance-version"
+          data-process-guidance-version
+        >{{ processGuidanceVersion }}</span>
       </div>
-    </div>
+      <p
+        class="process-guidance-context"
+        data-process-guidance-context
+      >
+        Triggered by the current TA worksheet and analysis state.
+      </p>
+      <ol class="process-guidance-list">
+        <li
+          v-for="entry in processGuidanceEntries"
+          :key="entry.entryId"
+          class="process-guidance-entry"
+          data-process-guidance-entry
+          :data-entry-type="entry.entryType"
+        >
+          <div class="process-guidance-entry-header">
+            <span
+              class="process-guidance-type-label"
+              data-process-guidance-entry-type-label
+            >{{ processGuidanceEntryTypeLabel(entry.entryType) }}</span>
+            <strong data-process-guidance-entry-title>
+              {{ entry.title }}
+            </strong>
+          </div>
+          <p
+            class="process-guidance-entry-meta"
+            data-process-guidance-entry-id
+          >
+            {{ entry.entryId }}
+          </p>
+          <p data-process-guidance-entry-message>
+            {{ entry.message }}
+          </p>
+        </li>
+      </ol>
+    </section>
   </section>
 </template>
 
@@ -335,8 +326,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   margin-top: 0;
 }
 
-.narrative-flow > *,
-.validation-columns > * {
+.narrative-flow > * {
   min-width: 0;
 }
 
@@ -602,7 +592,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
 }
 
 .narrative-list,
-.input-readiness ul {
+.process-guidance-list {
   margin-bottom: 0;
   padding-left: 18px;
 }
@@ -611,8 +601,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   margin-bottom: 10px;
 }
 
-.narrative-item-header,
-.provenance {
+.narrative-item-header {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 8px;
@@ -639,27 +628,105 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   margin: 0;
 }
 
-.factor-name,
-.validation-issue,
-.unevaluated-factors {
+.process-guidance-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 6px;
+}
+
+.process-guidance-version {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   overflow-wrap: anywhere;
 }
 
-.assumption-disclosure,
-.input-readiness {
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
+.process-guidance-context {
+  margin-bottom: 10px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
-.assumption-disclosure p {
-  margin-bottom: 5px;
+.process-guidance-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  padding-left: 0;
 }
 
-.provenance {
+.process-guidance-entry {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.process-guidance-entry:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.process-guidance-entry-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.process-guidance-entry-header strong,
+.process-guidance-entry-meta,
+.process-guidance-entry p {
+  overflow-wrap: anywhere;
+}
+
+.process-guidance-type-label {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.process-guidance-entry[data-entry-type="escalation"] .process-guidance-type-label {
+  background: #fff1ef;
+  color: var(--danger);
+}
+
+.process-guidance-entry[data-entry-type="warning"] .process-guidance-type-label {
+  background: #fff7e8;
+  color: #9a5b08;
+}
+
+.process-guidance-entry[data-entry-type="requirement"] .process-guidance-type-label {
+  background: #eef3f7;
+  color: #31556b;
+}
+
+.process-guidance-entry[data-entry-type="milestone"] .process-guidance-type-label {
+  background: #eff6ef;
+  color: #4d6a4e;
+}
+
+.process-guidance-entry[data-entry-type="instruction"] .process-guidance-type-label {
+  background: #f5f2ee;
+  color: #6d5844;
+}
+
+.process-guidance-entry-meta {
+  margin-bottom: 0;
   color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.74rem;
 }
 
 .interpretation-unavailable {
@@ -667,11 +734,6 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   border-left: 3px solid var(--pending);
   padding-left: 10px;
   color: var(--ink-soft);
-}
-
-.input-readiness h4 {
-  margin-bottom: 4px;
-  font-size: 0.9rem;
 }
 
 @media (max-width: 720px) {
