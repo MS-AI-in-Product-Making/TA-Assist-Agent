@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderF6PdfHtml } from "./f6-pdf-report.js";
+import { renderF6PdfHtml } from "@ai-assist/product-export";
 
 const REPORT = `# Tolerance Analysis Engineering Report
 
@@ -47,7 +47,11 @@ const REPORT = `# Tolerance Analysis Engineering Report
 
 describe("renderF6PdfHtml", () => {
   it("projects the governed report into a self-contained engineering print layout", () => {
-    const html = renderF6PdfHtml({ markdown: REPORT, sourceHash: "a".repeat(64) });
+    const html = renderF6PdfHtml({
+      markdown: REPORT,
+      sourceHash: "a".repeat(64),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
+    });
 
     expect(html).toContain("<!doctype html>");
     expect(html).toContain("Tolerance Analysis Engineering Report");
@@ -81,6 +85,7 @@ describe("renderF6PdfHtml", () => {
     const html = renderF6PdfHtml({
       markdown: `${REPORT}\n<script>globalThis.compromised = true</script>\n<img src=x onerror=alert(1)>`,
       sourceHash: "b".repeat(64),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
     });
 
     expect(html).not.toContain("<script>");

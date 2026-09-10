@@ -5,7 +5,9 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { renderF6PdfHtml } from "./f6-pdf-report.js";
+import { browserCandidates, f6PdfImageLinks, renderF6PdfHtml } from "@ai-assist/product-export";
+
+export { browserCandidates } from "@ai-assist/product-export";
 
 export interface F6PdfRenderInput {
   readonly markdown: string;
@@ -25,13 +27,16 @@ function pdfError(code: "pdf_artifact_invalid" | "pdf_render_unavailable", messa
 }
 
 export async function inlineReportImages(input: F6PdfRenderInput): Promise<ReadonlyMap<string, string>> {
-  const links = [...input.markdown.matchAll(/\[[^\]]*\]\(<([^>]+\.(?:png|jpe?g))>\)/gi)].map((match) => match[1]!);
+  const links = f6PdfImageLinks(input.markdown);
   const managedRoot = await realpath(input.managedRoot);
   const images = new Map<string, string>();
   for (const link of links) {
     try {
-      if (isAbsolute(link)) throw pdfError("pdf_artifact_invalid", "F6 PDF image path must be relative.");
-      const candidate = resolve(dirname(input.reportPath), link);
+      const decodedLink = decodeURI(link);
+      if (decodedLink.includes("?") || decodedLink.includes("#") || /^[a-z][a-z0-9+.-]*:/i.test(decodedLink) || isAbsolute(decodedLink)) {
+        throw pdfError("pdf_artifact_invalid", "F6 PDF image path must be a plain relative path.");
+      }
+      const candidate = resolve(dirname(input.reportPath), decodedLink);
       const target = await realpath(candidate);
       const delta = relative(managedRoot, target);
       const stats = await lstat(candidate);
@@ -56,18 +61,6 @@ export async function inlineReportImages(input: F6PdfRenderInput): Promise<Reado
     }
   }
   return images;
-}
-
-export function browserCandidates(environment: NodeJS.ProcessEnv = process.env): readonly string[] {
-  return [
-    environment.AI_TVA_CHROMIUM_EXECUTABLE,
-    environment.PROGRAMFILES === undefined ? undefined : join(environment.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
-    environment["PROGRAMFILES(X86)"] === undefined ? undefined : join(environment["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
-    environment.LOCALAPPDATA === undefined ? undefined : join(environment.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe"),
-    environment.PROGRAMFILES === undefined ? undefined : join(environment.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
-    environment["PROGRAMFILES(X86)"] === undefined ? undefined : join(environment["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
-    environment.LOCALAPPDATA === undefined ? undefined : join(environment.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
-  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
 }
 
 async function installedBrowsers(): Promise<readonly string[]> {

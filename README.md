@@ -52,16 +52,17 @@ The report includes:
 
 User-facing tables do not show Source or Evidence columns. Provenance, hashes, calculation traces, run decisions, and artifact identity remain available in internal governed artifacts.
 
-Current F6 runs publish exactly four files:
+Current F6 runs publish exactly five files:
 
 ```text
 Feature6-Optimization.json
 Feature6-Report.md
+Feature6-Report.pdf
 Feature6-Run-Summary.json
 manifest.json
 ```
 
-Historical five-file F6 bundles remain read-only and hash-validated.
+The Markdown and PDF reports are generated from the same validated projection and are hash-bound in the run summary. PDF rendering fails closed when no controlled Edge or Chrome executable can produce a valid PDF. Historical artifact-set versions remain read-only and hash-validated.
 
 ## Safety Boundaries
 

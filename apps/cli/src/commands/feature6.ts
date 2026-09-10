@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -183,9 +183,31 @@ function formatFeature6Output(value: unknown): string {
   if (!isContained(realPublishRoot, realFinalReport) || !isContained(realOutput, realFinalReport)) {
     throw new Error("invalid runner output");
   }
+  if (typeof output.finalReportPdfPath !== "string" || output.finalReportPdfPath.length === 0
+    || output.finalReportPdfPath.trim() !== output.finalReportPdfPath
+    || containsControlCharacter(output.finalReportPdfPath)
+    || containsBidiCharacter(output.finalReportPdfPath)) {
+    throw new Error("invalid runner output");
+  }
+  const resolvedPdfReport = resolve(trustedRepositoryRoot, output.finalReportPdfPath);
+  if (!existsSync(resolvedPdfReport)) throw new Error("invalid runner output");
+  const pdfStats = lstatSync(resolvedPdfReport);
+  if (!pdfStats.isFile() || pdfStats.isSymbolicLink() || hasLinkedPathComponent(resolvedPdfReport)) {
+    throw new Error("invalid runner output");
+  }
+  const realPdfReport = realpathSync(resolvedPdfReport);
+  const pdfBytes = readFileSync(realPdfReport);
+  if (parse(realPdfReport).base !== "Feature6-Report.pdf"
+    || !isContained(realPublishRoot, realPdfReport)
+    || !isContained(realOutput, realPdfReport)
+    || pdfBytes.length < 8
+    || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
+    throw new Error("invalid runner output");
+  }
   return [
     "Feature 6 workflow completed.",
     `fullReportPath: ${realFinalReport}`,
+    `fullPdfReportPath: ${realPdfReport}`,
     `status: ${output.status}`,
   ].join("\n");
 }

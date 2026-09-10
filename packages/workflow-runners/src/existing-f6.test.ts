@@ -13,6 +13,7 @@ import { runF6FullValidation } from "../../../scripts/run-f6-full-validation.mjs
 
 const cleanup: string[] = [];
 const interactionLanguage = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
+const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- artifact mutation tests intentionally exercise untyped external JSON.
 function readJson(filePath: string): any {
@@ -28,6 +29,7 @@ function rewriteAsHistoricalV2(runRoot: string): void {
   const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
   const manifestPath = path.join(runRoot, "manifest.json");
   const optimizationMarkdownPath = path.join(runRoot, "Feature6-Optimization.md");
+  rmSync(path.join(runRoot, "Feature6-Report.pdf"));
   const current = readJson(optimizationPath);
   const baselineIdentity = current.worksheets[0].baselineIdentity;
   const metrics = { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 };
@@ -58,6 +60,7 @@ function rewriteAsHistoricalV2(runRoot: string): void {
   summary.sources = Object.fromEntries(["f2", "f3", "f4", "f5"].map((key) => [key, optimization.provenance[`${key}Reference` as keyof typeof optimization.provenance]]));
   summary.inputDecisions = inputDecisions;
   summary.hashes.optimizationJsonSha256 = fixtureFileSha256(optimizationPath);
+  delete summary.hashes.finalReportPdfSha256;
   writeFileSync(optimizationMarkdownPath, "# Historical F6 optimization\n", "utf8");
   summary.hashes.optimizationMarkdownSha256 = fixtureFileSha256(optimizationMarkdownPath);
   writeJson(summaryPath, summary);
@@ -66,6 +69,7 @@ function rewriteAsHistoricalV2(runRoot: string): void {
   manifest.status = "completed";
   manifest.inputDecisions = inputDecisions;
   manifest.artifacts.optimizationMarkdown = "Feature6-Optimization.md";
+  delete manifest.artifacts.finalReportPdf;
   writeJson(manifestPath, manifest);
 }
 
@@ -86,7 +90,8 @@ describe("validateExistingF6", () => {
         interactionLanguage,
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
-      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v2", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      renderFinalReportPdf: () => PDF,
     });
     expect(result.status).toBe("completed");
     rewriteAsHistoricalV2(runRoot);
@@ -105,15 +110,17 @@ describe("validateExistingF6", () => {
     const result = runF6FullValidation({}, {
       parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({
-        artifactSetVersion: "f6-artifact-set-v2",
+        artifactSetVersion: "f6-artifact-set-v3",
         runId,
         runRoot,
         publishRoot: bundle.publishRoot,
         optimizationJsonName: "Feature6-Optimization.json",
         finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       }),
+      renderFinalReportPdf: () => PDF,
     });
 
     expect(result.status).toBe("completed");
@@ -121,6 +128,7 @@ describe("validateExistingF6", () => {
       status: "accepted",
       outputDirectory: runRoot,
       finalReportMarkdownPath: path.join(runRoot, "Feature6-Report.md"),
+      finalReportPdfPath: path.join(runRoot, "Feature6-Report.pdf"),
     });
   });
 
@@ -133,15 +141,17 @@ describe("validateExistingF6", () => {
     const result = runF6FullValidation({}, {
       parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({
-        artifactSetVersion: "f6-artifact-set-v2",
+        artifactSetVersion: "f6-artifact-set-v3",
         runId,
         runRoot,
         publishRoot: bundle.publishRoot,
         optimizationJsonName: "Feature6-Optimization.json",
         finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       }),
+      renderFinalReportPdf: () => PDF,
     });
 
     expect(result.status).toBe("completed");
@@ -149,5 +159,28 @@ describe("validateExistingF6", () => {
       status: "accepted",
       outputDirectory: runRoot,
     });
+  });
+
+  it("accepts a current v3 run with a validated F5 image observation source", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-04T12-45-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      renderFinalReportPdf: () => PDF,
+    });
+
+    expect(result.status).toBe("completed");
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const summary = readJson(summaryPath);
+    summary.sources.imageObservation = {
+      artifact: "Feature5-Image-Observations.json",
+      contentHash: "b".repeat(64),
+    };
+    writeJson(summaryPath, summary);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
   });
 });

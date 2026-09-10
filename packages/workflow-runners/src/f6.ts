@@ -15,18 +15,20 @@ import {
 import path from "node:path";
 
 import { createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { renderF6PdfSync } from "@ai-assist/product-export";
 import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
 
 interface F6Layout {
-  readonly artifactSetVersion: "f6-artifact-set-v2";
+  readonly artifactSetVersion: "f6-artifact-set-v3";
   readonly runId: string;
   readonly runRoot: string;
   readonly publishRoot: string;
   readonly optimizationJsonName: string;
   readonly finalReportMdName: string;
+  readonly finalReportPdfName: string;
   readonly runSummaryJsonName: string;
   readonly manifestName: string;
 }
@@ -36,13 +38,14 @@ export interface F6Dependencies {
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
   readonly createOptimization?: typeof createF6OptimizationV3;
   readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
+  readonly renderFinalReportPdf?: typeof renderF6PdfSync;
   readonly mkdir?: typeof mkdirSync;
   readonly randomUUID?: typeof randomUUID;
   readonly realpath?: typeof realpathSync;
   readonly lstat?: typeof lstatSync;
   readonly stat?: typeof statSync;
   readonly open?: typeof openSync;
-  readonly writeFd?: (descriptor: number, content: string) => void;
+  readonly writeFd?: (descriptor: number, content: string | Buffer) => void;
   readonly close?: typeof closeSync;
   readonly rename?: typeof renameSync;
   readonly beforeRename?: (info: { temporaryPath: string; filePath: string }) => void;
@@ -55,7 +58,7 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function sha256(content: string): string {
+function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -186,7 +189,7 @@ function removeOwnedTemporary(temporaryPath: string, boundary: ReturnType<typeof
   }
 }
 
-function atomicWrite(filePath: string, content: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>): void {
+function atomicWrite(filePath: string, content: string | Buffer, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>): void {
   assertBoundary(boundary, dependencies);
   assertStagingBoundary(boundary, staging, dependencies);
   const temporaryPath = path.join(staging.realStagingRoot, `${dependencies.randomUUID()}.tmp`);
@@ -231,6 +234,7 @@ function outputPaths(layout: F6Layout) {
   return {
     optimizationJson: path.join(layout.runRoot, layout.optimizationJsonName),
     finalReportMarkdown: path.join(layout.runRoot, layout.finalReportMdName),
+    finalReportPdf: path.join(layout.runRoot, layout.finalReportPdfName),
     runSummary: path.join(layout.runRoot, layout.runSummaryJsonName),
     manifest: path.join(layout.runRoot, layout.manifestName),
   };
@@ -326,6 +330,7 @@ export function runF6Optimization(
   const loadBundle = dependencies.loadBundle;
   const createOptimization = dependencies.createOptimization ?? createF6OptimizationV3;
   const createFinalReport = dependencies.createFinalReport;
+  const renderFinalReportPdf = dependencies.renderFinalReportPdf ?? renderF6PdfSync;
   const mkdir = dependencies.mkdir ?? mkdirSync;
   const randomUuid = dependencies.randomUUID ?? randomUUID;
   const realpath = dependencies.realpath ?? realpathSync;
@@ -413,9 +418,21 @@ export function runF6Optimization(
     });
     const finalReport = taEngineeringReportProjectionSchema.parse(finalReportCandidate);
 
+    const finalReportPdf = renderFinalReportPdf({
+      markdown: finalReport.markdown,
+      sourceHash: sha256(finalReport.markdown),
+      reportPath: paths.finalReportMarkdown,
+      managedRoot: layout.publishRoot,
+    });
+    if (!Buffer.isBuffer(finalReportPdf)
+      || finalReportPdf.length < 8
+      || finalReportPdf.subarray(0, 5).toString("ascii") !== "%PDF-") {
+      throw new Error("Feature 6 PDF renderer must return valid PDF bytes.");
+    }
     const contents = {
       optimizationJson: json(optimization),
       finalReportMarkdown: finalReport.markdown,
+      finalReportPdf,
     };
     const workflowStatus = optimization.runStatus.toLowerCase() as F6OptimizationResult["status"];
     const summary = {
@@ -433,7 +450,7 @@ export function runF6Optimization(
 
     failureStage = "output";
     const writeDependencies = { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm };
-    for (const key of ["optimizationJson", "finalReportMarkdown"] as const) {
+    for (const key of ["optimizationJson", "finalReportMarkdown", "finalReportPdf"] as const) {
       atomicWrite(paths[key], contents[key], boundary, staging, writeDependencies);
       artifacts[key] = path.basename(paths[key]);
     }
@@ -447,6 +464,7 @@ export function runF6Optimization(
       outputDirectory: layout.runRoot,
       optimizationJsonPath: paths.optimizationJson,
       finalReportMdPath: paths.finalReportMarkdown,
+      finalReportPdfPath: paths.finalReportPdf,
       runSummaryPath: paths.runSummary,
       manifestPath: paths.manifest,
       optimization,

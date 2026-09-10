@@ -24,9 +24,10 @@ describe("resolveFeature6OutputLayout", () => {
   it("builds the fixed default artifact layout", () => {
     const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow);
     expect(layout).toMatchObject({
-      artifactSetVersion: "f6-artifact-set-v2",
+      artifactSetVersion: "f6-artifact-set-v3",
       optimizationJsonName: "Feature6-Optimization.json",
       finalReportMdName: "Feature6-Report.md",
+      finalReportPdfName: "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     });

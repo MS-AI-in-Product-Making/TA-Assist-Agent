@@ -37,6 +37,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
   const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
   const manifestPath = path.join(runRoot, "manifest.json");
   const optimizationMarkdownPath = path.join(runRoot, "Feature6-Optimization.md");
+  rmSync(path.join(runRoot, "Feature6-Report.pdf"));
   const current = readJson(optimizationPath);
   const baselineIdentity = current.worksheets[0].baselineIdentity;
   const metrics = { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 };
@@ -122,6 +123,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
     };
   }
   summary.hashes.optimizationJsonSha256 = fixtureFileSha256(optimizationPath);
+  delete summary.hashes.finalReportPdfSha256;
   writeFileSync(optimizationMarkdownPath, "# Historical F6 optimization\n", "utf8");
   summary.hashes.optimizationMarkdownSha256 = fixtureFileSha256(optimizationMarkdownPath);
   writeJson(summaryPath, summary);
@@ -130,6 +132,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
   manifest.status = "completed";
   manifest.inputDecisions = inputDecisions;
   manifest.artifacts.optimizationMarkdown = "Feature6-Optimization.md";
+  delete manifest.artifacts.finalReportPdf;
   writeJson(manifestPath, manifest);
 }
 
@@ -307,15 +310,17 @@ function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNa
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
     }),
     resolveLayout: () => ({
-      artifactSetVersion: "f6-artifact-set-v2",
+      artifactSetVersion: "f6-artifact-set-v3",
       runId,
       runRoot,
       publishRoot: bundle.publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
       finalReportMdName: "Feature6-Report.md",
+      finalReportPdfName: "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     }),
+    renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
   });
 
   expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
@@ -371,6 +376,7 @@ describe("validateExistingF6Artifact", () => {
       status: "accepted",
       outputDirectory: runRoot,
       finalReportMarkdownPath: path.join(runRoot, "Feature6-Report.md"),
+      finalReportPdfPath: path.join(runRoot, "Feature6-Report.pdf"),
     });
   });
 
@@ -605,6 +611,21 @@ describe("validateExistingF6Artifact", () => {
     const { runRoot, bundle } = createVerifiedRun();
     writeFileSync(path.join(runRoot, "Feature6-Report.md"), "# altered\n", "utf8");
     expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "rejected", reasonCode: "artifact_hash_mismatch" });
+  });
+
+  it("rejects hash-consistent bytes without a PDF signature", () => {
+    const { runRoot, bundle } = createVerifiedRun();
+    const pdfPath = path.join(runRoot, "Feature6-Report.pdf");
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    writeFileSync(pdfPath, "not a pdf", "utf8");
+    const summary = readJson(summaryPath);
+    summary.hashes.finalReportPdfSha256 = fixtureFileSha256(pdfPath);
+    writeJson(summaryPath, summary);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "pdf_artifact_invalid",
+    });
   });
 
   it("rejects a workbook disposition that is not the worst worksheet disposition", () => {

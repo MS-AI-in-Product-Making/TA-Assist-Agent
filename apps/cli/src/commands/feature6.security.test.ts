@@ -44,6 +44,7 @@ async function fixture() {
     writeFile(join(f4Root, "Feature4-Calculation.json"), "{}", "utf8"),
     writeFile(join(f5Root, "Feature5-Report.json"), "{}", "utf8"),
     writeFile(join(outputDirectory, "Feature6-Report.md"), "# report\n", "utf8"),
+    writeFile(join(outputDirectory, "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
   ]);
   return {
     base,
@@ -62,6 +63,7 @@ function successfulExecutor(outputDirectory: string, status = "completed"): Exec
       status,
       outputDirectory,
       finalReportMdPath: `${outputDirectory.replaceAll("\\", "/")}/Feature6-Report.md`,
+      finalReportPdfPath: `${outputDirectory.replaceAll("\\", "/")}/Feature6-Report.pdf`,
     }),
     stderr: "",
   });
@@ -79,6 +81,19 @@ async function run(
 }
 
 describe("Feature 6 CLI trust boundary", () => {
+  it("rejects a successful runner result without the required PDF report", async () => {
+    const setup = await fixture();
+
+    await expect(run(setup, async () => ({
+      stdout: JSON.stringify({
+        status: "completed",
+        outputDirectory: setup.outputRelative,
+        finalReportMdPath: `${setup.outputRelative}/Feature6-Report.md`,
+      }),
+      stderr: "",
+    }))).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
+  });
+
   it("rejects an untrusted repository root before executing its runner", async () => {
     const fakeRoot = await mkdtemp(join(tmpdir(), "feature6-fake-root-"));
     cleanup.push(fakeRoot);
@@ -126,6 +141,7 @@ describe("Feature 6 CLI trust boundary", () => {
           status: "partially_completed",
           outputDirectory: setup.outputRelative,
           finalReportMdPath: `${setup.outputRelative}/Feature6-Report.md`,
+          finalReportPdfPath: `${setup.outputRelative}/Feature6-Report.pdf`,
         }),
         stderr: "",
       };
@@ -145,7 +161,7 @@ describe("Feature 6 CLI trust boundary", () => {
       { executeFile },
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nfullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}\nstatus: partially_completed`);
     expect(calls).toHaveLength(1);
     expect(calls[0].file).toBe(process.execPath);
     expect(calls[0].args).toEqual([
@@ -216,7 +232,7 @@ describe("Feature 6 CLI trust boundary", () => {
     async (status) => {
       const setup = await fixture();
       await expect(run(setup, successfulExecutor(setup.outputRelative, status)))
-        .resolves.toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: ${status}`);
+        .resolves.toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nfullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}\nstatus: ${status}`);
     },
   );
 

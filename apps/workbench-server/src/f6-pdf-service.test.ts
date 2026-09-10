@@ -7,14 +7,13 @@ import { describe, expect, it } from "vitest";
 import { browserCandidates, inlineReportImages } from "./f6-pdf-service.js";
 
 describe("browserCandidates", () => {
-  it("prefers configured and Edge installations before falling back to Chrome", () => {
+  it("uses only controlled Edge and Chrome installation paths", () => {
     expect(browserCandidates({
-      AI_TVA_CHROMIUM_EXECUTABLE: "C:\\controlled\\chromium.exe",
+      AI_TVA_CHROMIUM_EXECUTABLE: "C:\\untrusted\\payload.exe",
       PROGRAMFILES: "C:\\Program Files",
       "PROGRAMFILES(X86)": "C:\\Program Files (x86)",
       LOCALAPPDATA: "C:\\Users\\engineer\\AppData\\Local",
     })).toEqual([
-      "C:\\controlled\\chromium.exe",
       "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
       "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
       "C:\\Users\\engineer\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -60,6 +59,27 @@ describe("inlineReportImages", () => {
 
       await expect(inlineReportImages({
         markdown: "[Open image](<../outside.png>)",
+        sourceHash: "b".repeat(64),
+        reportPath,
+        managedRoot: root,
+      })).rejects.toThrow("escaped the managed root");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects standard Markdown image links outside the managed root", async () => {
+    const parent = join(".tmp", `f6-pdf-standard-escape-${randomUUID()}`);
+    const root = join(parent, "managed");
+    const reportPath = join(root, "Feature6-Report.md");
+    const outsideImage = join(parent, "outside.png");
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(reportPath, "# report", "utf8");
+      await writeFile(outsideImage, Buffer.from([137, 80, 78, 71]));
+
+      await expect(inlineReportImages({
+        markdown: "[Open image](../outside.png)",
         sourceHash: "b".repeat(64),
         reportPath,
         managedRoot: root,

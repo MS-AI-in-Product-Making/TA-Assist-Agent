@@ -22,7 +22,8 @@ const LEGACY_FILES = Object.freeze([
   "manifest.json",
 ]);
 
-const CURRENT_FILES = Object.freeze(LEGACY_FILES.filter((fileName) => fileName !== "Feature6-Optimization.md"));
+const V2_FILES = Object.freeze(LEGACY_FILES.filter((fileName) => fileName !== "Feature6-Optimization.md"));
+const V3_FILES = Object.freeze([...V2_FILES, "Feature6-Report.pdf"]);
 const LEGACY_ARTIFACTS = Object.freeze({
   optimizationJson: "Feature6-Optimization.json",
   optimizationMarkdown: "Feature6-Optimization.md",
@@ -30,21 +31,27 @@ const LEGACY_ARTIFACTS = Object.freeze({
   runSummary: "Feature6-Run-Summary.json",
 });
 
-const CURRENT_ARTIFACTS = Object.freeze({
+const V2_ARTIFACTS = Object.freeze({
   optimizationJson: "Feature6-Optimization.json",
   finalReportMarkdown: "Feature6-Report.md",
   runSummary: "Feature6-Run-Summary.json",
+});
+const V3_ARTIFACTS = Object.freeze({
+  ...V2_ARTIFACTS,
+  finalReportPdf: "Feature6-Report.pdf",
 });
 const LEGACY_HASHED_ARTIFACTS = Object.freeze([
   ["optimizationJsonSha256", "Feature6-Optimization.json"],
   ["optimizationMarkdownSha256", "Feature6-Optimization.md"],
   ["finalReportMarkdownSha256", "Feature6-Report.md"],
 ]);
-const CURRENT_HASHED_ARTIFACTS = Object.freeze(LEGACY_HASHED_ARTIFACTS.filter(([key]) => key !== "optimizationMarkdownSha256"));
+const V2_HASHED_ARTIFACTS = Object.freeze(LEGACY_HASHED_ARTIFACTS.filter(([key]) => key !== "optimizationMarkdownSha256"));
+const V3_HASHED_ARTIFACTS = Object.freeze([...V2_HASHED_ARTIFACTS, ["finalReportPdfSha256", "Feature6-Report.pdf"]]);
 
 function artifactContract(manifest: any) {
-  if (manifest?.artifactSetVersion === "f6-artifact-set-v2") return { files: CURRENT_FILES, artifacts: CURRENT_ARTIFACTS, hashes: CURRENT_HASHED_ARTIFACTS, current: true };
-  if (manifest?.artifactSetVersion === undefined) return { files: LEGACY_FILES, artifacts: LEGACY_ARTIFACTS, hashes: LEGACY_HASHED_ARTIFACTS, current: false };
+  if (manifest?.artifactSetVersion === "f6-artifact-set-v3") return { files: V3_FILES, artifacts: V3_ARTIFACTS, hashes: V3_HASHED_ARTIFACTS, optimizationMarkdown: false, pdf: true };
+  if (manifest?.artifactSetVersion === "f6-artifact-set-v2") return { files: V2_FILES, artifacts: V2_ARTIFACTS, hashes: V2_HASHED_ARTIFACTS, optimizationMarkdown: false, pdf: false };
+  if (manifest?.artifactSetVersion === undefined) return { files: LEGACY_FILES, artifacts: LEGACY_ARTIFACTS, hashes: LEGACY_HASHED_ARTIFACTS, optimizationMarkdown: true, pdf: false };
   return undefined;
 }
 
@@ -80,6 +87,11 @@ function jsonFile(filePath: string): any {
 
 function sha256File(filePath: string): string {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
+
+function hasPdfSignature(filePath: string): boolean {
+  const bytes = readFileSync(filePath);
+  return bytes.length >= 8 && bytes.subarray(0, 5).toString("ascii") === "%PDF-";
 }
 
 function isContained(root: string, candidate: string): boolean {
@@ -249,7 +261,17 @@ function validateInputDecisions(summary: any, manifest: any, optimization: any):
 }
 
 function validateRunSummary(summary: any, optimization: any): boolean {
-  return sameJson(summary?.counts, optimization.summary) && sameJson(summary?.sources, expectedSources(optimization));
+  const expected = expectedSources(optimization);
+  if (optimization.optimizationVersion === "f6-optimization-v3" && summary?.sources?.imageObservation !== undefined) {
+    const imageObservation = safeArtifactReference(summary.sources.imageObservation);
+    if (imageObservation === undefined
+      || imageObservation.artifact !== "Feature5-Image-Observations.json"
+      || !/^[a-f0-9]{64}$/.test(imageObservation.contentHash)) {
+      return false;
+    }
+    expected.imageObservation = imageObservation;
+  }
+  return sameJson(summary?.counts, optimization.summary) && sameJson(summary?.sources, expected);
 }
 
 export function validateExistingF6(entryPath: string, request: ExistingF6ValidationRequest): ExistingF6ValidationResult {
@@ -269,6 +291,7 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
     if (summary?.status !== expectedStatus || !validateRunSummary(summary, optimization)) return rejected("run_summary_invalid");
 
     if (!validateHashes(runRoot, summary, contract.hashes)) return rejected("artifact_hash_mismatch");
+    if (contract.pdf && !hasPdfSignature(path.join(runRoot, "Feature6-Report.pdf"))) return rejected("artifact_validation_failed");
     if (!validateReportSummary(summary, optimization)) return rejected("report_summary_invalid");
     if (!validateInputDecisions(summary, manifest, optimization)) return rejected("input_decisions_invalid");
 
@@ -277,8 +300,9 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
       status: "accepted",
       outputDirectory: runRoot,
       optimizationJsonPath: path.join(runRoot, "Feature6-Optimization.json"),
-      ...(contract.current ? {} : { optimizationMarkdownPath: path.join(runRoot, "Feature6-Optimization.md") }),
+      ...(contract.optimizationMarkdown ? { optimizationMarkdownPath: path.join(runRoot, "Feature6-Optimization.md") } : {}),
       finalReportMarkdownPath,
+      ...(contract.pdf ? { finalReportPdfPath: path.join(runRoot, "Feature6-Report.pdf") } : {}),
       runSummaryPath: path.join(runRoot, "Feature6-Run-Summary.json"),
       manifestPath: path.join(runRoot, "manifest.json"),
       reportSummary: summary.reportSummary,

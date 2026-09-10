@@ -6,6 +6,7 @@ import path from "node:path";
 import { runF6Optimization } from "./index.js";
 
 const HASH = "a".repeat(64);
+const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
 const LANGUAGE = {
   languageTag: "en-US",
   uiCatalogLanguage: "en" as const,
@@ -75,6 +76,7 @@ describe("runF6Optimization", () => {
         optimizationJsonName: "Feature6-Optimization.json",
         optimizationMdName: "Feature6-Optimization.md",
         finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       })),
@@ -96,6 +98,7 @@ describe("runF6Optimization", () => {
         sourceReferences: {},
       })),
       createFinalReport: vi.fn(() => ({ markdown: "# F6 report\n", reportSummary: { workbookDisposition: "PASS", worksheetDispositions: [] } })),
+      renderFinalReportPdf: vi.fn(() => PDF),
       renderOptimization: vi.fn(() => "# F6 optimization\n"),
       mkdir: vi.fn(),
       randomUUID: vi.fn(() => "temp-id"),
@@ -139,6 +142,7 @@ describe("runF6Optimization", () => {
         optimizationJsonName: "Feature6-Optimization.json",
         optimizationMdName: "Feature6-Optimization.md",
         finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       })),
@@ -159,6 +163,7 @@ describe("runF6Optimization", () => {
       })),
       createOptimization,
       createFinalReport: vi.fn(() => ({ markdown: "# F6 report\n", reportSummary: { workbookDisposition: "PASS", worksheetDispositions: [] }, projection: {} })),
+      renderFinalReportPdf: vi.fn(() => PDF),
       renderOptimization: vi.fn(() => "# F6 optimization\n"),
     });
 
@@ -206,6 +211,7 @@ describe("runF6Optimization", () => {
         optimizationJsonName: "Feature6-Optimization.json",
         optimizationMdName: "Feature6-Optimization.md",
         finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       })),
@@ -229,6 +235,7 @@ describe("runF6Optimization", () => {
       })),
       createOptimization,
       createFinalReport: vi.fn(() => ({ markdown: "# F6 report\n", reportSummary: { workbookDisposition: "PASS", worksheetDispositions: [] }, projection: {} })),
+      renderFinalReportPdf: vi.fn(() => PDF),
       renderOptimization: vi.fn(() => "# F6 optimization\n"),
     });
 
@@ -252,7 +259,7 @@ describe("runF6Optimization", () => {
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: "a".repeat(64),
     }, context(), {
-      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
+      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({
         status: "accepted",
         request: { worksheets: [] },
@@ -294,7 +301,7 @@ describe("runF6Optimization", () => {
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: HASH,
     } as any, context(), {
-      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
+      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({ status: "accepted", request: {}, f2Report: { artifactRoot: "f1" }, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
       createOptimization,
       createFinalReport,
@@ -321,7 +328,7 @@ describe("runF6Optimization", () => {
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: HASH,
     }, context(), {
-      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
+      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({ status: "accepted", request: {}, f2Report: { artifactRoot: "f1" }, f3Report: {}, f4Report: {}, f5Report: {}, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
       createOptimization: vi.fn(() => ({ optimizationVersion: "f6-optimization-v2", runStatus: "COMPLETED", summary: {} }) as any),
       createFinalReport,

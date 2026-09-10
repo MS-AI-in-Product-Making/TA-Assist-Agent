@@ -49,7 +49,7 @@ afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
 
-async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}));\n`): Promise<{
+async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md",finalReportPdfPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.pdf"}));\n`): Promise<{
   rootDir: string;
   f2Root: string;
   f3Root: string;
@@ -69,6 +69,7 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
     ...roots.map((root) => mkdir(root, { recursive: true })),
     mkdir(join(publishRoot, "f6-runs", "demo", "run-1"), { recursive: true }),
     writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md"), "# report\n", "utf8"),
+    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
   ]);
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
@@ -91,6 +92,7 @@ describe("Feature 6 CLI command", () => {
     );
 
     expect(result).toContain(`fullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}`);
+    expect(result).toContain(`fullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}`);
     expect(result).not.toContain("\nreport: ");
   });
 
@@ -98,7 +100,7 @@ describe("Feature 6 CLI command", () => {
     const setup = await fixture(`
 import { writeFileSync } from "node:fs";
 writeFileSync("invocation.json", JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
-console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1", finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md" }));
+console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1", finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md", finalReportPdfPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.pdf" }));
 `);
     const options = {
       selectedWorksheetNames: ["Overview", "Details"],
@@ -116,7 +118,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root, options,
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nfullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}\nstatus: partially_completed`);
     expect(JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"))).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
@@ -141,7 +143,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
   it.each(["completed", "partially_completed", "calculation_failed"])(
     "accepts the governed nonfailed runner status %s",
     async (status) => {
-      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}));\n`);
+      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md",finalReportPdfPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.pdf"}));\n`);
 
       await expect(runFeature6WorkflowCommand(
         setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,

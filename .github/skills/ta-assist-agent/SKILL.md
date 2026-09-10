@@ -15,6 +15,8 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 
 **REQUIRED SUB-SKILL: Use design-optimization.** Follow that Skill's workbook entry mode without omitting, merging, or reordering its governance gates.
 
+**REQUIRED SUB-SKILL: Use pdf-report-export.** Require the hash-validated PDF report in the same successful governed publication as the Markdown report.
+
 ## Entry
 
 - Accept exactly one `.xlsx` TA workbook path.
@@ -27,4 +29,4 @@ Present the workflow as **TA Assist Agent** and use product capability names in 
 
 The source workbook remains read-only. Preserve worksheet confirmations, drawing-governance publishing confirmation, multimodal image and complete-Factor validation, optional Analysis Context and Optimization Targets decisions, deterministic calculation authority, artifact containment, hashes, and final report validation.
 
-On success, present only the validator-confirmed final `Feature6-Report.md` link and absolute path as the engineering report. Internal JSON, run-summary, and manifest artifacts remain governed implementation records, not additional user reports.
+On success, present only the validator-confirmed final `Feature6-Report.md` and `Feature6-Report.pdf` links and absolute paths as the engineering reports. Internal JSON, run-summary, and manifest artifacts remain governed implementation records, not additional user reports.

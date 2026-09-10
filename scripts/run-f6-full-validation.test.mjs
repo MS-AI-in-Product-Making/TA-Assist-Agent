@@ -15,12 +15,14 @@ afterEach(() => {
 
 function layoutFor(bundle, runId = "2026-08-24T07-00-00-000Z") {
   return {
+    artifactSetVersion: "f6-artifact-set-v3",
     runId,
     runRoot: path.join(bundle.publishRoot, "f6-runs", runId),
     publishRoot: bundle.publishRoot,
     optimizationJsonName: "Feature6-Optimization.json",
     optimizationMdName: "Feature6-Optimization.md",
     finalReportMdName: "Feature6-Report.md",
+    finalReportPdfName: "Feature6-Report.pdf",
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",
   };

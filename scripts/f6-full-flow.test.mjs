@@ -31,6 +31,7 @@ import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
 const HASH = "a".repeat(64);
+const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
 const interactionLanguage = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -131,12 +132,13 @@ function setup({ status = "completed" } = {}) {
       expectedModelInterpretationContentHash: HASH,
     })),
     resolveLayout: vi.fn(() => ({
-      artifactSetVersion: "f6-artifact-set-v2",
+      artifactSetVersion: "f6-artifact-set-v3",
       runId: "2026-08-17T01-02-03-456Z",
       runRoot,
       publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
       finalReportMdName: "Feature6-Report.md",
+      finalReportPdfName: "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     })),
@@ -163,6 +165,7 @@ function setup({ status = "completed" } = {}) {
     })),
     createOptimization: vi.fn(() => optimization),
     createFinalReport: vi.fn(() => finalReport),
+    renderFinalReportPdf: vi.fn(() => PDF),
     renderOptimization: vi.fn(() => "# F6 optimization\n"),
     rename: (from, to) => {
       renameCalls.push(path.basename(to));
@@ -197,15 +200,17 @@ function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}
   const result = runF6FullValidation({}, {
     parseArgs: () => parsed,
     resolveLayout: () => ({
-      artifactSetVersion: "f6-artifact-set-v2",
+      artifactSetVersion: "f6-artifact-set-v3",
       runId,
       runRoot,
       publishRoot: bundle.publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
       finalReportMdName: "Feature6-Report.md",
+      finalReportPdfName: "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     }),
+    renderFinalReportPdf: () => PDF,
     ...dependencyOverrides,
   });
   return { result, runRoot };
@@ -225,6 +230,7 @@ function temporaryFiles(root) {
 const committedArtifacts = [
   ["optimizationJson", "Feature6-Optimization.json"],
   ["finalReportMarkdown", "Feature6-Report.md"],
+  ["finalReportPdf", "Feature6-Report.pdf"],
   ["runSummary", "Feature6-Run-Summary.json"],
 ];
 
@@ -274,7 +280,7 @@ describe("runF6FullValidation", () => {
     });
   });
 
-  it("writes all four fixed artifacts and passes validated reports to the final report projection", () => {
+  it("writes all five fixed artifacts and passes validated reports to the final report projection", () => {
     const context = setup();
     const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
 
@@ -282,6 +288,7 @@ describe("runF6FullValidation", () => {
     expect(readdirSync(context.runRoot).sort()).toEqual([
       "Feature6-Optimization.json",
       "Feature6-Report.md",
+      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -301,6 +308,8 @@ describe("runF6FullValidation", () => {
       requireMultimodalV3: true,
     });
     expect(result.finalReportMdPath).toBe(path.join(context.runRoot, "Feature6-Report.md"));
+    expect(result.finalReportPdfPath).toBe(path.join(context.runRoot, "Feature6-Report.pdf"));
+    expect(readFileSync(result.finalReportPdfPath)).toEqual(PDF);
     expect(result).not.toHaveProperty("composedReportJsonPath");
     expect(result).not.toHaveProperty("composedReportMdPath");
     expect(context.deps.createOptimization).toHaveBeenCalledWith({ request: true }, {
@@ -323,6 +332,16 @@ describe("runF6FullValidation", () => {
     expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
     expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ artifacts: {} });
+  });
+
+  it("fails before publishing business artifacts when the PDF signature is invalid", () => {
+    const context = setup();
+    context.deps.renderFinalReportPdf = () => Buffer.from("not a pdf");
+
+    const result = runF6FullValidation({}, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
   });
 
   it("passes optional targets through the v3 gate and records identical input decisions in summary and manifest", () => {
@@ -384,13 +403,14 @@ describe("runF6FullValidation", () => {
     expect(manifest.inputDecisions).toEqual(inputDecisions);
   });
 
-  it("hashes the exact three serialized content artifacts and records the report summary", () => {
+  it("hashes the exact four serialized content artifacts and records the report summary", () => {
     const context = setup();
     runF6FullValidation({}, context.deps);
     const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: sha256(`${JSON.stringify(context.optimization, null, 2)}\n`),
       finalReportMarkdownSha256: sha256(context.finalReport.markdown),
+      finalReportPdfSha256: sha256(PDF),
     });
     expect(summary.reportSummary).toEqual(context.reportSummary);
   });
@@ -401,6 +421,7 @@ describe("runF6FullValidation", () => {
     expect(context.renameCalls).toEqual([
       "Feature6-Optimization.json",
       "Feature6-Report.md",
+      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -579,7 +600,7 @@ describe("F6 real artifact full flow", () => {
           "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
         ],
         now: fixedNow,
-      }, {}, { log: (line) => lines.push(line) });
+      }, { renderFinalReportPdf: () => PDF }, { log: (line) => lines.push(line) });
     } finally {
       if (previousOutputRoot === undefined) delete process.env.AI_TVA_F6_OUTPUT_ROOT;
       else process.env.AI_TVA_F6_OUTPUT_ROOT = previousOutputRoot;
@@ -591,6 +612,7 @@ describe("F6 real artifact full flow", () => {
     expect(readdirSync(runRoot).sort()).toEqual([
       "Feature6-Optimization.json",
       "Feature6-Report.md",
+      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -600,6 +622,7 @@ describe("F6 real artifact full flow", () => {
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
       finalReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Report.md")),
+      finalReportPdfSha256: artifactHash(path.join(runRoot, "Feature6-Report.pdf")),
     });
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
     const finalMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
@@ -629,11 +652,12 @@ describe("F6 real artifact full flow", () => {
     expect(existsSync(linkedImagePath)).toBe(true);
     expect(artifactHash(linkedImagePath)).toBe(bundle.f3Worksheets[0].rows[0].imageReference.contentHash);
     expect(cliResult.finalReportMdPath).toBe(path.join(runRoot, "Feature6-Report.md"));
+    expect(cliResult.finalReportPdfPath).toBe(path.join(runRoot, "Feature6-Report.pdf"));
     expect(cliResult).not.toHaveProperty("composedReportJsonPath");
     expect(cliResult).not.toHaveProperty("composedReportMdPath");
     expect(readJson(path.join(runRoot, "manifest.json"))).toEqual({
       contractVersion: "v1",
-      artifactSetVersion: "f6-artifact-set-v2",
+      artifactSetVersion: "f6-artifact-set-v3",
       featureId: "F6",
       status: "completed",
       runId: "2026-08-17T01-02-03-456Z",
@@ -652,6 +676,7 @@ describe("F6 real artifact full flow", () => {
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
         finalReportMarkdown: "Feature6-Report.md",
+        finalReportPdf: "Feature6-Report.pdf",
         runSummary: "Feature6-Run-Summary.json",
       },
     });
@@ -704,10 +729,12 @@ describe("F6 real artifact full flow", () => {
     expect(readdirSync(result.outputDirectory).sort()).toEqual([
       "Feature6-Optimization.json",
       "Feature6-Report.md",
+      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
     expect(result.finalReportMdPath).toBe(path.join(result.outputDirectory, "Feature6-Report.md"));
+    expect(result.finalReportPdfPath).toBe(path.join(result.outputDirectory, "Feature6-Report.pdf"));
     expect(result).not.toHaveProperty("composedReportJsonPath");
     expect(result).not.toHaveProperty("composedReportMdPath");
     expect(readFileSync(bundle.paths.f5).equals(f5Bytes)).toBe(true);
@@ -740,6 +767,7 @@ describe("F6 real artifact full flow", () => {
     expect(readdirSync(runRoot).sort()).toEqual([
       "Feature6-Optimization.json",
       "Feature6-Report.md",
+      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -759,7 +787,7 @@ describe("F6 real artifact full flow", () => {
     const worksheet = optimization.worksheets[0];
 
     expect(result.status).toBe("completed");
-    expect(readdirSync(runRoot)).toHaveLength(4);
+    expect(readdirSync(runRoot)).toHaveLength(5);
     expect(optimization.optimizationVersion).toBe("f6-optimization-v3");
     expect(worksheet.steps.map(({ step }) => step)).toEqual(["centerAssessment", "contributorPriorities", "specificationChanges", "toleranceOptimization"]);
     expect(worksheet.steps[3]).toEqual(expect.objectContaining({
@@ -780,6 +808,7 @@ describe("F6 real artifact full flow", () => {
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
       finalReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Report.md")),
+      finalReportPdfSha256: artifactHash(path.join(runRoot, "Feature6-Report.pdf")),
     });
     expect(summary.reportSummary.workbookDisposition).toBeDefined();
     expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
@@ -787,6 +816,7 @@ describe("F6 real artifact full flow", () => {
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
         finalReportMarkdown: "Feature6-Report.md",
+        finalReportPdf: "Feature6-Report.pdf",
         runSummary: "Feature6-Run-Summary.json",
       },
     });
@@ -844,7 +874,7 @@ describe("F6 real artifact full flow", () => {
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
 
     expect(result.status).toBe("completed");
-    expect(readdirSync(runRoot)).toHaveLength(4);
+    expect(readdirSync(runRoot)).toHaveLength(5);
     expect(calculateScenario).not.toHaveBeenCalled();
     expect(JSON.stringify(optimization)).not.toMatch(/OP[123]|reductionRatio|"ratio"/u);
   });

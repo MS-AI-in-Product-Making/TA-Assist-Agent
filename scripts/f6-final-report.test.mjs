@@ -228,15 +228,18 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
     }),
     resolveLayout: () => ({
+      artifactSetVersion: "f6-artifact-set-v3",
       runId,
       runRoot,
       publishRoot: bundle.publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
       optimizationMdName: "Feature6-Optimization.md",
       finalReportMdName: "Feature6-Report.md",
+      finalReportPdfName: "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     }),
+    renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
   });
 
   expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
