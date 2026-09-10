@@ -55,7 +55,7 @@ The remainder of this document is machine-facing execution contract text. Litera
 
 ### Phase W0 - Validate workbook and F0 capabilities
 
-Resolve exactly one canonical `.xlsx` path, verify that it is a regular non-linked file, and preserve it read-only. Confirm the repository-backed F0 modules required by the flow: public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v2`. Stop if a required controlled version is unavailable.
+Run `npm run workflow:ta-entry-validation -- <ta-workbook-path>` exactly once. Require its completed result, canonical `.xlsx` path, regular non-linked file validation, workbook content hash, and controlled version list. Preserve the workbook read-only. The command validates repository-backed capabilities through their controlled loaders: public knowledge base `v1`, internal tolerance guidance `internal-v1`, interpretation rules `interpretation-rules-v2`, and process requirements `process-requirements-v1`. Never recursively scan repository contents to validate controlled versions. Stop if the command fails or a required controlled version is unavailable.
 
 ### Phase W1 - Generate F1 worksheet selection
 
@@ -191,6 +191,7 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 
 ## Allowed commands
 
+- `npm run workflow:ta-entry-validation -- <ta-workbook-path>`
 - `npm run workflow:f2:excel -- <ta-workbook-path>`
 - `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm`
 - `npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`

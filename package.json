@@ -26,6 +26,7 @@
     "demo:task1.7": "node scripts/run-f1-task1-7-demo.mjs",
     "workflow:f1": "node scripts/run-f1-full-validation.mjs",
     "workflow:data-parsing": "node scripts/run-f1-full-validation.mjs",
+    "workflow:ta-entry-validation": "node scripts/validate-ta-workbook-entry.mjs",
     "preworkflow:f2:excel": "npm run build -- --force",
     "workflow:f2": "node scripts/run-f2-full-validation.mjs",
     "workflow:data-cleaning": "node scripts/run-f2-full-validation.mjs",
