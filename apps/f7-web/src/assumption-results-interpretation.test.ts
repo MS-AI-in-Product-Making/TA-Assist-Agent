@@ -4,6 +4,7 @@ import { buildAssumptionResultsInterpretation } from "./assumption-results-inter
 
 type NarrativeRuleLike = { readonly ruleId: string };
 type NarrativeActionLike = { readonly optionId: string };
+type GuidanceEntryLike = { readonly entryId: string };
 
 function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   return {
@@ -114,5 +115,31 @@ describe("assumption results enhanced interpretation", () => {
     expect(result.validationRequirements).toContain("Validate the dominant contributor evidence before changing its tolerance or process controls.");
     expect(new Set(result.validationRequirements).size).toBe(result.validationRequirements.length);
     expect(result.validationRequirements).toEqual(result.narrative.validationRequirements);
+  });
+
+  it("attaches F0 process guidance for enhanced below-target results including requirement gap notice", () => {
+    const result = buildAssumptionResultsInterpretation(enhancedInterpretationSnapshot()) as {
+      readonly status: string;
+      readonly capability?: { readonly status: string };
+      readonly processGuidance?: { readonly entries: readonly GuidanceEntryLike[] };
+    };
+
+    expect(result.status).toBe("available");
+    expect(result.capability?.status).toBe("below-target");
+    expect(result.processGuidance?.entries.map((entry) => entry.entryId)).toContain("requirement-gap-ado-notice");
+  });
+
+  it("retains worksheet-supported input completeness guidance when prerequisites are unavailable", () => {
+    const snapshot = enhancedInterpretationSnapshot();
+    const result = buildAssumptionResultsInterpretation({
+      ...snapshot,
+      systemSpecification: undefined,
+    } as unknown as F7SessionSnapshot) as {
+      readonly status: string;
+      readonly processGuidance?: { readonly entries: readonly GuidanceEntryLike[] };
+    };
+
+    expect(result.status).toBe("unavailable");
+    expect(result.processGuidance?.entries.map((entry) => entry.entryId)).toContain("requirement-input-completeness");
   });
 });

@@ -14,6 +14,7 @@ import type {
   F7SessionSnapshot,
   F7SetupDistribution,
 } from "./api/f7-client";
+import { buildF0ProcessGuidance, type F0ProcessGuidance } from "./f0-process-guidance";
 import { buildTaOverallAssessment, buildTaResultSummary, type TaResultSummaryRow } from "./ta-result-summary";
 
 const UNAVAILABLE_REASONS = {
@@ -107,6 +108,7 @@ export type AssumptionResultsInterpretation =
       readonly overallAssessment: string;
       readonly assumptions: readonly string[];
       readonly inputReadiness: InputReadiness;
+      readonly processGuidance: F0ProcessGuidance;
       readonly narrative: F7EngineeringNarrative;
       readonly provenance: typeof PROVENANCE;
     }
@@ -116,11 +118,13 @@ export type AssumptionResultsInterpretation =
       readonly reason: string;
       readonly assumptions: readonly string[];
       readonly inputReadiness: InputReadiness;
+      readonly processGuidance: F0ProcessGuidance;
     };
 
 function unavailable(
   kind: keyof typeof UNAVAILABLE_REASONS,
   inputReadiness: InputReadiness,
+  processGuidance: F0ProcessGuidance,
 ): AssumptionResultsInterpretation {
   return {
     status: "unavailable",
@@ -128,6 +132,7 @@ function unavailable(
     reason: UNAVAILABLE_REASONS[kind],
     assumptions: [],
     inputReadiness,
+    processGuidance,
   };
 }
 
@@ -186,6 +191,7 @@ export function buildAssumptionResultsInterpretation(
   session: DeepReadonly<F7SessionSnapshot>,
 ): AssumptionResultsInterpretation {
   const inputReadiness = buildInputReadiness(session);
+  const baseProcessGuidance = buildF0ProcessGuidance(session);
   const specification = session.systemSpecification;
   if (
     session.factors.length === 0
@@ -199,7 +205,7 @@ export function buildAssumptionResultsInterpretation(
     || specification.targetSigmaLevel.status !== "available"
     || specification.additionalMeanShift.status !== "available"
   ) {
-    return unavailable("prerequisites-unavailable", inputReadiness);
+    return unavailable("prerequisites-unavailable", inputReadiness, baseProcessGuidance);
   }
 
   const systemValues = [
@@ -214,7 +220,7 @@ export function buildAssumptionResultsInterpretation(
     || specification.targetSigmaLevel.actualValue <= 0
     || specification.lowerSpecLimit.actualValue >= specification.upperSpecLimit.actualValue
   ) {
-    return unavailable("prerequisites-unavailable", inputReadiness);
+    return unavailable("prerequisites-unavailable", inputReadiness, baseProcessGuidance);
   }
 
   const shift = specification.additionalMeanShift.valueOrigin === "defaulted"
@@ -256,7 +262,7 @@ export function buildAssumptionResultsInterpretation(
       },
     });
   } catch {
-    return unavailable("calculation-unavailable", inputReadiness);
+    return unavailable("calculation-unavailable", inputReadiness, baseProcessGuidance);
   }
 
   const contributors = calculation.factors
@@ -296,19 +302,27 @@ export function buildAssumptionResultsInterpretation(
       || evaluation.knowledgeBaseVersion !== INTERPRETATION_VERSION
       || evaluation.resolvedTargets?.cpk?.value !== targetCpk
       || evaluation.resolvedTargets.cpk.source !== targetSource) {
-      return unavailable("rules-unavailable", inputReadiness);
+      return unavailable("rules-unavailable", inputReadiness, baseProcessGuidance);
     }
     for (const rule of evaluation.matchedRules) controlledTitle(rule.entryId);
 
     const performanceRules = evaluation.matchedRules.filter((rule) => rule.entryType === "performance-rule");
-    if (performanceRules.length !== 1) return unavailable("rules-unavailable", inputReadiness);
+    if (performanceRules.length !== 1) return unavailable("rules-unavailable", inputReadiness, baseProcessGuidance);
     const performanceRule = performanceRules[0]!;
     const capabilityStatus = performanceRule.entryId === "performance-cpk"
       ? "meets-target"
       : performanceRule.entryId === "performance-cpk-below-target"
         ? "below-target"
         : undefined;
-    if (capabilityStatus === undefined) return unavailable("rules-unavailable", inputReadiness);
+    if (capabilityStatus === undefined) return unavailable("rules-unavailable", inputReadiness, baseProcessGuidance);
+
+    const governedCapabilityStatus = calculation.capabilityStatus === "below-target"
+      ? "below-target"
+      : capabilityStatus;
+    const processGuidance = buildF0ProcessGuidance(
+      session,
+      governedCapabilityStatus === "below-target",
+    );
 
     const rootCauseRules = evaluation.matchedRules.filter((rule) => rule.entryType === "root-cause-signal");
     const improvementRules = evaluation.matchedRules.filter((rule) => rule.entryType === "improvement-option");
@@ -380,10 +394,11 @@ export function buildAssumptionResultsInterpretation(
         ? [ASSUMPTION_DISCLOSURE, CONCENTRATION_DISCLOSURE]
         : [ASSUMPTION_DISCLOSURE],
       inputReadiness,
+      processGuidance,
       narrative,
       provenance: PROVENANCE,
     };
   } catch {
-    return unavailable("rules-unavailable", inputReadiness);
+    return unavailable("rules-unavailable", inputReadiness, baseProcessGuidance);
   }
 }
