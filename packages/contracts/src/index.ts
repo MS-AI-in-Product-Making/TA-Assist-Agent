@@ -1,5 +1,6 @@
 export * from "./contracts.js";
 export * from "./errors.js";
+export * from "./process-requirements-contracts.js";
 export * from "./f7-contracts.js";
 export * from "./f8-contracts.js";
 export * from "./f7-handoff-contracts.js";

@@ -154,6 +154,29 @@ it("rejects a model response that does not map the current Factor source row", (
   expect(existsSync(path.join(bundle.publishRoot, "f6-model-interpretations"))).toBe(false);
 });
 
+it("accepts equivalent numeric and string DIM IDs across current evidence", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  rewriteFixtureJson(bundle.paths.f2, (value) => {
+    value.worksheets[0].rows[0].actualFields.dimCharacteristicId = 1;
+    return value;
+  });
+  rewriteFixtureJson(bundle.paths.f3, (value) => {
+    value.worksheets[0].rows[0].dimId = "1";
+    return value;
+  });
+
+  const result = materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+  });
+
+  expect(result.status).toBe("completed");
+});
+
 it("rejects a physical image hash mismatch before writing an artifact", () => {
   const worksheetNames = ["Analysis-A"];
   const bundle = createF6ArtifactBundleFixture({ worksheetNames });
