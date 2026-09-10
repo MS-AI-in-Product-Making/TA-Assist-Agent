@@ -7,6 +7,7 @@ const skillPath = path.join(root, ".github", "skills", "design-optimization", "S
 const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].join("-"), "json"].join(".");
 
 const allowedCommands = [
+  "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
   "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
@@ -101,7 +102,7 @@ describe("Design Optimization skill contract", () => {
     expect(userFacing).not.toMatch(/\bW[0-9A-Z]*\b/u);
   });
 
-  it("allows only the governed F1 through F6 workflow command shapes", () => {
+  it("allows only the governed entry through F6 workflow command shapes", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(commandLines(internal)).toEqual(allowedCommands);
     expect(internal).toContain("Pass the workflow-locked language tag with `--language <locked-language-tag>`");
