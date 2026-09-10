@@ -291,7 +291,7 @@ describe("F8 Web ADO contracts", () => {
       state: "preview_ready",
       actionId: "ado-validation:session-a:2",
       expectedRevision: 2,
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" },
+      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
       markdown: confirmation.nextContent,
       contentHash: "c".repeat(64),
       confirmation,
@@ -305,7 +305,7 @@ describe("F8 Web ADO contracts", () => {
       contractVersion: "f8-ado-write-confirmation-v1",
       validationActionId: "ado-validation:session-a:2",
       expectedRevision: 2,
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" },
+      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
       contentHash: "c".repeat(64),
       confirmationHash: "b".repeat(64),
       confirmed: true,
@@ -5366,13 +5366,15 @@ describe("F5.1 objective interpretation contracts", () => {
             tableId: "table-a",
             runStatus: "COMPLETED" as const,
             baselineIdentity,
+            baselineCapability: { lowerCpk: 1, upperCpk: 1, targetCpk: 1 },
             steps: [
               { step: "centerAssessment" as const, status: "aligned" as const, adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
               { step: "contributorPriorities" as const, priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" as const }] },
               { step: "specificationChanges" as const, proposals: [], clarifications: [] },
+              { step: "toleranceOptimization" as const, policyId: "f6-top3-tolerance-policy-v1" as const, trigger: { lowerCpk: 1, upperCpk: 1, targetCpk: 1, failedSides: [] }, options: [] },
             ],
           }],
-          summary: { worksheetCount: 1, completedWorksheetCount: 1, clarificationRequiredWorksheetCount: 0 },
+          summary: { worksheetCount: 1, completedWorksheetCount: 1, clarificationRequiredWorksheetCount: 0, candidateOptionCount: 0 as const, completedOptionCount: 0, calculationFailedOptionCount: 0 },
           provenance: {
             f2Reference: artifactReference("Feature2-Report.json"),
             f3Reference: artifactReference("Feature3-Report.json"),
@@ -5402,25 +5404,25 @@ describe("F5.1 objective interpretation contracts", () => {
         }
         expect(f6OptimizationResultV3Schema.safeParse({
           ...resultV3,
-          worksheets: [{ ...resultV3.worksheets[0], steps: [{ ...resultV3.worksheets[0].steps[0], adjustedMean: 1 }, resultV3.worksheets[0].steps[1], resultV3.worksheets[0].steps[2]] }],
+          worksheets: [{ ...resultV3.worksheets[0], steps: [{ ...resultV3.worksheets[0].steps[0], adjustedMean: 1 }, resultV3.worksheets[0].steps[1], resultV3.worksheets[0].steps[2], resultV3.worksheets[0].steps[3]] }],
         }).success).toBe(false);
         const lowerRankedFactor = { ...factor, sourceRow: factor.sourceRow + 1, factorName: "Factor B" };
         expect(f6OptimizationResultV3Schema.safeParse({
           ...resultV3,
-          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.1, guidance: "tighten_tolerance" }, { rank: 2, factor: lowerRankedFactor, contribution: 0.9, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.1, guidance: "tighten_tolerance" }, { rank: 2, factor: lowerRankedFactor, contribution: 0.9, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2], resultV3.worksheets[0].steps[3]] }],
         }).success).toBe(false);
         expect(f6OptimizationResultV3Schema.safeParse({
           ...resultV3,
-          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" }, { rank: 2, factor, contribution: 0.6, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" }, { rank: 2, factor, contribution: 0.6, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2], resultV3.worksheets[0].steps[3]] }],
         }).success).toBe(false);
         const invalidProposal = { side: "lower" as const, currentLimit: -1, proposedLimit: 0, targetCpk: 1.33, currentSideCpk: 0.8, verifiedSideCpk: 1.33, verificationStatus: "target_met" as const, approvalRequired: true as const, capabilityImprovementClaim: false as const, calculationReference: artifactReference("F4-Proposal.json") };
         expect(f6OptimizationResultV3Schema.safeParse({
           ...resultV3,
-          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], resultV3.worksheets[0].steps[1], { step: "specificationChanges", proposals: [invalidProposal], clarifications: [] }] }],
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], resultV3.worksheets[0].steps[1], { step: "specificationChanges", proposals: [invalidProposal], clarifications: [] }, resultV3.worksheets[0].steps[3]] }],
         }).success).toBe(false);
         expect(f6OptimizationResultV3Schema.safeParse({
           ...resultV3,
-          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { ...resultV3.worksheets[0].steps[1], priorities: [{ ...resultV3.worksheets[0].steps[1].priorities[0], rationale: "Use OP1" }] }, resultV3.worksheets[0].steps[2]] }],
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { ...resultV3.worksheets[0].steps[1], priorities: [{ ...resultV3.worksheets[0].steps[1].priorities[0], policyContext: { optionCode: "OP1" } }] }, resultV3.worksheets[0].steps[2], resultV3.worksheets[0].steps[3]] }],
         }).success).toBe(false);
       });
 

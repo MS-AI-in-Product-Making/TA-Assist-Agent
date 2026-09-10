@@ -812,6 +812,12 @@ textarea {
   color: var(--muted);
 }
 
+.report-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .field,
 .stack {
   display: grid;

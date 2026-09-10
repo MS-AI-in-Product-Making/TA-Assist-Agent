@@ -107,7 +107,7 @@ function sameNullable(left, right) {
   return (left ?? null) === (right ?? null);
 }
 
-function sameNullableIdentifier(left, right) {
+function sameDimId(left, right) {
   if (left == null || right == null) return left == null && right == null;
   return String(left) === String(right);
 }
@@ -173,7 +173,7 @@ function buildFactorRows(worksheetName, f2Worksheet, f3Worksheet, calculation) {
       || actual.partName !== f3Row.partSubsystem
       || actual.partCategory !== f3Row.partCategory
       || !sameNullable(actual.drawingNumber, f3Row.drawingNumber)
-      || !sameNullableIdentifier(actual.dimCharacteristicId, f3Row.dimId)
+      || !sameDimId(actual.dimCharacteristicId, f3Row.dimId)
       || actual.nominalValue !== factor.input.nominalValue
       || actual.upperTolerance !== factor.input.upperTolerance
       || actual.lowerTolerance !== factor.input.lowerTolerance

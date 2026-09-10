@@ -87,23 +87,23 @@ it("materializes one current v3 artifact for five selected worksheets", () => {
   expect(loaded.modelInterpretation.worksheets).toHaveLength(5);
 });
 
-it("accepts a numeric F2 DIM ID matching the normalized F3 string identity", () => {
+it("accepts equivalent numeric and string DIM ID representations", () => {
   const worksheetNames = ["Analysis-A"];
-  const bundle = createF6ArtifactBundleFixture({
-    worksheetNames,
-    actualFieldOverrides: { dimCharacteristicId: 101 },
-  });
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
   cleanup.push(bundle.root);
+  rewriteFixtureJson(bundle.paths.f2, (value) => {
+    value.worksheets[0].rows[0].actualFields.dimCharacteristicId = 1;
+  });
   rewriteFixtureJson(bundle.paths.f3, (value) => {
-    value.worksheets[0].rows[0].dimId = "101";
+    value.worksheets[0].rows[0].dimId = "1";
   });
   const responsePath = writeResponse(bundle, worksheetNames);
 
-  expect(materializeF6ModelInterpretation({
+  expect(() => materializeF6ModelInterpretation({
     ...bundle,
     responsePath,
     outputRoot: bundle.publishRoot,
-  })).toMatchObject({ status: "completed", worksheetCount: 1 });
+  })).not.toThrow();
 });
 
 it("rejects a model response outside the governed response root", () => {

@@ -387,7 +387,7 @@ describe("workbench state machine", () => {
         commandId: "ado-create-new",
         expectedRevision: 4,
         command: "confirm_ado_decision",
-        payload: { decision: "create_new" },
+        payload: { decision: "create_new", title: "TA Drawing Governance", sponsorEmail: "sponsor@example.com" },
       },
     );
 

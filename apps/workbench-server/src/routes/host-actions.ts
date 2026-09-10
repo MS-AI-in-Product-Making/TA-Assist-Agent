@@ -167,7 +167,9 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       ])).digest("hex");
       if (confirmation.confirmationHash !== expectedConfirmationHash
         || confirmation.nextContent !== action.prepareRequest.nextContent
-        || confirmation.factorCount !== action.prepareRequest.factorCount) {
+        || confirmation.factorCount !== action.prepareRequest.factorCount
+        || (action.prepareRequest.mode === "create"
+          && confirmation.ownerReference.trim().toLowerCase() !== action.prepareRequest.sponsorEmail.trim().toLowerCase())) {
         return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
       }
     }

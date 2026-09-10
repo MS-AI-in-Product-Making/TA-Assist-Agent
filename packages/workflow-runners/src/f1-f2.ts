@@ -408,15 +408,18 @@ function registrySelectionReference(
     };
   }
   if (waiting.length > 1) throw new Error("Feature 2 pending selection is ambiguous.");
+  if (confirmed.length === 1) {
+    const candidate = confirmed[0]!;
+    return {
+      runId: candidate.runId,
+      runRoot: candidate.runRoot,
+      manifestPath: candidate.manifestPath,
+      promptPath: candidate.promptPath,
+    };
+  }
+  if (confirmed.length > 1) throw new Error("Feature 2 pending selection is ambiguous.");
   if (stale.length > 0) throw new Error("Feature 2 pending selection registry contains stale candidates.");
-  if (confirmed.length !== 1) throw new Error("Feature 2 pending selection is ambiguous.");
-  const candidate = confirmed[0]!;
-  return {
-    runId: candidate.runId,
-    runRoot: candidate.runRoot,
-    manifestPath: candidate.manifestPath,
-    promptPath: candidate.promptPath,
-  };
+  throw new Error("Feature 2 pending selection is ambiguous.");
 }
 
 function resolveSelectionReference(

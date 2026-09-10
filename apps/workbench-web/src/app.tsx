@@ -121,7 +121,11 @@ export function App({ api, preloadedState, initialWorksheetOptions }: AppProps) 
         f3Report={session.f3Report}
         adoDecisionRequired={session.snapshot?.state === "ado_decision_required"}
         adoProjection={session.adoProjection}
-        onAdoDecision={(decision, workItemReference) => session.submitCommand("confirm_ado_decision", decision === "use_existing" ? { decision, workItemReference } : { decision })}
+        onAdoDecision={(decision, workItemReference, createInput) => session.submitCommand("confirm_ado_decision", decision === "use_existing"
+          ? { decision, workItemReference }
+          : decision === "create_new"
+            ? { decision, ...createInput }
+            : { decision })}
         onAdoConfirm={session.confirmAdoWrite}
         onAdoReconcile={session.reconcileAdoWrite}
         onAdoStartNewWriteGeneration={session.startNewAdoWriteGeneration}

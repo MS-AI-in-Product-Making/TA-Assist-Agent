@@ -537,7 +537,7 @@ function surfaceValidateRequest(
     expiresAt: overrides.expiresAt ?? "2026-08-24T00:05:00.000Z",
     confirmationHash: overrides.confirmationHash ?? WORKBOOK_HASH,
     expectedTargetVersion: overrides.expectedTargetVersion ?? "comment-v1",
-    prepareRequest: { mode: "create" as const, title: "TA Drawing Governance", nextContent: "next content", factorCount: 1 },
+    prepareRequest: { mode: "create" as const, title: "TA Drawing Governance", sponsorEmail: "sponsor@example.com", nextContent: "next content", factorCount: 1 },
   };
 }
 

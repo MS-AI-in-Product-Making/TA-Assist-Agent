@@ -9,7 +9,9 @@ export async function executeSurfaceValidation(
   surface: SurfaceMcpDrawingGovernanceClient,
   prepareRequest: SurfaceMcpPrepareRequest,
 ) {
-  const capabilities = await inspectSurfaceMcpCapabilities(surface, { mode: prepareRequest.mode });
+  const capabilities = await inspectSurfaceMcpCapabilities(surface, {
+    mode: prepareRequest.mode === "create" && prepareRequest.workItemReference !== undefined ? "existing" : prepareRequest.mode,
+  });
   if (!capabilities.ready) {
     return { status: "blocked" as const, reason: `Missing Surface MCP capabilities: ${capabilities.missing.join(", ")}` };
   }

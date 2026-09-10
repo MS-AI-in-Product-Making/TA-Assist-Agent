@@ -26,8 +26,11 @@ Use strict query order: organization -> project -> work item type/work item id.
 2. Validate selected organization.
 3. Query projects under that organization.
 4. Validate selected project.
-5. For create mode: query work item types and validate selected type (`Default: Task`).
-6. For existing mode: read work item by ID and validate target.
+5. For create mode: query work item types and validate selected type (`Default: Task`). Default the editable title to `[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>`, replace `<TA Excel Name>` with the uploaded TA workbook file name, and show the same template as a copyable example.
+6. For create mode, require a valid task owner personal email before creating the target or offering final write confirmation. In Chinese, ask exactly `请输入可在 <organization> 中验证的 task owner 的个人邮箱。`, replacing `<organization>` with the validated organization. Keep `sponsorEmail` only as the internal contract field name.
+7. Identity search is optional candidate assistance and must not block creation when identity search returns no result, because the search endpoint can omit a valid organization user. Pass the task owner personal email directly as `System.AssignedTo`.
+8. Read back the created Task and require the title to match exactly and the `System.AssignedTo` unique name to match the task owner personal email case-insensitively. This post-create readback is the authoritative owner validation; fail closed on a missing or mismatched owner.
+9. For existing mode: read work item by ID and validate target.
 
 If any lookup is invalid, run candidate correction from Surface MCP results before moving forward.
 

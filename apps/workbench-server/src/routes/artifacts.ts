@@ -1,6 +1,6 @@
 import { lstat, open, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { FastifyPluginAsync } from "fastify";
 import { openSessionStore, selectCompleteReviewContext } from "@ai-assist/workbench";
@@ -8,7 +8,54 @@ import { f2UserReportSchema } from "@ai-assist/contracts";
 
 import type { WorkbenchServerContext } from "../server.js";
 
+export function isSessionProductionArtifactPath(rootDir: string, sessionId: string, artifactPath: string): boolean {
+  const productionRoot = resolve(rootDir, "runtime", "workbench", "runner-output", sessionId, "production");
+  const delta = relative(productionRoot, resolve(artifactPath));
+  return delta.length > 0 && delta !== ".." && !delta.startsWith(`..${sep}`) && !isAbsolute(delta);
+}
+
 export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
+  app.get("/api/sessions/:sessionId/reports/f6.pdf", async (request, reply) => {
+    const auth = context.requireBrowserSession(request, reply);
+    if (auth === undefined) return reply;
+    const { sessionId } = request.params as { readonly sessionId: string };
+    if (auth.sessionId !== sessionId) return reply.code(403).send({ error: "session_scope_rejected" });
+    if (request.headers.range !== undefined) return reply.code(416).send({ error: "range_not_supported" });
+
+    const store = await openSessionStore({ rootDir: context.rootDir, sessionId });
+    let reportArtifactId: string | undefined;
+    try {
+      const snapshot = await store.readSnapshot();
+      reportArtifactId = selectCompleteReviewContext(snapshot)?.artifacts.get("f6_report")?.artifactId;
+    } finally {
+      await store.close();
+    }
+    if (reportArtifactId === undefined) return reply.code(404).send({ error: "artifact_not_found" });
+    const artifact = await readPersistedArtifact(context.rootDir, sessionId, reportArtifactId, {});
+    if (artifact === undefined || artifact.mimeType !== "text/markdown; charset=utf-8") {
+      return reply.code(404).send({ error: "artifact_not_found" });
+    }
+    const reportPath = resolve(context.rootDir, artifact.relativePath);
+    if (!isSessionProductionArtifactPath(context.rootDir, sessionId, reportPath)) {
+      return reply.code(403).send({ error: "artifact_path_rejected" });
+    }
+    const bytes = await readManagedArtifact(context.rootDir, reportPath);
+    if (bytes === undefined) return reply.code(403).send({ error: "artifact_path_rejected" });
+    const sourceHash = createHash("sha256").update(bytes).digest("hex");
+    if (sourceHash !== artifact.contentHash) return reply.code(409).send({ error: "artifact_hash_mismatch" });
+
+    try {
+      const pdf = await context.f6PdfService.render({ markdown: bytes.toString("utf8"), sourceHash, reportPath, managedRoot: context.rootDir });
+      reply.header("content-disposition", 'attachment; filename="Feature6-Report.pdf"');
+      reply.type("application/pdf");
+      return reply.send(pdf);
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { readonly code?: unknown }).code : undefined;
+      if (code === "pdf_artifact_invalid") return reply.code(409).send({ error: code });
+      return reply.code(503).send({ error: "pdf_render_unavailable" });
+    }
+  });
+
   app.get("/api/sessions/:sessionId/artifacts/:artifactId", async (request, reply) => {
     const auth = context.requireBrowserSession(request, reply);
     if (auth === undefined) {
@@ -80,6 +127,7 @@ async function readPersistedArtifact(
       : undefined;
     const reference = persistedReference ?? snapshotReference as typeof persistedReference;
     if (reference === undefined) return undefined;
+    if (persistedReference !== undefined && persistedReference.sessionId !== sessionId) return undefined;
     if (reference.kind === "f6_report") {
       const snapshot = await store.readSnapshot();
       const report = selectCompleteReviewContext(snapshot)?.artifacts.get("f6_report");

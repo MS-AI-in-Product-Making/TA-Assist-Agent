@@ -64,6 +64,7 @@ describe("executeSurfaceValidation", () => {
     await expect(executeSurfaceValidation(surface, {
       mode: "create",
       title: "TA Drawing Governance - Anonymous.xlsx",
+      sponsorEmail: "sponsor@example.com",
       nextContent: "## F3 DIM ID / Drawing Governance Reminder\n",
       factorCount: 1,
     })).resolves.toEqual({

@@ -875,8 +875,11 @@ describe("App", () => {
     const adoWorkspace = screen.getByRole("region", { name: "ADO workspace" });
     expect(within(adoWorkspace).getAllByText("Bracket").length).toBeGreaterThan(0);
     fireEvent.click(within(adoWorkspace).getByRole("button", { name: "Create work item" }));
+    expect(within(adoWorkspace).getByRole("textbox", { name: "Work item title" })).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for anonymous.xlsx");
+    fireEvent.change(within(adoWorkspace).getByRole("textbox", { name: "Sponsor email" }), { target: { value: "sponsor@example.com" } });
+    fireEvent.click(within(adoWorkspace).getByRole("button", { name: "Create and validate work item" }));
 
-    expect(commands).toEqual([{ command: "confirm_ado_decision", payload: { decision: "create_new" } }]);
+    expect(commands).toEqual([{ command: "confirm_ado_decision", payload: { decision: "create_new", title: "[TA Requirement][Project][Phase] Update Drawing Requirements for anonymous.xlsx", sponsorEmail: "sponsor@example.com" } }]);
     expect(screen.getAllByRole("button", { name: "Create work item" })).toHaveLength(1);
   }, 15_000);
 

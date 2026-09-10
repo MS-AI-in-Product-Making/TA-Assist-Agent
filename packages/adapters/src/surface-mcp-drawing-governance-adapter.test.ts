@@ -9,6 +9,7 @@ function createClient(options: {
   capabilities?: SurfaceMcpCapability[];
   ownerReference?: string;
   requestByReference?: string;
+  title?: string;
 } = {}) {
   let commentVersion = "comment-v1";
   let commentContent = "Existing Comment 0";
@@ -26,6 +27,7 @@ function createClient(options: {
       invocations.push("readWorkItem");
       return {
         version: "work-item-v1",
+        title: options.title,
         ownerReference: options.ownerReference,
         requestByReference: options.requestByReference ?? "request-by-ref",
       };
@@ -56,6 +58,16 @@ function linkRequest() {
     mode: "existing" as const,
     workItemReference: "WI-1102392",
     nextContent: "Existing Comment 0\n\n| Drawing | DIM ID |\n| --- | --- |\n| DRAW-A | 307 |",
+    factorCount: 1,
+  };
+}
+
+function createRequest() {
+  return {
+    mode: "create" as const,
+    title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox.xlsx",
+    sponsorEmail: "sponsor@example.com",
+    nextContent: "Governed drawing requirements",
     factorCount: 1,
   };
 }
@@ -93,6 +105,40 @@ describe("createSurfaceMcpDrawingGovernanceAdapter", () => {
       reasonCode: "owner_reference_missing",
     });
     expect(fake.invocations).not.toContain("updateCommentZero");
+  });
+
+  it("requires the created Work Item to be assigned to the requested sponsor", async () => {
+    const matching = createSurfaceMcpDrawingGovernanceAdapter(createClient({ ownerReference: "Sponsor@Example.com", title: createRequest().title }).client);
+    await expect(matching.prepare(createRequest())).resolves.toMatchObject({
+      status: "confirmation_required",
+      ownerReference: "Sponsor@Example.com",
+    });
+
+    const mismatched = createSurfaceMcpDrawingGovernanceAdapter(createClient({ ownerReference: "other@example.com", title: createRequest().title }).client);
+    await expect(mismatched.prepare(createRequest())).resolves.toMatchObject({
+      status: "blocked",
+      reasonCode: "sponsor_assignment_mismatch",
+    });
+  });
+
+  it("requires the created Work Item title readback to match the requested title", async () => {
+    const adapter = createSurfaceMcpDrawingGovernanceAdapter(createClient({ ownerReference: "sponsor@example.com", title: "Unexpected title" }).client);
+
+    await expect(adapter.prepare(createRequest())).resolves.toMatchObject({
+      status: "blocked",
+      reasonCode: "title_readback_mismatch",
+    });
+  });
+
+  it("revalidates an already-created target without creating a duplicate Work Item", async () => {
+    const fake = createClient({ ownerReference: "sponsor@example.com", title: createRequest().title });
+    const adapter = createSurfaceMcpDrawingGovernanceAdapter(fake.client);
+
+    await expect(adapter.prepare({ ...createRequest(), workItemReference: "WI-created" })).resolves.toMatchObject({
+      status: "confirmation_required",
+      workItemReference: "WI-created",
+    });
+    expect(fake.invocations).not.toContain("createWorkItem");
   });
 
   it("prepares a version-bound line diff without writing", async () => {

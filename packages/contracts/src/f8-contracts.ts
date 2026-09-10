@@ -608,7 +608,7 @@ const f8F6DraftConfirmationPayloadSchema = z.discriminatedUnion("decision", [
 ]);
 
 const adoDecisionPayloadSchema = z.discriminatedUnion("decision", [
-  z.object({ decision: z.literal("create_new"), rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("create_new"), title: nonEmptyStringSchema, sponsorEmail: z.string().trim().email(), rationale: nonEmptyStringSchema.optional() }).strict(),
   z.object({ decision: z.literal("use_existing"), workItemReference: nonEmptyStringSchema, rationale: nonEmptyStringSchema.optional() }).strict(),
   z.object({ decision: z.literal("local_only"), rationale: nonEmptyStringSchema.optional() }).strict(),
 ]);
@@ -852,12 +852,12 @@ const hostActionRequestBaseSchema = {
 } as const;
 
 const surfacePrepareRequestSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
+  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema, sponsorEmail: z.string().trim().email(), workItemReference: promptVisibleIdentitySchema.optional(), nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
   z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
 ]);
 
 const f8AdoTargetSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema }).strict(),
+  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema, sponsorEmail: z.string().trim().email() }).strict(),
   z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema }).strict(),
 ]);
 
