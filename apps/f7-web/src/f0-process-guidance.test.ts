@@ -1,21 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeepReadonly } from "vue";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base";
-import type {
-  ProcessRequirementEvaluationFacts,
-  ProcessRequirementMatchedEntry,
-} from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
 const VERSION = "process-requirements-v1" as const;
-
-interface FakeLoadedProcessRequirements {
-  readonly manifest: { readonly version: string };
-  readonly evaluateProcessRequirements: (
-    facts: ProcessRequirementEvaluationFacts,
-  ) => { readonly matchedEntries: readonly ProcessRequirementMatchedEntry[] };
-}
+type LoadDependency = NonNullable<NonNullable<Parameters<typeof buildF0ProcessGuidance>[2]>["load"]>;
 
 function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSnapshot> {
   return {
@@ -73,7 +63,7 @@ describe("buildF0ProcessGuidance", () => {
   });
 
   it("calls the injected loader with version only and fails closed on load errors", () => {
-    const load = vi.fn<typeof loadProcessRequirements>((request) => {
+    const load: LoadDependency = vi.fn((request) => {
       expect(request).toEqual({ version: VERSION });
       throw new Error("boom");
     });
@@ -85,10 +75,11 @@ describe("buildF0ProcessGuidance", () => {
   });
 
   it("fails closed when evaluation throws after a successful load", () => {
-    const load = vi.fn<(request: { readonly version: typeof VERSION }) => FakeLoadedProcessRequirements>((request) => {
+    const load: LoadDependency = vi.fn((request) => {
       expect(request).toEqual({ version: VERSION });
       return {
         manifest: { version: VERSION },
+        listProcessRequirements: () => [],
         evaluateProcessRequirements: () => {
           throw new Error("evaluate failed");
         },
@@ -102,11 +93,12 @@ describe("buildF0ProcessGuidance", () => {
   });
 
   it("fails closed when the loaded manifest version does not match", () => {
-    const load = vi.fn<(request: { readonly version: typeof VERSION }) => FakeLoadedProcessRequirements>((request) => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const load: LoadDependency = vi.fn((request) => {
       expect(request).toEqual({ version: VERSION });
       return {
         manifest: { version: "process-requirements-v0" },
-        evaluateProcessRequirements: () => ({ matchedEntries: [] }),
+        evaluateProcessRequirements: actual.evaluateProcessRequirements,
       };
     });
 

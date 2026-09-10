@@ -316,12 +316,9 @@ export function buildAssumptionResultsInterpretation(
         : undefined;
     if (capabilityStatus === undefined) return unavailable("rules-unavailable", inputReadiness, baseProcessGuidance);
 
-    const governedCapabilityStatus = calculation.capabilityStatus === "below-target"
-      ? "below-target"
-      : capabilityStatus;
     const processGuidance = buildF0ProcessGuidance(
       session,
-      governedCapabilityStatus === "below-target",
+      calculation.capability.status === "FAIL",
     );
 
     const rootCauseRules = evaluation.matchedRules.filter((rule) => rule.entryType === "root-cause-signal");

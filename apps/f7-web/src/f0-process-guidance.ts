@@ -1,18 +1,16 @@
-import type {
-  ProcessRequirementEvaluationFacts,
-  ProcessRequirementMatchedEntry,
-} from "@ai-assist/contracts";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base";
 import type { DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "./api/f7-client";
 
 const VERSION = "process-requirements-v1" as const;
+type ProcessRequirementEvaluator = ReturnType<typeof loadProcessRequirements>["evaluateProcessRequirements"];
+type ProcessRequirementEntries = ReturnType<ProcessRequirementEvaluator>["matchedEntries"];
 
 export type F0ProcessGuidance =
   | {
     readonly status: "available";
     readonly version: typeof VERSION;
-    readonly entries: readonly ProcessRequirementMatchedEntry[];
+    readonly entries: ProcessRequirementEntries;
   }
   | {
     readonly status: "unavailable";
@@ -25,11 +23,7 @@ interface LoadedProcessRequirements {
   readonly manifest: {
     readonly version: string;
   };
-  readonly evaluateProcessRequirements: (
-    facts: ProcessRequirementEvaluationFacts,
-  ) => {
-    readonly matchedEntries: readonly ProcessRequirementMatchedEntry[];
-  };
+  readonly evaluateProcessRequirements: ProcessRequirementEvaluator;
 }
 
 interface Dependencies {

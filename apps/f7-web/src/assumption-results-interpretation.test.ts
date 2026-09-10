@@ -36,6 +36,50 @@ function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   } as unknown as F7SessionSnapshot;
 }
 
+function equalityBoundarySnapshot(): F7SessionSnapshot {
+  const snapshot = enhancedInterpretationSnapshot();
+  const specification = snapshot.systemSpecification;
+  const factor = snapshot.factors[0];
+  const designNominal = specification?.designNominal;
+  const lowerSpecLimit = specification?.lowerSpecLimit;
+  const upperSpecLimit = specification?.upperSpecLimit;
+  const targetSigmaLevel = specification?.targetSigmaLevel;
+  const additionalMeanShift = specification?.additionalMeanShift;
+  if (
+    specification?.status !== "available"
+    || designNominal?.status !== "available"
+    || lowerSpecLimit?.status !== "available"
+    || upperSpecLimit?.status !== "available"
+    || targetSigmaLevel?.status !== "available"
+    || additionalMeanShift?.status !== "available"
+    || factor?.evidence === undefined
+  ) {
+    throw new Error("expected available specification");
+  }
+
+  return {
+    ...snapshot,
+    systemSpecification: {
+      ...specification,
+      designNominal: { ...designNominal, actualValue: 0 },
+      lowerSpecLimit: { ...lowerSpecLimit, actualValue: -1 },
+      upperSpecLimit: { ...upperSpecLimit, actualValue: 1 },
+      targetSigmaLevel: { ...targetSigmaLevel, actualValue: 4 },
+      additionalMeanShift: { ...additionalMeanShift, actualValue: 0 },
+    },
+    factors: [{
+      ...factor,
+      evidence: {
+        ...factor.evidence,
+        designNominal: 0,
+        upperTolerance: 1,
+        lowerTolerance: -1,
+        sigmaLevel: 4,
+      },
+    }],
+  };
+}
+
 describe("assumption results enhanced interpretation", () => {
   it("uses the governed system design nominal as the Mean reference", () => {
     const snapshot = enhancedInterpretationSnapshot();
@@ -127,6 +171,19 @@ describe("assumption results enhanced interpretation", () => {
     expect(result.status).toBe("available");
     expect(result.capability?.status).toBe("below-target");
     expect(result.processGuidance?.entries.map((entry) => entry.entryId)).toContain("requirement-gap-ado-notice");
+  });
+
+  it("attaches requirement gap guidance when governed kernel capability fails at the equality boundary", () => {
+    const result = buildAssumptionResultsInterpretation(equalityBoundarySnapshot());
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") {
+      throw new Error("expected available interpretation");
+    }
+
+    expect(result.capability.status).toBe("meets-target");
+    expect(result.capability.cpk).toBe(result.capability.targetCpk);
+    expect(result.processGuidance.entries.map((entry) => entry.entryId)).toContain("requirement-gap-ado-notice");
   });
 
   it("retains worksheet-supported input completeness guidance when prerequisites are unavailable", () => {
