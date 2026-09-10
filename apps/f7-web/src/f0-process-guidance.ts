@@ -1,4 +1,4 @@
-import { loadProcessRequirements } from "@ai-assist/knowledge-base";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import type { DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "./api/f7-client";
 

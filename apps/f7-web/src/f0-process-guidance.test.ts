@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeepReadonly } from "vue";
-import { loadProcessRequirements } from "@ai-assist/knowledge-base";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 

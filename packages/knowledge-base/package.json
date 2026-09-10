@@ -16,6 +16,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./process-requirements": {
+      "types": "./dist/process-requirements/query.d.ts",
+      "import": "./dist/process-requirements/query.js"
+    },
     "./public-engineering-rules": {
       "types": "./dist/public-engineering-rules.d.ts",
       "import": "./dist/public-engineering-rules.js"
