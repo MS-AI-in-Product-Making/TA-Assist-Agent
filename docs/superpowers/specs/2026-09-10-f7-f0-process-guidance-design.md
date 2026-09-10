@@ -52,8 +52,10 @@ F7 supplies only facts that are supported by the current workflow or analysis re
   organization or supplier role.
 - `analysisMethod: "one-dimensional-rss"` is fixed by the assumption-results calculation path.
 - `toleranceCount` is the number of Factor candidates represented by the selected TA worksheet.
-- `requirementGapPresent` is `true` when the governed capability result is below its resolved
-  target and `false` when it meets the target.
+- `requirementGapPresent` is `true` when the calculation kernel's governed capability status is
+  `FAIL` and `false` when it is `PASS`. The kernel defines Cpk equal to its resolved target as
+  `FAIL`, so that equality boundary activates requirement-gap guidance even when the interpretation
+  headline uses `meets-target` wording.
 
 Other evaluator facts are omitted unless a future F7 contract supplies explicit controlled values.
 In particular, F7 does not infer actor role, lifecycle stage, priority, CTS/CTF classification,
@@ -120,8 +122,8 @@ Builder coverage:
 
 - seven Factors do not activate the complex-stack escalation;
 - eleven Factors activate `method-escalation-complex-stack`;
-- below-target capability activates `requirement-gap-ado-notice`;
-- meets-target capability does not activate `requirement-gap-ado-notice`;
+- governed capability `FAIL` activates `requirement-gap-ado-notice`, including Cpk equal to target;
+- governed capability `PASS` does not activate `requirement-gap-ado-notice`;
 - universal F0 entries are returned from the evaluator without duplicated messages;
 - missing facts are not converted into guidance entries;
 - unavailable calculation still permits worksheet-supported matches;
