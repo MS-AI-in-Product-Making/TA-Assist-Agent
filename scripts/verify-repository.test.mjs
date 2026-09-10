@@ -54,6 +54,20 @@ function writeRepositoryFixture(repositoryPath, fixturePath, content) {
 }
 
 describe("isForbiddenRepositoryPath", () => {
+  it("keeps the tracked F7 declaration aligned with TypeScript LF output", () => {
+    const attributes = execFileSync("git", [
+      "check-attr",
+      "eol",
+      "--",
+      "packages/contracts/dist/f7-contracts.d.ts",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(attributes.trim()).toBe("packages/contracts/dist/f7-contracts.d.ts: eol: lf");
+  });
+
   it("enforces English on engineering entry assets without rejecting localized product files", () => {
     expect(hasCjkText("English only")).toBe(false);
     expect(hasCjkText("中文 product copy")).toBe(true);
