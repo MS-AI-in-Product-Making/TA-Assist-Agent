@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { validateF0Capabilities } from "./index.js";
+import type { F0Dependencies } from "./f0.js";
 
 function context() {
   const repositoryRoot = "C:/repo";
@@ -13,65 +14,156 @@ function context() {
   };
 }
 
+function validDependencies(): Required<F0Dependencies> {
+  return {
+    loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
+    loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
+    loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
+    loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v1" } })),
+  };
+}
+
 describe("validateF0Capabilities", () => {
   it("validates the production versioned knowledge loaders", () => {
-    expect(validateF0Capabilities(context())).toMatchObject({
+    expect(validateF0Capabilities(context())).toEqual({
       featureId: "F0",
       status: "completed",
-      versions: ["v1", "internal-v1", "interpretation-rules-v2"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
+      artifactRoot: undefined,
     });
   });
 
   it("validates F0 without inventing a workflow artifact", async () => {
     const runnerContext = context();
-    const result = await validateF0Capabilities(runnerContext, {
-      loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
-      loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
-    });
+    const dependencies = validDependencies();
+    const result = await validateF0Capabilities(runnerContext, dependencies);
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(dependencies.loadKnowledgeBase).toHaveBeenCalledExactlyOnceWith({ version: "v1" });
+    expect(dependencies.loadInternalToleranceGuidance).toHaveBeenCalledExactlyOnceWith({ version: "internal-v1" });
+    expect(dependencies.loadInterpretationRules).toHaveBeenCalledExactlyOnceWith({ version: "interpretation-rules-v2" });
+    expect(dependencies.loadProcessRequirements).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v1" });
+    expect(dependencies.loadKnowledgeBase.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.loadInternalToleranceGuidance.mock.invocationCallOrder[0]!,
+    );
+    expect(dependencies.loadInternalToleranceGuidance.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.loadInterpretationRules.mock.invocationCallOrder[0]!,
+    );
+    expect(dependencies.loadInterpretationRules.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.loadProcessRequirements.mock.invocationCallOrder[0]!,
+    );
+    expect(result).toEqual({
       status: "completed",
       featureId: "F0",
-      versions: ["v1", "internal-v1", "interpretation-rules-v2"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
       artifactRoot: undefined,
-    }));
-    expect(runnerContext.emit).toHaveBeenCalled();
+    });
+    expect(runnerContext.emit.mock.calls.map(([event]) => event.kind)).toEqual([
+      "stage_started",
+      "stage_completed",
+    ]);
   });
 
-  it("rejects missing or wrong manifest versions instead of falling back", async () => {
-    expect(() => validateF0Capabilities(context(), {
-      loadKnowledgeBase: vi.fn(() => ({ manifest: {} })),
-      loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "wrong" } })),
-      loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
-    })).toThrow(expect.objectContaining({
+  it("reads an injected loader dependency exactly once before validating its result", () => {
+    const runnerContext = context();
+    const injectedLoader = vi.fn(() => ({ manifest: { version: "wrong" } }));
+    let getterReads = 0;
+    const dependencies = validDependencies();
+    Object.defineProperty(dependencies, "loadProcessRequirements", {
+      enumerable: true,
+      get: () => {
+        getterReads += 1;
+        return getterReads === 1 ? injectedLoader : undefined;
+      },
+    });
+
+    expect(() => validateF0Capabilities(runnerContext, dependencies)).toThrow(expect.objectContaining({
       name: "Error",
       code: "evidence_mismatch",
       retryable: false,
     }));
+    expect(getterReads).toBe(1);
+    expect(injectedLoader).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v1" });
+    expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
   });
 
-  it("normalizes ordinary dependency failures to typed errors", async () => {
-    expect(() => validateF0Capabilities(context(), {
-      loadKnowledgeBase: vi.fn(() => { throw new Error("Cannot find module '@ai-assist/knowledge-base'."); }),
+  it("normalizes a throwing dependency getter without leaking raw details", () => {
+    const runnerContext = context();
+    const dependencies = validDependencies();
+    Object.defineProperty(dependencies, "loadProcessRequirements", {
+      enumerable: true,
+      get: () => { throw new Error("Missing C:\\confidential\\source.xlsx"); },
+    });
+
+    let thrown: unknown;
+    try {
+      validateF0Capabilities(runnerContext, dependencies);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "Error",
+      code: "internal_error",
+      summary: "Workflow runner failed unexpectedly.",
+      retryable: false,
+    });
+    expect(JSON.stringify(thrown)).not.toContain("confidential");
+    expect(runnerContext.emit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["knowledge base", "loadKnowledgeBase", "effectiveVersion"],
+    ["internal guidance", "loadInternalToleranceGuidance", "effectiveVersion"],
+    ["interpretation rules", "loadInterpretationRules", "effectiveVersion"],
+    ["process requirements", "loadProcessRequirements", "version"],
+  ] as const)("rejects missing and wrong %s manifests without completing the stage", (
+    _label,
+    dependencyName,
+    versionField,
+  ) => {
+    for (const result of [{}, { manifest: { [versionField]: "wrong" } }]) {
+      const runnerContext = context();
+      const dependencies = validDependencies();
+      dependencies[dependencyName] = vi.fn(() => result) as never;
+
+      expect(() => validateF0Capabilities(runnerContext, dependencies)).toThrow(expect.objectContaining({
+        name: "Error",
+        code: "evidence_mismatch",
+        retryable: false,
+      }));
+      expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
+    }
+  });
+
+  it("normalizes process requirements loader errors without completing the stage", async () => {
+    const runnerContext = context();
+
+    expect(() => validateF0Capabilities(runnerContext, {
+      loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
       loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
+      loadProcessRequirements: vi.fn(() => { throw new Error("Cannot find module 'process-requirements-v1'."); }),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "dependency_error",
       retryable: false,
     }));
+    expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
   });
 
   it("normalizes unknown failures without leaking raw details", async () => {
-    expect(() => validateF0Capabilities(context(), {
+    const runnerContext = context();
+
+    expect(() => validateF0Capabilities(runnerContext, {
       loadKnowledgeBase: vi.fn(() => { throw "secret-token=abc"; }),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
       loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
+      loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v1" } })),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "internal_error",
       summary: "Workflow runner failed unexpectedly.",
     }));
+    expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
   });
 });

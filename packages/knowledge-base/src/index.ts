@@ -47,3 +47,14 @@ export {
 	type TerminologyMatch,
 	type TerminologyUnknown,
 } from "./knowledge-base.js";
+export { createProcessRequirementSnapshot } from "./process-requirements/validation.js";
+export { createReviewedProcessRequirementsV1SeedPackage } from "./process-requirements/data/process-requirements-v1.js";
+export {
+	loadProcessRequirements,
+	type ProcessRequirements,
+} from "./process-requirements/query.js";
+export type { ProcessRequirementSeedPackage } from "@ai-assist/contracts";
+export type {
+	DeepReadonly as ProcessRequirementDeepReadonly,
+	ProcessRequirementSnapshot,
+} from "./process-requirements/types.js";

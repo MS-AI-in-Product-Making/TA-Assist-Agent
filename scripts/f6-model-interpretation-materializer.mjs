@@ -108,7 +108,9 @@ function sameNullable(left, right) {
 }
 
 function sameDimId(left, right) {
-  if (left == null || right == null) return left == null && right == null;
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return sameNullable(left, right);
+  }
   return String(left) === String(right);
 }
 
@@ -190,7 +192,7 @@ function buildFactorRows(worksheetName, f2Worksheet, f3Worksheet, calculation) {
       partName: actual.partName,
       partCategory: actual.partCategory,
       drawingNumber: actual.drawingNumber,
-      dimId: actual.dimCharacteristicId == null ? null : String(actual.dimCharacteristicId),
+      dimId: f3Row.dimId,
       nominal: factor.input.nominalValue,
       upperTolerance: factor.input.upperTolerance,
       lowerTolerance: factor.input.lowerTolerance,
