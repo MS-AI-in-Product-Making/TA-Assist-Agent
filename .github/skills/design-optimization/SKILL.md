@@ -45,6 +45,12 @@ Workbook mode must preserve two worksheet gates, optional ADO publishing gate be
 
 The remainder of this document is machine-facing execution contract text. Literal commands, artifact names, schema identifiers, policy IDs, and reason codes in this section must not be copied into user-facing plan, question, progress, action description, or result text.
 
+### Execution continuity
+
+- A tool timeout or background transition is not a command failure. Treat only a terminal nonzero exit, a structured failed result, or a governed validation failure as failure.
+- When a required command is moved to the background, retain the execution handle and continue retrieving its result until the command reaches a terminal state or requests input.
+- Do not send a final response while a required command is still running. Provide a progress update and keep the workflow active instead.
+
 ## Entry mode 1 - TA workbook
 
 ### Phase W0 - Validate workbook and F0 capabilities

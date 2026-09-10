@@ -322,6 +322,17 @@ describe("Design Optimization skill contract", () => {
     ]) expect(internal).toContain(rule);
   });
 
+  it("keeps a governed command alive when the execution tool moves it to the background", () => {
+    const internal = splitSkillSections(readSkill()).internal;
+    const entrySkill = readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+
+    for (const skill of [entrySkill, internal]) {
+      expect(skill).toContain("A tool timeout or background transition is not a command failure");
+      expect(skill).toContain("retain the execution handle and continue retrieving its result");
+      expect(skill).toContain("Do not send a final response while a required command is still running");
+    }
+  });
+
   it("documents product-triggered orchestration and governance mapping", () => {
     const documents = {
       readme: readFileSync(path.join(root, "README.md"), "utf8"),
