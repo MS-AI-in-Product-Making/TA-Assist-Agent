@@ -1,64 +1,75 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi } from "vitest";
+import type { DeepReadonly } from "vue";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base";
+import type { F7SessionSnapshot } from "./api/f7-client";
+import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
-import type { DeepReadonly } from '../../types'
-import type { F7SessionSnapshot } from '../../types'
+const VERSION = "process-requirements-v1" as const;
 
-import { buildF0ProcessGuidance } from './f0-process-guidance'
+function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSnapshot> {
+  return {
+    contractId: "f7-analysis-result-v1",
+    outputClassification: "confidential",
+    sessionId: "session-01",
+    status: "worksheet_selection",
+    workbook: {
+      fileName: "demo.xlsx",
+      workbookContentHash: "hash-a",
+    },
+    selectedWorksheetNames: [],
+    worksheetOptions: [],
+    factors: Array.from({ length: factorCount }, (_, index) => ({
+      factorCandidate: {
+        factorCandidateId: `candidate-${index + 1}`,
+        factorName: `Factor ${index + 1}`,
+      },
+    })),
+  } as unknown as DeepReadonly<F7SessionSnapshot>;
+}
 
-const makeSession = (factorsCount: number): DeepReadonly<F7SessionSnapshot> => ({
-  factors: Array.from({ length: factorsCount }, (_, i) => ({ id: `f${i}` }))
-} as any)
+function entryIds(result: ReturnType<typeof buildF0ProcessGuidance>): string[] {
+  return result.entries.map(({ entryId }) => entryId);
+}
 
-describe('buildF0ProcessGuidance', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-  })
+describe("buildF0ProcessGuidance", () => {
+  it("uses the real evaluator and only escalates complex stacks above ten factors", () => {
+    const seven = buildF0ProcessGuidance(snapshotWithFactorCount(7));
+    const eleven = buildF0ProcessGuidance(snapshotWithFactorCount(11));
 
-  it('should call loadProcessRequirements with minimal facts and handle available result', async () => {
-    const load = vi.fn(async (opts: any) => ({ matchedEntries: [{ id: 'e1' }], version: 'process-requirements-v1' }))
+    expect(seven.status).toBe("available");
+    expect(eleven.status).toBe("available");
+    if (seven.status !== "available" || eleven.status !== "available") {
+      throw new Error("expected available process guidance");
+    }
 
-    const result = await buildF0ProcessGuidance(makeSession(7), undefined, load)
+    expect(entryIds(seven)).not.toContain("method-escalation-complex-stack");
+    expect(entryIds(eleven)).toContain("method-escalation-complex-stack");
+    expect(entryIds(seven)).toContain("requirement-input-completeness");
+  });
 
-    expect(load).toHaveBeenCalledWith({ version: 'process-requirements-v1', facts: { actor: 'all', analysisMethod: 'one-dimensional-rss', toleranceCount: 7 } })
-    expect(result.available).toBe(true)
-    expect(result.entries).toHaveLength(1)
-  })
+  it.each([
+    [true, true],
+    [false, false],
+  ] as const)("applies requirement gap guidance only when gap is %s", (gap, expected) => {
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(1), gap);
 
-  it('should include requirementGapPresent when provided', async () => {
-    const load = vi.fn(async (opts: any) => ({ matchedEntries: [{ id: 'gap' }], version: 'process-requirements-v1' }))
+    expect(result.status).toBe("available");
+    if (result.status !== "available") {
+      throw new Error("expected available process guidance");
+    }
 
-    const result = await buildF0ProcessGuidance(makeSession(7), true, load)
+    expect(entryIds(result).includes("requirement-gap-ado-notice")).toBe(expected);
+  });
 
-    expect(load).toHaveBeenCalledWith({ version: 'process-requirements-v1', facts: { actor: 'all', analysisMethod: 'one-dimensional-rss', toleranceCount: 7, requirementGapPresent: true } })
-    expect(result.available).toBe(true)
-    expect(result.entries[0].id).toBe('gap')
-  })
+  it("calls the injected loader with version only and fails closed on load errors", () => {
+    const load = vi.fn<typeof loadProcessRequirements>((request) => {
+      expect(request).toEqual({ version: VERSION });
+      throw new Error("boom");
+    });
 
-  it('should mark unavailable with empty entries when load throws', async () => {
-    const load = vi.fn(async () => { throw new Error('boom') })
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
-    const result = await buildF0ProcessGuidance(makeSession(7), undefined, load)
-
-    expect(result.available).toBe(false)
-    expect(result.entries).toHaveLength(0)
-  })
-
-  it('should treat 11 factors as complex stack trigger', async () => {
-    const load = vi.fn(async (opts: any) => ({ matchedEntries: [{ id: 'complex' }], version: 'process-requirements-v1' }))
-
-    const result = await buildF0ProcessGuidance(makeSession(11), undefined, load)
-
-    // behaviour: still calls loader, returns entries; test ensures boundary
-    expect(load).toHaveBeenCalled()
-    expect(result.entries[0].id).toBe('complex')
-  })
-
-  it('should not include requirement-gap-ado-notice when gap false', async () => {
-    const load = vi.fn(async (opts: any) => ({ matchedEntries: [{ id: 'ok' }], version: 'process-requirements-v1' }))
-
-    const result = await buildF0ProcessGuidance(makeSession(7), false, load)
-
-    expect(load).toHaveBeenCalledWith({ version: 'process-requirements-v1', facts: { actor: 'all', analysisMethod: 'one-dimensional-rss', toleranceCount: 7, requirementGapPresent: false } })
-    expect(result.available).toBe(true)
-  })
-})
+    expect(load).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "unavailable", entries: [] });
+  });
+});
