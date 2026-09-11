@@ -372,7 +372,12 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
       workbookCatalog: parsed.data.workbookCatalog,
       worksheetSelection: parsed.data.worksheetSelection,
     });
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, EXCEL_WORKSHEET_CELL_WINDOW);
+    let workbook;
+    try {
+      workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, EXCEL_WORKSHEET_CELL_WINDOW);
+    } catch {
+      workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), false, EXCEL_WORKSHEET_CELL_WINDOW);
+    }
     const worksheets = analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
