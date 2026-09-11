@@ -5,6 +5,7 @@ import {
   buildDistributionFitPlot,
   buildDistributionFitReferences,
   buildReferenceLabelRows,
+  canonicalSigmaLevel,
   distributionFitObservedDomain,
   probabilityDensity,
 } from "./distribution-fit-plot";
@@ -62,6 +63,11 @@ function candidate(
 }
 
 describe("distribution fit plot", () => {
+  it("canonicalizes sigma levels before matching selectable reference options", () => {
+    expect(canonicalSigmaLevel(4.5000000000001)).toBe("4.5");
+    expect(canonicalSigmaLevel(5)).toBe("5");
+  });
+
   it("assigns nearby reference labels to different rows and reuses rows after sufficient separation", () => {
     const lines = [
       { id: "lower-spec-limit" as const, value: 0 },

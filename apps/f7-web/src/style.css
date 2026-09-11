@@ -1568,7 +1568,7 @@ textarea {
   height: auto;
   margin: 0 auto;
   font-family: "Aptos", "Segoe UI", sans-serif;
-  text-rendering: geometricPrecision;
+  text-rendering: auto;
 }
 
 .plot-axis,
@@ -1583,14 +1583,23 @@ textarea {
 }
 
 .plot-reference-line {
+  stroke: var(--reference-color);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
-.plot-reference-label {
-  font-size: 11px;
-  font-weight: 600;
+.plot-reference-label,
+.response-reference-badge text {
+  font-family: "Bahnschrift", "Aptos", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
   letter-spacing: 0;
+}
+
+.plot-reference-label {
+  fill: var(--reference-color);
+  font-variant-numeric: tabular-nums;
+  stroke: none;
 }
 
 .plot-reference-label-background {
@@ -1600,32 +1609,59 @@ textarea {
 }
 
 .reference-spec {
-  stroke: #b42318;
-  fill: #b42318;
+  --reference-color: #b42318;
 }
 
 .reference-target {
-  stroke: #175cd3;
-  fill: #175cd3;
-  stroke-width: 2.2;
+  --reference-color: #175cd3;
 }
 
 .reference-mean {
-  stroke: #067647;
-  fill: #067647;
-  stroke-dasharray: 5 3;
+  --reference-color: #067647;
 }
 
 .reference-3-sigma {
-  stroke: #b54708;
-  fill: #b54708;
-  stroke-dasharray: 4 3;
+  --reference-color: #b54708;
 }
 
 .reference-4-sigma {
-  stroke: #6941c6;
-  fill: #6941c6;
+  --reference-color: #6941c6;
+}
+
+.reference-sigma {
+  --reference-color: #6941c6;
+}
+
+.reference-4-5-sigma {
+  --reference-color: #175cd3;
+}
+
+.reference-6-sigma {
+  --reference-color: #344054;
+}
+
+.plot-reference-line.reference-target {
+  stroke-width: 2.2;
+}
+
+.plot-reference-line.reference-mean {
+  stroke-dasharray: 5 3;
+}
+
+.plot-reference-line.reference-3-sigma {
+  stroke-dasharray: 4 3;
+}
+
+.plot-reference-line.reference-4-sigma {
   stroke-dasharray: 2 3;
+}
+
+.plot-reference-line.reference-4-5-sigma {
+  stroke-dasharray: 6 3 2 3;
+}
+
+.plot-reference-line.reference-6-sigma {
+  stroke-dasharray: 8 3;
 }
 
 .histogram-bin {
@@ -1684,6 +1720,12 @@ textarea {
 .measured-distribution-interpretation h4 {
   margin: 0 0 8px;
   font-size: 0.9rem;
+}
+
+.measured-distribution-interpretation .capability-distribution-fit {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .measured-distribution-interpretation h5 {
@@ -3353,6 +3395,11 @@ textarea {
   accent-color: var(--ink);
 }
 
+.distribution-fit-sigma-controls {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
 .response-distribution-figure {
   width: 100%;
   min-width: 0;
@@ -3460,9 +3507,6 @@ textarea {
 
 .response-reference-badge text {
   fill: var(--ink-soft);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0;
 }
 
 .response-plot-tick-label,
@@ -3739,60 +3783,6 @@ textarea {
   color: #80271f;
   font-size: 0.78rem;
   font-weight: 700;
-}
-
-.measurement-histogram {
-  margin: 12px 0 16px;
-  border: 1px solid var(--line);
-  padding: 12px 14px 10px;
-  background: #fbfcfc;
-}
-
-.measurement-histogram-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.measurement-histogram-heading h4,
-.measurement-histogram-heading p {
-  margin: 0;
-}
-
-.measurement-histogram-heading strong {
-  border-left: 3px solid var(--success);
-  padding: 4px 8px;
-  background: #e7f3f0;
-  color: #075d51;
-  font-size: 0.8rem;
-}
-
-.measurement-histogram svg {
-  display: block;
-  width: 100%;
-  max-height: 220px;
-  margin-top: 4px;
-}
-
-.histogram-axis {
-  stroke: #849099;
-  stroke-width: 1;
-}
-
-.measurement-histogram-bar {
-  fill: var(--success);
-  opacity: 0.82;
-}
-
-.measurement-histogram text {
-  fill: var(--ink-soft);
-  font-size: 12px;
-}
-
-.measurement-histogram figcaption {
-  color: var(--ink-soft);
-  font-size: 0.72rem;
 }
 
 @media (max-width: 1400px) {

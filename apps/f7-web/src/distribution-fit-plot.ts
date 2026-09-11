@@ -16,6 +16,10 @@ export interface FactorSetupAssumptionInput {
   readonly sigmaLevel: number;
 }
 
+export function canonicalSigmaLevel(value: number): string {
+  return Number(value.toPrecision(12)).toString();
+}
+
 export function buildFactorSetupAssumption(input: FactorSetupAssumptionInput): FactorSetupAssumption {
   return {
     mean: Math.abs(input.signedMean),
@@ -71,7 +75,13 @@ export type DistributionFitReferenceLineId =
   | "minus-3-sigma"
   | "plus-3-sigma"
   | "minus-4-sigma"
-  | "plus-4-sigma";
+  | "plus-4-sigma"
+  | "minus-4-5-sigma"
+  | "plus-4-5-sigma"
+  | "minus-6-sigma"
+  | "plus-6-sigma"
+  | "minus-setup-sigma"
+  | "plus-setup-sigma";
 
 export interface DistributionFitReferenceLine {
   readonly id: DistributionFitReferenceLineId;

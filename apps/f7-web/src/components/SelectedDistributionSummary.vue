@@ -26,6 +26,9 @@ const props = defineProps<{
   readonly plotDomain: DistributionFitObservedDomain | undefined;
   readonly plotReferences: DistributionFitReferences | undefined;
   readonly setupAssumption: FactorSetupAssumption | undefined;
+  readonly showHeading?: boolean;
+  readonly display?: "all" | "summary" | "plot";
+  readonly selectableSigmaLevels?: boolean;
 }>();
 
 const selected = computed(() => props.result
@@ -52,27 +55,27 @@ function familyLabel(family: string): string {
 </script>
 
 <template>
-  <div class="selected-distribution-heading" data-selected-distribution-heading>
+  <div v-if="showHeading !== false && display !== 'plot'" class="selected-distribution-heading" data-selected-distribution-heading>
     <div>
       <p class="workspace-eyebrow">Selected model only</p>
       <h4>Selected Distribution Fit</h4>
     </div>
   </div>
-  <p v-if="fitLoading" data-distribution-fit-loading role="status" aria-live="polite">
+  <p v-if="display !== 'plot' && fitLoading" data-distribution-fit-loading role="status" aria-live="polite">
     Fitting candidate distributions with 10,000 deterministic Bootstrap replicates...
   </p>
-  <p v-else-if="fitError && !result" data-distribution-fit-error class="error-banner" role="alert">
+  <p v-else-if="display !== 'plot' && fitError && !result" data-distribution-fit-error class="error-banner" role="alert">
     {{ fitError.summary }}
   </p>
   <p
-    v-else-if="selected && !selected.available"
+    v-else-if="display !== 'plot' && selected && !selected.available"
     class="selected-distribution-unavailable"
     data-selected-distribution-unavailable
     role="status"
   >
     Selected Distribution Fit unavailable. No governed family is available for Capability interpretation.
   </p>
-  <div v-else-if="result && selectedCandidate" data-selected-distribution-summary>
+  <div v-else-if="display !== 'plot' && result && selectedCandidate" data-selected-distribution-summary>
     <dl class="selected-distribution-metrics">
       <div>
         <dt>Selected family</dt>
@@ -115,11 +118,20 @@ function familyLabel(family: string): string {
       </div>
     </dl>
     <DistributionFitPlot
-      v-if="plotDomain && plotReferences"
+      v-if="display !== 'summary' && plotDomain && plotReferences"
       :candidate="selectedCandidate"
       :observed-domain="plotDomain"
       :references="plotReferences"
       :assumption="setupAssumption"
+      :selectable-sigma-levels="selectableSigmaLevels"
     />
   </div>
+  <DistributionFitPlot
+    v-if="display === 'plot' && result && selectedCandidate && plotDomain && plotReferences"
+    :candidate="selectedCandidate"
+    :observed-domain="plotDomain"
+    :references="plotReferences"
+    :assumption="setupAssumption"
+    :selectable-sigma-levels="selectableSigmaLevels"
+  />
 </template>
