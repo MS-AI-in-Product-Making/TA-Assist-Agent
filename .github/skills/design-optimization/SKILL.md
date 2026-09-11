@@ -35,11 +35,11 @@ Plan and communicate using product capability names only:
 3. Data Cleaning: validate selected scope and build ready downstream worksheet candidates.
 4. Drawing Governance: execute current-run drawing governance analysis and preserve its validated result for the optional post-report ADO publishing gate.
 5. TA Calculation: execute governed calculation for the confirmed downstream scope.
-6. Result Interpretation: optionally collect image observations, then execute and validate interpreted outputs.
+6. Result Interpretation: execute the workflow-owned required image evaluation, then validate interpreted outputs.
 7. Design Optimization: keep workflow-owned image/model evaluation, record standard workbook Analysis Context and Optimization Targets as `NOT_PROVIDED`, run optimization, and validate final outputs.
 8. Feedback Application: present final governed output ledger and preserve required decision and evidence disclosures.
 
-Workbook mode must preserve two worksheet gates, optional ADO publishing gate behavior, optional image-observation behavior, independent Analysis Context and Optimization Targets confirmations, built-in top-contributor policy behavior, and final output disposition reporting.
+Workbook mode must preserve two worksheet gates, optional ADO publishing gate behavior, workflow-owned required image evaluation, standard `NOT_PROVIDED` Analysis Context and Optimization Targets decisions, built-in top-contributor policy behavior, and final output disposition reporting.
 
 ## Internal executor contract
 

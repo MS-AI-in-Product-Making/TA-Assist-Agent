@@ -113,6 +113,8 @@ describe("Design Optimization skill contract", () => {
 
   it("orders the complete workbook flow and preserves both worksheet gates", () => {
     const { internal } = splitSkillSections(readSkill());
+    expect(internal).not.toContain("optionally collect image observations");
+    expect(internal).not.toContain("independent Analysis Context and Optimization Targets confirmations");
     expectOrdered(internal, [
       "### Phase W0 - Validate workbook and F0 capabilities",
       "### Phase W1 - Generate F1 worksheet selection",
