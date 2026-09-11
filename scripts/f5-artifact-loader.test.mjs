@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { f5DataInterpretationRequestSchema } from "../packages/contracts/dist/contracts.js";
+import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { loadF5ArtifactBundle } from "./f5-artifact-loader.mjs";
 
 const tempRoots = [];
@@ -382,6 +383,65 @@ const CORE_SCOPES = [
   "stack_start",
   "direction",
 ];
+
+describe("v4 completed-only F5 consumer", () => {
+  it.each([false, true])("loads field-identical pairs with mixed=%s and checks original hash", (mixed) => {
+    const bundle = setupBundle();
+    const worksheets = [...bundle.imageReferences].map(([worksheetName, image], index) => {
+      const tableId = `table-${index + 1}`;
+      const factorRows = [{
+        worksheetName, tableId, sourceRow: 2,
+        factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z2` },
+        factorName: `Feature-${worksheetName}`, partName: "Anonymous bracket", partCategory: "CNC",
+        drawingNumber: "DRAW-100", dimId: "307", nominal: 12.45, upperTolerance: 0.2,
+        lowerTolerance: -0.2, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "Normal",
+        sourceCells: { factorName: `${worksheetName}!A2`, partName: `${worksheetName}!B2` },
+      }];
+      const request = {
+        contractVersion: "f5-multimodal-request-v3", inputClassification: "confidential",
+        sessionId: "session", revision: 1, inputRevision: 1,
+        workbook: { fileName: "anonymous.xlsx", contentHash: WORKBOOK_HASH },
+        worksheetName, tableId, activeFactorCount: 1,
+        factorSetHash: createF5MultimodalFactorSetHash(factorRows), factorRows,
+        image: { mediaType: "image/png", contentHash: image.contentHash,
+          byteLength: readFileSync(path.join(bundle.f1ArtifactRoot, image.relativePath)).length,
+          artifactPath: image.relativePath },
+      };
+      request.requestHash = createF5MultimodalRequestHash(request);
+      if (mixed && index === 1) return { status: "failed", request, reasonCode: "evaluation_incomplete", summary: "Incomplete evaluation" };
+      return { status: "completed", request, scopeEvaluations: requiredScopeEvaluations(), result: {
+        contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential",
+        requestHash: request.requestHash, sessionId: "session", revision: 1, inputRevision: 1,
+        workbookContentHash: WORKBOOK_HASH, worksheetName, tableId, imageContentHash: image.contentHash,
+        model: { modelId: "test-image-model", supportsImage: true }, imageTableInterpretation: "Visible factor A",
+        rowMappings: factorRows.map(({ worksheetName, tableId, sourceRow, factorOrdinal }) => ({
+          worksheetName, tableId, sourceRow, factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: "Visible A",
+        })),
+      } };
+    });
+    const artifact = { contractVersion: "f5-multimodal-artifact-v4", outputClassification: "confidential",
+      sessionId: "session", revision: 1, inputRevision: 1, workbookContentHash: WORKBOOK_HASH,
+      selectedWorksheetNames: worksheets.map(({ request }) => request.worksheetName), worksheets };
+    const artifactPath = path.join(bundle.base, "multimodal.json");
+    writeJson(artifactPath, f5MultimodalArtifactV4Schema.parse(artifact));
+    const selectedWorksheetNames = worksheets.filter(({ status }) => status === "completed").map(({ request }) => request.worksheetName);
+    const options = { selectedWorksheetNames, modelInterpretationArtifact: artifactPath,
+      expectedModelInterpretationContentHash: createHash("sha256").update(readFileSync(artifactPath)).digest("hex") };
+    const result = load(bundle, options);
+    expect(result).toMatchObject({ status: "accepted" });
+    expect(result.modelInterpretationArtifact.contractVersion).toBe("f5-multimodal-artifact-v3");
+    expect(result.modelInterpretationArtifact.worksheets).toEqual(worksheets.filter(({ status }) => status === "completed").map(({ request, result }) => ({ request, result })));
+    appendFileSync(artifactPath, " ");
+    expect(load(bundle, options).status).toBe("inputRejected");
+  });
+});
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
+}
 
 function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferences.keys()]) {
   const f1Report = loadJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"));

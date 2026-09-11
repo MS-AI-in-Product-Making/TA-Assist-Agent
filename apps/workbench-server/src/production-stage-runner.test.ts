@@ -496,8 +496,15 @@ async function writeMixedMultimodalArtifact(serverRoot: string, environment: Pro
   const completedResult = { contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential", requestHash: completedRequest.requestHash, sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a", imageContentHash: "b".repeat(64), model: { modelId: "vision-model", supportsImage: true }, imageTableInterpretation: "Image and complete table interpreted.", rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: completedRow.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: "A is visible." }] };
   const failedRequest = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64) }, worksheetName: "Analysis-B", tableId: "table-b", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash([failedRow]), image: { mediaType: "image/png" as const, contentHash: "c".repeat(64), byteLength: 100, artifactPath: "images/analysis-b.png" }, factorRows: [failedRow] };
   failedRequest.requestHash = createF5MultimodalRequestHash(failedRequest);
-  const bytes = Buffer.from(`${JSON.stringify({ contractVersion: "f5-multimodal-artifact-v4", outputClassification: "confidential", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A", "Analysis-B"], worksheets: [{ status: "completed", request: completedRequest, result: completedResult }, { status: "failed", request: failedRequest, reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" }] })}\n`, "utf8");
+  const bytes = Buffer.from(`${JSON.stringify({ contractVersion: "f5-multimodal-artifact-v4", outputClassification: "confidential", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A", "Analysis-B"], worksheets: [{ status: "completed", request: completedRequest, result: completedResult, scopeEvaluations: requiredScopeEvaluations() }, { status: "failed", request: failedRequest, reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" }] })}\n`, "utf8");
   const path = join(serverRoot, "multimodal-v4.json");
   await writeFile(path, bytes);
   return { path, contentHash: createHash("sha256").update(bytes).digest("hex") };
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }

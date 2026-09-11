@@ -192,6 +192,7 @@ function installRequiredMixedMultimodalV4(bundle, { failedWorksheetName = "Analy
     return {
       status: "completed",
       request,
+      scopeEvaluations: requiredScopeEvaluations(),
       result: {
         contractVersion: "f5-multimodal-result-v3",
         outputClassification: "confidential",
@@ -225,6 +226,13 @@ function installRequiredMixedMultimodalV4(bundle, { failedWorksheetName = "Analy
   writeJson(filePath, artifact);
   Object.assign(bundle, { requireMultimodalV3: true, modelInterpretationArtifactRoot, modelInterpretationArtifact, expectedModelInterpretationContentHash: sha256(filePath) });
   return artifact;
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }
 
 function keepCompletedF5WorksheetOnly(bundle, completedWorksheetName) {

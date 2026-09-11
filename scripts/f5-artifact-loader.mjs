@@ -9,7 +9,7 @@ import {
   f5ImageObservationArtifactSchema,
   workbookCatalogFileNameSchema,
 } from "../packages/contracts/dist/contracts.js";
-import { f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
+import { completedF5MultimodalProjection } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 
 const SOURCE_REFERENCES = Object.freeze({
   f1: "Feature1-Report.json",
@@ -429,13 +429,17 @@ export function loadF5ArtifactBundle({
     } catch {
       return inputRejected("artifact_contract_invalid", artifactReference);
     }
-    const parsed = f5MultimodalArtifactV3Schema.safeParse(parsedJson);
-    if (!parsed.success
-      || parsed.data.workbookContentHash !== workbook.contentHash
-      || !sameWorksheetSet(parsed.data.selectedWorksheetNames, selection)) {
+    let projection;
+    try {
+      projection = completedF5MultimodalProjection(parsedJson);
+    } catch {
       return inputRejected("artifact_identity_mismatch", artifactReference);
     }
-    validatedModelInterpretation = parsed.data;
+    if (projection.workbookContentHash !== workbook.contentHash
+      || !sameWorksheetSet(projection.worksheets.map(({ request }) => request), selection)) {
+      return inputRejected("artifact_identity_mismatch", artifactReference);
+    }
+    validatedModelInterpretation = projection;
   }
 
   const f1Loaded = loadSelectedF1Artifacts(f1ArtifactRoot, f1IndexLoaded.value, selection);

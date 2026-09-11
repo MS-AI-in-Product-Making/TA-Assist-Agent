@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 import { z } from "zod";
+import { f5CoreStructuralScopeSchema, f5EvidenceStatusSchema } from "./contracts.js";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonEmptyStringSchema = z.string().min(1).refine((value) => value.trim().length > 0, "must not be blank");
@@ -215,20 +216,63 @@ export const f5MultimodalWorksheetPairV3Schema = z.object({
 
 export const f5MultimodalEvaluationFailureReasonSchema = z.enum(f5MultimodalEvaluationFailureReasonValues);
 
+export const f5MultimodalRequestFailureV4Schema = z.object({
+  contractVersion: z.literal("f5-multimodal-request-failure-v4"),
+  inputClassification: z.literal("confidential"),
+  requestHash: sha256Schema,
+  sessionId: nonEmptyStringSchema,
+  revision: z.number().int().nonnegative(),
+  inputRevision: z.number().int().nonnegative(),
+  workbook: z.object({ fileName: nonEmptyStringSchema, contentHash: sha256Schema }).strict(),
+  worksheetName: nonEmptyStringSchema,
+  tableId: nonEmptyStringSchema,
+  activeFactorCount: z.number().int().positive(),
+  factorSetHash: sha256Schema,
+  evidence: z.object({ f2ContentHash: sha256Schema, f4ContentHash: sha256Schema }).strict(),
+  reasonCode: f5MultimodalEvaluationFailureReasonSchema,
+  summary: nonEmptyStringSchema,
+}).strict().superRefine((request, context) => {
+  if (request.requestHash !== createF5MultimodalRequestHash(request)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "requestHash must bind the request failure identity", path: ["requestHash"] });
+  }
+});
+
+export const f5MultimodalScopeEvaluationsSchema = z.array(z.object({
+  scope: f5CoreStructuralScopeSchema,
+  status: f5EvidenceStatusSchema.exclude(["not_evaluated", "not_applicable"]),
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: nonEmptyStringSchema.refine((value) => value.length <= 500, "visibleBasis must not exceed 500 characters"),
+}).strict().superRefine((evaluation, context) => {
+  if (evaluation.status === "supported" && (evaluation.observedValue !== "visible" || evaluation.confidence === "low")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "supported scopes require visible, non-low-confidence evidence" });
+  }
+})).length(5).superRefine((evaluations, context) => {
+  if (new Set(evaluations.map(({ scope }) => scope)).size !== 5) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "exactly five distinct core scopes must be evaluated" });
+  }
+});
+
 export const f5MultimodalWorksheetOutcomeV4Schema = z.union([
   z.object({
     status: z.literal("completed"),
     request: f5MultimodalWorksheetRequestV3Schema,
     result: f5MultimodalWorksheetResultV3Schema,
+    scopeEvaluations: f5MultimodalScopeEvaluationsSchema,
   }).strict().superRefine(({ request, result }, context) => {
     validateWorksheetBindingBindings(request, result, context);
   }),
   z.object({
     status: z.literal("failed"),
-    request: f5MultimodalWorksheetRequestV3Schema,
+    request: z.union([f5MultimodalWorksheetRequestV3Schema, f5MultimodalRequestFailureV4Schema]),
     reasonCode: f5MultimodalEvaluationFailureReasonSchema,
     summary: nonEmptyStringSchema,
-  }).strict(),
+  }).strict().superRefine((outcome, context) => {
+    if (outcome.request.contractVersion === "f5-multimodal-request-failure-v4"
+      && (outcome.reasonCode !== outcome.request.reasonCode || outcome.summary !== outcome.request.summary)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "request failure diagnostics must match the bound identity" });
+    }
+  }),
 ]);
 
 export const f5MultimodalArtifactV4Schema = z.object({
@@ -293,6 +337,22 @@ export const f5MultimodalArtifactV3Schema = z.object({
     if (request.workbook.contentHash !== artifact.workbookContentHash) context.addIssue({ code: z.ZodIssueCode.custom, message: "request workbook must match artifact", path: ["worksheets", index, "request", "workbook"] });
   });
 });
+
+export function completedF5MultimodalProjection(value: unknown): F5MultimodalArtifactV3 {
+  if ((value as { contractVersion?: string } | null)?.contractVersion !== "f5-multimodal-artifact-v4") {
+    return f5MultimodalArtifactV3Schema.parse(value);
+  }
+  const artifact = f5MultimodalArtifactV4Schema.parse(value);
+  const worksheets = artifact.worksheets.flatMap((outcome) => outcome.status === "completed"
+    ? [{ request: outcome.request, result: outcome.result }]
+    : []);
+  return f5MultimodalArtifactV3Schema.parse({
+    ...artifact,
+    contractVersion: "f5-multimodal-artifact-v3",
+    selectedWorksheetNames: worksheets.map(({ request }) => request.worksheetName),
+    worksheets,
+  });
+}
 
 export const f5MultimodalArtifactAuthorityV3Schema = z.object({
   sessionId: nonEmptyStringSchema,
@@ -396,6 +456,8 @@ export function validateF5MultimodalArtifactV4(
 }
 
 export type F5MultimodalWorksheetRequestV3 = z.infer<typeof f5MultimodalWorksheetRequestV3Schema>;
+export type F5MultimodalRequestFailureV4 = z.infer<typeof f5MultimodalRequestFailureV4Schema>;
+export type F5MultimodalScopeEvaluations = z.infer<typeof f5MultimodalScopeEvaluationsSchema>;
 export type F5MultimodalWorksheetResultV3 = z.infer<typeof f5MultimodalWorksheetResultV3Schema>;
 export type F5MultimodalArtifactV3 = z.infer<typeof f5MultimodalArtifactV3Schema>;
 export type F5MultimodalArtifactAuthorityV3 = z.infer<typeof f5MultimodalArtifactAuthorityV3Schema>;

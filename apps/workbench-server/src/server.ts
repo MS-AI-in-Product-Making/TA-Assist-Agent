@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, realpath, stat } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import cookie from "@fastify/cookie";
@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
 import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, validateF5MultimodalArtifactV4, worksheetSelectionPromptSchema, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createReviewContextId, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
-import { createTypedError } from "@ai-assist/contracts";
+import { createTypedError, f5MultimodalScopeEvaluationsSchema } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
 import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
@@ -436,6 +436,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (snapshot.state === "f5_running") {
         await context.ensurePendingMultimodalHostActions(snapshot);
         if (!await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+        snapshot = await authorizeMultimodalArtifact(rootDir, snapshot);
       }
       await enqueueSnapshotAttempt(rootDir, queue, snapshot);
     },
@@ -2085,12 +2086,28 @@ export async function materializeCompletedMultimodalArtifact(
   for (const request of requests) {
     const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
     const outcome = record?.result?.payload;
-    if (record?.status !== "completed" || record.request.kind !== "vscode_worksheet_multimodal_request") return false;
+    if (record === undefined || !["completed", "blocked", "failed"].includes(record.status)
+      || record.request.kind !== "vscode_worksheet_multimodal_request"
+      || record.request.request.requestHash !== request.requestHash) return false;
     if (outcome?.status === "completed") {
       if (outcome.outcome?.kind !== "worksheet_multimodal_response") return false;
       const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request: record.request.request, result: outcome.outcome.result });
-      if (!pair.success || pair.data.request.requestHash !== request.requestHash) return false;
-      worksheets.push({ status: "completed" as const, request: pair.data.request, result: pair.data.result });
+      if (!pair.success) {
+        worksheets.push({ status: "failed" as const, request, reasonCode: "factor_mapping_failed", summary: "Worksheet Factor mapping did not match the governed request." });
+        continue;
+      }
+      const scopes = f5MultimodalScopeEvaluationsSchema.safeParse(outcome.outcome.scopeEvaluations);
+      if (!scopes.success) {
+        worksheets.push({ status: "failed" as const, request, reasonCode: "evaluation_incomplete", summary: "Exactly five governed image scopes must be evaluated." });
+        continue;
+      }
+      worksheets.push({ status: "completed" as const, request: pair.data.request, result: pair.data.result, scopeEvaluations: scopes.data });
+      continue;
+    }
+    if (outcome?.status === "blocked") {
+      worksheets.push({ status: "failed" as const, request,
+        reasonCode: outcome.reason === "ordinal_mapping_unavailable" ? "factor_mapping_failed" : "model_capability_unavailable",
+        summary: outcome.reason ?? "Worksheet image evaluation is blocked." });
       continue;
     }
     if (outcome?.status === "failed") {
@@ -2152,18 +2169,15 @@ export async function reconcileActiveMultimodalAttempt(
   snapshot: F8SessionSnapshot,
   context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">,
 ): Promise<boolean> {
-  const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
-  for (const request of requests) {
-    const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
-    if (record?.request.kind !== "vscode_worksheet_multimodal_request"
-      || record.request.request.requestHash !== request.requestHash) continue;
-    const payload = record.result?.payload;
-    if (payload?.status === "blocked") {
-      await context.failActiveMultimodalAttempt(snapshot, payload.reason ?? "Worksheet multimodal interpretation is blocked.");
-      return false;
-    }
+  if (!await materializeCompletedMultimodalArtifact(rootDir, snapshot, context)) return false;
+  const registry = readRegistry<{ path: string }>(rootDir, "multimodal-artifacts", snapshot.sessionId);
+  if (registry === undefined) return false;
+  const artifact = f5MultimodalArtifactV4Schema.parse(JSON.parse(readFileSync(registry.path, "utf8")));
+  if (artifact.worksheets.every((worksheet) => worksheet.status === "failed")) {
+    await context.failActiveMultimodalAttempt(snapshot, artifact.worksheets[0]!.summary);
+    return false;
   }
-  return materializeCompletedMultimodalArtifact(rootDir, snapshot, context);
+  return true;
 }
 
 function projectMultimodalReference(snapshot: F8SessionSnapshot, operations: SessionDeltaOperations<SessionArtifactReference> | undefined): F8SessionSnapshot {
@@ -2182,4 +2196,31 @@ function projectMultimodalReference(snapshot: F8SessionSnapshot, operations: Ses
     ...snapshot,
     artifactRefs: [...(snapshot.artifactRefs ?? []).filter(({ artifactId }) => artifactId !== projected.artifactId), projected],
   };
+}
+
+async function authorizeMultimodalArtifact(rootDir: string, snapshot: F8SessionSnapshot): Promise<F8SessionSnapshot> {
+  const registry = readRegistry<{ path: string; contentHash: string }>(rootDir, "multimodal-artifacts", snapshot.sessionId);
+  if (registry === undefined) throw new Error("Server-owned multimodal artifact registry is unavailable.");
+  const relativePath = relative(rootDir, registry.path);
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) throw new Error("Server-owned multimodal artifact escaped the managed root.");
+  const reviewContext = await persistedReviewContext(rootDir, snapshot);
+  const store = await openSessionStore({ rootDir, sessionId: snapshot.sessionId });
+  try {
+    return await store.applySnapshotMutation(snapshot.revision, (current) => ({
+      snapshot: current,
+      artifactReferenceOps: {
+        upsert: [{
+          artifactId: `f5-multimodal:${current.inputRevision}`,
+          sessionId: current.sessionId,
+          inputRevision: current.inputRevision,
+          kind: "f5_multimodal",
+          relativePath,
+          contentHash: registry.contentHash,
+          reviewContext,
+        }],
+      },
+    }));
+  } finally {
+    await store.close();
+  }
 }

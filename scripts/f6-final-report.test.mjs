@@ -16,6 +16,7 @@ import {
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { marked } from "marked";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
+import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
 import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
 import {
   createF6ArtifactBundleFixture,
@@ -199,6 +200,7 @@ function createMixedMultimodalV4(inputs, { completedWorksheetName = "Analysis-A"
     worksheets: [{
       status: "completed",
       request: completedRequest,
+      scopeEvaluations: requiredScopeEvaluations(),
       result: {
         contractVersion: "f5-multimodal-result-v3",
         outputClassification: "confidential",
@@ -229,6 +231,13 @@ function createMixedMultimodalV4(inputs, { completedWorksheetName = "Analysis-A"
       summary,
     }],
   };
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }
 
 function keepCompletedWorksheetOnly(inputs, { completedWorksheetName = "Analysis-A", failedWorksheetName = "Analysis-B" } = {}) {
@@ -1128,6 +1137,22 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
 });
 
 describe("createF6FinalReportProjection v3", () => {
+  it("marks ready identifier gaps as MISSING with the printable row marker", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const sourceRow = inputs.f2Report.worksheets[0].rows[0];
+    sourceRow.actualFields.drawingNumber = null;
+    sourceRow.actualFields.dimCharacteristicId = null;
+    sourceRow.missingIdentifiers = ["drawingNumber", "dimCharacteristicId"];
+    inputs.f2Report.summary.missingPartNumberCount = 1;
+    inputs.f2Report.summary.missingDimIdCount = 1;
+    inputs.f2Report.f4Handoffs[0] = createF4Handoff({ workbookContentHash: inputs.f2Report.workbook.contentHash, worksheet: inputs.f2Report.worksheets[0] });
+    inputs.modelInterpretation = createMultimodalV3(inputs);
+    const { markdown } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const tableRow = markdown.split("\n").find((line) => line.startsWith("| Factor Analysis-A"));
+    expect(tableRow).toContain("| MISSING | MISSING |");
+    expect(tableRow).toContain(`data-f6-marker="required-missing" data-source-row="${sourceRow.sourceRow}"`);
+  });
+
   it("shows exact row and image blockers for evidence-only worksheets", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A"],
@@ -1448,6 +1473,22 @@ describe("createF6FinalReportProjection v3", () => {
 });
 
 describe("createF6FinalReportProjection v4 mixed outcomes", () => {
+  it("uses F2-ready F3 scope when F2 blocked and image failed coexist", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], blockedWorksheetNames: ["Blocked-C"] });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
+    inputs.f6Optimization.provenance.reportScope = {
+      worksheetNames: ["Analysis-A", "Analysis-B", "Blocked-C"],
+      blockedWorksheetNames: ["Analysis-B", "Blocked-C"],
+    };
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      { worksheetName: "Analysis-B", disposition: "FAIL" },
+      { worksheetName: "Blocked-C", disposition: "FAIL" },
+    ]));
+    expect(projection.projection.worksheets).toHaveLength(3);
+  });
+
   it("rejects a new-workflow final report when multimodal v3 is missing", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
   });

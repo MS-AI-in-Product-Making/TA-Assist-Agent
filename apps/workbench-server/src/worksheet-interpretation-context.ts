@@ -7,6 +7,8 @@ import {
   f2UserReportSchema,
   f4WorkflowCalculationResultSchema,
   f5MultimodalWorksheetRequestV3Schema,
+  f5MultimodalRequestFailureV4Schema,
+  type F5MultimodalRequestFailureV4,
   type F5MultimodalFactorRowV3,
   type F5MultimodalWorksheetRequestV3,
 } from "@ai-assist/contracts";
@@ -81,10 +83,20 @@ function isMatchingLiveClaim(
     && Date.parse(record.leaseExpiresAt) > binding.now.getTime();
 }
 
+export function buildSelectedWorksheetInterpretationContexts(
+  snapshot: F8SessionSnapshot,
+  artifacts: WorksheetInterpretationArtifactReader,
+): Promise<readonly F5MultimodalWorksheetRequestV3[]>;
+export function buildSelectedWorksheetInterpretationContexts(
+  snapshot: F8SessionSnapshot,
+  artifacts: WorksheetInterpretationArtifactReader,
+  options: { isolateFailures: true },
+): Promise<readonly (F5MultimodalWorksheetRequestV3 | F5MultimodalRequestFailureV4)[]>;
 export async function buildSelectedWorksheetInterpretationContexts(
   snapshot: F8SessionSnapshot,
   artifacts: WorksheetInterpretationArtifactReader,
-): Promise<readonly F5MultimodalWorksheetRequestV3[]> {
+  options?: { isolateFailures: true },
+): Promise<readonly (F5MultimodalWorksheetRequestV3 | F5MultimodalRequestFailureV4)[]> {
   const selection = snapshot.downstreamScopeSelection;
   if (selection === undefined
     || !("decision" in selection)
@@ -114,13 +126,33 @@ export async function buildSelectedWorksheetInterpretationContexts(
     throw contextError("Current F2 and F4 workbook evidence does not match the selected session scope.", [f2Reference.artifactId, f4Reference.artifactId]);
   }
 
-  return Promise.all(selectedWorksheetNames.map(async (worksheetName) => buildRequest(
-    snapshot,
-    worksheetName,
-    f2,
-    f4,
-    artifacts,
-  )));
+  return Promise.all(selectedWorksheetNames.map(async (worksheetName) => {
+    try {
+      return await buildRequest(snapshot, worksheetName, f2, f4, artifacts);
+    } catch (error) {
+      if (!options?.isolateFailures) throw error;
+      const matches = f2.worksheets.filter((worksheet) => worksheet.worksheetName === worksheetName && worksheet.status === "ready");
+      const rows = matches[0]?.rows ?? [];
+      const tableIds = new Set(rows.map(({ tableId }) => tableId));
+      if (matches.length !== 1 || rows.length === 0 || tableIds.size !== 1) throw error;
+      const message = error instanceof Error ? error.message : "";
+      const reasonCode = /hash/iu.test(message) ? "image_hash_mismatch"
+        : /image.*(?:missing|unavailable)|(?:missing|unavailable).*image/iu.test(message) ? "image_missing"
+        : /image/iu.test(message) ? "image_identity_mismatch" : "factor_mapping_failed";
+      const failure = {
+        contractVersion: "f5-multimodal-request-failure-v4" as const,
+        inputClassification: "confidential" as const,
+        requestHash: "", sessionId: snapshot.sessionId, revision: snapshot.revision, inputRevision: snapshot.inputRevision,
+        workbook: { fileName: f2.workbook.fileName, contentHash: f2.workbook.contentHash },
+        worksheetName, tableId: rows[0]!.tableId, activeFactorCount: rows.length,
+        factorSetHash: createF5MultimodalFactorSetHash(rows),
+        evidence: { f2ContentHash: f2Reference.contentHash, f4ContentHash: f4Reference.contentHash },
+        reasonCode, summary: `Worksheet request could not be built from governed evidence: ${reasonCode}.`,
+      };
+      failure.requestHash = createF5MultimodalRequestHash(failure);
+      return f5MultimodalRequestFailureV4Schema.parse(failure);
+    }
+  }));
 }
 
 export async function assertCurrentWorksheetInterpretationRequest(
@@ -132,7 +164,7 @@ export async function assertCurrentWorksheetInterpretationRequest(
   if (!parsedCandidate.success) {
     throw contextError("Multimodal worksheet request has an invalid content binding.", [candidate.worksheetName]);
   }
-  const current = await buildSelectedWorksheetInterpretationContexts(snapshot, artifacts);
+  const current = await buildSelectedWorksheetInterpretationContexts(snapshot, artifacts, { isolateFailures: true });
   const expected = current.find(({ worksheetName }) => worksheetName === parsedCandidate.data.worksheetName);
   if (expected === undefined || expected.requestHash !== parsedCandidate.data.requestHash) {
     throw contextError("Multimodal worksheet request is stale or does not match current evidence.", [candidate.worksheetName]);

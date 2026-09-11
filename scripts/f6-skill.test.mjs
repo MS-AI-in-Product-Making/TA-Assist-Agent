@@ -115,6 +115,8 @@ describe("Design Optimization skill contract", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(internal).not.toContain("optionally collect image observations");
     expect(internal).not.toContain("independent Analysis Context and Optimization Targets confirmations");
+    expect(internal).not.toContain("continue deterministic F5 with `not_evaluated`");
+    expect(internal).toContain("must not downgrade a required evaluation failure to `not_evaluated`");
     expectOrdered(internal, [
       "### Phase W0 - Validate workbook and F0 capabilities",
       "### Phase W1 - Generate F1 worksheet selection",
@@ -164,7 +166,9 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Run workflow-owned F5 image evaluation");
     expect(internal).toContain("Do not ask the user whether to evaluate the already verified F1 images");
     expect(internal).toContain("Record the workflow-owned outcome internally and continue to W7 without a caller confirmation gate");
-    expect(internal).toContain("Task 2 mixed-outcome behavior");
+    expect(internal).toContain("mixed-outcome behavior");
+    expect(internal).toContain("incomplete five-scope evidence");
+    expect(internal).toContain("makes that worksheet a governed `FAIL`; other worksheets continue");
     expect(internal).toContain("f5-image-observation-v2");
     expect(internal).toContain("must be reviewed by ME");
     expect(internal).toContain("Record Analysis Context as `NOT_PROVIDED` on the standard workbook path.");

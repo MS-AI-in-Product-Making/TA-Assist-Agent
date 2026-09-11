@@ -432,7 +432,14 @@ function completedMultimodalPayload(request: Awaited<ReturnType<typeof buildSele
     imageTableInterpretation: `Interpreted ${request.worksheetName} with the complete Factor table.`,
     rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched" as const, visibleStatus: "visible" as const, interpretation: `${row.factorOrdinal.value}:${row.factorName}` })),
   };
-  return { status: "completed" as const, outcome: { kind: "worksheet_multimodal_response" as const, result } };
+  return { status: "completed" as const, outcome: { kind: "worksheet_multimodal_response" as const, result, scopeEvaluations: requiredScopeEvaluations() } };
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence" as const, observedValue: "ambiguous" as const, confidence: "low" as const,
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }
 
 async function immediateQueue(options: PersistentWorkerQueueOptions) {
@@ -873,7 +880,8 @@ describe("workbench server routes", () => {
       const completed = await openSessionStore({ rootDir, sessionId });
       try {
         const snapshot = await completed.readSnapshot();
-        expect(snapshot.state).toBe("ado_decision_required");
+        const runnerError = await readFile(join(rootDir, "runtime", "workbench", "registries", "runner-errors", `${sessionId}.json`), "utf8").catch(() => undefined);
+        expect(snapshot.state, runnerError).toBe("ado_decision_required");
         expect(snapshot.priorRunReferences).toEqual(expect.arrayContaining([
           expect.objectContaining({ featureId: "F6", contractVersion: "f6-input-decision-v1", referenceId: "f6-analysis-context:not_provided" }),
           expect.objectContaining({ featureId: "F6", contractVersion: "f6-input-decision-v1", referenceId: "f6-optimization-targets:not_provided" }),

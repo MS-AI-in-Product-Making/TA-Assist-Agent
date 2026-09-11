@@ -72,6 +72,37 @@ const REPORT = `# Tolerance Analysis Engineering Report
 `;
 
 describe("renderF6PdfHtml", () => {
+  it.each([
+    ["comment", '<!-- <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> -->'],
+    ["unclosed", '<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true">'],
+    ["nonempty", '<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true">VISIBLE</span>'],
+    ["nested", '<div><span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span></div>'],
+    ["extra attribute", '<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true" title="spoof"></span>'],
+  ])("rejects %s marker without hiding following content", (_name, marker) => {
+    const legitimate = '<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span>';
+    const html = renderF6PdfHtml({
+      markdown: REPORT.replace(legitimate, `${marker} AFTER_MARKER`),
+      sourceHash: "a".repeat(64),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).not.toContain('class="missing"');
+    expect(html).not.toContain('<span class="f6-inline-marker"');
+    expect(html).toContain("AFTER_MARKER</td>");
+    expect(html).toContain("Top Enclosure Height");
+    if (_name === "nonempty") expect(html).toContain("VISIBLE");
+  });
+
+  it("does not recognize a complete marker outside the Factor Description cell", () => {
+    const marker = '<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span>';
+    const html = renderF6PdfHtml({
+      markdown: REPORT.replace(marker, "").replace("| Frame |", `| Frame ${marker} |`),
+      sourceHash: "a".repeat(64),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).not.toContain('class="missing"');
+    expect(html).not.toContain('<span class="f6-inline-marker"');
+  });
+
   it("projects the governed report into a self-contained engineering print layout", () => {
     const html = renderF6PdfHtml({
       markdown: REPORT,

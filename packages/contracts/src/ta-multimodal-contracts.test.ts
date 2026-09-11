@@ -73,6 +73,16 @@ function result(input = request()) {
   };
 }
 
+function scopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope,
+    status: "insufficient_evidence",
+    observedValue: "ambiguous",
+    confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
+}
+
 function schemas() {
   return contracts as typeof contracts & {
     f5MultimodalWorksheetRequestV3Schema?: { safeParse(value: unknown): { success: boolean } };
@@ -90,6 +100,22 @@ function schemas() {
 }
 
 describe("F5 mandatory multimodal v3 contracts", () => {
+  it("requires five assessed scopes for v4 completion while preserving historical v3 pairs", () => {
+    const input = request();
+    const output = result(input);
+    const pair = { request: input, result: output };
+    expect(contracts.f5MultimodalWorksheetPairV3Schema.parse(pair)).toEqual(pair);
+    expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.safeParse({ status: "completed", ...pair }).success).toBe(false);
+    const scopes = ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+      scope, status: "needs_review", observedValue: "ambiguous", confidence: "low", visibleBasis: "The visible image leaves the geometry ambiguous.",
+    }));
+    const completed = { status: "completed", ...pair, scopeEvaluations: scopes };
+    expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.parse(completed)).toEqual(completed);
+    for (const scopeEvaluations of [scopes.slice(1), [...scopes.slice(1), scopes[1]], scopes.map((scope) => ({ ...scope, status: "not_evaluated" }))]) {
+      expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.safeParse({ ...completed, scopeEvaluations }).success).toBe(false);
+    }
+  });
+
   it("exports strict per-worksheet request and result schemas", () => {
     const exported = schemas();
 
@@ -283,7 +309,7 @@ describe("F5 mandatory multimodal v3 contracts", () => {
       workbookContentHash: completedRequest.workbook.contentHash,
       selectedWorksheetNames: [completedRequest.worksheetName, failedRequest.worksheetName],
       worksheets: [
-        { status: "completed", request: completedRequest, result: result(completedRequest) },
+        { status: "completed", request: completedRequest, result: result(completedRequest), scopeEvaluations: scopeEvaluations() },
         { status: "failed", request: failedRequest, reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" },
       ],
     };

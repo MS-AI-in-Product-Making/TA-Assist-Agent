@@ -466,7 +466,7 @@ function assertCompletedF5MultimodalReference(snapshot, result) {
             code: "evidence_mismatch",
             summary: "Result Interpretation cannot complete without the current governed multimodal artifact.",
             suggestedAction: "Complete image and Factor-table interpretation for every selected worksheet.",
-            affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision)],
+            affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision), `revision:${snapshot.revision}`, `artifacts:${(snapshot.artifactRefs ?? []).map(({ artifactId }) => artifactId).join(",") || "none"}`],
         });
     }
 }

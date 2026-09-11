@@ -24,7 +24,7 @@ const COMPLETE_FACTOR_TABLE_HEADERS = [
   "Capability / Knowledge Guidance",
 ] as const;
 
-const REQUIRED_MISSING_MARKER_OPEN = /<span\s+class="f6-inline-marker"\s+data-f6-marker="required-missing"\s+data-source-row="(\d+)"\s+hidden(?:="")?\s+aria-hidden="true"\s*>/u;
+const REQUIRED_MISSING_MARKER_OPEN = /^<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="(\d+)" hidden(?:="")? aria-hidden="true">$/u;
 const REQUIRED_MISSING_MARKER_CLOSE = /^<\/span>$/u;
 
 function escapeHtml(value: string): string {
@@ -39,13 +39,14 @@ function exactHeadersMatch(headers: readonly string[], expected: readonly string
   return headers.length === expected.length && headers.every((header, index) => header === expected[index]);
 }
 
-function requiredMissingMarker(text: string): string | undefined {
-  const match = REQUIRED_MISSING_MARKER_OPEN.exec(text);
-  return match?.[1];
-}
-
-function hasRequiredMissingMarker(cell: Tokens.TableCell): boolean {
-  return requiredMissingMarker(cell.text) !== undefined;
+function requiredMissingMarker(cell: Tokens.TableCell): { index: number; sourceRow: string } | undefined {
+  const htmlIndexes = cell.tokens.flatMap((token, index) => token.type === "html" ? [index] : []);
+  if (htmlIndexes.length !== 2) return undefined;
+  const [openIndex, closeIndex] = htmlIndexes as [number, number];
+  if (closeIndex !== openIndex + 1) return undefined;
+  const sourceRow = REQUIRED_MISSING_MARKER_OPEN.exec(cell.tokens[openIndex]!.raw)?.[1];
+  if (sourceRow === undefined || !REQUIRED_MISSING_MARKER_CLOSE.test(cell.tokens[closeIndex]!.raw)) return undefined;
+  return { index: openIndex, sourceRow };
 }
 
 function numericValue(value: string): number | undefined {
@@ -155,7 +156,6 @@ class F6PdfRenderer extends Renderer {
   private analysisGridOpen = false;
   private analysisPanelOpen = false;
   private analysisPanelType: string | undefined;
-  private requiredMissingMarkerDepth = 0;
   private readonly requirements = new Map<string, string>();
 
   constructor(private readonly inlineImages: ReadonlyMap<string, string>) {
@@ -179,17 +179,7 @@ class F6PdfRenderer extends Renderer {
     return closing;
   }
 
-  override html({ text }: Tokens.HTML | Tokens.Tag): string {
-    const sourceRow = requiredMissingMarker(text);
-    if (sourceRow !== undefined) {
-      this.requiredMissingMarkerDepth += 1;
-      return `<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${sourceRow}" hidden="" aria-hidden="true">`;
-    }
-    if (REQUIRED_MISSING_MARKER_CLOSE.test(text.trim())) {
-      if (this.requiredMissingMarkerDepth === 0) return "";
-      this.requiredMissingMarkerDepth -= 1;
-      return "</span>";
-    }
+  override html(): string {
     return "";
   }
 
@@ -274,8 +264,14 @@ class F6PdfRenderer extends Renderer {
     if (exactHeadersMatch(headers, COMPLETE_FACTOR_TABLE_HEADERS)) {
       const headerCells = token.header.map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`).join("");
       const rows = token.rows.map((row) => {
-        const rowClass = row.some(hasRequiredMissingMarker) ? ' class="missing"' : "";
-        const cells = row.map((cell) => `<td>${this.parser.parseInline(cell.tokens)}</td>`).join("");
+        const marker = requiredMissingMarker(row[0]!);
+        const rowClass = marker === undefined ? "" : ' class="missing"';
+        const cells = row.map((cell, index) => {
+          if (index !== 0 || marker === undefined) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+          const before = this.parser.parseInline(cell.tokens.slice(0, marker.index));
+          const after = this.parser.parseInline(cell.tokens.slice(marker.index + 2));
+          return `<td>${before}<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${marker.sourceRow}" hidden="" aria-hidden="true"></span>${after}</td>`;
+        }).join("");
         return `<tr${rowClass}>${cells}</tr>`;
       }).join("");
       return `<table class="factor-table factor-table--complete"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;

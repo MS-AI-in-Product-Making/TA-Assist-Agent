@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createComparisonPlaceholder,
   createF6OptimizationV3,
+  createF5DataInterpretation,
 } from "../packages/workbook-catalog/dist/index.js";
 import {
   createF6ArtifactBundleFixture,
@@ -27,6 +28,7 @@ import {
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
+import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
 const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
@@ -569,6 +571,54 @@ describe("runF6FullValidation", () => {
 });
 
 describe("F6 real artifact full flow", () => {
+  it.each([
+    [false, "unchanged"], [true, "unchanged"], [true, "missing"], [true, "hash_mismatch"],
+  ])("publishes real v4 consumers with mixed=%s and failed image=%s", (mixed, failedImage) => {
+    const bundle = createRealBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
+    const modelPath = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    rewriteFixtureJson(modelPath, (model) => {
+      model.contractVersion = "f5-multimodal-artifact-v4";
+      model.worksheets = model.worksheets.map((pair, index) => mixed && index === 1
+        ? { status: "failed", request: pair.request, reasonCode: "evaluation_incomplete", summary: "Incomplete image assessment" }
+        : { status: "completed", ...pair, scopeEvaluations: requiredScopeEvaluations() });
+    });
+    if (mixed) {
+      rewriteFixtureJson(bundle.paths.f5, (report) => {
+        Object.assign(report, createF5DataInterpretation({
+          contractVersion: "v1", inputClassification: "confidential", workbook: report.workbook,
+          knowledgeBaseVersion: "interpretation-rules-v2",
+          worksheets: report.worksheets.filter(({ worksheetName }) => worksheetName === "Analysis-A")
+            .map(({ worksheetName, imageReference, governanceRows, calculationResult }) => ({
+              worksheetName, imageReference, governanceRows, calculationResult, imageObservations: [],
+            })),
+        }));
+      });
+    }
+    bundle.expectedModelInterpretationContentHash = fixtureFileSha256(modelPath);
+    const original = readFileSync(modelPath);
+    if (failedImage !== "unchanged") {
+      const imagePath = path.join(bundle.f2ArtifactRoot, readJson(modelPath).worksheets[1].request.image.artifactPath);
+      if (failedImage === "missing") rmSync(imagePath);
+      else writeFileSync(imagePath, "tampered failed image");
+    }
+    const loaded = loadF6ArtifactBundle({ ...bundle, requireMultimodalV3: true });
+    expect(loaded.status, JSON.stringify(loaded)).toBe("accepted");
+    const optimized = createF6OptimizationV3(loaded.request, {
+      interactionLanguage, multimodalInterpretation: loaded.modelInterpretation,
+      multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
+    });
+    expect(optimized.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(mixed ? ["Analysis-A"] : ["Analysis-A", "Analysis-B"]);
+    const { result, runRoot } = runRealF6(bundle, `v4-${mixed}-${failedImage}`);
+    expect(result.status, JSON.stringify(result)).toBe("completed");
+    expect(readdirSync(runRoot).sort()).toEqual(["Feature6-Optimization.json", "Feature6-Report.md", "Feature6-Report.pdf", "Feature6-Run-Summary.json", "manifest.json"]);
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(manifest.inputDecisions.modelInterpretation.artifactReference.contentHash).toBe(bundle.expectedModelInterpretationContentHash);
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    expect(summary.hashes.finalReportMarkdownSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.md")));
+    if (mixed) expect(summary.reportSummary.worksheetDispositions).toContainEqual({ worksheetName: "Analysis-B", disposition: "FAIL" });
+    expect(readFileSync(modelPath)).toEqual(original);
+  });
+
   it("runs the real CLI and layout without changing any governed input artifact", () => {
     const bundle = createRealBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const evidence = installF6V2Evidence(bundle);
@@ -924,3 +974,10 @@ describe("F6 real artifact full flow", () => {
   });
 
 });
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
+}

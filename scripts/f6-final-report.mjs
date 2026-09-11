@@ -256,8 +256,13 @@ function readyFactorTableRows(factors) {
     const actual = f2Row.actualFields;
     return {
       cells: [
-        clean(modelRow.factorName), clean(actual.partName), clean(actual.partCategory), clean(actual.drawingNumber),
-        clean(actual.dimCharacteristicId, "MISSING"), engineeringText(factor.input.nominalValue, factor.unit),
+        f2Row.missingIdentifiers?.length > 0
+          ? blockedFactorDescription(clean(modelRow.factorName), f2Row.sourceRow)
+          : clean(modelRow.factorName),
+        clean(actual.partName), clean(actual.partCategory),
+        blockedMissingIdentifier(f2Row, "drawingNumber") ? "MISSING" : clean(actual.drawingNumber),
+        blockedMissingIdentifier(f2Row, "dimCharacteristicId") ? "MISSING" : clean(actual.dimCharacteristicId),
+        engineeringText(factor.input.nominalValue, factor.unit),
         engineeringText(factor.input.upperTolerance, factor.unit), engineeringText(factor.input.lowerTolerance, factor.unit),
         numberText(factor.input.longTermSafetyFactor), numberText(factor.input.sigmaLevel), engineeringText(factor.mean, factor.unit),
         engineeringText(factor.halfTolerance, factor.unit), engineeringText(factor.sigma, factor.unit),
@@ -353,6 +358,7 @@ function verifiedImageLinks(modelInterpretation, options) {
   if (!isContained(publishRoot, artifactRoot) || !isContained(publishRoot, outputRoot)) failInvalid("image boundary");
   const links = new Map();
   for (const worksheet of modelInterpretation.worksheets) {
+    if (worksheet.status === "failed") continue;
     const image = worksheet.request.image;
     const relativePath = image.artifactPath;
     if (path.isAbsolute(relativePath) || relativePath.split(/[\\/]/u).includes("..") || !/\.(?:png|jpe?g)$/iu.test(relativePath)) {
@@ -761,17 +767,14 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
   assertWorkbookIdentity({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
   assertReportScope(f2Report, f6Optimization, blockedWorksheetDetailsByName);
   const blockedScopeNameSet = new Set(f6Optimization.provenance.reportScope.blockedWorksheetNames);
-  const scopeWorksheetNames = f6Optimization.provenance.reportScope.worksheetNames;
   const readyNames = f6Optimization.provenance.reportScope.worksheetNames
     .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName));
 
-  const f3WorksheetNames = f3Report.worksheets.map(({ worksheetName }) => worksheetName);
-  const f3MatchesReadyScope = isExactWorksheetSet(f3WorksheetNames, readyNames);
-  const f3MatchesReportScope = blockedScopeNameSet.size > 0
-    && isExactWorksheetSet(f3WorksheetNames, scopeWorksheetNames);
-  if (!f3MatchesReadyScope && !f3MatchesReportScope) {
-    throw new Error("Invalid F6 final report input: f3Report.");
-  }
+  assertExactWorksheetSet(
+    f3Report.worksheets.map(({ worksheetName }) => worksheetName),
+    f2Report.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName),
+    "f3Report",
+  );
   assertExactWorksheetSet(
     f5Report.worksheets.filter(({ status }) => status === "completed").map(({ worksheetName }) => worksheetName),
     readyNames,

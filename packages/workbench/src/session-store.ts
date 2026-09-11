@@ -9,6 +9,7 @@ import {
 } from "@ai-assist/contracts";
 
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
+import { acceptAttemptResult } from "./state-machine.js";
 import { CREATE_SESSION_STORE_SCHEMA_SQL } from "./session-store-schema.js";
 import {
   applyArtifactReferenceOps,
@@ -638,7 +639,12 @@ class SqliteSessionStore implements SessionStore {
 
     const mutation = await reducer(currentSnapshot);
     const snapshotTransition = prepareSnapshotTransition(currentSnapshot, mutation.snapshot, mutation.scenarioDrafts);
-    const nextSnapshot = snapshotTransition.snapshot;
+    const artifactReferenceOps = normalizeArtifactReferenceOps(
+      this.sessionId,
+      mutation.artifactReferences,
+      mutation.artifactReferenceOps,
+    );
+    const nextSnapshot = withArtifactReferences(snapshotTransition.snapshot, artifactReferenceOps);
     if (stableStringify(nextSnapshot.activeAttempt) !== stableStringify(currentSnapshot.activeAttempt)) {
       throw createTypedError({
         code: "validation_error",
@@ -647,12 +653,6 @@ class SqliteSessionStore implements SessionStore {
         affectedInputReferences: [this.sessionId],
       });
     }
-
-    const artifactReferenceOps = normalizeArtifactReferenceOps(
-      this.sessionId,
-      mutation.artifactReferences,
-      mutation.artifactReferenceOps,
-    );
     const hostActionOps = normalizeHostActionOps(
       this.sessionId,
       mutation.hostActions,
@@ -1019,16 +1019,25 @@ function validateAttemptResultSnapshot(
   }
 
   if (nextAttempt.attemptId !== currentSnapshot.activeAttempt.attemptId) {
+    const automaticSuccessors: Partial<Record<F8SessionSnapshot["state"], F8SessionSnapshot["state"]>> = {
+      workbook_validating: "f0_validating",
+      f3_running: "f4_running",
+      f4_running: "f5_running",
+      f5_running: "f6_running",
+    };
     const currentCommandId = currentSnapshot.activeAttempt.commandId;
     const expectedNextCommandId = currentCommandId === undefined ? undefined : `${currentCommandId}:next`;
     const expectedNextAttemptId = expectedNextCommandId === undefined
       ? undefined
       : `${expectedNextCommandId}:${nextAttempt.stage}`;
     if (result.status === "completed"
+      && currentSnapshot.state === currentSnapshot.activeAttempt.stage
+      && automaticSuccessors[currentSnapshot.activeAttempt.stage] === nextAttempt.stage
       && nextAttempt.status === "running"
       && nextSnapshot.state === nextAttempt.stage
       && nextAttempt.commandId === expectedNextCommandId
       && nextAttempt.attemptId === expectedNextAttemptId) {
+      acceptAttemptResult(currentSnapshot, result);
       return;
     }
     throw createTypedError({
