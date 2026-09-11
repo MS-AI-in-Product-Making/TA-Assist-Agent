@@ -1339,6 +1339,30 @@ describe("createF6FinalReportProjection v3", () => {
   });
 });
 
+describe("createF6FinalReportProjection v4 mixed outcomes", () => {
+  it("rejects a new-workflow final report when multimodal v3 is missing", () => {
+    expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
+  });
+
+  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A", "Analysis-B"],
+      f5Variant: "supported",
+      modelInterpretationVersion: "v2",
+    });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
+    ]));
+    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
+    expect(projection.markdown).toContain("- Status: FAIL");
+    expect(projection.markdown).toContain("worksheet image evaluation failed");
+  });
+});
+
 describe("worstDisposition", () => {
   it("returns the worst ranked disposition", () => {
     expect(worstDisposition(["PASS", "INCOMPLETE", "FAIL"])).toBe("FAIL");

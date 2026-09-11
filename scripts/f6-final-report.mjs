@@ -419,7 +419,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   ];
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
-    ...(worksheet.f2Worksheet.status === "ready"
+    ...((worksheet.f2Worksheet.status === "ready" && worksheet.blocker === undefined)
       ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks)
       : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
   ));
@@ -706,6 +706,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
   return f2Report.worksheets.map((f2Worksheet) => {
     const worksheetName = f2Worksheet.worksheetName;
     const blockedByScope = blockedScopeNameSet.has(worksheetName);
+    const blocker = blockedWorksheetDetailsByName.get(worksheetName);
 
     if (f2Worksheet.status !== "ready" || blockedByScope) {
       return {
@@ -714,7 +715,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
         f2Worksheet: blockedByScope && f2Worksheet.status === "ready"
           ? { ...f2Worksheet, status: "blocked" }
           : f2Worksheet,
-        blocker: blockedWorksheetDetailsByName.get(worksheetName),
+        blocker,
       };
     }
 
@@ -737,12 +738,13 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
 
     return {
       worksheetName,
-      disposition: resolveWorksheetDisposition({ f2Worksheet, f3Worksheet, f4Calculation, f5Worksheet }),
+      disposition: blocker !== undefined ? "FAIL" : resolveWorksheetDisposition({ f2Worksheet, f3Worksheet, f4Calculation, f5Worksheet }),
       f2Worksheet,
       f3Worksheet,
       f4Calculation,
       f5Worksheet,
       f6Worksheet,
+      blocker,
     };
   });
 }
