@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, validateF5MultimodalArtifactV4, worksheetSelectionPromptSchema, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, validateF5MultimodalArtifactV4, worksheetSelectionPromptSchema, type F5MultimodalRequestFailureV4, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createReviewContextId, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError, f5MultimodalScopeEvaluationsSchema } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -202,7 +202,7 @@ export interface WorkbenchServerContext {
   createAdoPreview(sessionId: string, prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]): Promise<AdoPreviewIdentity>;
   materializeF6InputDraftFromProposal(sessionId: string, input: { readonly expectedRevision: number; readonly proposal: F6InputProposal }): Promise<{ readonly status: string; readonly pendingDraft?: unknown; readonly preview?: unknown; readonly snapshotRevision?: number; readonly clarifications?: readonly { readonly clarificationId: string; readonly reasonCode: string; readonly question: string; readonly requiredFields: readonly string[] }[] }>;
   syncSessionRecord(sessionId: string): Promise<void>;
-  buildWorksheetInterpretationRequestsForSnapshot(snapshot: F8SessionSnapshot): Promise<readonly F5MultimodalWorksheetRequestV3[]>;
+  buildWorksheetInterpretationRequestsForSnapshot(snapshot: F8SessionSnapshot): Promise<readonly (F5MultimodalWorksheetRequestV3 | F5MultimodalRequestFailureV4)[]>;
   ensurePendingMultimodalHostActions(snapshot: F8SessionSnapshot): Promise<void>;
   createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
@@ -372,12 +372,13 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     },
     async ensurePendingMultimodalHostActions(snapshot) {
       if (snapshot.state !== "f5_running") return;
-      const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+      const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
       if (requests.length === 0) {
         throw createTypedError({ code: "evidence_mismatch", summary: "Result Interpretation has no governed worksheet requests.", suggestedAction: "Reconfirm the current downstream worksheet scope.", affectedInputReferences: [snapshot.sessionId] });
       }
       const expiresAt = new Date(Date.parse(snapshot.activeAttempt?.startedAt ?? new Date().toISOString()) + 24 * 60 * 60_000).toISOString();
       for (const request of requests) {
+        if (request.contractVersion === "f5-multimodal-request-failure-v4") continue;
         const actionId = `multimodal:${request.requestHash}`;
         const created = await context.hostActions.create({
           contractVersion: "f8-host-action-request-v1",
@@ -517,10 +518,11 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (snapshot === undefined) {
         throw createTypedError({ code: "validation_error", summary: "Session is unavailable for worksheet interpretation.", suggestedAction: "Refresh the workbench and retry.", affectedInputReferences: [sessionId] });
       }
-      return context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
+      const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
+      return requests.filter((request): request is F5MultimodalWorksheetRequestV3 => request.contractVersion === "f5-multimodal-request-v3");
     },
     async buildWorksheetInterpretationRequestsForSnapshot(snapshot) {
-      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, snapshot.sessionId));
+      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, snapshot.sessionId), { isolateFailures: true });
     },
     async validateWorksheetInterpretationRequest(sessionId, request) {
       const snapshot = await context.sessions.read(sessionId);
@@ -2084,6 +2086,10 @@ export async function materializeCompletedMultimodalArtifact(
   const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
   const worksheets = [];
   for (const request of requests) {
+    if (request.contractVersion === "f5-multimodal-request-failure-v4") {
+      worksheets.push({ status: "failed" as const, request, reasonCode: request.reasonCode, summary: request.summary });
+      continue;
+    }
     const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
     const outcome = record?.result?.payload;
     if (record === undefined || !["completed", "blocked", "failed"].includes(record.status)

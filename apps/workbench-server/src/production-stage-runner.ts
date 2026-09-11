@@ -200,14 +200,19 @@ async function requireMultimodalArtifact(environment: ProductionStageEnvironment
   const bytes = await readFile(identity.path);
   if (createHash("sha256").update(bytes).digest("hex") !== identity.contentHash) throw new Error("Mandatory multimodal interpretation artifact hash mismatch.");
   const artifact = parseMultimodalArtifact(JSON.parse(bytes.toString("utf8")));
+  const revisionMatches = consumer === "f5"
+    ? artifact.contractVersion === "f5-multimodal-artifact-v4"
+      ? artifact.revision + 1 === environment.snapshot.revision
+      : artifact.revision === environment.snapshot.revision
+    : artifact.revision < environment.snapshot.revision;
   if (artifact.sessionId !== environment.sessionId
-    || (consumer === "f5" ? artifact.revision !== environment.snapshot.revision : artifact.revision >= environment.snapshot.revision)
+    || !revisionMatches
     || artifact.inputRevision !== environment.snapshot.inputRevision
     || artifact.workbookContentHash !== environment.reviewContext?.workbookHash
     || JSON.stringify(artifact.selectedWorksheetNames) !== JSON.stringify(selectedWorksheetNames)) {
     throw new Error("Mandatory multimodal interpretation artifact authority mismatch.");
   }
-  if (consumer === "f6") {
+  if (consumer === "f6" || artifact.contractVersion === "f5-multimodal-artifact-v4") {
     const references = environment.snapshot.artifactRefs?.filter((reference) => reference.kind === "f5_multimodal"
       && reference.validated
       && reference.revision === environment.snapshot.inputRevision

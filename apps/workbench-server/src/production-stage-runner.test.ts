@@ -139,6 +139,19 @@ describe("runProductionStage output gating", () => {
         } as F8SessionSnapshot,
       };
       const multimodalArtifact = await writeMixedMultimodalArtifact(serverRoot, environment);
+      environment.snapshot = {
+        ...environment.snapshot,
+        revision: environment.snapshot.revision + 1,
+        artifactRefs: [{
+          artifactId: "f5-multimodal:2",
+          kind: "f5_multimodal",
+          revision: 2,
+          validated: true,
+          reviewContextId: "c".repeat(64),
+          relativePath: relative(serverRoot, multimodalArtifact.path),
+          contentHash: multimodalArtifact.contentHash,
+        }],
+      };
       let capturedRequest: Record<string, unknown> | undefined;
 
       await runProductionStage("f5_running", { ...environment, multimodalArtifact }, {

@@ -11,7 +11,7 @@ import {
   f6ModelInterpretationArtifactSchema,
   f6OptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
-import { f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
+import { createF5MultimodalFactorSetHash, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import {
   createCalculationRequestFromF4Handoff,
@@ -1804,6 +1804,17 @@ function assertMultimodalAuthority(artifact, { f2Report, f3Report, f4Report, f5R
     const calculation = f4Report.calculations.find(({ worksheetSelection }) => (
       worksheetSelection.worksheetName === request.worksheetName && worksheetSelection.tableId === request.tableId
     ));
+    if (request.contractVersion === "f5-multimodal-request-failure-v4") {
+      if (request.workbook.fileName !== f2Report.workbook.fileName
+        || f2Worksheet === undefined || f3Worksheet === undefined || calculation === undefined
+        || request.activeFactorCount !== f2Worksheet.rows.length
+        || request.activeFactorCount !== calculation.factors.length
+        || request.factorSetHash !== createF5MultimodalFactorSetHash(f2Worksheet.rows)
+        || f2Worksheet.rows.some(({ tableId }) => tableId !== request.tableId)) {
+        throw new Error("multimodal request-failure authority does not match governed worksheet evidence");
+      }
+      continue;
+    }
     if (request.workbook.fileName !== f2Report.workbook.fileName
       || f2Worksheet === undefined || f3Worksheet === undefined || calculation === undefined
       || request.factorRows.length !== calculation.factors.length) {
