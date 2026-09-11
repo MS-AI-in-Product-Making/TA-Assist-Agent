@@ -1,24 +1,25 @@
-# F6 HTML 与 PDF 报告链接优化设计
+# F6 可编辑 HTML 与 PDF 报告原型设计
 
 **日期：** 2026-09-11  
-**状态：** 待用户审阅  
+**状态：** 已批准
 **目标分支：** `feat/f6-html-pdf-report-links`
 
 ## 1. 目标
 
-优化 F6 工程报告的 HTML 投影和 PDF 导出，使报告符合克制、清晰的 Microsoft 工程文档风格，并确保 PDF 中的工作表目录和公差路径图片可点击。
+使用当前真实 F6 报告内容创建一个独立、离线、可直接编辑的 HTML 原型，用于确定最终工程报告的版式和内容。原型采用克制、清晰的 Microsoft 工程文档风格，可保存修改后的 HTML 草稿，并可通过浏览器打印或导出为 PDF。
 
-HTML 是受控的临时中间文件，用于生成 PDF，但不进入最终发布目录、manifest 或用户报告链接。F6 最终仍发布现有五文件集合，用户报告仍为 Markdown 与 PDF。
+HTML 原型是明确标记为 `DRAFT / NOT GOVERNED` 的设计评审资产。本轮不把它接入正式 F6 发布流程，不替换现有 `Feature6-Report.md` 或 `Feature6-Report.pdf`，也不改变五文件治理合同。用户确认原型后，再单独设计正式 F6 renderer、受保护计算字段和治理发布门。
 
 ## 2. 范围
 
-本变更只涉及 F6 报告输出：
+本变更只创建 F6 报告设计原型：
 
-- Markdown 到 HTML 的投影。
-- Microsoft 风格的屏幕与打印样式。
-- HTML 内部章节链接和图片链接。
-- Chromium HTML-to-PDF 导出。
-- PDF 链接 annotation 验证。
+- 从当前 validator-confirmed F6 报告读取真实内容和图片。
+- 生成自包含 Microsoft 风格 HTML。
+- 在浏览器页面内直接编辑报告正文。
+- 保存修改后的独立 Draft HTML。
+- 使用浏览器打印或导出 Draft PDF。
+- 保留 HTML 内部章节链接和图片交互。
 
 本变更不修改：
 
@@ -27,41 +28,39 @@ HTML 是受控的临时中间文件，用于生成 PDF，但不进入最终发�
 - F6 报告业务内容与处置逻辑。
 - 最终五文件发布合同。
 - 源工作簿或任何历史运行产物。
+- 正式 F6 renderer、runner、manifest 和 verifier。
 
 ## 3. 当前问题
 
-当前 Markdown 报告包含工作表章节链接和原始图片链接。HTML 投影器会把图片链接替换为内嵌 `<img>`，但不会保留外层 `<a href>`。Chromium 打印后，PDF 只保留内部章节 destination，公差路径图片没有可执行链接 annotation。
+当前 F6 只有最终 Markdown/PDF，没有一个适合用户在定稿前直接调整版式与文字的可视化草稿。现有 HTML 仅存在于 PDF 导出的临时目录，生成后立即删除，且页面没有编辑、另存或草稿状态能力。
 
-现有 PDF 校验只验证 `%PDF-` 签名与 SHA-256，无法发现“PDF 可以打开但链接不可点击”的回归。
+当前 PDF 中图片链接也会在 HTML 投影时被替换为纯内嵌 `<img>`，不适合作为最终交互方案的设计基线。原型需要让用户先验证目录、图片、内容密度和打印版式，再决定正式 F6 的链接和发布合同。
 
 ## 4. 方案决策
 
-采用增强现有 HTML 投影器的方案，不引入新的浏览器自动化框架，也不在 PDF 生成后注入链接。
+采用独立原型页面方案，不直接修改正式 F6 HTML/PDF renderer。
 
 理由：
 
-1. HTML 与 PDF 保持同源，符合当前哈希绑定与原子发布模型。
-2. 复用现有 `marked` renderer、图片 containment 和哈希验证。
-3. 改动集中在 `product-export` 与对应测试，不扩大到计算和编排层。
-4. 避免 PDF 后处理带来的字体、结构、annotation 坐标和签名风险。
+1. 用户可以先用真实内容确认信息架构、样式和文字，再固化正式 renderer。
+2. 原型与正式治理产物隔离，不会让手工修改后的数值或结论冒充已验证结果。
+3. 自包含 HTML 可以离线打开、直接编辑、另存和打印，不需要本地服务器或网络服务。
+4. 后续正式接入时可将已确认的视觉 tokens、布局和交互迁移到 `product-export`，避免反复修改正式发布链路。
 
 ## 5. 数据流
 
 ```text
-Validated F6 Markdown
-  -> validate relative image references
-  -> resolve images beneath managed publish root
-  -> verify regular file, ancestry, identity, and hash
-  -> render temporary Microsoft-style HTML
-     -> internal worksheet anchors
-     -> inlined image wrapped by validated source link
-  -> Chromium print-to-PDF
-  -> validate PDF signature, hash, and link annotations
-  -> atomic five-file F6 publication
-  -> delete temporary HTML
+Validator-confirmed current F6 report
+  -> read governed Markdown and validated image
+  -> generate self-contained editable Draft HTML
+  -> user edits content in the browser
+     -> save a new Draft HTML snapshot
+     -> print or export Draft PDF
+  -> user reviews layout and content
+  -> later phase: translate approved design into formal F6 renderer
 ```
 
-HTML 不得被复制到最终运行目录。无论成功或失败，临时目录都必须清理。
+原型文件存放在独立的受控 prototype 目录，不写入任何历史 F6 run。保存操作创建新的本地 Draft HTML，不回写源 Markdown、源工作簿或正式 PDF。
 
 ## 6. HTML 报告设计
 
@@ -92,68 +91,74 @@ HTML 不得被复制到最终运行目录。无论成功或失败，临时目录
 - Factor 表、统计图和贡献图保持现有信息密度，不创建嵌套卡片。
 - 链接具有可见下划线、键盘焦点轮廓和足够对比度。
 
-## 7. 链接行为
+### 6.3 页面内编辑
+
+- 报告正文使用 `contenteditable`，点击后可直接修改标题、段落和表格文字。
+- 固定工具栏不属于可编辑正文，提供编辑状态、保存 Draft HTML 和打印/导出 PDF 操作。
+- 页面持续显示 `DRAFT / NOT GOVERNED`，手工修改后切换为 `Unsaved changes` 状态。
+- 保存通过浏览器本地 Blob 下载生成新的自包含 HTML，不调用服务器，不覆盖原型源文件。
+- 打印时隐藏工具栏、编辑轮廓和操作提示，但保留 Draft 水印。
+- 支持键盘操作和清晰的 `:focus-visible` 状态；不劫持浏览器原生撤销、重做和文本选择。
+
+## 7. 原型链接行为
 
 ### 7.1 工作表目录
 
-Workbook Summary 中的工作表名称必须生成 `href="#worksheet-N"`。对应工作表容器必须具有唯一 `id="worksheet-N"`。HTML 点击后滚动到目标章节；PDF 中必须生成内部 destination/link annotation。
+Workbook Summary 中的工作表名称必须生成 `href="#worksheet-N"`。对应工作表容器必须具有唯一 `id="worksheet-N"`。HTML 点击后滚动到目标章节；打印 PDF 时应保留可用的内部 destination/link annotation，供用户评估最终行为。
 
 ### 7.2 公差路径图片
 
-经验证的图片链接在 HTML 中渲染为：
+图片以内嵌 data URI 渲染，保证原型另存后仍可离线显示。点击图片打开同页的放大查看层，避免本地 `file:` 链接被 PDF viewer 安全策略阻断。放大查看层提供关闭按钮和键盘 Escape 支持。
+
+原型结构为：
 
 ```html
-<a class="stack-image-link" href="VALIDATED_SOURCE_URI">
+<a class="stack-image-link" href="#image-1-detail">
   <figure class="stack-image">
     <img src="VALIDATED_DATA_URI" alt="Open tolerance path image">
   </figure>
 </a>
 ```
 
-图片内容继续使用 data URI 内嵌，保证 PDF 渲染稳定。`href` 仅由已经通过受控 containment、非链接文件、TOCTOU 身份和哈希检查的图片路径生成，不直接采用未验证 Markdown 文本。
+图片 data URI 只来自当前已验证的 F6 图片资产。禁止执行 `javascript:`、加载网络 URL、读取任意用户路径或把编辑后的 HTML 自动写回治理产物。
 
-禁止 `javascript:`、`data:`、网络 URL、任意绝对输入和逃逸 managed root 的路径作为链接目标。无法建立安全链接时必须失败关闭，不得生成无链接 PDF 并报告成功。
+## 8. Draft HTML 保存与 PDF 导出
 
-本地 PDF viewer 可能基于安全策略询问用户是否允许打开本地文件，但 PDF 本身必须包含有效图片链接 annotation。
+原型提供两个本地操作：
 
-## 8. PDF 导出与验证
+1. `Save draft HTML`：序列化当前可编辑正文、样式、脚本和内嵌图片，下载新的自包含 HTML。
+2. `Print / export PDF`：调用浏览器原生打印界面，由用户选择 Microsoft Print to PDF 或 Save as PDF。
 
-继续使用已安装的受控 Microsoft Edge 或 Google Chrome，以临时 HTML 生成 PDF。PDF 成功条件扩展为：
-
-1. 文件以 `%PDF-` 开头。
-2. SHA-256 与 run summary、manifest 一致。
-3. 至少存在预期数量的内部章节链接 annotation。
-4. 每个公差路径图片存在对应的链接 annotation。
-5. annotation 目标不得包含未验证协议或越界路径。
-
-链接校验应使用结构化 PDF parser 或仓库可控的解析能力，不使用脆弱的字节字符串计数作为正式验证逻辑。
+Draft PDF 不是正式 F6 工程报告，不写入 run summary 或 manifest。自动测试验证打印样式、工具栏隐藏、Draft 水印和内部链接 HTML 结构；人工验收使用 Edge 打印预览检查分页、重叠、截断和链接行为。
 
 ## 9. 错误处理
 
-- HTML 投影失败：停止 PDF 与最终发布。
-- 图片验证失败：返回现有受控 PDF artifact 错误，不输出降级 HTML/PDF。
-- Chromium 未生成链接 annotation：报告验证失败，不发布五文件集合。
-- 临时文件清理失败不得泄露报告内容；错误日志不得包含机密 HTML、图片字节或绝对用户路径。
-- 不改写或修复历史 F6 运行目录；修复只影响后续新运行。
+- 找不到当前 validator-confirmed F6 报告或图片：停止原型生成，不猜测历史路径。
+- 图片验证失败：停止原型生成，不输出缺图版本。
+- 浏览器不支持本地下载：保留页面编辑内容并给出明确状态，不清空用户修改。
+- 打印由浏览器原生能力完成；取消打印不改变页面或已保存草稿。
+- 不改写或修复历史 F6 运行目录，不把 Draft 状态表述为正式验证成功。
 
 ## 10. 测试策略
 
 严格采用测试驱动开发：
 
-1. HTML 单元测试先证明图片当前未被 `<a>` 包裹，再要求安全 `href`、内部章节锚点、Microsoft tokens、focus-visible 与打印样式。
-2. 安全测试覆盖网络协议、`javascript:`、绝对路径、路径穿越、符号链接和受控根逃逸。
-3. 真实 PDF 集成测试使用受控 Chromium 生成 PDF，并结构化检查内部 destination 与图片 link annotation。
-4. F6 runner/full-flow 测试确认最终仍是五文件、manifest-last、Markdown/PDF 同源和哈希一致。
-5. 运行当前 governed F6 verifier，确认现有发布合同未被扩大。
-6. 使用当前 TA 样例生成新运行，人工点击工作表目录和公差路径图片，并检查桌面 PDF 显示无重叠、截断或空白页。
+1. DOM 测试先验证编辑、dirty 状态、保存和打印行为缺失，再实现最小交互。
+2. HTML 结构测试要求内部章节锚点、图片放大入口、Microsoft tokens、`:focus-visible` 和 `@media print`。
+3. 安全测试确认无外部脚本、网络资源、绝对机密路径和治理写回能力。
+4. 保存测试确认导出的 HTML 保留用户修改、内嵌图片和 Draft 标记，并排除临时 dirty 状态。
+5. 打印测试确认工具栏、编辑边框和操作提示隐藏，Draft 水印保留。
+6. 运行当前 governed F6 verifier，证明原型未改变正式五文件合同。
+7. 使用 Edge 在桌面视口打开原型，实际修改内容、保存后重新打开，并通过打印预览检查分页、重叠、截断和空白页。
 
 ## 11. 验收标准
 
-- 新分支只包含 F6 报告输出相关代码、测试和设计文档。
-- HTML 明确采用 Microsoft 工程文档风格，并可在 Chromium 中正确呈现。
-- HTML 工作表目录与图片均可点击。
-- PDF 工作表目录能跳转到对应章节。
-- PDF 内嵌图片可点击并指向已验证原始图片。
-- PDF 链接 annotation 由自动测试验证。
-- 最终仍只发布五个治理文件，不保留临时 HTML。
-- F1-F5、计算结果、优化结果和报告处置不发生变化。
+- 新分支只包含 F6 报告原型、测试、生成工具和设计文档。
+- HTML 明确采用 Microsoft 工程文档风格，并可在 Edge 中离线打开。
+- 报告正文可直接编辑，修改后显示未保存状态。
+- 保存后的 Draft HTML 可重新打开，并保留文字修改、版式和内嵌图片。
+- HTML 工作表目录和图片放大入口均可点击。
+- 浏览器打印预览可生成布局稳定的 Draft PDF，工具栏不进入打印内容。
+- 页面始终明确标记 `DRAFT / NOT GOVERNED`。
+- 正式 F6 仍只发布五个治理文件，原型不写入历史运行目录。
+- F1-F5、计算结果、优化结果和正式报告处置不发生变化。
