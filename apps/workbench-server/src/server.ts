@@ -756,7 +756,7 @@ async function recoverActiveAttempts(
   sessions: SessionRegistry,
   artifacts: ArtifactRegistry,
   queue: PersistentWorkerQueue,
-  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "ensurePendingMultimodalHostActions" | "hostActions" | "failActiveMultimodalAttempt">,
 ): Promise<void> {
   let database: DatabaseSync | undefined;
   try {
@@ -2094,9 +2094,11 @@ export async function materializeCompletedMultimodalArtifact(
       continue;
     }
     if (outcome?.status === "failed") {
-      const reasonCode = outcome.error?.reasonCode;
+      const reasonCode = outcome.error?.code === "feature_not_available"
+        ? "model_capability_unavailable"
+        : "evaluation_failed";
       const summary = outcome.error?.summary;
-      if (typeof reasonCode !== "string" || typeof summary !== "string") return false;
+      if (typeof summary !== "string") return false;
       const requestValue = record.request.request;
       if (requestValue.requestHash !== request.requestHash) return false;
       worksheets.push({ status: "failed" as const, request: requestValue, reasonCode, summary });

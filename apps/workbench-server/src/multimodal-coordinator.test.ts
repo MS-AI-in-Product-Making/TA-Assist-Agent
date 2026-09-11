@@ -21,9 +21,9 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const requests = [request("Analysis-B", "table-b", "B", 21), request("Analysis-A", "table-a", "A", 11)];
     const records = new Map([[`multimodal:${requests[0]!.requestHash}`, completedRecord(requests[0]!)]]);
     const context = {
-      buildWorksheetInterpretationRequests: async () => requests,
+      buildWorksheetInterpretationRequestsForSnapshot: async () => requests,
       hostActions: { readRecord: async (_sessionId: string, actionId: string) => records.get(actionId) },
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions">;
 
     await expect(materializeCompletedMultimodalArtifact(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(await readdir(rootDir)).toEqual([]);
@@ -52,10 +52,10 @@ describe("materializeCompletedMultimodalArtifact", () => {
       [`multimodal:${requests[1]!.requestHash}`, completedRecord(requests[1]!)],
     ]);
     const context = {
-      buildWorksheetInterpretationRequests: async () => requests,
+      buildWorksheetInterpretationRequestsForSnapshot: async () => requests,
       hostActions: { readRecord: async (_sessionId: string, actionId: string) => records.get(actionId) },
       failActiveMultimodalAttempt,
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
 
     await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(true);
     expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const failActiveMultimodalAttempt = vi.fn(async () => undefined);
     const actionRequest = completedRecord(requestValue).request;
     const context = {
-      buildWorksheetInterpretationRequests: async () => [requestValue],
+      buildWorksheetInterpretationRequestsForSnapshot: async () => [requestValue],
       hostActions: {
         readRecord: async () => ({
           status: "blocked",
@@ -84,7 +84,7 @@ describe("materializeCompletedMultimodalArtifact", () => {
         }),
       },
       failActiveMultimodalAttempt,
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
 
     await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(failActiveMultimodalAttempt).toHaveBeenCalledWith(snapshot(), "model_capability_unavailable");
@@ -96,10 +96,10 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const requestValue = request("Analysis-A", "table-a", "A", 11);
     const failActiveMultimodalAttempt = vi.fn();
     const context = {
-      buildWorksheetInterpretationRequests: async () => [requestValue],
+      buildWorksheetInterpretationRequestsForSnapshot: async () => [requestValue],
       hostActions: { readRecord: async () => ({ status: "pending", request: completedRecord(requestValue).request }) },
       failActiveMultimodalAttempt,
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
 
     await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
