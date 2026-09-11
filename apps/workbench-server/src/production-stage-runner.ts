@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { f5MultimodalArtifactV3Schema } from "@ai-assist/contracts";
+import { f5MultimodalArtifactV4Schema } from "../../../packages/contracts/src/ta-multimodal-contracts.js";
 
 import { canonicalSelectedWorksheetSetHash, type F8SessionSnapshot, type RuntimeSkillResult, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import type { RunContext } from "@ai-assist/workflow-runners";
@@ -78,6 +79,9 @@ export async function runProductionStage(stage: string, environment: ProductionS
   if (stage === "f5_running") {
     if (environment.roots.f3Root === undefined || environment.roots.f4Root === undefined || environment.reviewContext === undefined) throw new Error("F5 roots are unavailable.");
     const multimodal = await requireMultimodalArtifact(environment, selected, "f5");
+    const completedWorksheetNames = multimodal.artifact.worksheets
+      .filter((worksheet) => worksheet.status === "completed")
+      .map((worksheet) => worksheet.request.worksheetName);
     const scripts = await loadF5(environment.repositoryRoot);
     const f5Base = join(outputBase, "f5");
     const result = requireRuntimeSkillOutput(await orchestrator.runStage("f5_running", {
@@ -90,7 +94,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
       ],
       ...(worksheetScope === undefined ? {} : { worksheetScope }),
       input: {
-        request: { f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, selectedWorksheetNames: selected, modelInterpretationPath: multimodal.path, expectedModelInterpretationContentHash: multimodal.contentHash },
+        request: { f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, selectedWorksheetNames: completedWorksheetNames, modelInterpretationPath: multimodal.path, expectedModelInterpretationContentHash: multimodal.contentHash },
         context: { ...environment.context, managedOutputRoot: f5Base },
         dependencies: {
           resolveOutputLayout: () => scripts.resolveFeature5OutputLayout({ f1ArtifactRoot: environment.roots.f1Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root }, f5Base, () => new Date(), publishRoot),
@@ -192,13 +196,16 @@ async function requireMultimodalArtifact(environment: ProductionStageEnvironment
   if (identity === undefined) throw new Error("Mandatory multimodal interpretation artifact is unavailable.");
   const bytes = await readFile(identity.path);
   if (createHash("sha256").update(bytes).digest("hex") !== identity.contentHash) throw new Error("Mandatory multimodal interpretation artifact hash mismatch.");
-  const parsed = f5MultimodalArtifactV3Schema.safeParse(JSON.parse(bytes.toString("utf8")));
-  if (!parsed.success
-    || parsed.data.sessionId !== environment.sessionId
-    || (consumer === "f5" ? parsed.data.revision !== environment.snapshot.revision : parsed.data.revision >= environment.snapshot.revision)
-    || parsed.data.inputRevision !== environment.snapshot.inputRevision
-    || parsed.data.workbookContentHash !== environment.reviewContext?.workbookHash
-    || JSON.stringify(parsed.data.selectedWorksheetNames) !== JSON.stringify(selectedWorksheetNames)) {
+  const parsedValue = JSON.parse(bytes.toString("utf8"));
+  const parsed = f5MultimodalArtifactV4Schema.safeParse(parsedValue);
+  const legacy = parsed.success ? parsed : f5MultimodalArtifactV3Schema.safeParse(parsedValue);
+  const artifact = parsed.success ? parsed.data : legacy.data;
+  if (!legacy.success
+    || artifact.sessionId !== environment.sessionId
+    || (consumer === "f5" ? artifact.revision !== environment.snapshot.revision : artifact.revision >= environment.snapshot.revision)
+    || artifact.inputRevision !== environment.snapshot.inputRevision
+    || artifact.workbookContentHash !== environment.reviewContext?.workbookHash
+    || JSON.stringify(artifact.selectedWorksheetNames) !== JSON.stringify(selectedWorksheetNames)) {
     throw new Error("Mandatory multimodal interpretation artifact authority mismatch.");
   }
   if (consumer === "f6") {
@@ -210,7 +217,7 @@ async function requireMultimodalArtifact(environment: ProductionStageEnvironment
       && resolve(environment.serverRoot, reference.relativePath) === resolve(identity.path)) ?? [];
     if (references.length !== 1) throw new Error("Mandatory multimodal interpretation artifact reference mismatch.");
   }
-  return { ...identity, artifact: parsed.data };
+  return { ...identity, artifact };
 }
 
 function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, skillId: string): Output {

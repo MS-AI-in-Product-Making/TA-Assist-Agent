@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
 import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, worksheetSelectionPromptSchema, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { f5MultimodalArtifactV4Schema, validateF5MultimodalArtifactV4 } from "../../../packages/contracts/src/ta-multimodal-contracts.js";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createReviewContextId, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -2062,14 +2063,28 @@ export async function materializeCompletedMultimodalArtifact(
   const worksheets = [];
   for (const request of requests) {
     const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
-    const outcome = record?.result?.payload.status === "completed" ? record.result.payload.outcome : undefined;
-    if (record?.status !== "completed" || record.request.kind !== "vscode_worksheet_multimodal_request" || outcome?.kind !== "worksheet_multimodal_response") return false;
-    const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request: record.request.request, result: outcome.result });
-    if (!pair.success || pair.data.request.requestHash !== request.requestHash) return false;
-    worksheets.push(pair.data);
+    const outcome = record?.result?.payload;
+    if (record?.status !== "completed" || record.request.kind !== "vscode_worksheet_multimodal_request") return false;
+    if (outcome?.status === "completed") {
+      if (outcome.outcome?.kind !== "worksheet_multimodal_response") return false;
+      const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request: record.request.request, result: outcome.outcome.result });
+      if (!pair.success || pair.data.request.requestHash !== request.requestHash) return false;
+      worksheets.push({ status: "completed" as const, request: pair.data.request, result: pair.data.result });
+      continue;
+    }
+    if (outcome?.status === "failed") {
+      const reasonCode = outcome.error?.reasonCode;
+      const summary = outcome.error?.summary;
+      if (typeof reasonCode !== "string" || typeof summary !== "string") return false;
+      const requestValue = record.request.request;
+      if (requestValue.requestHash !== request.requestHash) return false;
+      worksheets.push({ status: "failed" as const, request: requestValue, reasonCode, summary });
+      continue;
+    }
+    return false;
   }
-  const artifact = f5MultimodalArtifactV3Schema.parse({
-    contractVersion: "f5-multimodal-artifact-v3",
+  const artifact = f5MultimodalArtifactV4Schema.parse({
+    contractVersion: "f5-multimodal-artifact-v4",
     outputClassification: "confidential",
     sessionId: snapshot.sessionId,
     revision: snapshot.revision,
@@ -2078,7 +2093,7 @@ export async function materializeCompletedMultimodalArtifact(
     selectedWorksheetNames: requests.map(({ worksheetName }) => worksheetName),
     worksheets,
   });
-  const validated = validateF5MultimodalArtifactV3(artifact, {
+  const validated = validateF5MultimodalArtifactV4(artifact, {
     sessionId: snapshot.sessionId,
     revision: snapshot.revision,
     inputRevision: snapshot.inputRevision,
@@ -2122,10 +2137,6 @@ export async function reconcileActiveMultimodalAttempt(
     const payload = record.result?.payload;
     if (payload?.status === "blocked") {
       await context.failActiveMultimodalAttempt(snapshot, payload.reason ?? "Worksheet multimodal interpretation is blocked.");
-      return false;
-    }
-    if (payload?.status === "failed") {
-      await context.failActiveMultimodalAttempt(snapshot, payload.error.summary);
       return false;
     }
   }

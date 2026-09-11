@@ -116,6 +116,53 @@ describe("runProductionStage output gating", () => {
     }
   });
 
+  it("starts F5 only for completed worksheets from a mixed multimodal v4 aggregate", async () => {
+    const serverRoot = await mkdtemp(join(tmpdir(), "ta-task6-f5-mixed-"));
+    try {
+      const environment = {
+        ...createEnvironment("f5_running"),
+        serverRoot,
+        snapshot: {
+          ...createEnvironment("f5_running").snapshot,
+          initialScopeSelection: {
+            workbookContentHash: "a".repeat(64),
+            selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+            confirmed: true,
+            provenance: "user",
+          },
+          downstreamScopeSelection: {
+            workbookContentHash: "a".repeat(64),
+            selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+            confirmed: true,
+            provenance: "user",
+          },
+        } as F8SessionSnapshot,
+      };
+      const multimodalArtifact = await writeMixedMultimodalArtifact(serverRoot, environment);
+      let capturedRequest: Record<string, unknown> | undefined;
+
+      await runProductionStage("f5_running", { ...environment, multimodalArtifact }, {
+        ...orchestratorResult({}),
+        runStage: async (_stage, input) => {
+          capturedRequest = (input.input as { request?: Record<string, unknown> }).request;
+          const outputDirectory = join(serverRoot, "managed", "f5");
+          const reportJsonPath = join(outputDirectory, "Feature5-Report.json");
+          await mkdir(outputDirectory, { recursive: true });
+          await writeFile(reportJsonPath, "{}\n", "utf8");
+          return { status: "completed", skillId: "engineering-interpretation-v1", inputRevision: 2, idempotencyKey: "attempt-1:f5_running", output: { status: "completed", outputDirectory, reportJsonPath } } as never;
+        },
+      });
+
+      expect(capturedRequest).toMatchObject({
+        selectedWorksheetNames: ["Analysis-A"],
+        modelInterpretationPath: multimodalArtifact.path,
+        expectedModelInterpretationContentHash: multimodalArtifact.contentHash,
+      });
+    } finally {
+      await rm(serverRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects blocked results even if output exists", async () => {
     await expect(runProductionStage(
       "f3_running",
@@ -324,6 +371,20 @@ async function writeMultimodalArtifact(serverRoot: string, environment: Producti
   const result = { contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential", requestHash: request.requestHash, sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a", imageContentHash: "b".repeat(64), model: { modelId: "vision-model", supportsImage: true }, imageTableInterpretation: "Image and complete table interpreted.", rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: "A is visible." }] };
   const bytes = Buffer.from(`${JSON.stringify({ contractVersion: "f5-multimodal-artifact-v3", outputClassification: "confidential", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], worksheets: [{ request, result }] })}\n`, "utf8");
   const path = join(serverRoot, "multimodal.json");
+  await writeFile(path, bytes);
+  return { path, contentHash: createHash("sha256").update(bytes).digest("hex") };
+}
+
+async function writeMixedMultimodalArtifact(serverRoot: string, environment: ProductionStageEnvironment) {
+  const completedRow = { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z11" }, factorName: "Factor A", partName: "Part A", partCategory: "CNC", drawingNumber: null, dimId: null, nominal: 0, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", sourceCells: { factorName: "Analysis-A!A11" } };
+  const failedRow = { worksheetName: "Analysis-B", tableId: "table-b", sourceRow: 21, factorOrdinal: { value: "B", rawText: "B", sourceCell: "Analysis-B!Z21" }, factorName: "Factor B", partName: "Part B", partCategory: "CNC", drawingNumber: null, dimId: null, nominal: 0, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", sourceCells: { factorName: "Analysis-B!A21" } };
+  const completedRequest = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64) }, worksheetName: "Analysis-A", tableId: "table-a", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash([completedRow]), image: { mediaType: "image/png" as const, contentHash: "b".repeat(64), byteLength: 100, artifactPath: "images/analysis-a.png" }, factorRows: [completedRow] };
+  completedRequest.requestHash = createF5MultimodalRequestHash(completedRequest);
+  const completedResult = { contractVersion: "f5-multimodal-result-v3", outputClassification: "confidential", requestHash: completedRequest.requestHash, sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a", imageContentHash: "b".repeat(64), model: { modelId: "vision-model", supportsImage: true }, imageTableInterpretation: "Image and complete table interpreted.", rowMappings: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: completedRow.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: "A is visible." }] };
+  const failedRequest = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64) }, worksheetName: "Analysis-B", tableId: "table-b", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash([failedRow]), image: { mediaType: "image/png" as const, contentHash: "c".repeat(64), byteLength: 100, artifactPath: "images/analysis-b.png" }, factorRows: [failedRow] };
+  failedRequest.requestHash = createF5MultimodalRequestHash(failedRequest);
+  const bytes = Buffer.from(`${JSON.stringify({ contractVersion: "f5-multimodal-artifact-v4", outputClassification: "confidential", sessionId: environment.sessionId, revision: environment.snapshot.revision, inputRevision: environment.snapshot.inputRevision, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A", "Analysis-B"], worksheets: [{ status: "completed", request: completedRequest, result: completedResult }, { status: "failed", request: failedRequest, reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" }] })}\n`, "utf8");
+  const path = join(serverRoot, "multimodal-v4.json");
   await writeFile(path, bytes);
   return { path, contentHash: createHash("sha256").update(bytes).digest("hex") };
 }
