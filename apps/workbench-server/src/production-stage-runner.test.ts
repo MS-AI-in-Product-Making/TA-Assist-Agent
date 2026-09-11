@@ -163,6 +163,119 @@ describe("runProductionStage output gating", () => {
     }
   });
 
+  it("starts F6 only for completed worksheets from a mixed multimodal v4 aggregate", async () => {
+    const serverRoot = await mkdtemp(join(tmpdir(), "ta-task6-f6-mixed-"));
+    try {
+      const sessionId = createEnvironment("f6_running").sessionId;
+      const publishRoot = join(serverRoot, "runtime", "workbench", "runner-output", sessionId);
+      const managedRoot = join(publishRoot, "managed");
+      const outputDir = join(managedRoot, "f6");
+      await Promise.all([
+        mkdir(outputDir, { recursive: true }),
+        mkdir(join(managedRoot, "f1"), { recursive: true }),
+        mkdir(join(managedRoot, "f2"), { recursive: true }),
+        mkdir(join(managedRoot, "f3"), { recursive: true }),
+        mkdir(join(managedRoot, "f4"), { recursive: true }),
+        mkdir(join(managedRoot, "f5"), { recursive: true }),
+      ]);
+      const optimizationJsonPath = join(outputDir, "Feature6-Optimization.json");
+      const finalReportMdPath = join(outputDir, "Feature6-Report.md");
+      const runSummaryPath = join(outputDir, "Feature6-Run-Summary.json");
+      const manifestPath = join(outputDir, "manifest.json");
+      await Promise.all([
+        writeFile(optimizationJsonPath, "{}\n", "utf8"),
+        writeFile(finalReportMdPath, "# report\n", "utf8"),
+        writeFile(runSummaryPath, "{}\n", "utf8"),
+        writeFile(manifestPath, "{}\n", "utf8"),
+      ]);
+      const environment = {
+        ...createEnvironment("f6_running"),
+        serverRoot,
+        snapshot: {
+          ...createEnvironment("f6_running").snapshot,
+          revision: 4,
+          initialScopeSelection: {
+            workbookContentHash: "a".repeat(64),
+            selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+            confirmed: true,
+            provenance: "user",
+          },
+          downstreamScopeSelection: {
+            workbookContentHash: "a".repeat(64),
+            selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+            confirmed: true,
+            provenance: "user",
+          },
+          artifactRefs: [{ artifactId: "f5-multimodal:2", kind: "f5_multimodal", revision: 2, validated: true, reviewContextId: "c".repeat(64), relativePath: "multimodal-v4.json", contentHash: "f".repeat(64) }],
+        } as F8SessionSnapshot,
+        roots: {
+          f1Root: join(managedRoot, "f1"),
+          f2Root: join(managedRoot, "f2"),
+          f3Root: join(managedRoot, "f3"),
+          f4Root: join(managedRoot, "f4"),
+          f5Root: join(managedRoot, "f5"),
+          f6Root: outputDir,
+        },
+      };
+      const multimodalArtifact = await writeMixedMultimodalArtifact(serverRoot, {
+        ...environment,
+        snapshot: {
+          ...environment.snapshot,
+          revision: 2,
+        },
+      });
+      environment.snapshot.artifactRefs = [{
+        artifactId: "f5-multimodal:2",
+        kind: "f5_multimodal",
+        revision: 2,
+        validated: true,
+        reviewContextId: "c".repeat(64),
+        relativePath: "multimodal-v4.json",
+        contentHash: multimodalArtifact.contentHash,
+      }];
+      let capturedRequest: Record<string, unknown> | undefined;
+
+      await runProductionStage(
+        "f6_running",
+        {
+          ...environment,
+          multimodalArtifact,
+        },
+        {
+          runStage: async (_stage, input) => {
+            capturedRequest = (input.input as { request?: Record<string, unknown> }).request;
+            return {
+              status: "completed",
+              skillId: "improvement-evaluation-v1",
+              inputRevision: 2,
+              idempotencyKey: "attempt-1:f6_running",
+              output: {
+                status: "completed",
+                outputDirectory: outputDir,
+                optimizationJsonPath,
+                finalReportMdPath,
+                runSummaryPath,
+                manifestPath,
+                finalReportProjection: { summary: "ok" },
+              },
+            } as never;
+          },
+          runWorkbookScopeDiscovery: async () => ({ status: "completed", skillId: "workbook-scope-discovery-v1", inputRevision: 2, idempotencyKey: "attempt-1" }),
+          runAnalysisInputValidation: async () => ({ status: "completed", skillId: "analysis-input-validation-v1", inputRevision: 2, idempotencyKey: "attempt-1" }),
+        },
+      );
+
+      expect(capturedRequest).toMatchObject({
+        selectedWorksheetNames: ["Analysis-A"],
+        modelInterpretationPath: multimodalArtifact.path,
+        expectedModelInterpretationContentHash: multimodalArtifact.contentHash,
+        requireMultimodalV3: true,
+      });
+    } finally {
+      await rm(serverRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects blocked results even if output exists", async () => {
     await expect(runProductionStage(
       "f3_running",

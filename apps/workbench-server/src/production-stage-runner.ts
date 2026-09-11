@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { f5MultimodalArtifactV3Schema } from "@ai-assist/contracts";
-import { f5MultimodalArtifactV4Schema } from "../../../packages/contracts/src/ta-multimodal-contracts.js";
+import { f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "@ai-assist/contracts";
 
 import { canonicalSelectedWorksheetSetHash, type F8SessionSnapshot, type RuntimeSkillResult, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import type { RunContext } from "@ai-assist/workflow-runners";
@@ -109,6 +108,9 @@ export async function runProductionStage(stage: string, environment: ProductionS
   if (stage === "f6_running") {
     if (environment.roots.f3Root === undefined || environment.roots.f4Root === undefined || environment.roots.f5Root === undefined || environment.reviewContext === undefined) throw new Error("F6 roots are unavailable.");
     const multimodal = await requireMultimodalArtifact(environment, selected, "f6");
+    const completedWorksheetNames = multimodal.artifact.worksheets
+      .filter((worksheet) => worksheet.status === "completed")
+      .map((worksheet) => worksheet.request.worksheetName);
     const scripts = await loadF6(environment.repositoryRoot);
     const f6Base = join(outputBase, "f6");
     const layout = scripts.resolveFeature6OutputLayout({ f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root }, f6Base, () => new Date(), publishRoot);
@@ -117,7 +119,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
       f3ArtifactRoot: environment.roots.f3Root,
       f4ArtifactRoot: environment.roots.f4Root,
       f5ArtifactRoot: environment.roots.f5Root,
-      selectedWorksheetNames: selected,
+      selectedWorksheetNames: completedWorksheetNames,
       interactionLanguage: environment.snapshot.interactionLanguage,
       modelInterpretationPath: multimodal.path,
       expectedModelInterpretationContentHash: multimodal.contentHash,

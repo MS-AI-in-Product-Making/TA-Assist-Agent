@@ -143,6 +143,103 @@ function installRequiredMultimodalV3(bundle) {
   return artifact;
 }
 
+function installRequiredMixedMultimodalV4(bundle, { failedWorksheetName = "Analysis-B", reasonCode = "evaluation_failed", summary = "worksheet image evaluation failed" } = {}) {
+  const f2 = readJson(bundle.paths.f2);
+  const f5 = readJson(bundle.paths.f5);
+  const worksheets = bundle.selectedWorksheetNames.map((worksheetName, index) => {
+    const calculation = bundle.calculations[index];
+    const factor = calculation.factors[0];
+    const sourceRow = factor.source.sourceRow;
+    const f2Row = f2.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).rows[0];
+    const image = f5.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName).imageReference;
+    const factorRows = [{
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      sourceRow,
+      factorOrdinal: structuredClone(f2Row.factorOrdinal),
+      factorName: factor.factorName,
+      partName: f2Row.actualFields.partName,
+      partCategory: f2Row.actualFields.partCategory,
+      drawingNumber: f2Row.actualFields.drawingNumber,
+      dimId: f2Row.actualFields.dimCharacteristicId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: f2Row.sourceCells,
+    }];
+    const request = {
+      contractVersion: "f5-multimodal-request-v3",
+      inputClassification: "confidential",
+      requestHash: "",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      revision: 7,
+      inputRevision: 3,
+      workbook: { fileName: f2.workbook.fileName, contentHash: f2.workbook.contentHash },
+      worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png", contentHash: image.contentHash, byteLength: 100, artifactPath: image.relativePath },
+      factorRows,
+    };
+    request.requestHash = createF5MultimodalRequestHash(request);
+    if (worksheetName === failedWorksheetName) {
+      return { status: "failed", request, reasonCode, summary };
+    }
+    return {
+      status: "completed",
+      request,
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: request.requestHash,
+        sessionId: request.sessionId,
+        revision: request.revision,
+        inputRevision: request.inputRevision,
+        workbookContentHash: request.workbook.contentHash,
+        worksheetName,
+        tableId: request.tableId,
+        imageContentHash: request.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: `Image and complete Factor table interpreted for ${worksheetName}.`,
+        rowMappings: factorRows.map((row) => ({ worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value} is visible.` })),
+      },
+    };
+  });
+  const artifact = {
+    contractVersion: "f5-multimodal-artifact-v4",
+    outputClassification: "confidential",
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    revision: 7,
+    inputRevision: 3,
+    workbookContentHash: WORKBOOK_HASH,
+    selectedWorksheetNames: [...bundle.selectedWorksheetNames],
+    worksheets,
+  };
+  const modelInterpretationArtifactRoot = path.join(bundle.publishRoot, "multimodal");
+  const modelInterpretationArtifact = "interpretation-v4.json";
+  const filePath = path.join(modelInterpretationArtifactRoot, modelInterpretationArtifact);
+  writeJson(filePath, artifact);
+  Object.assign(bundle, { requireMultimodalV3: true, modelInterpretationArtifactRoot, modelInterpretationArtifact, expectedModelInterpretationContentHash: sha256(filePath) });
+  return artifact;
+}
+
+function keepCompletedF5WorksheetOnly(bundle, completedWorksheetName) {
+  rewriteJson(bundle.paths.f5, (report) => {
+    report.worksheets = report.worksheets.filter((worksheet) => worksheet.worksheetName === completedWorksheetName);
+    report.status = "completed";
+    report.summary.worksheetCount = report.worksheets.length;
+    report.summary.completedWorksheetCount = report.worksheets.length;
+    report.summary.inputRejectedWorksheetCount = 0;
+    report.summary.statementCount = report.worksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0);
+    report.summary.clarificationCount = report.worksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0);
+    report.summary.assumptionCount = report.worksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0);
+  });
+}
+
 describe("loadF6ArtifactBundle", () => {
   it("accepts an all-ready governed bundle and preserves the validated F4 baseline request", () => {
     const bundle = setupBundle();
@@ -569,6 +666,32 @@ describe("F6 governed bundle validation", () => {
     );
     expect(result.blockedWorksheets[0].findings.some(({ findingKind }) =>
       findingKind === "confirmed_requirement_violation")).toBe(false);
+  });
+
+  it("accepts a required mixed multimodal v4 artifact and carries the failed worksheet as an F6 blocker", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
+    installRequiredMixedMultimodalV4(bundle);
+    keepCompletedF5WorksheetOnly(bundle, "Analysis-A");
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
+    expect(result.request.reportScope).toEqual({
+      worksheetNames: ["Analysis-A", "Analysis-B"],
+      blockedWorksheetNames: ["Analysis-B"],
+    });
+    expect(result.blockedWorksheets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        worksheetName: "Analysis-B",
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            findingCode: "multimodal_blocker:evaluation_failed",
+            findingKind: "validation_abnormality",
+          }),
+        ]),
+      }),
+    ]));
   });
 
   it("preserves requested worksheet order while retaining original F4 calculation indices", () => {

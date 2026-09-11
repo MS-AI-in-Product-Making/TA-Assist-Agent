@@ -116,6 +116,128 @@ function createMultimodalV3(inputs) {
   };
 }
 
+function createMixedMultimodalV4(inputs, { completedWorksheetName = "Analysis-A", failedWorksheetName = "Analysis-B", reasonCode = "evaluation_failed", summary = "worksheet image evaluation failed" } = {}) {
+  const completedWorksheet = inputs.f2Report.worksheets.find((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const failedWorksheet = inputs.f2Report.worksheets.find((worksheet) => worksheet.worksheetName === failedWorksheetName);
+  const completedCalculation = inputs.f4Report.calculations.find((calculation) => calculation.worksheetSelection.worksheetName === completedWorksheetName);
+  const failedCalculation = inputs.f4Report.calculations.find((calculation) => calculation.worksheetSelection.worksheetName === failedWorksheetName);
+  const completedF5Worksheet = inputs.f5Report.worksheets.find((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const failedF5Worksheet = inputs.f5Report.worksheets.find((worksheet) => worksheet.worksheetName === failedWorksheetName);
+  if (!completedWorksheet || !failedWorksheet || !completedCalculation || !failedCalculation || !completedF5Worksheet || !failedF5Worksheet) {
+    throw new Error("Expected mixed multimodal fixture worksheets.");
+  }
+  const requestFor = (worksheet, calculation, f5Worksheet) => {
+    const f2Row = worksheet.rows[0];
+    const factor = calculation.factors[0];
+    const factorRows = [{
+      worksheetName: worksheet.worksheetName,
+      tableId: f2Row.tableId,
+      sourceRow: f2Row.sourceRow,
+      factorOrdinal: structuredClone(f2Row.factorOrdinal),
+      factorName: factor.factorName,
+      partName: f2Row.actualFields.partName,
+      partCategory: f2Row.actualFields.partCategory,
+      drawingNumber: f2Row.actualFields.drawingNumber,
+      dimId: f2Row.actualFields.dimCharacteristicId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: structuredClone(f2Row.sourceCells),
+    }];
+    const request = {
+      contractVersion: "f5-multimodal-request-v3",
+      inputClassification: "confidential",
+      requestHash: "",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      revision: 7,
+      inputRevision: 3,
+      workbook: {
+        fileName: inputs.f2Report.workbook.fileName,
+        contentHash: inputs.f2Report.workbook.contentHash,
+      },
+      worksheetName: worksheet.worksheetName,
+      tableId: f2Row.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png", contentHash: f5Worksheet.imageReference.contentHash, byteLength: 100, artifactPath: f5Worksheet.imageReference.relativePath },
+      factorRows,
+    };
+    request.requestHash = createF5MultimodalRequestHash(request);
+    return request;
+  };
+  const completedRequest = requestFor(completedWorksheet, completedCalculation, completedF5Worksheet);
+  const failedRequest = requestFor(failedWorksheet, failedCalculation, failedF5Worksheet);
+  return {
+    contractVersion: "f5-multimodal-artifact-v4",
+    outputClassification: "confidential",
+    sessionId: completedRequest.sessionId,
+    revision: completedRequest.revision,
+    inputRevision: completedRequest.inputRevision,
+    workbookContentHash: completedRequest.workbook.contentHash,
+    selectedWorksheetNames: [completedWorksheetName, failedWorksheetName],
+    worksheets: [{
+      status: "completed",
+      request: completedRequest,
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: completedRequest.requestHash,
+        sessionId: completedRequest.sessionId,
+        revision: completedRequest.revision,
+        inputRevision: completedRequest.inputRevision,
+        workbookContentHash: completedRequest.workbook.contentHash,
+        worksheetName: completedRequest.worksheetName,
+        tableId: completedRequest.tableId,
+        imageContentHash: completedRequest.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: "Image and complete Factor table jointly support the tolerance path interpretation.",
+        rowMappings: completedRequest.factorRows.map((factorRow) => ({
+          worksheetName: factorRow.worksheetName,
+          tableId: factorRow.tableId,
+          sourceRow: factorRow.sourceRow,
+          factorOrdinal: structuredClone(factorRow.factorOrdinal),
+          mappingStatus: "matched",
+          visibleStatus: "visible",
+          interpretation: "Factor A is visible and mapped to the table row.",
+        })),
+      },
+    }, {
+      status: "failed",
+      request: failedRequest,
+      reasonCode,
+      summary,
+    }],
+  };
+}
+
+function keepCompletedWorksheetOnly(inputs, { completedWorksheetName = "Analysis-A", failedWorksheetName = "Analysis-B" } = {}) {
+  inputs.f5Report.worksheets = inputs.f5Report.worksheets.filter((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  inputs.f5Report.status = "completed";
+  inputs.f5Report.summary.worksheetCount = inputs.f5Report.worksheets.length;
+  inputs.f5Report.summary.completedWorksheetCount = inputs.f5Report.worksheets.length;
+  inputs.f5Report.summary.inputRejectedWorksheetCount = 0;
+  inputs.f5Report.summary.statementCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0);
+  inputs.f5Report.summary.clarificationCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0);
+  inputs.f5Report.summary.assumptionCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0);
+
+  inputs.f6Optimization.worksheets = inputs.f6Optimization.worksheets.filter((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const completedWorksheet = inputs.f6Optimization.worksheets[0];
+  const options = completedWorksheet.steps[3].options;
+  inputs.f6Optimization.provenance.reportScope = {
+    worksheetNames: [completedWorksheetName, failedWorksheetName],
+    blockedWorksheetNames: [failedWorksheetName],
+  };
+  inputs.f6Optimization.summary.worksheetCount = 1;
+  inputs.f6Optimization.summary.completedWorksheetCount = completedWorksheet.runStatus === "COMPLETED" ? 1 : 0;
+  inputs.f6Optimization.summary.clarificationRequiredWorksheetCount = completedWorksheet.runStatus === "COMPLETED" ? 0 : 1;
+  inputs.f6Optimization.summary.completedOptionCount = options.filter((option) => option.status === "completed").length;
+  inputs.f6Optimization.summary.calculationFailedOptionCount = options.filter((option) => option.status === "calculation_failed").length;
+  inputs.f6Optimization.runStatus = completedWorksheet.runStatus === "COMPLETED" ? "COMPLETED" : "CLARIFICATION_REQUIRED";
+}
+
 function numberText(value, fallback = "N/A") {
   if (!Number.isFinite(value)) return fallback;
   return Number(value.toFixed(6)).toString();
@@ -442,6 +564,21 @@ describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
 
   it("rejects a new-workflow final report when multimodal v3 is missing", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
+  });
+
+  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], f5Variant: "supported", modelInterpretationVersion: "v2" });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
+
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
+    ]));
+    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
+    expect(projection.markdown).toContain("- Status: FAIL");
+    expect(projection.markdown).toContain("worksheet image evaluation failed");
   });
 
   it("renders image-plus-table context and every Factor mapping from multimodal v3", () => {
