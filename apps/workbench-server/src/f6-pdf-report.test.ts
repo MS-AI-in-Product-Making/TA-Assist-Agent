@@ -119,12 +119,12 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("class=\"document-overview\"");
     expect(html).toContain("class=\"workbook-summary\"");
     expect(html).toContain("font-variant-numeric:tabular-nums");
-    expect(html).toContain(".report-content>h1 { font-size:20pt;");
+    expect(html).toContain(".slide-summary>h1 {");
     expect(html).toContain(".document-overview,.workbook-summary { table-layout:fixed;");
-    expect(html).toContain(".worksheet-section h2 { font-size:10pt;");
-    expect(html).not.toContain("border-radius:");
+    expect(html).toContain(".analysis-panel h2 {");
+    expect(html).toContain("border-radius:22px");
     expect(html).not.toContain("box-shadow:");
-    expect(html).toContain("class=\"worksheet-section\"");
+    expect(html).toContain("class=\"worksheet-section slide slide-worksheet\"");
     expect(html).toContain("class=\"factor-table factor-table--complete\"");
     expect(html).toContain("data-f6-marker=\"required-missing\"");
     expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Frame Post Location <span class="f6-inline-marker"/u);
@@ -140,7 +140,9 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("class=\"spec-change-graph\"");
     expect(html).toContain("Frame Post Location");
     expect(html).toContain("width:50.5%");
-    expect(html).toContain("@page { size:A4 landscape;");
+    expect(html).toContain("@page { size:20in 11.25in;");
+    expect(html).toContain("Stardos Stencil");
+    expect(html).toContain("Barlow Condensed");
     expect(html).not.toContain("fitWorksheetPages");
     expect(html).not.toContain("height:174mm");
     expect(html).not.toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden;");

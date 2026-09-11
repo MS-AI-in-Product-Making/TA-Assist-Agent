@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renderF6PdfSync, validatedF6InlineImages } from "./f6-pdf-export.js";
 import { renderF6PdfHtml } from "./f6-pdf-report.js";
@@ -104,7 +104,7 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain('src="evidence/stack.png"');
   });
 
-  it("renders a 16:9 one-page worksheet with navigable anchors and colored comments", () => {
+  it("renders a fixed 16:9 Stencil and Tablet summary plus one slide per worksheet", () => {
     const markdown = [
       "# TA Engineering Analysis Report",
       "",
@@ -130,8 +130,9 @@ describe("renderF6PdfSync", () => {
       sourceHash: createHash("sha256").update(markdown).digest("hex"),
     });
 
-    expect(html).toContain("@page { size:A4 landscape;");
-    expect(html).toContain('<section class="worksheet-section" id="worksheet-1">');
+    expect(html).toContain("@page { size:20in 11.25in;");
+    expect(html).toContain('class="report-content slide slide-summary"');
+    expect(html).toContain('<section class="worksheet-section slide slide-worksheet" id="worksheet-1">');
     expect(html).toContain('href="#worksheet-1"');
     expect(html).toContain('class="comment comment--pass">Pass</span>');
     expect(html).toContain('class="comment comment--need-review">Need Review</span>');
@@ -139,17 +140,31 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="contribution-chart"');
     expect(html).not.toContain('<table class="contribution-table"');
     expect(html).not.toContain("fitWorksheetPages");
-    expect(html).not.toContain("break-after:page");
+    expect(html).toContain("width:1920px");
+    expect(html).toContain("height:1080px");
+    expect(html).toContain("break-after:page");
+    expect(html).toContain("Stardos Stencil");
+    expect(html).toContain("Barlow Condensed");
+    expect(html).toContain("--st-bone:#e2dcc9");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
-    expect(html).toContain("gap:0");
-    expect(html).toContain("grid-template-columns:78mm minmax(0,1fr)");
-    expect(html).toContain("grid-template-rows:auto auto");
-    expect(html).toContain(".analysis-panel--results { display:grid; grid-template-columns:1fr 1fr;");
-    expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm;");
-    expect(html).not.toContain("height:174mm");
-    expect(html).not.toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden;");
-    expect(html).not.toContain("overflow-wrap:anywhere");
+    expect(html).toContain("grid-template-columns:1.15fr .85fr .72fr");
+    expect(html).toContain("grid-template-rows:1fr 220px");
+  });
+
+  it("renders exactly one summary slide plus one slide per worksheet", () => {
+    const worksheetSections = Array.from({ length: 5 }, (_value, index) => [
+      `# 3-${index + 1} Worksheet: Analysis-${index + 1}`,
+      "",
+      "Worksheet content.",
+    ].join("\n"));
+    const markdown = ["# TA Engineering Analysis Report", "", ...worksheetSections].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html.match(/class="report-content slide slide-summary"/gu)).toHaveLength(1);
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(5);
+    expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(6);
   });
 
   it("renders the Task 3 complete Factor table with hidden missing markers preserved", () => {
@@ -161,7 +176,7 @@ describe("renderF6PdfSync", () => {
       "| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
       "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
       "| Factor A <span class=\"f6-inline-marker\" data-f6-marker=\"required-missing\" data-source-row=\"14\" hidden aria-hidden=\"true\"></span> | Part A | CNC | MISSING | DIM-14 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | N/A | N/A | N/A | Capability: f0_information_insufficient; Knowledge: missing_process_context |",
-      "| Factor B | Part B | PCBA | DWG-2 | DIM-15 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.2 mm; Knowledge: internal-v1 |",
+      "| Factor B | Part B | PCBA | DWG-2 | DIM-15 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.35 mm; Knowledge: internal-v9 · dynamic-rule |",
       "",
       "## Requirements and Statistical Results",
       "",
@@ -199,7 +214,7 @@ describe("renderF6PdfSync", () => {
       "|---:|---|---:|---:|---|---|",
       "| 1 | Factor A | 0.025 mm | 60.0% | High | Tighten tolerance |",
       "| 2 | Factor B | 0.020 mm | 30.0% | Medium | Review process |",
-      "| 3 | Factor C | 0.015 mm | 10.0% | Medium | Confirm input |",
+      "| 3 | Factor C | 0.015 mm | 7.7% | Medium | Confirm input |",
       "",
       "## Specification Changes",
       "",
@@ -210,26 +225,81 @@ describe("renderF6PdfSync", () => {
     ].join("\n");
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(html).toContain('<table class="factor-table factor-table--complete">');
+    expect(html).toContain('<table class="factor-table factor-table--complete" data-factor-count="2">');
     expect(html).toContain('<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden="" aria-hidden="true"></span>');
     expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Factor A <span class="f6-inline-marker"/u);
     expect(html).toContain("Factor A");
     expect(html).toContain("MISSING");
+    expect(html).toContain("<th>Guidance</th>");
+    expect(html).toContain("Insufficient evidence");
+    expect(html).toContain("Within guidance &le; 0.350&nbsp;mm");
+    expect(html).not.toContain("f0_information_insufficient");
+    expect(html).not.toContain("internal-v1");
     expect(html).not.toContain('class="drawing-health"');
     expect(html).toContain('class="capability-spectrum"');
     expect(html).toContain('data-target-cpk="1.333"');
+    expect(html).toContain("Capability against target <strong>1.33</strong>");
+    expect(html).toContain("<strong>1.48</strong>");
+    expect(html).toContain("<small>-0.150 → -0.180</small>");
     expect(html).toContain('class="spec-range-graph"');
     expect(html).toContain('data-statistical-result="PASS"');
     expect(html).toContain('data-worst-case-result="FAIL"');
     expect(html).toContain('class="mean-offset-graph"');
     expect(html).toContain('data-offset="0.010"');
     expect(html).toContain('class="contribution-chart"');
+    expect(html).toContain("<strong>7.70&nbsp;%</strong>");
     expect(html).toContain('class="spec-change-graph"');
     expect(html).not.toContain('<table class="result-table">');
     expect(html).not.toContain('<table class="analysis-table">');
     expect(html).not.toContain("Graph-first engineering brief");
-    expect(html).toContain(".factor-table { table-layout:fixed;");
-    expect(html).toContain(".factor-table td,.factor-table th { font-size:8.5pt;");
+    expect(html).toContain('data-factor-count="2"');
+    expect(html).toContain(".factor-table { height:330px;");
+  });
+
+  it("fails closed when a worksheet exceeds the fixed slide Factor capacity", () => {
+    const rows = Array.from({ length: 11 }, (_value, index) => (
+      `| Factor ${index + 1} | Part | CNC | DWG-${index + 1} | DIM-${index + 1} | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: non_f0_process_category |`
+    ));
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      ...rows,
+    ].join("\n");
+
+    expect(() => renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") }))
+      .toThrow("fixed slide supports at most 10 Factors");
+  });
+
+  it("formats displayed engineering values to three significant figures", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "## 2. Workbook Summary",
+      "",
+      "| Worksheet | Tolerance Loop Description | Key Finding | Comment |",
+      "|---|---|---|---|",
+      "| [Analysis-A](#worksheet-1) | Loop A | CpkL 0.7396 and CpkU 0.7396 do not meet Target Cpk 1. | Fail |",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "- Mean Response: -0.050000 mm",
+      "- RSS One Sigma: 0.045069 mm",
+      "- Predicted Yield: 97.3499%",
+      "- DPM 26500.280602",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("CpkL 0.740 and CpkU 0.740 do not meet Target Cpk 1.00");
+    expect(html).toContain("-0.0500&nbsp;mm");
+    expect(html).toContain("0.0451&nbsp;mm");
+    expect(html).toContain("97.3&nbsp;%");
+    expect(html).toContain("DPM 2.65 × 10^4");
+    expect(html).not.toContain("0.045069 mm");
   });
 
   it("fails graph values closed instead of treating unsafe or unavailable evidence as zero", () => {
