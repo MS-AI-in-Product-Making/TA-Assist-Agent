@@ -236,6 +236,10 @@ function blockedMissingIdentifier(row, identifier) {
   return Array.isArray(row.missingIdentifiers) && row.missingIdentifiers.includes(identifier);
 }
 
+function blockedFactorDescription(value, sourceRow) {
+  return `${value} <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${sourceRow}" hidden aria-hidden="true"></span>`;
+}
+
 function renderCompleteFactorTable(rows) {
   return [
     row(COMPLETE_FACTOR_TABLE_HEADERS),
@@ -266,9 +270,13 @@ function readyFactorTableRows(factors) {
 function blockedFactorTableRows(worksheet) {
   return worksheet.f2Worksheet.rows.map((f2Row) => {
     const actual = f2Row.actualFields;
+    const hasBlockedMarker = (Array.isArray(f2Row.missingRequiredFields) && f2Row.missingRequiredFields.length > 0)
+      || (Array.isArray(f2Row.missingIdentifiers) && f2Row.missingIdentifiers.length > 0);
     return {
       cells: [
-        blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName),
+        hasBlockedMarker
+          ? blockedFactorDescription(blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName), f2Row.sourceRow)
+          : (blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName)),
         blockedRequiredField(f2Row, "partName") ? "MISSING" : clean(actual.partName),
         blockedRequiredField(f2Row, "partCategory") ? "MISSING" : clean(actual.partCategory),
         blockedMissingIdentifier(f2Row, "drawingNumber") ? "MISSING" : clean(actual.drawingNumber),
@@ -283,10 +291,6 @@ function blockedFactorTableRows(worksheet) {
         NA,
         NA,
       ],
-      marker: (Array.isArray(f2Row.missingRequiredFields) && f2Row.missingRequiredFields.length > 0)
-        || (Array.isArray(f2Row.missingIdentifiers) && f2Row.missingIdentifiers.length > 0)
-        ? `<!-- factor-row-state=required-missing source-row=${f2Row.sourceRow} -->`
-        : undefined,
     };
   });
 }

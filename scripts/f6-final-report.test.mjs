@@ -14,6 +14,7 @@ import {
   createF5MultimodalRequestHash,
 } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
+import { marked } from "marked";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
 import {
@@ -1189,11 +1190,15 @@ describe("createF6FinalReportProjection v3", () => {
     ]);
     expect(reportSummary.workbookDisposition).toBe("FAIL");
     expect(blockedSection).toContain(row(expectedFactorHeaders));
-    expect(blockedSection).toContain("| MISSING | Part Blocked-A | CNC | MISSING | DIM-100 | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |");
-    expect(blockedSection).toContain("| Factor Blocked-A | Part Blocked-A | CNC | DRAW-100 | MISSING | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |");
-    expect(blockedSection).toContain("<!-- factor-row-state=required-missing source-row=16 -->");
-    expect(blockedSection).toContain("<!-- factor-row-state=required-missing source-row=17 -->");
-    expect(blockedSection).not.toContain("N/A <!-- factor-row-state=required-missing source-row=16 -->");
+    expect(blockedSection).toContain(`| MISSING <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span> | Part Blocked-A | CNC | MISSING | DIM-100 | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |`);
+    expect(blockedSection).toContain(`| Factor Blocked-A <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span> | Part Blocked-A | CNC | DRAW-100 | MISSING | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |`);
+    expect(blockedSection).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span>`);
+    expect(blockedSection).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span>`);
+    expect(blockedSection).not.toContain("<!-- factor-row-state=required-missing source-row=16 -->");
+    expect(blockedSection).not.toContain("<!-- factor-row-state=required-missing source-row=17 -->");
+    const html = marked.parse(markdown, { async: false });
+    expect(html).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span>`);
+    expect(html).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span>`);
     expect(blockedSection.match(/\| Factor Description \| Part Name \| Part Category \| Drawing Number \| DIM ID \| Design Nominal \| \+ Tolerance \| - Tolerance \| Long Term \/ Safety Factor \| Sigma Level \| Mean \| Tolerance \| One Sigma \| Capability \/ Knowledge Guidance \|/g) ?? []).toHaveLength(1);
     expect(blockedSection).not.toContain("Source Row");
     expect(blockedSection).not.toContain("Notes");
