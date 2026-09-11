@@ -2098,8 +2098,7 @@ describe("F7 workbench shell", () => {
     expect(diagnostics.text()).toContain("Missing Values");
     expect(diagnostics.text()).toContain("3σ Rule");
     expect(diagnostics.text()).toContain("IQR Method");
-    expect(workspace.find("[data-measurement-histogram]").exists()).toBe(true);
-    expect(workspace.get("[data-measurement-shape]").text()).toContain("Not enough data");
+    expect(workspace.find("[data-measurement-histogram]").exists()).toBe(false);
     await workspace.get("input[data-measurement-row='3']").setValue("0.500");
     await workspace.get("input[data-measurement-row='2']").setValue("");
     expect(workspace.get("tr[data-missing-value='true'] input").attributes("aria-label")).toContain("missing value");
@@ -2179,16 +2178,14 @@ describe("F7 workbench shell", () => {
     expect(workspace.find("[data-capability-guidance-applicability]").text()).toBe("Applicability: public demo process capability");
     // Selected distribution summary precedes guidance and measured interpretation.
     const changeSummaryEl = workspace.get("[data-capability-change-summary]").element! as Element;
-    const selectedDistributionEl = workspace.get("[data-capability-distribution-fit]").element! as Element;
     const guidanceEl = workspace.get("[data-capability-guidance]").element! as Element;
     const measuredInterpretationEl = workspace.get("[data-measured-distribution-interpretation]").element! as Element;
+    const selectedDistributionEl = workspace.get("[data-capability-distribution-fit]").element! as Element;
     const metricsBoardEl = workspace.get("[data-measurement-metrics-board]").element! as Element;
-    const histogramEl = workspace.get("[data-measurement-histogram]").element! as Element;
     expect(changeSummaryEl.parentElement).toBe(metricsBoardEl);
-    expect(metricsBoardEl.nextElementSibling).toBe(histogramEl);
-    expect(histogramEl.nextElementSibling).toBe(selectedDistributionEl);
-    expect(selectedDistributionEl.nextElementSibling).toBe(guidanceEl);
+    expect(metricsBoardEl.nextElementSibling).toBe(guidanceEl);
     expect(guidanceEl.nextElementSibling).toBe(measuredInterpretationEl);
+    expect(selectedDistributionEl.parentElement).toBe(measuredInterpretationEl);
   });
 
   it("8) phase_1_ready banner states readiness without contradicting the available factor capability analysis", async () => {
@@ -2321,9 +2318,18 @@ describe("F7 workbench shell", () => {
 
   describe("Capability entry distribution fit", () => {
     it("auto-fits ready measurements and shows only the selected distribution summary", async () => {
-      const client = createMockClient(phaseReadySnapshot(), {
-        importWorkbook: phaseReadySnapshot(),
-        fitDistribution: approvedDistributionSnapshot(),
+      const withSetupSigma = (snapshot: F7SessionSnapshot): F7SessionSnapshot => ({
+        ...snapshot,
+        factors: snapshot.factors.map((factor, index) => index === 0 ? {
+          ...factor,
+          factorCandidate: { ...factor.factorCandidate, sigmaLevel: 5 },
+          evidence: factor.evidence ? { ...factor.evidence, sigmaLevel: 5 } : undefined,
+        } : factor),
+      });
+      const setupSigmaSnapshot = withSetupSigma(phaseReadySnapshot());
+      const client = createMockClient(setupSigmaSnapshot, {
+        importWorkbook: setupSigmaSnapshot,
+        fitDistribution: withSetupSigma(approvedDistributionSnapshot()),
       });
       const wrapper = mount(App, { props: { client } });
       await uploadWorkbook(wrapper);
@@ -2352,7 +2358,77 @@ describe("F7 workbench shell", () => {
       expect(embeddedFit.get("[data-selected-confidence]").text()).toBe("Low");
       expect(embeddedFit.get("[data-selected-approval-state]").text()).toContain("Automatically selected for Monte Carlo");
       expect(embeddedFit.find("[data-approve-distribution]").exists()).toBe(false);
-      expect(embeddedFit.findAll("[data-distribution-plot='normal']")).toHaveLength(1);
+      expect(embeddedFit.find("[data-distribution-plot]").exists()).toBe(false);
+      const standalonePlot = workspace.get("[data-selected-distribution-plot]");
+      expect(standalonePlot.findAll("[data-distribution-plot='normal']")).toHaveLength(1);
+      expect(workspace.findAll("[data-distribution-plot]")).toHaveLength(1);
+      const sigmaControls = standalonePlot.get("[data-distribution-sigma-controls]");
+      const sigmaCheckboxes = sigmaControls.findAll("input[type='checkbox']");
+      expect(sigmaCheckboxes).toHaveLength(5);
+      expect(sigmaControls.text()).toContain("±3σ");
+      expect(sigmaControls.text()).toContain("±4σ");
+      expect(sigmaControls.text()).toContain("±4.5σ");
+      expect(sigmaControls.text()).toContain("±5σ");
+      expect(sigmaControls.text()).toContain("±6σ");
+      expect(sigmaCheckboxes.map((checkbox) => (checkbox.element as HTMLInputElement).checked))
+        .toEqual([false, false, false, true, false]);
+      expect(standalonePlot.findAll("[data-reference-sigma-level='5']")).toHaveLength(2);
+      expect(standalonePlot.find("[data-reference-sigma-level='3']").exists()).toBe(false);
+      expect(standalonePlot.find("[data-reference-sigma-level='4']").exists()).toBe(false);
+      expect(standalonePlot.find("[data-reference-sigma-level='4.5']").exists()).toBe(false);
+      expect(standalonePlot.find("[data-reference-sigma-level='6']").exists()).toBe(false);
+      await sigmaControls.get("input[data-distribution-sigma-level='3']").setValue(true);
+      await sigmaControls.get("input[data-distribution-sigma-level='4']").setValue(true);
+      await sigmaControls.get("input[data-distribution-sigma-level='4.5']").setValue(true);
+      expect(standalonePlot.findAll("[data-reference-sigma-level='3']")).toHaveLength(2);
+      expect(standalonePlot.findAll("[data-reference-sigma-level='4']")).toHaveLength(2);
+      expect(standalonePlot.findAll("[data-reference-sigma-level='4.5']")).toHaveLength(2);
+      expect(standalonePlot.findAll("[data-reference-sigma-level='5']")).toHaveLength(2);
+      const referenceLabelY = (id: string) => standalonePlot
+        .get(`[data-reference-line-id='${id}'] [data-reference-label]`)
+        .attributes("y");
+      expect(referenceLabelY("lower-spec-limit")).toBe("18");
+      expect(referenceLabelY("target")).toBe("18");
+      expect(referenceLabelY("upper-spec-limit")).toBe("18");
+      expect(referenceLabelY("mean")).toBe("39");
+      expect(referenceLabelY("minus-4-sigma")).toBe("39");
+      expect(referenceLabelY("plus-4-sigma")).toBe("39");
+      const secondRowBadges = standalonePlot.findAll("[data-reference-label]")
+        .filter((label) => label.attributes("y") === "39")
+        .map((label) => {
+          const background = label.element.previousElementSibling?.previousElementSibling;
+          if (!(background instanceof SVGElement)) throw new Error("Missing reference label background");
+          const left = Number(background.getAttribute("x"));
+          return { left, right: left + Number(background.getAttribute("width")) };
+        })
+        .toSorted((left, right) => left.left - right.left);
+      for (let index = 1; index < secondRowBadges.length; index += 1) {
+        expect(secondRowBadges[index]!.left).toBeGreaterThanOrEqual(secondRowBadges[index - 1]!.right);
+      }
+      for (const id of [
+        "lower-spec-limit",
+        "target",
+        "upper-spec-limit",
+        "mean",
+        "minus-4-sigma",
+        "plus-4-sigma",
+      ]) {
+        const reference = standalonePlot.get(`[data-reference-line-id='${id}']`);
+        expect(reference.get("[data-reference-label]").text()).toMatch(/^[^\s]+ -?\d+\.\d{4}$/);
+        expect(Number(reference.get("[data-reference-label-background]").attributes("width")))
+          .toBeGreaterThan(48);
+      }
+      expect(standalonePlot.findAll("[data-frequency-axis-tick]").at(-1)?.get("line").attributes("y1"))
+        .toBe("60");
+      expect(STYLE_SOURCE).toMatch(/\.plot-reference-label,\s*\.response-reference-badge text\s*\{[^}]*font-family:\s*"Bahnschrift",\s*"Aptos",\s*sans-serif[^}]*font-size:\s*9px[^}]*font-weight:\s*700/s);
+      expect(STYLE_SOURCE).toMatch(/\.plot-reference-line\s*\{[^}]*stroke:\s*var\(--reference-color\)/s);
+      expect(STYLE_SOURCE).toMatch(/\.plot-reference-label\s*\{[^}]*fill:\s*var\(--reference-color\)[^}]*stroke:\s*none/s);
+      expect(STYLE_SOURCE).toMatch(/\.reference-spec\s*\{[^}]*--reference-color:\s*#b42318/s);
+      expect(STYLE_SOURCE).toMatch(/\.distribution-fit-plot svg\s*\{[^}]*text-rendering:\s*auto/s);
+      const capabilityColumn = workspace.get("[data-live-capability-column]");
+      const capabilityHeading = capabilityColumn.get("h3");
+      expect(Array.from(capabilityColumn.element.children).indexOf(standalonePlot.element))
+        .toBeLessThan(Array.from(capabilityColumn.element.children).indexOf(capabilityHeading.element));
       expect(embeddedFit.find("table.distribution-fit-table").exists()).toBe(false);
       expect(embeddedFit.find("[data-qq-family]").exists()).toBe(false);
       expect(embeddedFit.find("[data-fit-conclusion]").exists()).toBe(false);
@@ -2362,6 +2438,9 @@ describe("F7 workbench shell", () => {
       expect(embeddedFit.text()).not.toContain("No unique distribution preference");
 
       const interpretation = workspace.get("[data-measured-distribution-interpretation]");
+      expect(interpretation.find("[data-capability-distribution-fit]").exists()).toBe(true);
+      expect(interpretation.find("[data-selected-distribution-heading]").exists()).toBe(false);
+      expect(interpretation.get("h4").text()).toBe("Measured Distribution Interpretation");
       expect(interpretation.get("[data-distribution-controlled-statements]").findAll("li").length).toBeGreaterThan(0);
       expect(interpretation.get("[data-distribution-factual-comparisons]").text()).toContain("Factor Setup value of 0.5700");
       expect(interpretation.get("[data-distribution-provenance]").text()).toContain("F0 distribution-interpretation-v1");
@@ -2554,11 +2633,11 @@ describe("F7 workbench shell", () => {
       await workspace.get("button[data-stage='capability']").trigger("click");
 
       const embeddedFit = workspace.get("[data-capability-distribution-fit]");
-  const fitHeading = embeddedFit.get("[data-selected-distribution-heading]");
-  expect(fitHeading.get("h4").text()).toBe("Selected Distribution Fit");
-      expect(fitHeading.find("[data-approve-distribution]").exists()).toBe(false);
-  expect(embeddedFit.find("button[data-fit-plot-family]").exists()).toBe(false);
-  expect(embeddedFit.findAll("[data-distribution-plot='normal']")).toHaveLength(1);
+        expect(embeddedFit.find("[data-selected-distribution-heading]").exists()).toBe(false);
+        expect(embeddedFit.find("[data-approve-distribution]").exists()).toBe(false);
+        expect(embeddedFit.find("button[data-fit-plot-family]").exists()).toBe(false);
+        expect(embeddedFit.find("[data-distribution-plot]").exists()).toBe(false);
+        expect(workspace.findAll("[data-selected-distribution-plot] [data-distribution-plot='normal']")).toHaveLength(1);
       expect(embeddedFit.get("[data-selected-approval-state]").text()).toContain("Automatically selected for Monte Carlo");
       expect(client.approveDistribution).not.toHaveBeenCalled();
     });

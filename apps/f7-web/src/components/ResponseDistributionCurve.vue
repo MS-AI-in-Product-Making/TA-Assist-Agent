@@ -58,10 +58,7 @@ const visibleReferences = computed(() => {
   const currentModel = model.value;
   if (!currentModel) return [];
 
-  const badgeRows = [39, 24, 9] as const;
-  const badgeGap = 3;
-  const rowRightEdges: number[] = [];
-  return currentModel.references
+  const references = currentModel.references
     .filter((reference) => {
       const sigma = referenceSigma(reference.id);
       return sigma === undefined || sigmaVisibility[sigma];
@@ -73,22 +70,29 @@ const visibleReferences = computed(() => {
         ...reference,
         badgeText,
         badgeWidth,
-        badgeLeft: reference.x - badgeWidth / 2,
-      };
-    })
-    .sort((left, right) => left.badgeLeft - right.badgeLeft)
-    .map((reference) => {
-      const row = rowRightEdges.findIndex(
-        (rightEdge) => reference.badgeLeft >= rightEdge + badgeGap,
-      );
-      const badgeRow = row >= 0 ? row : rowRightEdges.length;
-      rowRightEdges[badgeRow] = reference.badgeLeft + reference.badgeWidth;
-      return {
-        ...reference,
         badgeX: reference.x,
-        badgeY: badgeRows[badgeRow] ?? badgeRows.at(-1)!,
+        badgeY: isPrimaryReference(reference.id) ? 18 : 35,
       };
     });
+
+  const badgeGap = 3;
+  for (const badgeY of [18, 35]) {
+    const row = references
+      .filter((reference) => reference.badgeY === badgeY)
+      .sort((left, right) => left.x - right.x);
+    let rightEdge = currentModel.plotBounds.left;
+    for (const reference of row) {
+      reference.badgeX = Math.max(reference.x, rightEdge + reference.badgeWidth / 2);
+      rightEdge = reference.badgeX + reference.badgeWidth / 2 + badgeGap;
+    }
+    let leftEdge = currentModel.plotBounds.right;
+    for (const reference of row.toReversed()) {
+      reference.badgeX = Math.min(reference.badgeX, leftEdge - reference.badgeWidth / 2);
+      leftEdge = reference.badgeX - reference.badgeWidth / 2 - badgeGap;
+    }
+  }
+
+  return references;
 });
 
 const accessibleDescription = computed(() => {
@@ -107,6 +111,10 @@ function referenceSigma(id: ResponseDistributionReferenceId): SigmaLevel | undef
   if (id.includes("-4-sigma")) return "4";
   if (id.includes("-6-sigma")) return "6";
   return undefined;
+}
+
+function isPrimaryReference(id: ResponseDistributionReferenceId): boolean {
+  return id === "lower-spec-limit" || id === "target" || id === "upper-spec-limit";
 }
 
 function referenceClass(id: ResponseDistributionReferenceId): string {

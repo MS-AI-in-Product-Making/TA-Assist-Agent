@@ -1,34 +1,140 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, reactive, watch } from "vue";
 import {
   buildDistributionFitPlot,
   buildReferenceLabelRows,
+  canonicalSigmaLevel,
   type FactorSetupAssumption,
   type DistributionFitObservedDomain,
   type DistributionFitPlotCandidate,
   type DistributionFitReferenceLine,
+  type DistributionFitReferenceLineId,
   type DistributionFitReferences,
 } from "../distribution-fit-plot";
+
+type SigmaLevel = string;
+
+interface SigmaLevelOption {
+  readonly value: SigmaLevel;
+  readonly numericValue: number;
+  readonly idFragment: "3" | "4" | "4-5" | "6" | "setup";
+}
 
 const props = defineProps<{
   readonly candidate: DistributionFitPlotCandidate;
   readonly observedDomain: DistributionFitObservedDomain;
   readonly references: DistributionFitReferences;
   readonly assumption: FactorSetupAssumption | undefined;
+  readonly selectableSigmaLevels?: boolean;
 }>();
+
+const standardSigmaLevels: readonly SigmaLevelOption[] = [
+  { value: "3", numericValue: 3, idFragment: "3" },
+  { value: "4", numericValue: 4, idFragment: "4" },
+  { value: "4.5", numericValue: 4.5, idFragment: "4-5" },
+  { value: "6", numericValue: 6, idFragment: "6" },
+];
+const sigmaLevels = computed<readonly SigmaLevelOption[]>(() => {
+  const setupSigma = props.assumption?.sigmaLevel;
+  if (!(setupSigma && Number.isFinite(setupSigma) && setupSigma > 0)) {
+    return standardSigmaLevels;
+  }
+  const setupValue = canonicalSigmaLevel(setupSigma);
+  if (standardSigmaLevels.some(({ value }) => value === setupValue)) return standardSigmaLevels;
+  return [...standardSigmaLevels, {
+    value: setupValue,
+    numericValue: setupSigma,
+    idFragment: "setup" as const,
+  }].toSorted((left, right) => left.numericValue - right.numericValue);
+});
+const sigmaVisibility = reactive<Record<SigmaLevel, boolean>>({});
+
+watch(
+  () => [props.selectableSigmaLevels, props.assumption?.sigmaLevel] as const,
+  ([selectable, setupSigmaLevel]) => {
+    if (!selectable) return;
+    const setupValue = setupSigmaLevel && Number.isFinite(setupSigmaLevel) && setupSigmaLevel > 0
+      ? canonicalSigmaLevel(setupSigmaLevel)
+      : "3";
+    const defaultLevel = sigmaLevels.value.find(({ value }) => value === setupValue)?.value ?? "3";
+    for (const value of Object.keys(sigmaVisibility)) delete sigmaVisibility[value];
+    for (const { value } of sigmaLevels.value) sigmaVisibility[value] = value === defaultLevel;
+  },
+  { immediate: true },
+);
 
 const width = 800;
 const height = 332;
-const margin = { top: 88, right: 18, bottom: 42, left: 62 } as const;
+const margin = { top: 60, right: 18, bottom: 42, left: 62 } as const;
 const plotWidth = width - margin.left - margin.right;
 const plotHeight = height - margin.top - margin.bottom;
-const model = computed(() => buildDistributionFitPlot(props.candidate, props.observedDomain, props.assumption));
+const effectiveObservedDomain = computed(() => {
+  if (!props.selectableSigmaLevels) return props.observedDomain;
+  const maximumSigma = Math.max(6, props.assumption?.sigmaLevel ?? 0);
+  const radius = maximumSigma * props.references.sampleStandardDeviation;
+  return {
+    ...props.observedDomain,
+    minimum: Math.min(props.observedDomain.minimum, props.references.mean - radius),
+    maximum: Math.max(props.observedDomain.maximum, props.references.mean + radius),
+  };
+});
+const model = computed(() => buildDistributionFitPlot(props.candidate, effectiveObservedDomain.value, props.assumption));
+const selectableReferenceLines = computed<readonly DistributionFitReferenceLine[]>(() => {
+  if (!props.selectableSigmaLevels) return props.references.lines;
+  const fixedLines = props.references.lines.filter((line) => referenceSigma(line.id) === undefined);
+  const sigmaLines = sigmaLevels.value.flatMap(({ numericValue, idFragment }) => ([
+    {
+      id: `minus-${idFragment}-sigma` as DistributionFitReferenceLineId,
+      value: props.references.mean - numericValue * props.references.sampleStandardDeviation,
+    },
+    {
+      id: `plus-${idFragment}-sigma` as DistributionFitReferenceLineId,
+      value: props.references.mean + numericValue * props.references.sampleStandardDeviation,
+    },
+  ]));
+  return [...fixedLines, ...sigmaLines];
+});
+const visibleReferenceLines = computed(() => selectableReferenceLines.value.filter((line) => {
+  if (!props.selectableSigmaLevels) return true;
+  const sigmaLevel = referenceSigma(line.id);
+  return sigmaLevel === undefined || sigmaVisibility[sigmaLevel];
+}));
+const displayedSigmaLevels = computed(() => props.selectableSigmaLevels
+  ? sigmaLevels.value.filter(({ value }) => sigmaVisibility[value])
+  : standardSigmaLevels.slice(0, 2));
 const referenceLabelRows = computed(() => buildReferenceLabelRows(
-  props.references.lines,
+  visibleReferenceLines.value,
   model.value.domainMinimum,
   model.value.domainMaximum,
   plotWidth,
 ));
+const visibleReferences = computed(() => {
+  const references = visibleReferenceLines.value.map((line) => ({
+    ...line,
+    labelWidth: referenceLabelWidth(line),
+    labelX: xPosition(line.value),
+    labelY: referenceLabelY(line),
+  }));
+  if (!props.selectableSigmaLevels) return references;
+
+  const labelGap = 3;
+  for (const labelY of [18, 39]) {
+    const row = references
+      .filter((reference) => reference.labelY === labelY)
+      .sort((left, right) => left.labelX - right.labelX);
+    let rightEdge = margin.left;
+    for (const reference of row) {
+      reference.labelX = Math.max(reference.labelX, rightEdge + reference.labelWidth / 2);
+      rightEdge = reference.labelX + reference.labelWidth / 2 + labelGap;
+    }
+    let leftEdge = width - margin.right;
+    for (const reference of row.toReversed()) {
+      reference.labelX = Math.min(reference.labelX, leftEdge - reference.labelWidth / 2);
+      leftEdge = reference.labelX - reference.labelWidth / 2 - labelGap;
+    }
+  }
+  return references;
+});
 const titleId = computed(() => `distribution-fit-${props.candidate.family}-title`);
 
 function xFraction(value: number): number {
@@ -70,7 +176,21 @@ function formatXAxis(value: number): string {
   });
 }
 
+function formatReferenceValue(value: number): string {
+  const magnitude = Math.abs(value);
+  return magnitude >= 1_000_000 || (magnitude > 0 && magnitude < 0.001)
+    ? value.toExponential(3)
+    : value.toLocaleString("en-US", {
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 4,
+        useGrouping: false,
+      });
+}
+
 function referenceLabel(line: DistributionFitReferenceLine): string {
+  const sigmaLevel = referenceSigma(line.id);
+  if (line.id === "minus-setup-sigma") return `−${sigmaLevel}σ ${formatReferenceValue(line.value)}`;
+  if (line.id === "plus-setup-sigma") return `+${sigmaLevel}σ ${formatReferenceValue(line.value)}`;
   const labels: Record<DistributionFitReferenceLine["id"], string> = {
     "lower-spec-limit": "LSL",
     "upper-spec-limit": "USL",
@@ -80,17 +200,54 @@ function referenceLabel(line: DistributionFitReferenceLine): string {
     "plus-3-sigma": "+3σ",
     "minus-4-sigma": "−4σ",
     "plus-4-sigma": "+4σ",
+    "minus-4-5-sigma": "−4.5σ",
+    "plus-4-5-sigma": "+4.5σ",
+    "minus-6-sigma": "−6σ",
+    "plus-6-sigma": "+6σ",
+    "minus-setup-sigma": "−σ",
+    "plus-setup-sigma": "+σ",
   };
-  return labels[line.id];
+  return `${labels[line.id]} ${formatReferenceValue(line.value)}`;
+}
+
+function referenceLabelWidth(line: DistributionFitReferenceLine): number {
+  const textWidth = Array.from(referenceLabel(line)).reduce((width, character) => {
+    if (character === " " || character === "." || character === ",") return width + 2.5;
+    if (character === "+" || character === "−" || character === "-") return width + 4;
+    return width + 4.5;
+  }, 0);
+  return Math.min(100, Math.max(48, Math.ceil(textWidth + 10)));
+}
+
+function referenceSigma(id: DistributionFitReferenceLineId): SigmaLevel | undefined {
+  if (id.includes("-setup-sigma")) {
+    const setupSigma = props.assumption?.sigmaLevel;
+    return setupSigma && Number.isFinite(setupSigma) && setupSigma > 0
+      ? canonicalSigmaLevel(setupSigma)
+      : undefined;
+  }
+  if (id.includes("-3-sigma")) return "3";
+  if (id.includes("-4-5-sigma")) return "4.5";
+  if (id.includes("-4-sigma")) return "4";
+  if (id.includes("-6-sigma")) return "6";
+  return undefined;
 }
 
 function referenceClass(line: DistributionFitReferenceLine): string {
   if (line.id.includes("spec-limit")) return "reference-spec";
   if (line.id === "target" || line.id === "mean") return `reference-${line.id}`;
-  return line.id.includes("3-sigma") ? "reference-3-sigma" : "reference-4-sigma";
+  const sigmaLevel = referenceSigma(line.id);
+  return standardSigmaLevels.some(({ value }) => value === sigmaLevel)
+    ? `reference-${sigmaLevel?.replace(".", "-")}-sigma`
+    : "reference-sigma";
 }
 
 function referenceLabelY(line: DistributionFitReferenceLine): number {
+  if (props.selectableSigmaLevels) {
+    return line.id === "lower-spec-limit" || line.id === "target" || line.id === "upper-spec-limit"
+      ? 18
+      : 39;
+  }
   return 18 + (referenceLabelRows.value[line.id] ?? 0) * 17;
 }
 </script>
@@ -101,6 +258,21 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
     :data-distribution-plot="candidate.family"
     :aria-label="`${candidate.family.charAt(0).toUpperCase()}${candidate.family.slice(1)} frequency histogram and fitted expected frequency curve`"
   >
+    <fieldset
+      v-if="selectableSigmaLevels"
+      class="distribution-fit-sigma-controls response-sigma-controls"
+      data-distribution-sigma-controls
+    >
+      <legend class="sr-only">Visible sample sigma levels</legend>
+      <label v-for="level in sigmaLevels" :key="level.value">
+        <input
+          v-model="sigmaVisibility[level.value]"
+          type="checkbox"
+          :data-distribution-sigma-level="level.value"
+        >
+        ±{{ level.value }}σ
+      </label>
+    </fieldset>
     <div class="distribution-fit-plot-graphic" data-distribution-plot-graphic>
       <svg viewBox="0 0 800 332" role="img" :aria-labelledby="titleId">
       <title :id="titleId">{{ candidate.family }} observed frequency histogram and fitted expected frequency curve</title>
@@ -122,17 +294,18 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
         :height="height - margin.bottom - yPosition(bin.frequency)"
       />
       <g
-        v-for="line in references.lines"
+        v-for="line in visibleReferences"
         :key="line.id"
         data-reference-line
         :data-reference-line-id="line.id"
+        :data-reference-sigma-level="referenceSigma(line.id)"
       >
         <rect
           data-reference-label-background
           class="plot-reference-label-background"
-          :x="xPosition(line.value) - 24"
-          :y="referenceLabelY(line) - 12"
-          width="48"
+          :x="line.labelX - line.labelWidth / 2"
+          :y="line.labelY - 12"
+          :width="line.labelWidth"
           height="16"
           rx="3"
         />
@@ -146,8 +319,8 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
         <text
           data-reference-label
           :class="['plot-reference-label', referenceClass(line)]"
-          :x="xPosition(line.value)"
-          :y="referenceLabelY(line)"
+          :x="line.labelX"
+          :y="line.labelY"
           text-anchor="middle"
         >{{ referenceLabel(line) }}</text>
       </g>
@@ -198,10 +371,10 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
           <dd>{{ formatAxis(references.target) }} (midpoint-derived)</dd>
           <dt>Mean</dt>
           <dd>{{ formatAxis(references.mean) }}</dd>
-          <dt>±3σ (sample)</dt>
-          <dd>{{ formatAxis(3 * references.sampleStandardDeviation) }}</dd>
-          <dt>±4σ (sample)</dt>
-          <dd>{{ formatAxis(4 * references.sampleStandardDeviation) }}</dd>
+          <template v-for="level in displayedSigmaLevels" :key="level.value">
+            <dt>±{{ level.value }}σ (sample)</dt>
+            <dd>{{ formatAxis(level.numericValue * references.sampleStandardDeviation) }}</dd>
+          </template>
         </dl>
       </section>
     </figcaption>

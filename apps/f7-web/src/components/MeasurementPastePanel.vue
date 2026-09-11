@@ -16,7 +16,6 @@ import {
 } from "../distribution-fit-plot";
 import { buildMeasuredDistributionInterpretation } from "../distribution-guidance";
 import DistributionFitAnalysis from "./DistributionFitAnalysis.vue";
-import MeasurementHistogram from "./MeasurementHistogram.vue";
 import SelectedDistributionSummary from "./SelectedDistributionSummary.vue";
 import SelectedFactorSetup from "./SelectedFactorSetup.vue";
 import {
@@ -600,6 +599,20 @@ onBeforeUnmount(() => {
       </p>
     </div>
     <aside class="measurement-workspace-body capability-analysis" data-live-capability-column aria-live="polite">
+      <div v-if="distributionFitResult" class="selected-distribution-plot" data-selected-distribution-plot>
+        <SelectedDistributionSummary
+          :result="distributionFitResult"
+          :approval="distributionApproval"
+          :fit-loading="fitLoading"
+          :fit-error="fitError"
+          :plot-domain="distributionPlotDomain"
+          :plot-references="distributionPlotReferences"
+          :setup-assumption="factorSetupAssumption"
+          :show-heading="false"
+          selectable-sigma-levels
+          display="plot"
+        />
+      </div>
       <p class="workspace-eyebrow">Measurement data confirmed</p>
       <h3>Capability Analysis</h3>
       <div class="measurement-metrics-board" data-measurement-metrics-board>
@@ -720,18 +733,6 @@ onBeforeUnmount(() => {
       <p v-if="measurementDiagnostics.outlierIndexes.length > 0" class="outlier-advisory" data-outlier-advisory>
         Red rows are candidate outliers only. Values remain included in all calculations.
       </p>
-      <MeasurementHistogram :diagnostics="measurementDiagnostics" />
-      <section class="capability-distribution-fit" data-capability-distribution-fit>
-        <SelectedDistributionSummary
-          :result="distributionFitResult"
-          :approval="distributionApproval"
-          :fit-loading="fitLoading"
-          :fit-error="fitError"
-          :plot-domain="distributionPlotDomain"
-          :plot-references="distributionPlotReferences"
-          :setup-assumption="factorSetupAssumption"
-        />
-      </section>
       <section
         v-if="guidance"
         class="capability-guidance compact semantic"
@@ -782,8 +783,21 @@ onBeforeUnmount(() => {
         </template>
       </section>
       <section class="measured-distribution-interpretation" data-measured-distribution-interpretation>
+        <h4>Measured Distribution Interpretation</h4>
+        <div class="capability-distribution-fit" data-capability-distribution-fit>
+          <SelectedDistributionSummary
+            :result="distributionFitResult"
+            :approval="distributionApproval"
+            :fit-loading="fitLoading"
+            :fit-error="fitError"
+            :plot-domain="distributionPlotDomain"
+            :plot-references="distributionPlotReferences"
+            :setup-assumption="factorSetupAssumption"
+            :show-heading="false"
+            display="summary"
+          />
+        </div>
         <template v-if="measuredDistributionInterpretation?.available">
-          <h4>Measured Distribution Interpretation</h4>
           <h5>Controlled statements</h5>
           <ul data-distribution-controlled-statements>
             <li v-for="statement in measuredDistributionInterpretation.controlledStatements" :key="statement">
@@ -800,7 +814,6 @@ onBeforeUnmount(() => {
           <p data-distribution-rule-ids>Rule IDs: {{ measuredDistributionInterpretation.ruleIds.join(", ") }}</p>
         </template>
         <template v-else>
-          <h4>Measured Distribution Interpretation unavailable</h4>
           <p data-measured-distribution-unavailable>
             A governed selected distribution or the required Setup and Sample comparison is unavailable.
           </p>

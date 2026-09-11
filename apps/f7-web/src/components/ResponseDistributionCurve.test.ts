@@ -62,21 +62,15 @@ function parseTranslate(transform: string): { readonly x: number; readonly y: nu
   return { x: Number(match![1]), y: Number(match![2]) };
 }
 
-function expectBadgesAlignedAndSeparated(wrapper: VueWrapper): void {
+function expectBadgesSeparatedInTwoRows(wrapper: VueWrapper): void {
   const layouts = wrapper.findAll("[data-response-badge]").map((badge) => {
-    const id = requiredAttribute(badge, "data-response-badge");
     const position = parseTranslate(requiredAttribute(badge, "transform"));
-    const lineX = Number(requiredAttribute(
-      wrapper.get(`[data-response-reference="${id}"]`),
-      "x1",
-    ));
     const rect = badge.get("rect");
     const rectX = Number(requiredAttribute(rect, "x"));
     const rectY = Number(requiredAttribute(rect, "y"));
     const width = Number(requiredAttribute(rect, "width"));
     const height = Number(requiredAttribute(rect, "height"));
 
-    expect(position.x).toBe(lineX);
     expect(position.y + rectY + height).toBeLessThan(48);
     return {
       y: position.y,
@@ -86,11 +80,7 @@ function expectBadgesAlignedAndSeparated(wrapper: VueWrapper): void {
   });
   const rows = Map.groupBy(layouts, ({ y }) => y);
 
-  expect(rows.size).toBeLessThanOrEqual(3);
-  const rowPositions = [...rows.keys()].toSorted((left, right) => left - right);
-  for (let index = 1; index < rowPositions.length; index += 1) {
-    expect(rowPositions[index]! - rowPositions[index - 1]!).toBeGreaterThanOrEqual(15);
-  }
+  expect([...rows.keys()].toSorted((left, right) => left - right)).toEqual([18, 35]);
   for (const row of rows.values()) {
     const sorted = row.toSorted((left, right) => left.left - right.left);
     for (let index = 1; index < sorted.length; index += 1) {
@@ -162,15 +152,30 @@ describe("ResponseDistributionCurve", () => {
     expect(wrapper.findAll('[data-response-sigma="6"]')).toHaveLength(0);
   });
 
-  it("keeps every badge at its exact reference x in non-overlapping rows above the plot", async () => {
+  it("places LSL, Target, and USL on the first row and all other references on the second", () => {
     const wrapper = mount(ResponseDistributionCurve, { props: { calculation: createCalculation() } });
-    expectBadgesAlignedAndSeparated(wrapper);
+    const badgeY = (id: string) => parseTranslate(requiredAttribute(
+      wrapper.get(`[data-response-badge="${id}"]`),
+      "transform",
+    )).y;
+
+    expect(badgeY("lower-spec-limit")).toBe(18);
+    expect(badgeY("target")).toBe(18);
+    expect(badgeY("upper-spec-limit")).toBe(18);
+    expect(badgeY("mean")).toBe(35);
+    expect(badgeY("minus-3-sigma")).toBe(35);
+    expect(badgeY("plus-3-sigma")).toBe(35);
+  });
+
+  it("keeps every badge separated within the two semantic rows above the plot", async () => {
+    const wrapper = mount(ResponseDistributionCurve, { props: { calculation: createCalculation() } });
+    expectBadgesSeparatedInTwoRows(wrapper);
 
     for (const checkbox of wrapper.findAll("input[type='checkbox']")) {
       if (!(checkbox.element as HTMLInputElement).checked) await checkbox.setValue(true);
     }
     expect(wrapper.findAll("[data-response-badge]")).toHaveLength(12);
-    expectBadgesAlignedAndSeparated(wrapper);
+    expectBadgesSeparatedInTwoRows(wrapper);
 
     const calculation = createCalculation();
     const targetValue = (calculation.capability.lowerSpecLimit + calculation.capability.upperSpecLimit) / 2;
@@ -193,7 +198,7 @@ describe("ResponseDistributionCurve", () => {
       "transform",
     ));
     expect(meanLineX).toBeCloseTo(targetLineX, 8);
-    expectBadgesAlignedAndSeparated(samePointWrapper);
+    expectBadgesSeparatedInTwoRows(samePointWrapper);
     expect(meanBadge.y).not.toBe(targetBadge.y);
   });
 
