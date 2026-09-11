@@ -217,16 +217,32 @@ function blockedMissingFieldMap(missingFieldSummary) {
   return bySourceRow;
 }
 
+function blockedMissingFieldSummaryText(missingFieldSummary) {
+  if (!Array.isArray(missingFieldSummary) || missingFieldSummary.length === 0) return NA;
+  return missingFieldSummary.map((item) => {
+    const field = item?.field === undefined ? NA : clean(item.field);
+    const count = Number.isFinite(item?.factorCount) ? `x${item.factorCount}` : NA;
+    const rows = Array.isArray(item?.sourceRows) && item.sourceRows.length > 0 ? `rows ${item.sourceRows.join(", ")}` : NA;
+    if (rows === NA) return `${field} ${count}`;
+    return `${field} ${count} (${rows})`;
+  }).join("; ");
+}
+
+function blockedRequiredField(row, field) {
+  return Array.isArray(row.missingRequiredFields) && row.missingRequiredFields.includes(field);
+}
+
+function blockedMissingIdentifier(row, identifier) {
+  return Array.isArray(row.missingIdentifiers) && row.missingIdentifiers.includes(identifier);
+}
+
 function renderCompleteFactorTable(rows) {
   return [
     row(COMPLETE_FACTOR_TABLE_HEADERS),
     row(COMPLETE_FACTOR_TABLE_HEADERS.map(() => "---")),
-    ...rows.map(({ cells, marker }) => {
+    ...rows.flatMap(({ cells, marker }) => {
       const renderedCells = [...cells];
-      if (marker !== undefined) {
-        renderedCells[renderedCells.length - 1] = `${renderedCells[renderedCells.length - 1]} ${marker}`;
-      }
-      return row(renderedCells);
+      return marker === undefined ? [row(renderedCells)] : [row(renderedCells), marker];
     }),
   ];
 }
@@ -248,28 +264,29 @@ function readyFactorTableRows(factors) {
 }
 
 function blockedFactorTableRows(worksheet) {
-  const missingFieldsBySourceRow = blockedMissingFieldMap(worksheet.f2Worksheet.missingFieldSummary);
   return worksheet.f2Worksheet.rows.map((f2Row) => {
-    const missingFields = missingFieldsBySourceRow.get(f2Row.sourceRow) ?? new Set();
     const actual = f2Row.actualFields;
     return {
       cells: [
-        missingFields.has("factorName") ? "MISSING" : clean(actual.factorName),
-        missingFields.has("partName") ? "MISSING" : clean(actual.partName),
-        missingFields.has("partCategory") ? "MISSING" : clean(actual.partCategory),
-        missingFields.has("drawingNumber") ? "MISSING" : clean(actual.drawingNumber),
-        missingFields.has("dimCharacteristicId") ? "MISSING" : clean(actual.dimCharacteristicId),
-        missingFields.has("nominalValue") ? "MISSING" : engineeringText(actual.nominalValue, "mm"),
-        missingFields.has("upperTolerance") ? "MISSING" : engineeringText(actual.upperTolerance, "mm"),
-        missingFields.has("lowerTolerance") ? "MISSING" : engineeringText(actual.lowerTolerance, "mm"),
-        missingFields.has("longTermSafetyFactor") ? "MISSING" : numberText(actual.longTermSafetyFactor),
-        missingFields.has("sigmaLevel") ? "MISSING" : numberText(actual.sigmaLevel),
+        blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName),
+        blockedRequiredField(f2Row, "partName") ? "MISSING" : clean(actual.partName),
+        blockedRequiredField(f2Row, "partCategory") ? "MISSING" : clean(actual.partCategory),
+        blockedMissingIdentifier(f2Row, "drawingNumber") ? "MISSING" : clean(actual.drawingNumber),
+        blockedMissingIdentifier(f2Row, "dimCharacteristicId") ? "MISSING" : clean(actual.dimCharacteristicId),
+        blockedRequiredField(f2Row, "nominalValue") ? "MISSING" : engineeringText(actual.nominalValue, "mm"),
+        blockedRequiredField(f2Row, "upperTolerance") ? "MISSING" : engineeringText(actual.upperTolerance, "mm"),
+        blockedRequiredField(f2Row, "lowerTolerance") ? "MISSING" : engineeringText(actual.lowerTolerance, "mm"),
+        blockedRequiredField(f2Row, "longTermSafetyFactor") ? "MISSING" : numberText(actual.longTermSafetyFactor),
+        blockedRequiredField(f2Row, "standardDeviation") ? "MISSING" : numberText(actual.sigmaLevel),
         NA,
         NA,
         NA,
         NA,
       ],
-      marker: missingFields.size > 0 ? `<!-- factor-row-state=required-missing source-row=${f2Row.sourceRow} -->` : undefined,
+      marker: (Array.isArray(f2Row.missingRequiredFields) && f2Row.missingRequiredFields.length > 0)
+        || (Array.isArray(f2Row.missingIdentifiers) && f2Row.missingIdentifiers.length > 0)
+        ? `<!-- factor-row-state=required-missing source-row=${f2Row.sourceRow} -->`
+        : undefined,
     };
   });
 }
@@ -1329,7 +1346,7 @@ function renderBlockedWorksheet(worksheet) {
     "",
     "| Worksheet | Status | Evidence |",
     "|---|---|---|",
-    row([clean(worksheet.worksheetName), clean(worksheet.f2Worksheet.status), clean(worksheet.f2Worksheet.missingFieldSummary?.join("; "), "输入或计算链被阻断")]),
+    row([clean(worksheet.worksheetName), clean(worksheet.f2Worksheet.status), clean(blockedMissingFieldSummaryText(worksheet.f2Worksheet.missingFieldSummary), "输入或计算链被阻断")]),
   ];
 }
 

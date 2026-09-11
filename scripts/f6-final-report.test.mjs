@@ -1021,6 +1021,22 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
     expect((readySection.match(/^\| Factor /gm) ?? [])).toHaveLength(readyCalculation.factorCount);
   });
 
+  it("renders the governed ready14 list as a single non-legacy report slice", () => {
+    const worksheetNames = Array.from({ length: 14 }, (_, index) => `Analysis-${index + 1}`);
+    const inputs = loadRealF6Inputs({
+      worksheetNames,
+      f5Variant: "supported",
+    });
+
+    const { markdown, projection } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.worksheets).toHaveLength(14);
+    expect(markdown.match(/^# 3-\d+ Worksheet: Analysis-/gm) ?? []).toHaveLength(14);
+    for (const worksheetName of worksheetNames) {
+      expect(markdown).toContain(`Worksheet: ${worksheetName}`);
+    }
+  });
+
   it("uses approved explicit missing states when optional context, image, and reviewer are absent", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
 
@@ -1121,6 +1137,7 @@ describe("createF6FinalReportProjection v3", () => {
     missingRow.sourceRow = 16;
     missingRow.factorOrdinal = { value: "B", rawText: "B", sourceCell: "Blocked-A!Z16" };
     missingRow.missingRequiredFields = ["factorName"];
+    missingRow.missingIdentifiers = ["drawingNumber"];
     missingRow.sourceCells = {
       ...missingRow.sourceCells,
       factorName: "Blocked-A!A16",
@@ -1133,13 +1150,32 @@ describe("createF6FinalReportProjection v3", () => {
       standardDeviation: "Blocked-A!H16",
       distribution: "Blocked-A!I16",
     };
-    blockedWorksheet.rows.push(missingRow);
+    const secondMissingRow = structuredClone(missingRow);
+    secondMissingRow.sourceRow = 17;
+    secondMissingRow.factorOrdinal = { value: "C", rawText: "C", sourceCell: "Blocked-A!Z17" };
+    secondMissingRow.missingRequiredFields = [];
+    secondMissingRow.missingIdentifiers = ["dimCharacteristicId"];
+    secondMissingRow.sourceCells = {
+      ...secondMissingRow.sourceCells,
+      factorName: "Blocked-A!A17",
+      partName: "Blocked-A!B17",
+      partCategory: "Blocked-A!C17",
+      nominalValue: "Blocked-A!D17",
+      upperTolerance: "Blocked-A!E17",
+      lowerTolerance: "Blocked-A!F17",
+      longTermSafetyFactor: "Blocked-A!G17",
+      standardDeviation: "Blocked-A!H17",
+      distribution: "Blocked-A!I17",
+    };
+    blockedWorksheet.rows.push(missingRow, secondMissingRow);
     blockedWorksheet.missingFieldSummary = [{ field: "factorName", factorCount: 1, sourceRows: [16] }];
     inputs.f2Report.summary = {
       ...inputs.f2Report.summary,
       factorRowCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.length, 0),
       rowsWithRequiredMissing: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingRequiredFields.length > 0).length, 0),
       requiredMissingFieldCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.reduce((rowCount, row) => rowCount + row.missingRequiredFields.length, 0), 0),
+      missingDimIdCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length, 0),
+      missingPartNumberCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingIdentifiers.includes("drawingNumber") || row.missingIdentifiers.includes("partNumber")).length, 0),
       nonF0ProcessCategoryCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.capabilityStatus === "non_f0_process_category").length, 0),
     };
 
@@ -1153,10 +1189,11 @@ describe("createF6FinalReportProjection v3", () => {
     ]);
     expect(reportSummary.workbookDisposition).toBe("FAIL");
     expect(blockedSection).toContain(row(expectedFactorHeaders));
-    expect(blockedSection).toContain("| Factor Blocked-A |");
-    expect(blockedSection).toContain("| MISSING |");
-    expect(blockedSection).toContain("| N/A | N/A | N/A | N/A <!-- factor-row-state=required-missing source-row=16 --> |");
+    expect(blockedSection).toContain("| MISSING | Part Blocked-A | CNC | MISSING | DIM-100 | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |");
+    expect(blockedSection).toContain("| Factor Blocked-A | Part Blocked-A | CNC | DRAW-100 | MISSING | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |");
     expect(blockedSection).toContain("<!-- factor-row-state=required-missing source-row=16 -->");
+    expect(blockedSection).toContain("<!-- factor-row-state=required-missing source-row=17 -->");
+    expect(blockedSection).not.toContain("N/A <!-- factor-row-state=required-missing source-row=16 -->");
     expect(blockedSection.match(/\| Factor Description \| Part Name \| Part Category \| Drawing Number \| DIM ID \| Design Nominal \| \+ Tolerance \| - Tolerance \| Long Term \/ Safety Factor \| Sigma Level \| Mean \| Tolerance \| One Sigma \| Capability \/ Knowledge Guidance \|/g) ?? []).toHaveLength(1);
     expect(blockedSection).not.toContain("Source Row");
     expect(blockedSection).not.toContain("Notes");
