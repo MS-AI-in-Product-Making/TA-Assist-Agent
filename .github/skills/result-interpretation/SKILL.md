@@ -66,6 +66,8 @@ When the user selected a subset, extra ready F4 calculations are permitted in th
 
 Ask whether image evidence should be evaluated. Optional observation availability is distinct from missing required F1 image provenance. Use this routing table exactly:
 
+When Design Optimization owns the end-to-end workbook workflow, this capability must not add a separate caller image-confirmation gate.
+
 ### Image availability routing
 
 | Condition | Prerequisite | Worksheet routing | F5 continuation | Tolerance result |

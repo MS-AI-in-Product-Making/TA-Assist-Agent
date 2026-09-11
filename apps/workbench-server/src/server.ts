@@ -1430,10 +1430,8 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
   }
 
   private async applyAutomaticStageDecisions(snapshot: F8SessionSnapshot, completedAttemptId: string): Promise<void> {
-    if (snapshot.state === "image_decision_required") {
-      const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:image-default`, expectedRevision: snapshot.revision, command: "confirm_image_decision", payload: { decision: "not_evaluated", rationale: "No additional image observation supplied." } });
-      await this.followUp?.(next);
-    }
+    void snapshot;
+    void completedAttemptId;
   }
 }
 

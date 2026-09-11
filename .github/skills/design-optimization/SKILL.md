@@ -93,9 +93,9 @@ Run F4 from the W2 `Feature2-Report.json`. Validate that every downstream worksh
 
 The `F4` output is the validated F4 root, `Feature4-Calculation.json`, report, run summary, and manifest.
 
-### Phase W6 - Evaluate optional F5 v2 image evidence
+### Phase W6 - Run workflow-owned F5 image evaluation
 
-Ask whether to evaluate the already verified F1 images. If the user skips, image capability is unavailable, or no valid observation artifact can be created, continue deterministic F5 with `not_evaluated` and clarifications. A missing F1 image or image reference is different: that worksheet was excluded in W3 and cannot continue.
+Do not ask the user whether to evaluate the already verified F1 images. Run the standard workbook flow's image evaluation internally using Task 2 mixed-outcome behavior. Record the workflow-owned outcome internally and continue to W7 without a caller confirmation gate. If image capability is unavailable or no valid observation artifact can be created, continue deterministic F5 with `not_evaluated` and clarifications. A missing F1 image or image reference is different: that worksheet was excluded in W3 and cannot continue.
 
 For image mode, analyze each selected worksheet independently using only that worksheet's W3-verified physical image, all active factor rows, and matching F3/F4 evidence; never combine image or Factor context across worksheets. Keep visible image FACTs separate from contextual SIGNALs. Evaluate exactly these five core scopes per worksheet: `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`. Do not infer unseen geometry, Drawing Number, DIM ID, datum identity, or label-to-row mappings.
 

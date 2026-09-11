@@ -12,7 +12,7 @@ import type { StartWorkbenchServerOptions } from "./server.js";
 import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
-import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
+import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, reduceSessionCommand } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
@@ -509,7 +509,7 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("registers a structured F6 result under one durable F4/F5 review context", async () => {
+  it("advances the standard path without submitting legacy image/context/targets confirmations", async () => {
     const rootDir = testRoot("workbench-server-review-context-registration");
     await rm(rootDir, { recursive: true, force: true });
     const runner = vi.fn(async (job: { readonly stage: string }) => {
@@ -541,6 +541,7 @@ describe("workbench server routes", () => {
       const browser = await server.testAuthenticate(sessionId);
       await mkdir(join(rootDir, "f4"), { recursive: true });
       await mkdir(join(rootDir, "f5"), { recursive: true });
+      await mkdir(join(rootDir, "f6"), { recursive: true });
       await writeFile(join(rootDir, "f4", "Feature4-Calculation.json"), JSON.stringify({ artifactId: "f4-calculation" }));
       await writeFile(join(rootDir, "f5", "Feature5-Report.json"), JSON.stringify({ artifactId: "f5-report" }));
       const store = await openSessionStore({ rootDir, sessionId });
@@ -557,76 +558,41 @@ describe("workbench server routes", () => {
             ...snapshot,
             revision: snapshot.revision + 1,
             inputRevision: 1,
-            state: "analysis_context_decision_required",
+            state: "failed",
             downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
-            activeAttempt: null,
-            artifactRefs: [
-              { artifactId: "f4-calculation", kind: "f4_calculation", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
-              { artifactId: "f5-report", kind: "f5_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
-            ],
+            activeAttempt: {
+              attemptId: "seed-f4:f4_running",
+              stage: "f4_running",
+              status: "failed",
+              startedAt: "2026-08-25T00:00:00.000Z",
+              endedAt: "2026-08-25T00:00:01.000Z",
+            },
           },
-          artifactReferences: [
-            { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64), reviewContext: REVIEW_CONTEXT },
-            { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64), reviewContext: REVIEW_CONTEXT },
-          ],
         }));
       } finally {
         await store.close();
       }
 
-      let expectedRevision = 1;
-      const submit = async (commandId: string, command: string, payload: Record<string, unknown>) => {
-        const response = await server.inject({
-          method: "POST",
-          url: `/api/sessions/${sessionId}/commands`,
-          headers: browser.headers,
-          payload: { contractVersion: "f8-session-command-v1", sessionId, commandId, expectedRevision, command, payload },
-        });
-        if (response.statusCode === 202) expectedRevision = response.json<{ revision: number }>().revision;
-        return response;
-      };
-
-      expect((await submit("confirm-analysis-context", "confirm_analysis_context", { decision: "not_provided", rationale: "No additional analysis context supplied." })).statusCode).toBe(202);
-      expect((await submit("confirm-optimization-targets", "confirm_optimization_targets", { decision: "not_provided", rationale: "Use governed default optimization targets." })).statusCode).toBe(202);
+      const standardRun = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: { contractVersion: "f8-session-command-v1", sessionId, commandId: "retry-f4", expectedRevision: 1, command: "retry", payload: { stage: "f4_running" } },
+      });
+      expect(standardRun.statusCode).toBe(202);
 
       const reopened = await openSessionStore({ rootDir, sessionId });
       try {
         const snapshot = await reopened.readSnapshot();
-        expect(snapshot.state).toBe("ado_decision_required");
-        expectedRevision = snapshot.revision;
+        expect(snapshot.state).not.toBe("image_decision_required");
+        expect(await reopened.readCommandReceipt("retry-f4:f4_running:image-default")).toBeNull();
+        expect(await reopened.readCommandReceipt("confirm-analysis-context")).toBeNull();
+        expect(await reopened.readCommandReceipt("confirm-optimization-targets")).toBeNull();
       } finally {
         await reopened.close();
       }
-
-      expect((await submit("ado-local-only", "confirm_ado_decision", { decision: "local_only" })).statusCode).toBe(202);
-
-      const reviewed = await openSessionStore({ rootDir, sessionId });
-      try {
-        const snapshot = await reviewed.readSnapshot();
-        const f4Reference = await reviewed.readArtifactReference("f4-calculation");
-        expect(snapshot.state).toBe("review_required");
-        expect(snapshot.artifactRefs?.map((artifact) => artifact.revision)).toEqual([1, 1, 1, 1]);
-        expect(f4Reference?.metadata?.reviewContext).toEqual(REVIEW_CONTEXT);
-        expect(selectCompleteReviewContext(snapshot)?.reviewContextId).toMatch(/^[a-f0-9]{64}$/);
-        expect(projectWorksheetReview({ sessionId, snapshot, f4Report: { calculations: [] }, f5Report: { worksheets: [] }, f6Report: { worksheets: [] } }, "Analysis-A").worksheets).toHaveLength(1);
-      } finally {
-        await reviewed.close();
-      }
-      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f6_running"]);
-      expect(runner.mock.calls.map(([job]) => job.payload)).toEqual([
-        { sessionId, reviewContext: REVIEW_CONTEXT },
-      ]);
-      const artifactResponse = await server.inject({
-        method: "GET",
-        url: `/api/sessions/${sessionId}/artifacts/f4-calculation`,
-        headers: browser.headers,
-      });
-      expect({ statusCode: artifactResponse.statusCode, payload: artifactResponse.payload }).toEqual({
-        statusCode: 200,
-        payload: JSON.stringify({ artifactId: "f4-calculation" }),
-      });
-      expect(artifactResponse.json()).toEqual({ artifactId: "f4-calculation" });
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running"]);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

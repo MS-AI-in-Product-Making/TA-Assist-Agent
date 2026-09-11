@@ -120,7 +120,7 @@ describe("Design Optimization skill contract", () => {
       "### Phase W3 - Select ready downstream worksheets",
       "### Phase W4 - Run and validate current F3",
       "### Phase W5 - Run F4",
-      "### Phase W6 - Evaluate optional F5 v2 image evidence",
+      "### Phase W6 - Run workflow-owned F5 image evaluation",
       "### Phase W7 - Run and validate F5",
       "### Phase W8 - Generate governed model interpretation",
       "### Phase W8A - Collect optional TA Analysis Context",
@@ -161,6 +161,26 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("must not be combined with the F3 ADO confirmation");
     expect(internal).toContain("f6-optimization-v3");
     expect(internal).not.toContain("reduce_top_contributor_20");
+  });
+
+  it("keeps image evaluation internal on the standard workbook path while preserving governed gates", () => {
+    const { internal } = splitSkillSections(readSkill());
+    const resultInterpretationSkill = readFileSync(path.join(root, ".github", "skills", "result-interpretation", "SKILL.md"), "utf8");
+    const entrySkill = readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+
+    expect(internal).toContain("Run workflow-owned F5 image evaluation");
+    expect(internal).toContain("Do not ask the user whether to evaluate the already verified F1 images");
+    expect(internal).toContain("Record the workflow-owned outcome internally and continue to W7 without a caller confirmation gate");
+    expect(internal).toContain("Task 2 mixed-outcome behavior");
+    expect(internal).toContain("f5-image-observation-v2");
+    expect(internal).toContain("must be reviewed by ME");
+    expect(internal).toContain("Confirm analysis context");
+    expect(internal).toContain("Confirm optimization targets");
+    expect(internal).toContain("f6-top3-tolerance-policy-v1");
+    expect(internal).toContain("Confirm write");
+    expect(internal).toContain("Feature6-Report.pdf");
+    expect(resultInterpretationSkill).toContain("When Design Optimization owns the end-to-end workbook workflow, this capability must not add a separate caller image-confirmation gate");
+    expect(entrySkill).toContain("internal image evaluation before the optional Analysis Context and Optimization Targets gates");
   });
 
   it("runs current-run F3 before F4 and defers the optional ADO gate until after F6", () => {
