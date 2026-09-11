@@ -53,6 +53,7 @@ function combinedCauseInput(): BuildF7EngineeringNarrativeInput {
         ruleId: "improvement-reduce-contributor",
         title: "Reduce the dominant contributor",
         validationSteps: [
+          "Update representative variation evidence.",
           "Validate the dominant contributor evidence before changing its tolerance or process controls.",
           "Recalculate the tolerance stack after the proposed contributor change.",
           "Confirm the improvement with representative data against the unchanged resolved target.",
@@ -125,11 +126,11 @@ describe("buildF7EngineeringNarrative", () => {
     });
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
     expect(narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
-      "root-cause-excessive-variation",
       "root-cause-mean-shift",
+      "root-cause-excessive-variation",
       "root-cause-contributor-concentration",
     ]);
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       completeEvidence: true,
       quantitativeEvidence: {
@@ -138,7 +139,7 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "USL",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.26, 12);
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.26, 12);
     expect(narrative.rootCauseAnalysis[2]).toMatchObject({
       ruleId: "root-cause-contributor-concentration",
       completeEvidence: true,
@@ -147,11 +148,27 @@ describe("buildF7EngineeringNarrative", () => {
         contributionPercent: 46,
       },
     });
+    expect(narrative.engineeringRisk.indexOf("RC02")).toBeLessThan(narrative.engineeringRisk.indexOf("RC01"));
     expect(narrative.suggestedActionSequence.map(({ optionId }) => ({ optionId }))).toEqual([
       { optionId: "improvement-center-mean" },
       { optionId: "improvement-reduce-variation" },
-      { optionId: "improvement-reduce-contributor" },
     ]);
+    expect(narrative.suggestedActionSequence[0]?.narrative).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline. Current mean: +0.08; target mean: 0; required adjustment: -0.08 toward LSL.",
+    );
+    expect(narrative.suggestedActionSequence[1]).toMatchObject({
+      optionId: "improvement-reduce-variation",
+      title: "Reduce total variation",
+      narrative: "Reduce total variation only after representative variation evidence confirms the modeled shortfall; investigate the dominant contributor before changing its tolerance or process controls.",
+      validationSteps: [
+        "Update representative variation evidence.",
+        "Rerun the same RSS or Monte Carlo method with unchanged specifications and target.",
+        "Confirm Cp and Cpk meet the resolved target using a new representative sample.",
+        "Validate the dominant contributor evidence before changing its tolerance or process controls.",
+        "Recalculate the tolerance stack after the proposed contributor change.",
+        "Confirm the improvement with representative data against the unchanged resolved target.",
+      ],
+    });
     expect(narrative.validationRequirements).toEqual([
       "Confirm physical centering feasibility through ME review.",
       "Center toward the specification midpoint while preserving the approved specification.",
@@ -199,6 +216,169 @@ describe("buildF7EngineeringNarrative", () => {
       optionId: "improvement-reduce-variation",
       sourceAlias: "kb://improvement-reduce-variation",
       sourceFileHash: "b".repeat(64),
+    });
+  });
+
+  it("keeps standalone variation suggestions unchanged", () => {
+    const input = combinedCauseInput();
+    const variationOption = input.controlledOptions.find(({ ruleId }) => ruleId === "improvement-reduce-variation");
+    const contributorOption = input.controlledOptions.find(({ ruleId }) => ruleId === "improvement-reduce-contributor");
+    if (variationOption === undefined || contributorOption === undefined) {
+      throw new Error("expected both variation options in the test fixture");
+    }
+
+    const variationNarrative = buildF7EngineeringNarrative({
+      ...input,
+      controlledOptions: [{
+        ...variationOption,
+        sourceAlias: "kb://improvement-reduce-variation",
+        sourceFileHash: "a".repeat(64),
+      }],
+    });
+    const contributorNarrative = buildF7EngineeringNarrative({
+      ...input,
+      controlledOptions: [{
+        ...contributorOption,
+        sourceAlias: "kb://improvement-reduce-contributor",
+        sourceFileHash: "b".repeat(64),
+      }],
+    });
+
+    expect(variationNarrative.suggestedActionSequence).toMatchObject([{
+      optionId: "improvement-reduce-variation",
+      title: "Reduce total variation",
+      sourceAlias: "kb://improvement-reduce-variation",
+      sourceFileHash: "a".repeat(64),
+      narrative: "Reduce total variation only after representative variation evidence confirms the modeled shortfall.",
+      validationSteps: variationOption.validationSteps,
+    }]);
+    expect(contributorNarrative.suggestedActionSequence).toMatchObject([{
+      optionId: "improvement-reduce-contributor",
+      title: "Reduce the dominant contributor",
+      sourceAlias: "kb://improvement-reduce-contributor",
+      sourceFileHash: "b".repeat(64),
+      narrative: "Investigate the dominant contributor before changing its tolerance or process controls.",
+      validationSteps: contributorOption.validationSteps,
+    }]);
+  });
+
+  it("reports a positive mean-centering adjustment toward USL", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean: -0.07,
+      lowerSpecLimit: -0.1,
+      upperSpecLimit: 0,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+
+    expect(narrative.suggestedActionSequence[0]?.narrative).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline. Current mean: -0.07; target mean: -0.05; required adjustment: +0.02 toward USL.",
+    );
+    expect(narrative.suggestedActionSequence[0]).toMatchObject({
+      meanCentering: {
+        feasibilityNarrative: "Confirm mean-centering feasibility before changing the process centerline.",
+        currentMean: -0.07,
+        targetMean: -0.05,
+        requiredAdjustment: expect.closeTo(0.02, 12),
+        direction: "USL",
+        display: {
+          currentMean: "-0.07",
+          targetMean: "-0.05",
+          requiredAdjustment: "+0.02",
+        },
+      },
+    });
+  });
+
+  it("reports a nonzero target mean for asymmetric specifications", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean: 0.2,
+      lowerSpecLimit: -0.4,
+      upperSpecLimit: 0.6,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+
+    expect(narrative.suggestedActionSequence[0]?.narrative).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline. Current mean: +0.2; target mean: 0.1; required adjustment: -0.1 toward LSL.",
+    );
+  });
+
+  it("preserves a very small nonzero mean adjustment", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean: 1e-8,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+
+    expect(narrative.suggestedActionSequence[0]?.narrative).toContain(
+      "Current mean: +1e-8; target mean: 0; required adjustment: -1e-8 toward LSL.",
+    );
+  });
+
+  it("calculates a finite midpoint for large same-sign specifications", () => {
+    const lowerSpecLimit = Number.MAX_VALUE - 3e292;
+    const upperSpecLimit = Number.MAX_VALUE;
+    const mean = lowerSpecLimit;
+    const expectedTargetMean = lowerSpecLimit + (upperSpecLimit - lowerSpecLimit) / 2;
+
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean,
+      lowerSpecLimit,
+      upperSpecLimit,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+    const meanCentering = narrative.suggestedActionSequence[0]?.meanCentering;
+
+    expect(meanCentering).toBeDefined();
+    expect(meanCentering?.currentMean).toBe(mean);
+    expect(Number.isFinite(meanCentering?.targetMean)).toBe(true);
+    expect(meanCentering!.targetMean).toBeGreaterThan(lowerSpecLimit);
+    expect(meanCentering!.targetMean).toBeLessThan(upperSpecLimit);
+    expect(meanCentering!.targetMean).toBeCloseTo(expectedTargetMean, 12);
+    expect(meanCentering!.requiredAdjustment).toBeGreaterThan(0);
+    expect(meanCentering!.requiredAdjustment).toBeCloseTo(expectedTargetMean - mean, 12);
+    expect(meanCentering!.direction).toBe("USL");
+  });
+
+  it.each(["mean", "lowerSpecLimit", "upperSpecLimit"] as const)(
+    "keeps feasibility-only mean-centering guidance when %s is missing",
+    (missingField) => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      [missingField]: undefined,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+
+    expect(narrative.suggestedActionSequence[0]?.narrative).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline.",
+    );
+    expect(narrative.suggestedActionSequence[0]).not.toHaveProperty("meanCentering");
+    },
+  );
+
+  it("reports that no mean adjustment is required when the process is centered", () => {
+    const narrative = buildF7EngineeringNarrative({
+      ...combinedCauseInput(),
+      mean: 0,
+      controlledOptions: [combinedCauseInput().controlledOptions[2]!],
+    });
+
+    expect(narrative.suggestedActionSequence[0]?.narrative).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline. Current mean: +0; target mean: 0; no adjustment required.",
+    );
+    expect(narrative.suggestedActionSequence[0]?.meanCentering).toEqual({
+      feasibilityNarrative: "Confirm mean-centering feasibility before changing the process centerline.",
+      currentMean: 0,
+      targetMean: 0,
+      requiredAdjustment: 0,
+      direction: "balanced",
+      display: {
+        currentMean: "+0",
+        targetMean: "0",
+        requiredAdjustment: "0",
+      },
     });
   });
 
@@ -448,7 +628,7 @@ describe("buildF7EngineeringNarrative", () => {
     });
 
     expect(narrative.resultJudgment.nearerSpecificationSide).toBe("balanced");
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       completeEvidence: true,
       quantitativeEvidence: {
@@ -456,10 +636,10 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "balanced",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { meanOffset?: number } | undefined)?.meanOffset).toBeCloseTo(Number.EPSILON * 8, 20);
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("balanced around the specification midpoint");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward USL");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward LSL");
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { meanOffset?: number } | undefined)?.meanOffset).toBeCloseTo(Number.EPSILON * 8, 20);
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("balanced around the specification midpoint");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).not.toContain("toward USL");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).not.toContain("toward LSL");
     expect(narrative.engineeringRisk).toContain("mean remains at or balanced around the specification midpoint");
   });
 
@@ -476,12 +656,12 @@ describe("buildF7EngineeringNarrative", () => {
 
     expect(narrative.rootCauseAnalysis).toEqual([
       expect.objectContaining({
-        ruleId: "root-cause-excessive-variation",
+        ruleId: "root-cause-mean-shift",
         completeEvidence: false,
         narrative: "Evidence is incomplete for this matched hypothesis.",
       }),
       expect.objectContaining({
-        ruleId: "root-cause-mean-shift",
+        ruleId: "root-cause-excessive-variation",
         completeEvidence: false,
         narrative: "Evidence is incomplete for this matched hypothesis.",
       }),
@@ -558,12 +738,12 @@ describe("buildF7EngineeringNarrative", () => {
     const narrative = buildF7EngineeringNarrative(input);
 
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
-    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidence).toMatchObject({
+    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidence).toMatchObject({
       cp: 1.18,
       targetCpk: 1.33,
     });
-    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
-    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidenceLabels).toEqual({
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
+    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidenceLabels).toEqual({
       cp: "Cp",
       targetCpk: "Target Cpk",
       cpTargetGap: "Cp vs target gap",
@@ -586,16 +766,16 @@ describe("buildF7EngineeringNarrative", () => {
     });
 
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.408, 12);
-    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
       ruleId: "root-cause-excessive-variation",
       quantitativeEvidence: {
         cp: 1.184,
         targetCpk: 1.331,
       },
     });
-    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.147, 12);
-    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("a 0.15 shortfall");
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.147, 12);
+    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("a 0.15 shortfall");
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       quantitativeEvidence: {
         specificationMidpoint: 0,
@@ -603,15 +783,15 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "USL",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
-    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidenceLabels).toEqual({
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
+    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidenceLabels).toEqual({
       cpCpkGap: "Cp-Cpk gap",
       specificationMidpoint: "Specification midpoint",
       meanOffset: "Mean offset",
       direction: "Direction",
     });
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("Cp exceeds Cpk by 0.26");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("the mean is +0.08");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("Cp exceeds Cpk by 0.26");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("the mean is +0.08");
   });
 
   it("labels contributor evidence with explicit engineering names", () => {

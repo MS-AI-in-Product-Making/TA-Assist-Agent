@@ -291,8 +291,12 @@ describe("DimensionChainPanel", () => {
       configurable: true,
       value: () => ({ left: 0, top: 0, width: 360, height: 360, right: 360, bottom: 360, x: 0, y: 0, toJSON: () => ({}) }),
     });
-    canvas.element.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, clientX: 180, clientY: 180 }));
+    const wheelEvent = new WheelEvent("wheel", { cancelable: true, deltaY: -100, clientX: 180, clientY: 180 });
+    expect(canvas.element.dispatchEvent(wheelEvent)).toBe(true);
     await wrapper.vm.$nextTick();
+    expect(svg.attributes("data-view-zoom")).toBe("1");
+
+    await wrapper.get("button[aria-label='Zoom in']").trigger("click");
     expect(Number(svg.attributes("data-view-zoom"))).toBeGreaterThan(1);
 
     const selectButton = wrapper.get("button[aria-label='Select area to zoom']");

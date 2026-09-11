@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* global ClipboardEvent, HTMLElement, Image, KeyboardEvent, PointerEvent, WheelEvent, window */
+/* global ClipboardEvent, HTMLElement, Image, KeyboardEvent, PointerEvent, window */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
 import {
   ArrowDown,
@@ -610,15 +610,6 @@ function pointInView(event: PointerEvent, element: HTMLElement): { x: number; y:
   };
 }
 
-function onWheel(event: WheelEvent): void {
-  event.preventDefault();
-  const element = event.currentTarget as HTMLElement;
-  const bounds = element.getBoundingClientRect();
-  const anchorX = bounds.width > 0 ? (event.clientX - bounds.left) / bounds.width : 0.5;
-  const anchorY = bounds.height > 0 ? (event.clientY - bounds.top) / bounds.height : 0.5;
-  zoomTo(viewZoom.value * (event.deltaY < 0 ? 1.15 : 1 / 1.15), anchorX, anchorY);
-}
-
 function onPointerDown(event: PointerEvent): void {
   if (interaction.value) return;
   const element = event.currentTarget as HTMLElement;
@@ -1170,7 +1161,6 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
       :class="{ 'is-panning': interaction?.kind === 'pan', 'is-selecting': selectionMode }"
       data-dimension-chain-canvas
       tabindex="0"
-      @wheel="onWheel"
       @paste="onPaste"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"

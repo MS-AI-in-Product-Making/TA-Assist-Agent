@@ -100,13 +100,29 @@ export function createReviewedInterpretationRulesV2SeedPackage(): Interpretation
         "Rerun the same RSS or Monte Carlo method and confirm Cpk against the unchanged target.",
       ],
     },
+    {
+      ...common,
+      entryId: "improvement-relax-final-specification",
+      entryType: "improvement-option",
+      title: "Relax the final specification as a fallback",
+      description: "Considers widening the final specification only after process and tolerance optimization cannot close the capability gap.",
+      relatedEntryIds: ["root-cause-excessive-variation"],
+      provenance: approvedProvenance("A29:A29"),
+      expectedImpact: "Increase capability margin by widening the approved final specification.",
+      tradeoffs: ["Changes the product requirement and requires formal engineering approval."],
+      validationSteps: [
+        "Demonstrate that feasible process and tolerance optimization cannot close the capability gap.",
+        "Obtain formal approval from the requirement owner before changing the final specification.",
+        "Rerun the tolerance analysis against the approved revised specification.",
+      ],
+    },
   );
   seed.manifest.sourceCount = seed.sources.length;
   seed.manifest.entryCount = seed.entries.length;
   seed.manifest.entryTypeCounts["root-cause-signal"] += 2;
-  seed.manifest.entryTypeCounts["improvement-option"] += 2;
+  seed.manifest.entryTypeCounts["improvement-option"] += 3;
   seed.manifest.sourcesHash = "6406d052501787d753a33b0bb532f654337cf0f75f791cb10eb25466ca08c915";
-  seed.manifest.entriesHash = "505795d7ae64e55f8979c56ffb582a6d8bd54a14a3dad0d2a9c5133454ba0fa9";
-  seed.manifest.contentHash = "1babc5390b400f433b17fbaef0fe7d87ee3defc21ae38371b5884a0f22ba8470";
+  seed.manifest.entriesHash = "f315a49e49bd3c4b6c8ebc756d403f897b1a88645d8fb7785bba6fc44ca1e8f6";
+  seed.manifest.contentHash = "47a1e85ee7828169c6de2327648fccca0a071c11eb21e539badffa787304bfae";
   return seed;
 }
