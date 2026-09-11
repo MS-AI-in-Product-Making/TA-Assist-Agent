@@ -103,6 +103,16 @@ function formatUpperTolerance(value: number): string {
                 :height="176 - yFor(contributor.contributionPercent)"
                 rx="2"
               />
+              <text
+                v-for="(contributor, index) in contributors"
+                :key="`bar-label-${contributor.reference}`"
+                data-pareto-bar-label
+                :data-factor-name="contributor.factorName"
+                class="pareto-bar-label"
+                :x="xFor(index)"
+                :y="Math.max(12, yFor(contributor.contributionPercent) - 6)"
+                text-anchor="middle"
+              >{{ formatPercent(contributor.contributionPercent) }}</text>
               <polyline
                 data-pareto-cumulative-line
                 class="pareto-line"
@@ -230,6 +240,11 @@ svg text {
 .pareto-bar {
   fill: var(--accent);
   opacity: 0.82;
+}
+
+.pareto-bar-label {
+  fill: var(--ink);
+  font-weight: 700;
 }
 
 .pareto-line {

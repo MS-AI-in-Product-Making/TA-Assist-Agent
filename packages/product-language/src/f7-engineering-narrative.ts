@@ -70,7 +70,21 @@ export interface F7NarrativeActionItem {
   readonly sourceFileHash?: string;
   readonly narrative: string;
   readonly validationSteps: readonly string[];
+  readonly meanCentering?: Readonly<{
+    readonly feasibilityNarrative: string;
+    currentMean: number;
+    targetMean: number;
+    requiredAdjustment: number;
+    direction: F7NarrativeSpecificationSide;
+    display: Readonly<{
+      currentMean: string;
+      targetMean: string;
+      requiredAdjustment: string;
+    }>;
+  }>;
 }
+
+type MeanCenteringActionEvidence = NonNullable<F7NarrativeActionItem["meanCentering"]>;
 
 export interface F7EngineeringNarrative {
   readonly resultJudgment: F7NarrativeResultJudgment;
@@ -109,6 +123,7 @@ function assertSupportedRuleIds(input: BuildF7EngineeringNarrativeInput): void {
 }
 
 const INCOMPLETE_EVIDENCE_MESSAGE = "Evidence is incomplete for this matched hypothesis.";
+const MEAN_CENTERING_FEASIBILITY_NARRATIVE = "Confirm mean-centering feasibility before changing the process centerline.";
 const BALANCED_DISTANCE_SCALE = Number.EPSILON * 32;
 const DEFAULT_DISPLAY_DECIMALS = 2;
 const MAX_ADAPTIVE_DISPLAY_DECIMALS = 6;
@@ -259,6 +274,10 @@ function formatDisplayNumber(value: number, decimals = DEFAULT_DISPLAY_DECIMALS)
 }
 
 function formatNarrativeNumber(value: number, plan: NarrativeDisplayPlan): string {
+  if (value === 0) {
+    return "0";
+  }
+
   if (plan.notation === "fixed") {
     return formatDisplayNumber(value, plan.decimals ?? DEFAULT_DISPLAY_DECIMALS);
   }
@@ -379,6 +398,14 @@ function buildMeanShiftDirectionNarrative(
   return `the mean is ${formatSignedNumber(meanOffset)} from the specification midpoint toward ${direction}`;
 }
 
+function calculateSpecificationMidpoint(lowerSpecLimit: number, upperSpecLimit: number): number {
+  const sameSign = (lowerSpecLimit < 0) === (upperSpecLimit < 0);
+  const midpoint = sameSign
+    ? lowerSpecLimit + (upperSpecLimit - lowerSpecLimit) / 2
+    : (lowerSpecLimit + upperSpecLimit) / 2;
+  return assertFiniteDerivedNumber("specificationMidpoint", midpoint);
+}
+
 function buildResultJudgment(input: BuildF7EngineeringNarrativeInput): F7NarrativeResultJudgment {
   const rawMargin = assertFiniteDerivedNumber("resultJudgment.margin", input.cpk - input.targetCpk);
   const margin = rawMargin;
@@ -459,10 +486,7 @@ function buildMeanShiftNarrative(input: BuildF7EngineeringNarrativeInput, rule: 
   }
 
   const cpCpkGap = assertFiniteDerivedNumber("rootCauseAnalysis.cpCpkGap", input.cp - input.cpk);
-  const specificationMidpoint = assertFiniteDerivedNumber(
-    "rootCauseAnalysis.specificationMidpoint",
-    (input.lowerSpecLimit + input.upperSpecLimit) / 2,
-  );
+  const specificationMidpoint = calculateSpecificationMidpoint(input.lowerSpecLimit, input.upperSpecLimit);
   const meanOffset = assertFiniteDerivedNumber("rootCauseAnalysis.meanOffset", input.mean - specificationMidpoint);
   const direction = resolveNearestSpecificationSide(input.mean, input.lowerSpecLimit, input.upperSpecLimit);
   if (direction === undefined) {
@@ -565,27 +589,87 @@ function buildRootCauseAnalysis(input: BuildF7EngineeringNarrativeInput): F7Narr
   });
 }
 
+function buildMeanCenteringActionEvidence(
+  input: BuildF7EngineeringNarrativeInput,
+): MeanCenteringActionEvidence | undefined {
+  if (input.mean === undefined || input.lowerSpecLimit === undefined || input.upperSpecLimit === undefined) {
+    return undefined;
+  }
+
+  const targetMean = calculateSpecificationMidpoint(input.lowerSpecLimit, input.upperSpecLimit);
+  const derivedAdjustment = assertFiniteDerivedNumber(
+    "suggestedActionSequence.requiredMeanAdjustment",
+    targetMean - input.mean,
+  );
+  const requiredAdjustment = derivedAdjustment === 0 ? 0 : derivedAdjustment;
+  const displayPlan = resolveNarrativeDisplayPlan([input.mean, targetMean, requiredAdjustment]);
+  const direction = requiredAdjustment === 0 ? "balanced" : requiredAdjustment < 0 ? "LSL" : "USL";
+
+  return {
+    feasibilityNarrative: MEAN_CENTERING_FEASIBILITY_NARRATIVE,
+    currentMean: input.mean,
+    targetMean,
+    requiredAdjustment,
+    direction,
+    display: {
+      currentMean: formatSignedNarrativeNumber(input.mean, displayPlan),
+      targetMean: formatNarrativeNumber(targetMean, displayPlan),
+      requiredAdjustment: requiredAdjustment === 0
+        ? formatNarrativeNumber(requiredAdjustment, displayPlan)
+        : formatSignedNarrativeNumber(requiredAdjustment, displayPlan),
+    },
+  };
+}
+
+function buildMeanCenteringActionNarrative(meanCentering: MeanCenteringActionEvidence | undefined): string {
+  if (meanCentering === undefined) {
+    return MEAN_CENTERING_FEASIBILITY_NARRATIVE;
+  }
+
+  if (meanCentering.direction === "balanced") {
+    return `${MEAN_CENTERING_FEASIBILITY_NARRATIVE} Current mean: ${meanCentering.display.currentMean}; target mean: ${meanCentering.display.targetMean}; no adjustment required.`;
+  }
+
+  return `${MEAN_CENTERING_FEASIBILITY_NARRATIVE} Current mean: ${meanCentering.display.currentMean}; target mean: ${meanCentering.display.targetMean}; required adjustment: ${meanCentering.display.requiredAdjustment} toward ${meanCentering.direction}.`;
+}
+
 function buildSuggestedActions(input: BuildF7EngineeringNarrativeInput): F7NarrativeActionItem[] {
-  return sortOptionsBySequence(input.controlledOptions).map((option) => {
-    let narrative = `${option.title} requires controlled validation before any downstream decision.`;
-    if (option.ruleId === "improvement-center-mean") {
-      narrative = "Confirm mean-centering feasibility before changing the process centerline.";
-    } else if (option.ruleId === "improvement-reduce-variation") {
-      narrative = "Reduce total variation only after representative variation evidence confirms the modeled shortfall.";
-    } else if (option.ruleId === "improvement-reduce-contributor") {
-      narrative = "Investigate the dominant contributor before changing its tolerance or process controls.";
-    } else if (option.ruleId === "improvement-relax-final-specification") {
-      narrative = "As a final fallback, consider relaxing the final specification only after feasible process and tolerance improvements are exhausted and the requirement owner approves the change.";
-    }
-    return {
-      optionId: option.ruleId,
-      title: option.title,
-      ...(option.sourceAlias === undefined ? {} : { sourceAlias: option.sourceAlias }),
-      ...(option.sourceFileHash === undefined ? {} : { sourceFileHash: option.sourceFileHash }),
-      narrative,
-      validationSteps: [...option.validationSteps],
-    };
-  });
+  const sortedOptions = sortOptionsBySequence(input.controlledOptions);
+  const contributorOption = sortedOptions.find((option) => option.ruleId === "improvement-reduce-contributor");
+  const mergeVariationSuggestions = contributorOption !== undefined
+    && sortedOptions.some((option) => option.ruleId === "improvement-reduce-variation");
+
+  return sortedOptions
+    .filter((option) => !mergeVariationSuggestions || option.ruleId !== "improvement-reduce-contributor")
+    .map((option) => {
+      let narrative = `${option.title} requires controlled validation before any downstream decision.`;
+      let validationSteps = [...option.validationSteps];
+      let meanCentering: MeanCenteringActionEvidence | undefined;
+      if (option.ruleId === "improvement-center-mean") {
+        meanCentering = buildMeanCenteringActionEvidence(input);
+        narrative = buildMeanCenteringActionNarrative(meanCentering);
+      } else if (option.ruleId === "improvement-reduce-variation") {
+        if (mergeVariationSuggestions) {
+          narrative = "Reduce total variation only after representative variation evidence confirms the modeled shortfall; investigate the dominant contributor before changing its tolerance or process controls.";
+          validationSteps = dedupeStable([...validationSteps, ...contributorOption.validationSteps]);
+        } else {
+          narrative = "Reduce total variation only after representative variation evidence confirms the modeled shortfall.";
+        }
+      } else if (option.ruleId === "improvement-reduce-contributor") {
+        narrative = "Investigate the dominant contributor before changing its tolerance or process controls.";
+      } else if (option.ruleId === "improvement-relax-final-specification") {
+        narrative = "As a final fallback, consider relaxing the final specification only after feasible process and tolerance improvements are exhausted and the requirement owner approves the change.";
+      }
+      return {
+        optionId: option.ruleId,
+        title: option.title,
+        ...(option.sourceAlias === undefined ? {} : { sourceAlias: option.sourceAlias }),
+        ...(option.sourceFileHash === undefined ? {} : { sourceFileHash: option.sourceFileHash }),
+        narrative,
+        validationSteps,
+        ...(meanCentering === undefined ? {} : { meanCentering }),
+      };
+    });
 }
 
 function buildEngineeringSummary(

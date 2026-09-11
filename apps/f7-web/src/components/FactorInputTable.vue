@@ -1248,15 +1248,15 @@ function onModeChange(factorId: string, event: Event): void {
             <div><dt>Additional Mean Shift</dt><dd>{{ formatFixed(f4Calculation?.system.shift, 4) }}</dd></div>
             <div><dt>LSL</dt><dd class="f4-excel-evidence" data-f4-lsl>
               <input v-if="setupEditable" v-model.number="systemSpecificationDraft.lowerSpecLimit" data-f4-lsl-input class="f4-readonly-field f4-compact-value" type="number" step="any" aria-label="Lower Specification Limit" :disabled="busy">
-              <output v-else class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output>
+              <output v-else class="f4-readonly-field f4-compact-value is-readonly" aria-disabled="true">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output>
             </dd></div>
             <div><dt>USL</dt><dd class="f4-excel-evidence" data-f4-usl>
               <input v-if="setupEditable" v-model.number="systemSpecificationDraft.upperSpecLimit" data-f4-usl-input class="f4-readonly-field f4-compact-value" type="number" step="any" aria-label="Upper Specification Limit" :disabled="busy">
-              <output v-else class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output>
+              <output v-else class="f4-readonly-field f4-compact-value is-readonly" aria-disabled="true">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output>
             </dd></div>
             <div><dt>Target Sigma Level</dt><dd class="f4-excel-evidence" data-f4-target-sigma>
               <input v-if="setupEditable" v-model.number="systemSpecificationDraft.targetSigmaLevel" data-f4-target-sigma-input class="f4-readonly-field f4-compact-value" type="number" min="0.000001" step="any" aria-label="Target Sigma Level" :disabled="busy">
-              <output v-else class="f4-readonly-field f4-compact-value">{{ typeof systemSpecificationDraft.targetSigmaLevel === "number" ? `${formatFixed(systemSpecificationDraft.targetSigmaLevel, 0)}σ` : "—" }}</output>
+              <output v-else class="f4-readonly-field f4-compact-value is-readonly" aria-disabled="true">{{ typeof systemSpecificationDraft.targetSigmaLevel === "number" ? `${formatFixed(systemSpecificationDraft.targetSigmaLevel, 0)}σ` : "—" }}</output>
             </dd></div>
             <div><dt>Target Cpk</dt><dd>{{ formatFixed(f4Calculation?.capability.targetCpk, 2) }}</dd></div>
           </dl>

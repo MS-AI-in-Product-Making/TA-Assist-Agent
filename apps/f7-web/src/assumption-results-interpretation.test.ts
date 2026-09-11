@@ -224,9 +224,12 @@ describe("assumption results enhanced interpretation", () => {
     expect(result.narrative.suggestedActionSequence.map((item: NarrativeActionLike) => item.optionId)).toEqual([
       "improvement-center-mean",
       "improvement-reduce-variation",
-      "improvement-reduce-contributor",
       "improvement-relax-final-specification",
     ]);
+    expect(result.narrative.suggestedActionSequence[0]?.narrative).toContain("required adjustment:");
+    expect(result.narrative.suggestedActionSequence[1]?.narrative).toContain(
+      "investigate the dominant contributor before changing its tolerance or process controls",
+    );
     expect(result.narrative.evidenceDisclosure).toContain("Assumption-based RSS evidence; this is not measured capability evidence.");
     expect(result.engineeringInterpretations).toEqual([
       "Mean shift hypothesis",

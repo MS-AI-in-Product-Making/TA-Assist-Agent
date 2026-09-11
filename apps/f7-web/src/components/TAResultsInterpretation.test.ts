@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
-import TAResultsInterpretation from "./TAResultsInterpretation.vue";
+import TAResultsInterpretation, * as taResultsInterpretationModule from "./TAResultsInterpretation.vue";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
 import type {
@@ -170,6 +170,30 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
 }
 
 describe("TAResultsInterpretation", () => {
+  it("shows no adjustment required for a zero adjustment or balanced direction", () => {
+    const formatMeanAdjustment = (taResultsInterpretationModule as {
+      formatMeanAdjustment?: (meanCentering: {
+        readonly requiredAdjustment: number;
+        readonly direction: "LSL" | "USL" | "balanced";
+        readonly display: { readonly requiredAdjustment: string };
+      }) => string;
+    }).formatMeanAdjustment;
+
+    expect(formatMeanAdjustment).toEqual(expect.any(Function));
+    if (formatMeanAdjustment === undefined) return;
+
+    expect(formatMeanAdjustment({
+      requiredAdjustment: 0,
+      direction: "LSL",
+      display: { requiredAdjustment: "0" },
+    })).toBe("No adjustment required");
+    expect(formatMeanAdjustment({
+      requiredAdjustment: 0.01,
+      direction: "balanced",
+      display: { requiredAdjustment: "+0.01" },
+    })).toBe("No adjustment required");
+  });
+
   beforeAll(async () => {
     ({ buildAssumptionResultsInterpretation: actualBuildAssumptionResultsInterpretation } = await vi.importActual("../assumption-results-interpretation"));
     buildAssumptionResultsInterpretationSpy = vi.spyOn(assumptionResultsInterpretationModule, "buildAssumptionResultsInterpretation");
@@ -243,19 +267,47 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.findAll("[data-root-cause-item]")[0]?.text()).toContain("Cp-Cpk gap");
     expect(wrapper.findAll("[data-root-cause-item]")[0]?.text()).not.toMatch(/RC\d+|root-cause-/);
     expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).not.toMatch(/RC\d+|root-cause-/);
-    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("Tolerance Adjustment Priority (% Cont. to σ)");
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).not.toContain("Tolerance Adjustment Priority (% Cont. to σ)");
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.find("[data-contributor-pareto]").exists()).toBe(false);
     expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).not.toContain("Contributor concentration hypothesis");
     expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("State hypothesis");
     expect(wrapper.get("[data-root-cause-list]").element.tagName).toBe("OL");
     expect(wrapper.find("[data-engineering-risk]").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Engineering Risk");
-    expect(wrapper.findAll("[data-action-sequence-item]")).toHaveLength(4);
+    expect(wrapper.findAll("[data-action-sequence-item]")).toHaveLength(3);
     expect(wrapper.findAll("[data-action-sequence-item]").map((item) => item.text())).toEqual([
       expect.stringContaining("improvement-center-mean"),
       expect.stringContaining("improvement-reduce-variation"),
-      expect.stringContaining("improvement-reduce-contributor"),
       expect.stringContaining("improvement-relax-final-specification"),
     ]);
+    const meanCenteringAction = wrapper.find("[data-action-sequence-item][data-option-id='improvement-center-mean']");
+    const meanCenteringAdjustment = meanCenteringAction?.get("[data-mean-centering-adjustment]");
+    expect(meanCenteringAction?.get("p").text()).toBe(
+      "Confirm mean-centering feasibility before changing the process centerline.",
+    );
+    expect(meanCenteringAction?.get("p").text()).not.toContain("Current mean:");
+    expect(meanCenteringAdjustment?.get("[data-mean-centering-table] caption").text()).toBe("Required mean change");
+    expect(meanCenteringAdjustment?.findAll("[data-mean-centering-table] thead th").map((item) => item.text())).toEqual([
+      "Parameter",
+      "Current",
+      "Recommended",
+      "Adjustment",
+    ]);
+    expect(meanCenteringAdjustment?.get("[data-mean-centering-row]").findAll("th, td").map((cell) => cell.text())).toEqual([
+      "Mean",
+      "+0.03",
+      "→ 0",
+      "-0.03 toward LSL",
+    ]);
+    expect(meanCenteringAdjustment?.get("[data-mean-centering-outcome-label]").text()).toBe("Expected result");
+    expect(meanCenteringAdjustment?.get("[data-mean-centering-outcome-value]").text()).toBe("Mean 0");
+    expect(meanCenteringAdjustment?.get("small").text()).toBe("after applying the recommended adjustment");
+    expect(wrapper.findAll("[data-action-sequence-item]")[1]?.text()).toContain(
+      "investigate the dominant contributor before changing its tolerance or process controls",
+    );
+    expect(wrapper.findAll("[data-action-sequence-item]")[1]?.text()).toContain("Tolerance Adjustment Priority (% Cont. to σ)");
+    expect(wrapper.findAll("[data-action-sequence-item]")[1]?.find("[data-contributor-pareto]").exists()).toBe(true);
+    expect(wrapper.findAll("[data-contributor-pareto]")).toHaveLength(1);
     const fallbackAction = wrapper.findAll("[data-action-sequence-item]").at(-1);
     const fallback = fallbackAction?.get("[data-specification-fallback]");
     expect(fallback?.get(".specification-adjustments-scroll").attributes()).toMatchObject({
@@ -390,6 +442,14 @@ describe("TAResultsInterpretation", () => {
       "30",
       "20",
     ]);
+    expect(chart.findAll("[data-pareto-bar-label]").map((label) => ({
+      factorName: label.attributes("data-factor-name"),
+      text: label.text(),
+    }))).toEqual([
+      { factorName: "Factor B", text: "50.00%" },
+      { factorName: "Factor C", text: "30.00%" },
+      { factorName: "Factor A", text: "20.00%" },
+    ]);
     expect(chart.find("[data-pareto-cumulative-line]").exists()).toBe(true);
     expect(chart.get("[data-pareto-table-pane]").attributes()).toMatchObject({
       role: "region",
@@ -414,10 +474,31 @@ describe("TAResultsInterpretation", () => {
     if (!excessiveVariationItem) throw new Error("expected excessive variation item");
     expect(excessiveVariationItem.text()).toContain("Excessive variation hypothesis");
     expect(excessiveVariationItem.find(".evidence-grid").exists()).toBe(true);
-    expect(excessiveVariationItem.find("[data-pareto-layout]").exists()).toBe(true);
-    const evidence = excessiveVariationItem.get(".evidence-grid").element;
-    const pareto = excessiveVariationItem.get("[data-pareto-layout]").element;
-    expect(evidence.compareDocumentPosition(pareto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(excessiveVariationItem.find("[data-pareto-layout]").exists()).toBe(false);
+    const variationAction = wrapper.findAll("[data-action-sequence-item]")[1];
+    if (!variationAction) throw new Error("expected reduce total variation action");
+    const actionNarrative = variationAction.get("p").element;
+    const paretoHeading = variationAction.findAll(".narrative-item-header")[1]?.element;
+    if (!paretoHeading) throw new Error("expected tolerance adjustment priority heading");
+    const pareto = variationAction.get("[data-pareto-layout]").element;
+    expect(actionNarrative.compareDocumentPosition(paretoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(paretoHeading.compareDocumentPosition(pareto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("omits tolerance adjustment priority when no contributor priorities are available", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      contributorPriorities: [],
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-contributor-pareto]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Tolerance Adjustment Priority (% Cont. to σ)");
   });
 
   it("omits the entire guidance section when no process guidance entries are available", () => {
@@ -609,14 +690,15 @@ describe("TAResultsInterpretation", () => {
     });
 
     const rootCauseText = wrapper.findAll("[data-root-cause-item]").map((item) => item.text()).join(" ");
+    const interpretationText = wrapper.text();
     expect(rootCauseText).toContain("Cp vs target gap");
     expect(rootCauseText).toContain("Cp-Cpk gap");
     expect(rootCauseText).toContain("Specification midpoint");
     expect(rootCauseText).toContain("Mean offset");
     expect(rootCauseText).toContain("Direction");
-    expect(rootCauseText).toContain("Contributor");
-    expect(rootCauseText).toContain("% Cont. to σ");
-    expect(rootCauseText).toContain("Cumulative");
+    expect(interpretationText).toContain("Contributor");
+    expect(interpretationText).toContain("% Cont. to σ");
+    expect(interpretationText).toContain("Cumulative");
     expect(rootCauseText).not.toContain("Contributor reference");
     expect(rootCauseText).not.toContain("Contribution (%)");
     expect(rootCauseText).not.toContain("cpTargetGap");

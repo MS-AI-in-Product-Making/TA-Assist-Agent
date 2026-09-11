@@ -1083,6 +1083,7 @@ describe("F7 workbench shell", () => {
       const input = capabilitySummary.get(selector);
       expect(input.classes()).toContain("f4-readonly-field");
       expect(input.classes()).toContain("f4-compact-value");
+      expect(input.classes()).not.toContain("is-readonly");
       expect(input.attributes("disabled")).toBeUndefined();
     }
     expect(STYLE_SOURCE).toMatch(/\.f4-readonly-field\.f4-compact-value\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);
@@ -1269,6 +1270,10 @@ describe("F7 workbench shell", () => {
     const readOnlyChain = readOnlyWrapper.getComponent(DimensionChainPanel);
     expect(readOnlyChain.props("editable")).toBe(false);
     expect(readOnlyChain.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
+    for (const selector of ["[data-f4-lsl] output", "[data-f4-usl] output", "[data-f4-target-sigma] output"]) {
+      expect(readOnlyWrapper.get(selector).classes()).toContain("is-readonly");
+    }
+    expect(STYLE_SOURCE).toMatch(/\.f4-readonly-field\.is-readonly\s*\{[^}]*background:\s*#[0-9a-f]+[^}]*border-color:\s*#[0-9a-f]+[^}]*color:\s*#[0-9a-f]+[^}]*cursor:\s*not-allowed/s);
 
     const setupSnapshot = factorSetupSnapshot();
     const busyClient = createMockClient(setupSnapshot, { importWorkbook: setupSnapshot });

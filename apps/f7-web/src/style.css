@@ -2867,6 +2867,13 @@ textarea {
   text-align: center;
 }
 
+.f4-readonly-field.is-readonly {
+  background: #e2e6e9;
+  border-color: #a9b2b8;
+  color: #5f6b73;
+  cursor: not-allowed;
+}
+
 .f4-status {
   min-width: 38px;
   padding: 2px 4px;

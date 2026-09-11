@@ -1,3 +1,21 @@
+<script lang="ts">
+interface MeanCenteringAdjustment {
+  readonly requiredAdjustment: number;
+  readonly direction: string;
+  readonly display: {
+    readonly requiredAdjustment: string;
+  };
+}
+
+export function formatMeanAdjustment(meanCentering: MeanCenteringAdjustment): string {
+  if (meanCentering.requiredAdjustment === 0 || meanCentering.direction === "balanced") {
+    return "No adjustment required";
+  }
+
+  return `${meanCentering.display.requiredAdjustment} toward ${meanCentering.direction}`;
+}
+</script>
+
 <script setup lang="ts">
 import { computed, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
@@ -193,12 +211,6 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
                   <dd>{{ formatEvidenceValue(key, value) }}</dd>
                 </template>
               </dl>
-              <template v-if="item.ruleId === 'root-cause-excessive-variation' && interpretation.contributorPriorities.length > 0">
-                <div class="narrative-item-header">
-                  <strong>Tolerance Adjustment Priority (% Cont. to σ)</strong>
-                </div>
-                <ContributorParetoChart :contributors="interpretation.contributorPriorities" />
-              </template>
             </li>
           </ol>
           <p
@@ -220,12 +232,77 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
               :key="item.optionId"
               class="narrative-item"
               data-action-sequence-item
+              :data-option-id="item.optionId"
             >
               <div class="narrative-item-header">
                 <strong>{{ item.title }}</strong>
                 <span class="rule-id">{{ item.optionId }}</span>
               </div>
-              <p>{{ item.narrative }}</p>
+              <p>
+                {{ item.optionId === 'improvement-center-mean' && item.meanCentering
+                  ? item.meanCentering.feasibilityNarrative
+                  : item.narrative }}
+              </p>
+              <div
+                v-if="item.optionId === 'improvement-center-mean' && item.meanCentering"
+                class="specification-fallback"
+                data-mean-centering-adjustment
+              >
+                <div
+                  class="specification-adjustments-scroll"
+                  role="region"
+                  aria-label="Required mean change"
+                  tabindex="0"
+                >
+                  <table data-mean-centering-table>
+                    <caption>Required mean change</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">
+                          Parameter
+                        </th>
+                        <th scope="col">
+                          Current
+                        </th>
+                        <th scope="col">
+                          Recommended
+                        </th>
+                        <th scope="col">
+                          Adjustment
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr data-mean-centering-row>
+                        <th scope="row">
+                          Mean
+                        </th>
+                        <td>{{ item.meanCentering.display.currentMean }}</td>
+                        <td class="recommended-specification">
+                          <span aria-hidden="true">→</span>
+                          {{ item.meanCentering.display.targetMean }}
+                        </td>
+                        <td class="specification-adjustment">
+                          {{ formatMeanAdjustment(item.meanCentering) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="specification-outcome">
+                  <span data-mean-centering-outcome-label>Expected result</span>
+                  <strong data-mean-centering-outcome-value>
+                    Mean {{ item.meanCentering.display.targetMean }}
+                  </strong>
+                  <small>after applying the recommended adjustment</small>
+                </div>
+              </div>
+              <template v-if="item.optionId === 'improvement-reduce-variation' && interpretation.contributorPriorities.length > 0">
+                <div class="narrative-item-header">
+                  <strong>Tolerance Adjustment Priority (% Cont. to σ)</strong>
+                </div>
+                <ContributorParetoChart :contributors="interpretation.contributorPriorities" />
+              </template>
               <div
                 v-if="item.optionId === 'improvement-relax-final-specification'"
                 class="specification-fallback"
