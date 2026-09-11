@@ -6,6 +6,7 @@ it("returns the disabled feature dependencies and enablement requirements", () =
     code: "feature_not_available",
     featureId: "F7",
     dependencies: [
+      "interpretation-rules-v2",
       "measurement-store-v1",
       "dim-id-service-v1",
     ],

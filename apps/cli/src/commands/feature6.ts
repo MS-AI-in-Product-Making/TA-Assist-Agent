@@ -227,16 +227,26 @@ function timeoutFailure(error: unknown): boolean {
   return candidate.code === "ETIMEDOUT" || (candidate.killed === true && candidate.signal === "SIGTERM");
 }
 
+function standardProgramFilesRoot(key: "PROGRAMFILES" | "PROGRAMFILES(X86)", value: string): boolean {
+  if (process.platform !== "win32" || !isAbsolute(value)) return false;
+  const resolved = resolve(value);
+  const expectedName = key === "PROGRAMFILES" ? "Program Files" : "Program Files (x86)";
+  return resolved.toLowerCase() === join(parse(resolved).root, expectedName).toLowerCase();
+}
+
 function feature6RunnerEnvironment(): NodeJS.ProcessEnv {
   const allowedKeys = [
     "PATH", "Path", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
-    "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+    "HOMEDRIVE", "HOMEPATH", "PROGRAMFILES", "PROGRAMFILES(X86)", "APPDATA", "HOME",
+    "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
   ] as const;
   const environment: NodeJS.ProcessEnv = {};
   const includedKeys = new Set<string>();
   for (const key of allowedKeys) {
     const value = process.env[key];
     const comparisonKey = process.platform === "win32" ? key.toLowerCase() : key;
+    if ((key === "PROGRAMFILES" || key === "PROGRAMFILES(X86)")
+      && (typeof value !== "string" || !standardProgramFilesRoot(key, value))) continue;
     if (typeof value === "string" && !includedKeys.has(comparisonKey)) {
       environment[key] = value;
       includedKeys.add(comparisonKey);

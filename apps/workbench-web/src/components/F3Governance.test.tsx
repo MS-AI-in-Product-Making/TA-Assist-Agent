@@ -93,11 +93,13 @@ describe("F3Governance", () => {
 
     fireEvent.click(localOnly);
     fireEvent.click(create);
+    fireEvent.change(within(section).getByRole("textbox", { name: "Sponsor email" }), { target: { value: "sponsor@example.com" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Create and validate work item" }));
     fireEvent.change(within(section).getByRole("textbox", { name: "Existing work item" }), { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });
     fireEvent.click(update);
 
     expect(onSubmit).toHaveBeenCalledWith("local_only");
-    expect(onSubmit).toHaveBeenCalledWith("create_new");
+    expect(onSubmit).toHaveBeenCalledWith("create_new", undefined, expect.objectContaining({ sponsorEmail: "sponsor@example.com" }));
     expect(onSubmit).toHaveBeenCalledWith("use_existing", "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123");
   });
 

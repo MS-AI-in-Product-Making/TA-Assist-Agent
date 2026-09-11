@@ -994,14 +994,17 @@ describe("createF6FinalReportProjection v3", () => {
 
     worksheetNames.forEach((worksheetName, index) => {
       expect(report.markdown).toContain(`# 3-${index + 1} Worksheet: ${worksheetName}`);
-      const prefix = `## 3-${index + 1}`;
-      expect(report.markdown).toContain(`${prefix}-1 Tolerance Path Image`);
-      expect(report.markdown).toContain(`${prefix}-2 Complete Factor Table`);
-      expect(report.markdown).toContain(`${prefix}-3 Requirements and Statistical Results`);
-      expect(report.markdown).toContain(`${prefix}-4 Adjusted Mean to Spec Center Shift`);
-      expect(report.markdown).toContain(`${prefix}-5 Contributor Priorities`);
-      expect(report.markdown).toContain(`${prefix}-6 Specification Changes`);
-      expect(report.markdown).toContain(`${prefix}-7 Tolerance Optimization Options`);
+      expect(report.markdown).not.toMatch(new RegExp(`^## 3-${index + 1}-\\d+ `, "mu"));
+      const worksheetStart = report.markdown.indexOf(`# 3-${index + 1} Worksheet: ${worksheetName}`);
+      const factorStart = report.markdown.indexOf("## Complete Factor Table", worksheetStart);
+      const imageStart = report.markdown.indexOf("## Tolerance Path Image", worksheetStart);
+      expect(factorStart).toBeGreaterThan(worksheetStart);
+      expect(imageStart).toBeGreaterThan(factorStart);
+      expect(report.markdown).toContain("## Requirements and Statistical Results");
+      expect(report.markdown).toContain("## Adjusted Mean to Spec Center Shift");
+      expect(report.markdown).toContain("## Contributor Priorities");
+      expect(report.markdown).toContain("## Specification Changes");
+      expect(report.markdown).not.toContain("Tolerance Optimization Options");
     });
     expect(report.projection.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(worksheetNames);
   });
@@ -1015,20 +1018,23 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(inputs.f6Optimization.interactionLanguage.uiCatalogLanguage).toBe("zh");
     expect(report.markdown).toContain("# TA Engineering Analysis Report");
-    expect(report.markdown).toContain("## 3-1-1 Tolerance Path Image");
-    expect(report.markdown).toContain("## 3-1-2 Complete Factor Table");
+    expect(report.markdown).toContain("## Tolerance Path Image");
+    expect(report.markdown).toContain("## Complete Factor Table");
     expect(report.markdown).toContain("Image and complete Factor table interpreted for Analysis-A.");
+    expect(report.markdown).toContain("*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*");
     expect(report.markdown).not.toContain("- Factor Analysis-A: A is visible.");
     expect(report.markdown).not.toContain("TA 工程分析报告");
+    expect(report.markdown).not.toMatch(/\p{Script=Han}/u);
   });
 
-  it("renders timezone-aware document control and worksheet summary navigation without a disposition column", () => {
+  it("renders timezone-aware worksheet navigation with a review comment", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
     expect(report.markdown).toMatch(/\| Report Generated At \| 2026-08-\d{2} \d{2}:\d{2}:\d{2} \(UTC [+-]\d{1,2}(?::\d{2})?\) \|/u);
-    expect(report.markdown).toContain("| Worksheet | Tolerance Loop Description | Key Finding |");
-    expect(report.markdown).not.toContain("| Worksheet | Tolerance Loop Description | Key Finding | Disposition |");
+    expect(report.markdown).toContain("| Worksheet | Tolerance Loop Description | Key Finding | Comment |");
+    expect(report.markdown).toContain("| [Analysis-A](#worksheet-1) | Loop Analysis-A |");
+    expect(report.markdown).toContain("| Need Review |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
     expect(report.markdown).toContain("[Analysis-B](#worksheet-2)");
     expect(report.markdown).toContain('<a id="worksheet-1"></a>');
@@ -1050,7 +1056,9 @@ describe("createF6FinalReportProjection v3", () => {
     expect(calculation.capability.lowerCpk).toBeCloseTo(calculation.capability.targetCpk);
     expect(calculation.capability.lowerCpkStatus).toBe("FAIL");
     expect(calculation.capability.upperCpkStatus).toBe("FAIL");
-    expect(report.markdown).toContain(`CpkL ${numberText(calculation.capability.lowerCpk)} and CpkU ${numberText(calculation.capability.upperCpk)} do not meet Target Cpk ${numberText(calculation.capability.targetCpk)}; ME review of the TA result is required.`);
+    expect(report.markdown).toContain(`CpkL ${numberText(calculation.capability.lowerCpk)} and CpkU ${numberText(calculation.capability.upperCpk)} do not meet Target Cpk ${numberText(calculation.capability.targetCpk)}.`);
+    expect(report.markdown).not.toContain("ME review of the TA result is required");
+    expect(report.markdown).toContain("| Fail |");
   });
 
   it("preserves the engineering Key Finding in the structured v3 projection", () => {
@@ -1075,7 +1083,7 @@ describe("createF6FinalReportProjection v3", () => {
     expect(markdown).toContain("| A | 2 | Factor Analysis-A | Part Analysis-A | DRAW-100 | DIM-100 | CNC |");
     expect(markdown).toContain("Review assembly stack.");
 
-    expect(markdown).toContain("## 3-1-3 Requirements and Statistical Results");
+    expect(markdown).toContain("## Requirements and Statistical Results");
     for (const label of [
       "Design Nominal", "LSL", "USL", "Target Cpk", "Evaluation Level",
       "Statistical Range", "Worst-Case Range", "Predictive Cp", "Predictive CpkL",
@@ -1086,19 +1094,31 @@ describe("createF6FinalReportProjection v3", () => {
     expect(markdown).not.toContain("F0 Capability and Knowledge Guidance");
     expect(markdown).toContain(String.raw`non\_f0\_process\_category`);
 
-    expect(markdown).toContain("## 3-1-4 Adjusted Mean to Spec Center Shift");
+    expect(markdown).toContain("## Adjusted Mean to Spec Center Shift");
     expect(markdown).toContain("Adjusted Mean: 0.200 mm");
     expect(markdown).toContain("Specification Center: 0.000 mm");
     expect(markdown).toContain("Offset: 0.200 mm");
     expect(markdown).toContain("optimize Factor nominal values");
 
-    expect(markdown).toContain("## 3-1-5 Contributor Priorities");
+    expect(markdown).toContain("## Contributor Priorities");
     expect(markdown).toContain("| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |");
     expect(markdown).toContain("Focus tolerance-range review on the first three priorities.");
-    expect(markdown).toContain("## 3-1-6 Specification Changes");
-    expect(markdown).toContain("## 3-1-7 Tolerance Optimization Options");
-    expect([...markdown.matchAll(/^## 3-1-(\d+) /gmu)].map((match) => Number(match[1]))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(markdown).toContain("## Specification Changes");
+    expect(markdown).not.toContain("Tolerance Optimization Options");
+    expect(markdown).not.toMatch(/^## 3-1-\d+ /gmu);
+    expect(markdown.match(/\| Rank \| Factor \| One Sigma \| Variance Contribution/gmu)).toHaveLength(1);
     expect(markdown).not.toMatch(/^\|[^\n]*\|\s*(?:Source|Evidence|来源|证据)\s*\|[^\n]*$/imu);
+  });
+
+  it("omits specification changes for a passing worksheet and labels it Pass", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.reportSummary.worksheetDispositions).toEqual([
+      expect.objectContaining({ worksheetName: "Analysis-A", disposition: "PASS" }),
+    ]);
+    expect(report.markdown).toContain("| Pass |");
+    expect(report.markdown).not.toContain("## Specification Changes");
   });
 
   it("renders qualitative priorities and suppresses an aligned-center warning", () => {
@@ -1127,7 +1147,7 @@ describe("createF6FinalReportProjection v3", () => {
     expect(report.markdown).not.toContain("capability improvement");
   });
 
-  it("renders governed Top 3 tolerance options with ratios and F4 results", () => {
+  it("omits internal tolerance optimization options", () => {
     const inputs = loadRealF6Inputs({
       systemSpecificationOverrides: {
         targetSigmaLevel: {
@@ -1138,15 +1158,17 @@ describe("createF6FinalReportProjection v3", () => {
     });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toContain("## 3-1-7 Tolerance Optimization Options");
-    expect(report.markdown).toContain("f6-top3-tolerance-policy-v1");
-    expect(report.markdown).toContain("OP1");
-    expect(report.markdown).toContain("25.0%");
-    expect(report.markdown).toContain("OP2");
-    expect(report.markdown).toContain("20.0%");
-    expect(report.markdown).toContain("OP3");
-    expect(report.markdown).toContain("40.0%");
-    expect(report.markdown).toContain("Result Cpk");
+    expect(report.markdown).not.toContain("Tolerance Optimization Options");
+    expect(report.markdown).not.toContain("f6-top3-tolerance-policy-v1");
+    expect(report.markdown).not.toContain("Result Cpk");
+  });
+
+  it("rejects Chinese model interpretation text from the English report", () => {
+    const inputs = loadRealF6Inputs();
+    inputs.modelInterpretation.worksheets[0].result.imageTableInterpretation = "模型生成的中文解读。";
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true }))
+      .toThrow(/English-only report/i);
   });
 
   it("rejects contributor Factor identity drift against F4 evidence", () => {

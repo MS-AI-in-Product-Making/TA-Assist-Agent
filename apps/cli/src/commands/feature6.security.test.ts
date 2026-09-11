@@ -124,6 +124,10 @@ describe("Feature 6 CLI trust boundary", () => {
   it("uses only the fixed trusted runner with governed execution options and cleared overrides", async () => {
     vi.stubEnv("PATH", "trusted-path");
     vi.stubEnv("SystemRoot", "C:\\Windows");
+    vi.stubEnv("PROGRAMFILES", "C:\\Program Files");
+    vi.stubEnv("PROGRAMFILES(X86)", "C:\\Program Files (x86)");
+    vi.stubEnv("LOCALAPPDATA", "C:\\Users\\engineer\\AppData\\Local");
+    vi.stubEnv("AI_TVA_CHROMIUM_EXECUTABLE", "C:\\untrusted\\payload.exe");
     vi.stubEnv("NODE_OPTIONS", "--require attacker.cjs");
     vi.stubEnv("NODE_PATH", "attacker-modules");
     vi.stubEnv("NODE_EXTRA_CA_CERTS", "attacker-ca.pem");
@@ -176,21 +180,49 @@ describe("Feature 6 CLI trust boundary", () => {
     expect(calls[0].options).toMatchObject({
       cwd: trustedRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, killSignal: "SIGTERM",
     });
-    expect(calls[0].options.env).toMatchObject({ PATH: "trusted-path", SystemRoot: "C:\\Windows" });
+    expect(calls[0].options.env).toMatchObject({
+      PATH: "trusted-path",
+      SystemRoot: "C:\\Windows",
+      PROGRAMFILES: "C:\\Program Files",
+      "PROGRAMFILES(X86)": "C:\\Program Files (x86)",
+    });
     expect(Object.keys(calls[0].options.env)).toEqual(expect.arrayContaining(["PATH", "SystemRoot"]));
     expect(Object.keys(calls[0].options.env).every((key) => [
       "PATH", "Path", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
-      "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+      "HOMEDRIVE", "HOMEPATH", "PROGRAMFILES", "PROGRAMFILES(X86)", "APPDATA", "HOME",
+      "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
     ].includes(key))).toBe(true);
     for (const rejectedKey of [
       "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "npm_config_node_options", "ELECTRON_RUN_AS_NODE",
-      "AI_TVA_F6_OUTPUT_ROOT", "AI_TVA_F6_PUBLISH_ROOT", "AI_TVA_UNTRUSTED_OVERRIDE",
+      "AI_TVA_F6_OUTPUT_ROOT", "AI_TVA_F6_PUBLISH_ROOT", "AI_TVA_UNTRUSTED_OVERRIDE", "AI_TVA_CHROMIUM_EXECUTABLE",
+      "LOCALAPPDATA",
     ]) {
       expect(calls[0].options.env).not.toHaveProperty(rejectedKey);
     }
     expect(lstatSync(trustedRunner).isFile()).toBe(true);
     expect(lstatSync(trustedRunner).isSymbolicLink()).toBe(false);
     expect(realpathSync(trustedRunner)).toBe(trustedRunner);
+  });
+
+  it("rejects redirected browser installation roots", async () => {
+    vi.stubEnv("PROGRAMFILES", "C:\\attacker");
+    vi.stubEnv("PROGRAMFILES(X86)", "D:\\payload");
+    vi.stubEnv("LOCALAPPDATA", "C:\\attacker-local");
+    const setup = await fixture();
+    let childEnvironment: NodeJS.ProcessEnv | undefined;
+
+    await runFeature6WorkflowCommand(
+      trustedRoot, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Overview"] },
+      { executeFile: async (_file, _args, options) => {
+        childEnvironment = options.env;
+        return successfulExecutor(setup.outputRelative)();
+      } },
+    );
+
+    expect(childEnvironment).not.toHaveProperty("PROGRAMFILES");
+    expect(childEnvironment).not.toHaveProperty("PROGRAMFILES(X86)");
+    expect(childEnvironment).not.toHaveProperty("LOCALAPPDATA");
   });
 
   it("does not let NODE_OPTIONS execute a marker module in the real default child", async () => {
