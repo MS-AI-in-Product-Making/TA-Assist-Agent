@@ -1,15 +1,54 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { renderF6PdfSync } from "./f6-pdf-export.js";
+import { renderF6PdfSync, validatedF6InlineImages } from "./f6-pdf-export.js";
 import { renderF6PdfHtml } from "./f6-pdf-report.js";
 
 const MARKDOWN = "# Governed report\n";
 const HASH = createHash("sha256").update(MARKDOWN).digest("hex");
+const cleanupRoots: string[] = [];
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const temporaryManagedRoot = (): string => {
+  const root = mkdtempSync(join(tmpdir(), "f6-inline-images-"));
+  cleanupRoots.push(root);
+  return root;
+};
+
+const writeFixture = (filePath: string, value: string | Buffer): void => {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, value);
+};
+
+const writeBinaryFixture = writeFixture;
+
+afterEach(() => {
+  for (const root of cleanupRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("renderF6PdfSync", () => {
+  it("exposes validated inline images for the editable prototype", () => {
+    const root = temporaryManagedRoot();
+    const reportPath = path.join(root, "runs", "run-1", "Feature6-Report.md");
+    const imagePath = path.join(root, "evidence", "stack.png");
+    writeFixture(reportPath, "[Open tolerance path image](<../../evidence/stack.png>)\n");
+    writeBinaryFixture(imagePath, PNG);
+
+    const markdown = readFileSync(reportPath, "utf8");
+    const images = validatedF6InlineImages({
+      markdown,
+      sourceHash: createHash("sha256").update(markdown).digest("hex"),
+      reportPath,
+      managedRoot: root,
+    });
+
+    expect(images.get("../../evidence/stack.png")).toBe(`data:image/png;base64,${PNG.toString("base64")}`);
+  });
+
   it("renders validated Markdown as PDF bytes with the source hash embedded", () => {
     const executeFile = vi.fn((_browser: string, args: readonly string[]) => {
       const output = args.find((arg) => arg.startsWith("--print-to-pdf="))?.slice("--print-to-pdf=".length);

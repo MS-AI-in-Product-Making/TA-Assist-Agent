@@ -42,7 +42,7 @@ function installedBrowsers(): readonly string[] {
   return installed;
 }
 
-function inlineReportImages(input: F6PdfRenderInput): ReadonlyMap<string, string> {
+export function validatedF6InlineImages(input: F6PdfRenderInput): ReadonlyMap<string, string> {
   const links = f6PdfImageLinks(input.markdown);
   const managedRoot = realpathSync(input.managedRoot);
   const images = new Map<string, string>();
@@ -93,7 +93,7 @@ export function renderF6PdfSync(
     const sourceHash = createHash("sha256").update(input.markdown).digest("hex");
     if (sourceHash !== input.sourceHash) throw pdfError("pdf_artifact_invalid", "F6 PDF source hash does not match the Markdown content.");
     const baseHref = new URL(".", pathToFileURL(input.reportPath)).href;
-    writeFileSync(htmlPath, renderF6PdfHtml({ markdown: input.markdown, sourceHash, baseHref, inlineImages: inlineReportImages(input) }), "utf8");
+    writeFileSync(htmlPath, renderF6PdfHtml({ markdown: input.markdown, sourceHash, baseHref, inlineImages: validatedF6InlineImages(input) }), "utf8");
     for (const browser of browsers()) {
       try {
         executeFile(browser, [
