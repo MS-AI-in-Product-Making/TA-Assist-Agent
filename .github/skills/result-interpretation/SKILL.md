@@ -62,24 +62,27 @@ Run F4 from the validated F2 report. F4 may calculate every F2 ready worksheet b
 
 When the user selected a subset, extra ready F4 calculations are permitted in the F4 artifact but are outside the F5 scope. The effective F4 worksheet set consumed and presented by F5 must equal the selected set: F5 `--worksheet` filters F4 output back to the selected set. F3 and F5 receive the identical selected worksheet-name set.
 
-#### Phase W6 - Optional image observations
+#### Phase W6 - Required workflow-owned image observations
 
 Ask whether image evidence should be evaluated. Optional observation availability is distinct from missing required F1 image provenance. Use this routing table exactly:
+
+When Design Optimization owns the end-to-end workbook workflow, this capability must not add a separate caller image-confirmation gate.
+
+When Design Optimization owns the end-to-end workbook workflow, this capability also must not collect Analysis Context or Optimization Targets; that workflow records the standard-path decisions as `NOT_PROVIDED` after internal image evaluation.
 
 ### Image availability routing
 
 | Condition | Prerequisite | Worksheet routing | F5 continuation | Tolerance result |
 | --- | --- | --- | --- | --- |
 | F1 physical image or imageReference missing | none | fail_closed; exclude from F5 ready | prohibited; do not promise continuation | not produced |
-| Image mode unavailable | verified existing F1 imageReference | remain F5 ready | continue deterministic F5 | not_evaluated + clarification |
-| User skips image evaluation | verified existing F1 imageReference | remain F5 ready | continue deterministic F5 | not_evaluated + clarification |
-| No observation artifact generated | verified existing F1 imageReference | remain F5 ready | continue deterministic F5 | not_evaluated + clarification |
+| Image mode unavailable | verified existing F1 imageReference | worksheet FAIL | prohibit that worksheet; continue others | required evaluation failed |
+| Incomplete or invalid observation | verified existing F1 imageReference | worksheet FAIL | prohibit that worksheet; continue others | required evaluation failed |
 
-For each continuing `not_evaluated` case, clarify that tolerance drawing evidence was not evaluated; do not imply that the required F1 image or its reference was absent.
+Do not offer a skip choice and do not record a required evaluation failure as a successful `not_evaluated` worksheet.
 
 `f5-image-observation-v1` is historical read-only compatibility; new workbook image mode never creates v1. Existing-artifact mode may validate and present a historical v1, but must not migrate, extend, or rewrite it. New image mode creates only `f5-image-observation-v2`.
 
-Before optional image processing, validate the F1/F3/F4 baseline identities, selected worksheet set, table identities, and source rows. A baseline identity mismatch fails closed and prohibits F5 continuation. An image-mode failure is eligible for fallback only after this baseline remains valid.
+Before image processing, validate the F1/F3/F4 baseline identities, selected worksheet set, table identities, and source rows. A worksheet baseline identity mismatch fails that worksheet and prohibits its F5 continuation while preserving other valid worksheets.
 
 Follow this order without omission or reordering:
 
@@ -93,14 +96,14 @@ Follow this order without omission or reordering:
 	- Model-generated reference interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.
 4. **Create one immutable `f5-image-observation-v2` artifact.** Write the optional strict JSON artifact only at `test/demo-output/f5-observations/<workbook-content-hash>/<system-generated-uuid>/Feature5-Image-Observations.json`. Do not invent a CLI for image analysis.
 5. **Read back and validate schema, identity, and source rows.** After creation, read back and validate the artifact with `f5ImageObservationArtifactSchema`. Validate the contract version, workbook identity, selected worksheets, images, five scopes, complete snapshots, source provenance, and structured links. W6 readback must exactly match those already verified image references and the v2 snapshot and source identities.
-6. **Pass the validated v2 artifact to F5, or discard the whole artifact and use deterministic fallback.** The v2 selected worksheet set must be exact. Any worksheet, scope, or snapshot mismatch discards the entire v2 artifact; partial consumption is prohibited. A missing, unreadable, malformed JSON, unknown, or invalid optional observation artifact uses the same whole-artifact deterministic fallback. When the validated baseline remains valid, continue deterministic F5 with `not_evaluated` plus clarification. Never repair an immutable artifact in place.
+6. **Pass completed worksheet evidence to F5 and preserve failed worksheet outcomes for the final report.** Every selected worksheet reaches one terminal outcome. Any worksheet, scope, snapshot, readback, image, or mapping mismatch fails that worksheet without discarding valid completed worksheets. Never repair an immutable artifact in place.
 
 Creation controls apply to the entire v2 artifact:
 
 - The UUID must be system-generated and must not be user-derived.
 - Before creation, lexically normalize the intended parent and require it to remain contained beneath `test/demo-output/f5-observations/<workbook-content-hash>/`; reject absolute resets, traversal, alternate roots, and any other lexical escape.
 - Before creation, check every existing ancestor for a reparse point, symlink, or junction.
-- If ancestry is unverifiable, do not create the artifact; continue deterministic F5 with `not_evaluated` plus clarification.
+- If ancestry is unverifiable, record the affected worksheet as failed and continue only other validated worksheets.
 - Create the observation artifact with `create_file` only.
 - Never edit, overwrite, append to, or reuse an observation artifact or target.
 - If the target already exists, fail closed and select a new system-generated UUID directory, then repeat all containment and ancestry checks before a single creation attempt.
@@ -144,11 +147,11 @@ Never upgrade confidence or review status to avoid these gates. `confirmed` reco
 
 #### Phase W7 - Run F5 with the same selection
 
-Run the matching allowed F5 worksheet-filtered command with a repeated `--worksheet` argument for every selected name, adding the v2 observation artifact only when Phase W6 created and validated the entire artifact. The three artifact roots must be the controlled F1, F3, and F4 outputs from this run. Workbook mode always selects at least one worksheet and always passes the exact selected set to F5; never omit the worksheet filter.
+Run the matching allowed F5 worksheet-filtered command with a repeated `--worksheet` argument for every completed image-evaluation worksheet, adding the validated evidence artifact. Preserve failed worksheet outcomes for the final report. The three artifact roots must be the controlled F1, F3, and F4 outputs from this run. Require at least one completed worksheet to invoke F5 and never omit the worksheet filter.
 
 #### Phase W8 - Validate and present F5
 
-Strictly validate `Feature5-Report.json`, the manifest, run summary, output containment, source identities, worksheet set, classifications, and recorded hashes. The post-run summary records the observation artifact hash. Present FACT, RULE, SIGNAL, OPTION, assumptions, and clarifications without promoting one category into another. For v2 image mode, present the model-generated reference interpretation beside its deterministic Factor evidence and explicitly warn that it may contain hallucinations, label mismatches, or omissions, cannot replace an engineering conclusion, and requires ME review. Before presentation, validate the versions recorded by the F2 and F5 artifacts and present public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v2`. This disclosure records controlled F0 use; it does not imply a separate F0 workflow command. When a verified F1 image reference exists but image mode is unavailable, the user skips evaluation, or no observation artifact is generated, drawing evidence remains `not_evaluated` with clarification and deterministic F5 results still complete. A missing F1 physical image or `imageReference` is instead fail-closed and produces no F5 result for that worksheet.
+Strictly validate `Feature5-Report.json`, the manifest, run summary, output containment, source identities, completed worksheet set, classifications, failed worksheet ledger, and recorded hashes. The post-run summary records the observation artifact hash. Present FACT, RULE, SIGNAL, OPTION, assumptions, and clarifications without promoting one category into another. Present model-generated reference interpretation beside deterministic Factor evidence and explicitly warn that it may contain hallucinations, label mismatches, or omissions, cannot replace an engineering conclusion, and requires ME review. Before presentation, validate the versions recorded by the F2 and F5 artifacts and present public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v2`. This disclosure records controlled F0 use; it does not imply a separate F0 workflow command. A required image evaluation that cannot complete produces no F5 result for that worksheet and remains a governed `FAIL` in the final report.
 
 The user-facing TA interpretation narrative must summarize tolerance-chain and Target understanding, capability results, major contributors and engineering risk, direct image-to-Table anomalies, and required clarifications. Report each `indicated_conflict` prominently as a direct image-to-Table anomaly, preserving `textBasis` and linked Factor names, and label it as requiring ME review. Do not include `datum_chain` or `stack_start` in the user-facing narrative; retain them only in governed internal evidence and the audit appendix.
 

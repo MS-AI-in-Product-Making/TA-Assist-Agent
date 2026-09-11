@@ -73,19 +73,49 @@ function result(input = request()) {
   };
 }
 
+function scopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope,
+    status: "insufficient_evidence",
+    observedValue: "ambiguous",
+    confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
+}
+
 function schemas() {
   return contracts as typeof contracts & {
     f5MultimodalWorksheetRequestV3Schema?: { safeParse(value: unknown): { success: boolean } };
     f5MultimodalWorksheetResultV3Schema?: { safeParse(value: unknown): { success: boolean } };
     f5MultimodalArtifactV3Schema?: { safeParse(value: unknown): { success: boolean } };
     f5MultimodalWorksheetPairV3Schema?: { safeParse(value: unknown): { success: boolean } };
+    f5MultimodalEvaluationFailureReasonSchema?: { safeParse(value: unknown): { success: boolean } };
+    f5MultimodalWorksheetOutcomeV4Schema?: { safeParse(value: unknown): { success: boolean } };
+    f5MultimodalArtifactV4Schema?: { safeParse(value: unknown): { success: boolean } };
     createF5MultimodalFactorSetHash?: (rows: unknown[]) => string;
     createF5MultimodalRequestHash?: (value: unknown) => string;
     validateF5MultimodalArtifactV3?: (value: unknown, authority: unknown) => { success: boolean };
+    validateF5MultimodalArtifactV4?: (value: unknown, authority: unknown) => { success: boolean };
   };
 }
 
 describe("F5 mandatory multimodal v3 contracts", () => {
+  it("requires five assessed scopes for v4 completion while preserving historical v3 pairs", () => {
+    const input = request();
+    const output = result(input);
+    const pair = { request: input, result: output };
+    expect(contracts.f5MultimodalWorksheetPairV3Schema.parse(pair)).toEqual(pair);
+    expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.safeParse({ status: "completed", ...pair }).success).toBe(false);
+    const scopes = ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+      scope, status: "needs_review", observedValue: "ambiguous", confidence: "low", visibleBasis: "The visible image leaves the geometry ambiguous.",
+    }));
+    const completed = { status: "completed", ...pair, scopeEvaluations: scopes };
+    expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.parse(completed)).toEqual(completed);
+    for (const scopeEvaluations of [scopes.slice(1), [...scopes.slice(1), scopes[1]], scopes.map((scope) => ({ ...scope, status: "not_evaluated" }))]) {
+      expect(contracts.f5MultimodalWorksheetOutcomeV4Schema.safeParse({ ...completed, scopeEvaluations }).success).toBe(false);
+    }
+  });
+
   it("exports strict per-worksheet request and result schemas", () => {
     const exported = schemas();
 
@@ -259,5 +289,55 @@ describe("F5 mandatory multimodal v3 contracts", () => {
     };
 
     expect(exported.validateF5MultimodalArtifactV3!(artifact, authority).success).toBe(false);
+  });
+
+  it("exports strict v4 worksheet outcomes that preserve completed and failed identities", () => {
+    const exported = schemas();
+    expect(exported.f5MultimodalEvaluationFailureReasonSchema).toBeDefined();
+    expect(exported.f5MultimodalWorksheetOutcomeV4Schema).toBeDefined();
+    expect(exported.f5MultimodalArtifactV4Schema).toBeDefined();
+    expect(exported.validateF5MultimodalArtifactV4).toBeDefined();
+
+    const completedRequest = request("Analysis-A");
+    const failedRequest = request("Analysis-B");
+    const artifact = {
+      contractVersion: "f5-multimodal-artifact-v4",
+      outputClassification: "confidential",
+      sessionId: completedRequest.sessionId,
+      revision: completedRequest.revision,
+      inputRevision: completedRequest.inputRevision,
+      workbookContentHash: completedRequest.workbook.contentHash,
+      selectedWorksheetNames: [completedRequest.worksheetName, failedRequest.worksheetName],
+      worksheets: [
+        { status: "completed", request: completedRequest, result: result(completedRequest), scopeEvaluations: scopeEvaluations() },
+        { status: "failed", request: failedRequest, reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" },
+      ],
+    };
+
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(artifact).success).toBe(true);
+
+    const duplicateNames = structuredClone(artifact);
+    duplicateNames.selectedWorksheetNames = [completedRequest.worksheetName, completedRequest.worksheetName];
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(duplicateNames).success).toBe(false);
+
+    const missingWorksheet = structuredClone(artifact);
+    missingWorksheet.selectedWorksheetNames = [completedRequest.worksheetName];
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(missingWorksheet).success).toBe(false);
+
+    const requestHashMismatch = structuredClone(artifact);
+    requestHashMismatch.worksheets[1]!.request.requestHash = sha("other-request");
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(requestHashMismatch).success).toBe(false);
+
+    const orderMismatch = structuredClone(artifact);
+    orderMismatch.worksheets.reverse();
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(orderMismatch).success).toBe(false);
+
+    const unknownReason = structuredClone(artifact);
+    unknownReason.worksheets[1] = { ...unknownReason.worksheets[1], reasonCode: "runner_failed" };
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(unknownReason).success).toBe(false);
+
+    const missingRequestIdentity = structuredClone(artifact);
+    delete missingRequestIdentity.worksheets[1].request.tableId;
+    expect(exported.f5MultimodalArtifactV4Schema?.safeParse(missingRequestIdentity).success).toBe(false);
   });
 });

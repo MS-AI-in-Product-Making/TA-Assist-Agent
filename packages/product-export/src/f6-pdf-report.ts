@@ -7,12 +7,46 @@ export interface F6PdfHtmlInput {
   readonly inlineImages?: ReadonlyMap<string, string>;
 }
 
+const COMPLETE_FACTOR_TABLE_HEADERS = [
+  "Factor Description",
+  "Part Name",
+  "Part Category",
+  "Drawing Number",
+  "DIM ID",
+  "Design Nominal",
+  "+ Tolerance",
+  "- Tolerance",
+  "Long Term / Safety Factor",
+  "Sigma Level",
+  "Mean",
+  "Tolerance",
+  "One Sigma",
+  "Capability / Knowledge Guidance",
+] as const;
+
+const REQUIRED_MISSING_MARKER_OPEN = /^<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="(\d+)" hidden(?:="")? aria-hidden="true">$/u;
+const REQUIRED_MISSING_MARKER_CLOSE = /^<\/span>$/u;
+
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
 function cellText(cell: Tokens.TableCell): string {
   return cell.text.replace(/<[^>]*>/g, "").trim();
+}
+
+function exactHeadersMatch(headers: readonly string[], expected: readonly string[]): boolean {
+  return headers.length === expected.length && headers.every((header, index) => header === expected[index]);
+}
+
+function requiredMissingMarker(cell: Tokens.TableCell): { index: number; sourceRow: string } | undefined {
+  const htmlIndexes = cell.tokens.flatMap((token, index) => token.type === "html" ? [index] : []);
+  if (htmlIndexes.length !== 2) return undefined;
+  const [openIndex, closeIndex] = htmlIndexes as [number, number];
+  if (closeIndex !== openIndex + 1) return undefined;
+  const sourceRow = REQUIRED_MISSING_MARKER_OPEN.exec(cell.tokens[openIndex]!.raw)?.[1];
+  if (sourceRow === undefined || !REQUIRED_MISSING_MARKER_CLOSE.test(cell.tokens[closeIndex]!.raw)) return undefined;
+  return { index: openIndex, sourceRow };
 }
 
 function numericValue(value: string): number | undefined {
@@ -227,8 +261,20 @@ class F6PdfRenderer extends Renderer {
     if (headers.length === 3 && headers[0] === "Capability Metric" && headers[1] === "Value" && headers[2] === "Result") {
       return capabilitySpectrum(this.requirements, token.rows);
     }
-    if (headers.length >= 10 && headers.includes("Ordinal") && headers.includes("Factor Description")) {
-      return `<p class="brief-kicker">Graph-first engineering brief</p>${drawingHealthGraph(headers, token.rows)}`;
+    if (exactHeadersMatch(headers, COMPLETE_FACTOR_TABLE_HEADERS)) {
+      const headerCells = token.header.map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`).join("");
+      const rows = token.rows.map((row) => {
+        const marker = requiredMissingMarker(row[0]!);
+        const rowClass = marker === undefined ? "" : ' class="missing"';
+        const cells = row.map((cell, index) => {
+          if (index !== 0 || marker === undefined) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+          const before = this.parser.parseInline(cell.tokens.slice(0, marker.index));
+          const after = this.parser.parseInline(cell.tokens.slice(marker.index + 2));
+          return `<td>${before}<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${marker.sourceRow}" hidden="" aria-hidden="true"></span>${after}</td>`;
+        }).join("");
+        return `<tr${rowClass}>${cells}</tr>`;
+      }).join("");
+      return `<table class="factor-table factor-table--complete"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     if (headers.length === 5 && headers[0] === "Side" && headers[1] === "Current Limit" && headers[2] === "Proposed Limit") {
       return specificationChangeGraph(token.rows);
@@ -263,9 +309,9 @@ class F6PdfRenderer extends Renderer {
 const PRINT_CSS = `
   :root { --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --paper:#fff; --wash:#f8fafc; --blue:#0078d4; --pass:#107c10; --warn:#a15c00; --fail:#d13438; }
   * { box-sizing:border-box; }
-  @page { size:320mm 180mm; margin:7mm; @bottom-right { content:"TA Assist Agent  |  " counter(page) " / " counter(pages); color:#64748b; font:6pt "Segoe UI", Arial, sans-serif; } }
+  @page { size:A4 landscape; margin:10mm 8mm 12mm; @bottom-right { content:"TA Assist Agent  |  " counter(page) " / " counter(pages); color:#64748b; font:6pt "Segoe UI", Arial, sans-serif; } }
   html { background:var(--wash); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:10pt; line-height:1.25; font-variant-numeric:tabular-nums; }
-  body { margin:0 auto; max-width:306mm; background:var(--paper); }
+  body { margin:0 auto; max-width:281mm; background:var(--paper); }
   .report-content { padding:4mm; }
   .report-content>h1 { font-size:20pt; margin:0 0 3mm; padding-bottom:2mm; border-bottom:2px solid var(--blue); }
   .report-content>h2 { margin:2.5mm 0 1mm; font-size:11pt; }
@@ -275,8 +321,8 @@ const PRINT_CSS = `
   .workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:24%; }
   .workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:52%; }
   .workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:10%; text-align:center; }
-  .worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden; break-before:page; break-after:page; }
-  .worksheet-fit { width:100%; padding:1mm 1.5mm; transform-origin:top left; }
+  .worksheet-section { margin:0 0 6mm; break-before:page; page-break-before:always; }
+  .worksheet-fit { width:100%; padding:0; }
   h1 { margin:0 0 1.5mm; padding:0 0 1mm; border-bottom:2px solid var(--blue); font-size:20pt; font-weight:650; letter-spacing:0; }
   h2 { margin:0 0 1mm; color:#1e293b; font-size:13pt; font-weight:650; letter-spacing:0; break-after:avoid; }
   .worksheet-section h2 { font-size:10pt; }
@@ -287,7 +333,24 @@ const PRINT_CSS = `
   th { padding:1.2mm 1mm; background:#1e293b; color:#fff; text-align:left; font-weight:600; }
   td { padding:1mm; border-bottom:1px solid var(--line); vertical-align:top; } tbody tr:nth-child(even) { background:var(--wash); }
   a { color:#0067b8; text-decoration:underline; } .comment { font-weight:750; white-space:nowrap; } .comment--pass { color:var(--pass); } .comment--need-review { color:var(--warn); } .comment--fail { color:var(--fail); }
-  .brief-kicker { margin:0 0 1mm; color:var(--muted); font-size:7pt; }
+  .f6-inline-marker,[data-f6-marker] { display:none !important; }
+  .factor-table { table-layout:fixed; }
+  .factor-table td,.factor-table th { font-size:8.5pt; overflow-wrap:normal; word-break:normal; }
+  .factor-table th:nth-child(1),.factor-table td:nth-child(1) { width:16%; }
+  .factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:10%; }
+  .factor-table th:nth-child(3),.factor-table td:nth-child(3) { width:8%; }
+  .factor-table th:nth-child(4),.factor-table td:nth-child(4) { width:8%; }
+  .factor-table th:nth-child(5),.factor-table td:nth-child(5) { width:7%; }
+  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:7%; text-align:right; }
+  .factor-table th:nth-child(7),.factor-table td:nth-child(7) { width:7%; text-align:right; }
+  .factor-table th:nth-child(8),.factor-table td:nth-child(8) { width:7%; text-align:right; }
+  .factor-table th:nth-child(9),.factor-table td:nth-child(9) { width:7%; text-align:right; }
+  .factor-table th:nth-child(10),.factor-table td:nth-child(10) { width:6%; text-align:right; }
+  .factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:6%; text-align:right; }
+  .factor-table th:nth-child(12),.factor-table td:nth-child(12) { width:6%; text-align:right; }
+  .factor-table th:nth-child(13),.factor-table td:nth-child(13) { width:6%; text-align:right; }
+  .factor-table th:nth-child(14),.factor-table td:nth-child(14) { width:16%; }
+  .factor-table tbody tr.missing td { background:#fef2f2; }
   .drawing-health { display:flex; align-items:center; justify-content:space-between; gap:4mm; margin:0 0 1.5mm; padding:1.4mm 2mm; border:1px solid var(--line); background:#f8fafc; } .health-copy { display:flex; align-items:baseline; gap:3mm; } .health-copy h2,.health-copy p { margin:0; } .health-copy h2 { font-size:10pt; } .health-copy p { color:var(--muted); font-size:7.5pt; } .health-measures { display:flex; gap:5mm; font-size:7.5pt; } .health-measures span { white-space:nowrap; } .health-measures strong { margin-right:1mm; color:var(--fail); font-size:11pt; }
   .analysis-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-template-rows:auto auto; gap:0; align-items:stretch; border:1px solid var(--line); } .analysis-panel { min-width:0; padding:1.5mm 2mm; background:var(--paper); break-inside:avoid; } .analysis-panel+.analysis-panel { border-left:1px solid var(--line); } .analysis-panel h2 { margin-bottom:1mm; } .analysis-panel--image { display:grid; grid-template-columns:78mm minmax(0,1fr); column-gap:3mm; grid-column:span 5; } .analysis-panel--image h2 { grid-column:1/-1; } .analysis-panel--image>.stack-image { grid-column:1; grid-row:2/span 3; } .analysis-panel--image>p { grid-column:2; margin:.5mm 0; font-size:7.5pt; line-height:1.3; } .analysis-panel--results { display:grid; grid-template-columns:1fr 1fr; gap:2mm; grid-column:span 7; } .analysis-panel--results>h2,.analysis-panel--results>.system-summary { grid-column:1/-1; } .analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm; border-top:1px solid var(--line); } .analysis-panel--center { grid-column:span 3; } .analysis-panel--contributors { grid-column:span 6; } .analysis-panel--specifications { grid-column:span 3; }
   .stack-image { margin:0; text-align:center; break-inside:avoid; } .stack-image img { width:78mm; max-height:62mm; object-fit:contain; }
@@ -296,30 +359,10 @@ const PRINT_CSS = `
   .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--muted); } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:#e7edf3; } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track .spec-window { position:absolute; top:0; height:4mm; border:1px solid #94a3b8; background:transparent; z-index:1; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
   .capability-spectrum figcaption strong { color:var(--blue); } .capability-row { display:grid; grid-template-columns:12mm 1fr 14mm; gap:1mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .capability-track i { display:block; height:100%; background:#64748b; } .capability-row--pass .capability-track i { background:var(--pass); } .capability-row--fail .capability-track i { background:var(--fail); } .capability-track b { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); } .capability-spectrum>p,.system-summary { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .offset-track { margin:3mm 0 2mm; background:#e7edf3; } .offset-track i { position:absolute; left:50%; top:-1mm; width:1px; height:6mm; background:var(--ink); } .offset-track b { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--blue); transform:translateX(-50%) rotate(45deg); } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
-  .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:#dbe4ee; } .contribution-fill { display:block; height:100%; background:#64748b; } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:anywhere; }
+  .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:#dbe4ee; } .contribution-fill { display:block; height:100%; background:#64748b; } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:normal; word-break:normal; }
   .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track i { background:#64748b; } .change-track b { background:var(--blue); }
   @media print { html,body { background:#fff; } body { max-width:none; } }
 `;
-
-const FIT_SCRIPT = `<script>
-  function fitWorksheetPages() {
-    for (const section of document.querySelectorAll(".worksheet-section")) {
-      const content = section.querySelector(".worksheet-fit");
-      if (!(content instanceof HTMLElement)) continue;
-      content.style.transform = "none";
-      content.style.width = "100%";
-      const heightScale = section.clientHeight / content.scrollHeight;
-      const widthScale = section.clientWidth / content.scrollWidth;
-      const scale = Math.min(1, heightScale, widthScale);
-      content.style.width = (100 / scale) + "%";
-      content.style.transform = "scale(" + scale + ")";
-      section.dataset.fitScale = scale.toFixed(4);
-    }
-  }
-  window.addEventListener("load", fitWorksheetPages);
-  window.addEventListener("beforeprint", fitWorksheetPages);
-  if (document.fonts) document.fonts.ready.then(fitWorksheetPages);
-</script>`;
 
 export function renderF6PdfHtml(input: F6PdfHtmlInput): string {
   if (!/^[a-f0-9]{64}$/.test(input.sourceHash)) throw new Error("F6 PDF source hash must be a SHA-256 digest.");
@@ -328,7 +371,7 @@ export function renderF6PdfHtml(input: F6PdfHtmlInput): string {
   const content = marked.parse(input.markdown, { async: false, renderer });
   const closingSection = renderer.finishContent();
   const base = input.baseHref === undefined ? "" : `<base href="${escapeHtml(input.baseHref)}">`;
-  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content">${content}${closingSection}</main>${FIT_SCRIPT}</body></html>`;
+  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content">${content}${closingSection}</main></body></html>`;
 }
 
 export function f6PdfImageLinks(markdown: string): readonly string[] {

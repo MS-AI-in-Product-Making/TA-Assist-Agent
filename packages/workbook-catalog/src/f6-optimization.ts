@@ -1,6 +1,7 @@
 import {
   calculationRequestSchema,
   f5MultimodalArtifactV3Schema,
+  completedF5MultimodalProjection,
   f6AnalysisContextSchema,
   f6LegacyOptimizationResultSchema,
   f6ModelInterpretationArtifactSchema,
@@ -12,6 +13,7 @@ import {
   type CalculationFactorResult,
   type CalculationRequest,
   type F5MultimodalArtifactV3,
+  type F5MultimodalArtifactV4,
   type F6ControlledScenario,
   type F6AnalysisContext,
   type F6FactorIdentity,
@@ -61,7 +63,7 @@ interface OptimizationDependencies {
 
 export interface F6OptimizationV3Inputs {
   readonly interactionLanguage: InteractionLanguage;
-  readonly multimodalInterpretation: F5MultimodalArtifactV3;
+  readonly multimodalInterpretation: F5MultimodalArtifactV3 | F5MultimodalArtifactV4;
   readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
   readonly optimizationTargets?: F6OptimizationTargets;
   readonly optimizationTargetsDecision?: F6InputDecision;
@@ -1401,11 +1403,11 @@ export function createF6Optimization(
 
 function verifiedMultimodalWorksheets(
   request: F6OptimizationRequest,
-  value: F5MultimodalArtifactV3,
+  value: F5MultimodalArtifactV3 | F5MultimodalArtifactV4,
 ): F5MultimodalArtifactV3["worksheets"] {
   let artifact: F5MultimodalArtifactV3;
   try {
-    artifact = f5MultimodalArtifactV3Schema.parse(value);
+    artifact = completedF5MultimodalProjection(value);
   } catch {
     throw new Error("Multimodal interpretation must be a valid governed v3 artifact.");
   }

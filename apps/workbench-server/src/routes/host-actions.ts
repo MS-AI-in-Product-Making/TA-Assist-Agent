@@ -252,13 +252,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       if (action?.kind === "vscode_worksheet_multimodal_request") {
         const snapshot = await context.sessions.read(sessionId);
         if (snapshot?.state === "f5_running" && snapshot.revision === action.expectedRevision) {
-          if (parsed.data.payload.status === "completed") await context.enqueueActiveAttempt(snapshot);
-          else await context.failActiveMultimodalAttempt(
-            snapshot,
-            parsed.data.payload.status === "blocked"
-              ? parsed.data.payload.reason ?? "Worksheet multimodal interpretation is blocked."
-              : parsed.data.payload.error.summary,
-          );
+          await context.enqueueActiveAttempt(snapshot);
         }
       }
       return reply.code(204).send();

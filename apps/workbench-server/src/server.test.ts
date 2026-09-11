@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -12,11 +12,12 @@ import type { StartWorkbenchServerOptions } from "./server.js";
 import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
-import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
+import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, reduceSessionCommand } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
 import type { TaWorkbookOrchestrator } from "@ai-assist/workbench";
+import { buildSelectedWorksheetInterpretationContexts } from "./worksheet-interpretation-context.js";
 
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
@@ -29,6 +30,8 @@ const REVIEW_CONTEXT = {
 };
 const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const MULTIMODAL_IMAGE_BYTES = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+const MULTIMODAL_IMAGE_HASH = createHash("sha256").update(MULTIMODAL_IMAGE_BYTES).digest("hex");
 
 function buildWorkbenchServer(options: StartWorkbenchServerOptions) {
   return buildWorkbenchServerBase({ interactionLanguage: ENGLISH_LOCK, ...options });
@@ -229,6 +232,214 @@ function imageBindingSystemSpec() {
     targetSigmaLevel: { status: "available", sourceLabel: "Sigma", sourceCell: "Analysis-A!B4", displayValue: "4.2", actualValue: 4.2, valueOrigin: "numeric_literal" },
     additionalMeanShift: { status: "available", sourceLabel: "Mean shift", sourceCell: "Analysis-A!B5", displayValue: "0", actualValue: 0, valueOrigin: "numeric_literal" },
   };
+}
+
+function workflowOwnedMultimodalF2Row(worksheetName: string, tableId: string, sourceRow: number, ordinal: string, imagePath: string) {
+  return {
+    worksheetName,
+    tableId,
+    sourceRow,
+    factorOrdinal: { value: ordinal, rawText: ordinal === "C" ? " C " : ordinal, sourceCell: `${worksheetName}!Z${sourceRow}` },
+    actualFields: {
+      factorName: `Factor ${worksheetName.at(-1)}${ordinal === "C" ? "1" : ordinal === "A" ? "1" : "2"}`,
+      partName: `Part ${worksheetName.at(-1)}`,
+      drawingNumber: `DWG-${worksheetName.at(-1)}`,
+      dimCharacteristicId: String(sourceRow),
+      partCategory: "CNC",
+      nominalValue: sourceRow,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "normal",
+      mean: sourceRow,
+      tolerance: 0.2,
+      oneSigma: 0.025,
+      percentContributionToSigma: 0.5,
+      notes: null,
+    },
+    sourceCells: { factorName: `${worksheetName}!A${sourceRow}`, nominalValue: `${worksheetName}!B${sourceRow}` },
+    imageReference: { artifact: "f1", relativePath: imagePath, contentHash: MULTIMODAL_IMAGE_HASH, worksheetName },
+    missingRequiredFields: [],
+    missingIdentifiers: [],
+    capabilityStatus: "non_f0_process_category",
+    adoReminderRequested: false,
+  };
+}
+
+function workflowOwnedMultimodalAvailable(sourceCell: string, actualValue: number) {
+  return { status: "available", sourceLabel: "label", sourceCell, displayValue: String(actualValue), actualValue, valueOrigin: "numeric_literal" };
+}
+
+function workflowOwnedMultimodalF2Report(workbookHash = REVIEW_CONTEXT.workbookHash) {
+  const worksheetA = [
+    workflowOwnedMultimodalF2Row("Analysis-A", "table-a", 11, "A", "images/analysis-a.png"),
+    workflowOwnedMultimodalF2Row("Analysis-A", "table-a", 12, "B", "images/analysis-a.png"),
+  ];
+  const worksheetB = [workflowOwnedMultimodalF2Row("Analysis-B", "table-b", 21, "C", "images/analysis-b.png")];
+  const worksheet = (worksheetName: string, rows: typeof worksheetA | typeof worksheetB) => ({
+    worksheetName,
+    toleranceLoopDescription: worksheetName,
+    tolerancePathImageStatus: "available",
+    systemSpecification: {
+      status: "available",
+      designNominal: workflowOwnedMultimodalAvailable(`${worksheetName}!B1`, 0),
+      lowerSpecLimit: workflowOwnedMultimodalAvailable(`${worksheetName}!B2`, -1),
+      upperSpecLimit: workflowOwnedMultimodalAvailable(`${worksheetName}!B3`, 1),
+      targetSigmaLevel: workflowOwnedMultimodalAvailable(`${worksheetName}!B4`, 4),
+      additionalMeanShift: workflowOwnedMultimodalAvailable(`${worksheetName}!B5`, 0),
+    },
+    systemSpecificationIssues: [],
+    f4CalculabilityIssues: [],
+    rows,
+    missingFieldSummary: [],
+    status: "ready",
+  });
+  const handoff = (worksheetName: string, tableId: string, rows: typeof worksheetA | typeof worksheetB) => ({
+    contractVersion: "v1",
+    handoffVersion: "f4-handoff-v1",
+    inputClassification: "confidential",
+    status: "ready",
+    workbookContentHash: workbookHash,
+    worksheetName,
+    toleranceLoopDescription: worksheetName,
+    systemSpecification: {
+      designNominal: 0,
+      lowerSpecLimit: workflowOwnedMultimodalAvailable(`${worksheetName}!B2`, -1),
+      upperSpecLimit: workflowOwnedMultimodalAvailable(`${worksheetName}!B3`, 1),
+      targetSigmaLevel: workflowOwnedMultimodalAvailable(`${worksheetName}!B4`, 4),
+      targetCpk: 4 / 3,
+      additionalMeanShift: workflowOwnedMultimodalAvailable(`${worksheetName}!B5`, 0),
+    },
+    factors: rows.map((row) => ({ tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells })),
+  });
+  return {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    status: "completed",
+    workbook: { fileName: "anonymous.xlsx", contentHash: workbookHash, f1GeneratedAt: "2026-09-07T00:00:00.000Z" },
+    knowledgeBaseVersions: ["v1", "internal-v1"],
+    mappingRuleVersion: "v1",
+    artifactRoot: "managed/f2",
+    worksheets: [worksheet("Analysis-A", worksheetA), worksheet("Analysis-B", worksheetB)],
+    f4Handoffs: [handoff("Analysis-A", "table-a", worksheetA), handoff("Analysis-B", "table-b", worksheetB)],
+    adoEvents: [],
+    summary: {
+      worksheetsChecked: 2,
+      blockedWorksheetCount: 0,
+      readyWorksheetCount: 2,
+      factorRowCount: 3,
+      rowsWithRequiredMissing: 0,
+      requiredMissingFieldCount: 0,
+      missingImageWorksheetCount: 0,
+      internalWithinGuidanceCount: 0,
+      internalGuidanceExceededCount: 0,
+      f0InformationInsufficientCount: 0,
+      publicLibraryMatchCount: 0,
+      nonF0ProcessCategoryCount: 3,
+      unableToCheckCount: 0,
+      publicToleranceDifferenceCount: 0,
+      publicDistributionDifferenceCount: 0,
+      missingDimIdCount: 0,
+      missingPartNumberCount: 0,
+    },
+  };
+}
+
+function workflowOwnedMultimodalF4Result(workbookHash = REVIEW_CONTEXT.workbookHash) {
+  const factor = (worksheetName: string, tableId: string, sourceRow: number, factorName: string) => ({
+    factorName,
+    unit: "mm",
+    source: { worksheetName, tableId, sourceRow },
+    input: { nominalValue: sourceRow, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal" },
+    mean: sourceRow,
+    halfTolerance: 0.1,
+    sigma: 0.025,
+    contribution: 0.5,
+    trace: { formulaIds: ["factor-mean-v1"], sourceCells: [`${worksheetName}!B${sourceRow}`] },
+  });
+  const calculation = (worksheetName: string, tableId: string, factors: ReturnType<typeof factor>[]) => ({
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F4",
+    status: "completed",
+    calculationVersion: "excel-ta-v1",
+    projectReference: "project",
+    runReference: `run-${worksheetName}`,
+    workbookContentHash: workbookHash,
+    worksheetSelection: { worksheetName, tableId },
+    factorCount: factors.length,
+    recommendation: { method: "worst_case", reason: "factor_count_1_to_3", refer3d: false, criticality: "none", criticalityRisk: false },
+    factors,
+    system: { designNominal: 0, mean: 0, additionalMeanShift: 0, worstCaseUpper: 1, worstCaseLower: -1, rssSigma: 0.1 },
+    capability: { lowerSpecLimit: -1, upperSpecLimit: 1, targetSigmaLevel: 4, targetCpk: 1.33, cp: 2, lowerCpk: 2, upperCpk: 2, cpk: 2, lowerZ: 6, upperZ: 6, lowerDpm: 0, upperDpm: 0, totalDpm: 0, outOfSpecRatio: 0, yield: 1, status: "PASS" },
+    traceRecords: [{ outputField: "capability.cpk", formulaVersion: "excel-ta-v1", formulaId: "cpk-v1", sourceCells: ["capability.lowerCpk", "capability.upperCpk"] }],
+    scenarios: [],
+  });
+  return {
+    contractVersion: "v1",
+    workflowVersion: "f4-f2-v1",
+    outputClassification: "confidential",
+    featureId: "F4",
+    status: "completed",
+    runId: "f4-run",
+    generatedAt: "2026-09-07T00:00:00.000Z",
+    source: { artifactReference: "Feature2-Report.json", workbookFileName: "anonymous.xlsx", workbookContentHash: workbookHash },
+    calculations: [
+      calculation("Analysis-A", "table-a", [factor("Analysis-A", "table-a", 11, "Factor A1"), factor("Analysis-A", "table-a", 12, "Factor A2")]),
+      calculation("Analysis-B", "table-b", [factor("Analysis-B", "table-b", 21, "Factor B1")]),
+    ],
+    summary: { selectedWorksheetCount: 2, completedWorksheetCount: 2 },
+  };
+}
+
+async function writeWorkflowOwnedMultimodalImages(rootDir: string) {
+  await writeImageArtifactFixture(rootDir, "managed/f1/images/analysis-a.png", MULTIMODAL_IMAGE_BYTES);
+  await writeImageArtifactFixture(rootDir, "managed/f1/images/analysis-b.png", MULTIMODAL_IMAGE_BYTES);
+}
+
+function workflowOwnedMultimodalArtifactReader(sessionId: string, f2Report: ReturnType<typeof workflowOwnedMultimodalF2Report>, f2ReportHash: string, f4Result: ReturnType<typeof workflowOwnedMultimodalF4Result>, f4ResultHash: string) {
+  return {
+    async readReference(artifactId: string) {
+      if (artifactId === "f2-current") return { artifactId, sessionId, inputRevision: 1, kind: "f2_report", relativePath: "managed/f2/Feature2-Report.json", contentHash: f2ReportHash };
+      if (artifactId === "f4-current") return { artifactId, sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "managed/f4/Feature4-Calculation.json", contentHash: f4ResultHash };
+      return undefined;
+    },
+    async readJson(artifactId: string) {
+      if (artifactId === "f2-current") return f2Report;
+      if (artifactId === "f4-current") return f4Result;
+      return undefined;
+    },
+    async inspectWorksheetImage(input: { worksheetName: string; artifactPath: string; expectedContentHash: string }) {
+      return { mediaType: "image/png" as const, contentHash: input.expectedContentHash, byteLength: MULTIMODAL_IMAGE_BYTES.byteLength, artifactPath: input.artifactPath };
+    },
+  };
+}
+
+function completedMultimodalPayload(request: Awaited<ReturnType<typeof buildSelectedWorksheetInterpretationContexts>>[number]) {
+  const result = {
+    contractVersion: "f5-multimodal-result-v3" as const,
+    outputClassification: "confidential" as const,
+    requestHash: request.requestHash,
+    sessionId: request.sessionId,
+    revision: request.revision,
+    inputRevision: request.inputRevision,
+    workbookContentHash: request.workbook.contentHash,
+    worksheetName: request.worksheetName,
+    tableId: request.tableId,
+    imageContentHash: request.image.contentHash,
+    model: { modelId: "test-vision-model", supportsImage: true as const },
+    imageTableInterpretation: `Interpreted ${request.worksheetName} with the complete Factor table.`,
+    rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched" as const, visibleStatus: "visible" as const, interpretation: `${row.factorOrdinal.value}:${row.factorName}` })),
+  };
+  return { status: "completed" as const, outcome: { kind: "worksheet_multimodal_response" as const, result, scopeEvaluations: requiredScopeEvaluations() } };
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence" as const, observedValue: "ambiguous" as const, confidence: "low" as const,
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }
 
 async function immediateQueue(options: PersistentWorkerQueueOptions) {
@@ -509,26 +720,56 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("registers a structured F6 result under one durable F4/F5 review context", async () => {
+  it("creates workflow-owned multimodal host actions without confirm_image_decision and waits for every worksheet outcome", async () => {
     const rootDir = testRoot("workbench-server-review-context-registration");
     await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "30303030-3030-4303-8303-303030303030";
+    const f2Report = workflowOwnedMultimodalF2Report();
+    const f4Result = workflowOwnedMultimodalF4Result();
+    const f2ReportHash = await writeJsonArtifact(rootDir, "managed/f2/Feature2-Report.json", f2Report);
+    await writeWorkflowOwnedMultimodalImages(rootDir);
+    const reviewContext = {
+      workbookHash: REVIEW_CONTEXT.workbookHash,
+      downstreamSelectionHash: createHash("sha256").update(JSON.stringify(["Analysis-A", "Analysis-B"])).digest("hex"),
+      baselineRunReference: REVIEW_CONTEXT.baselineRunReference,
+    };
     const runner = vi.fn(async (job: { readonly stage: string }) => {
-      const result = job.stage === "f4_running"
-        ? structuredReviewResult("F4", false)
-        : job.stage === "f5_running"
-          ? structuredReviewResult("F5")
-          : job.stage === "f6_running"
-            ? structuredReviewResult("F6")
-            : { status: "completed", artifactReferences: [] };
-      await Promise.all((result.artifactReferences ?? []).map(async (artifact) => {
-        const target = join(rootDir, artifact.relativePath);
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, JSON.stringify({ artifactId: artifact.artifactId }));
-      }));
-      if (job.stage === "f4_running") return structuredReviewResult("F4", false);
-      if (job.stage === "f5_running") return structuredReviewResult("F5");
-      if (job.stage === "f6_running") return structuredReviewResult("F6");
-      return { status: "completed" };
+      if (job.stage === "f4_running") {
+        const f4Hash = await writeJsonArtifact(rootDir, "managed/f4/Feature4-Calculation.json", f4Result);
+        return {
+          featureId: "F4",
+          status: "completed",
+          reviewContext,
+          artifactReferences: [{ artifactId: "f4-current", kind: "f4_calculation", relativePath: "managed/f4/Feature4-Calculation.json", contentHash: f4Hash }],
+        };
+      }
+      if (job.stage === "f5_running") {
+        const registry = JSON.parse(await readFile(join(rootDir, "runtime", "workbench", "registries", "multimodal-artifacts", `${sessionId}.json`), "utf8")) as { path: string; contentHash: string };
+        const f5ReportHash = await writeJsonArtifact(rootDir, "managed/f5/Feature5-Report.json", { artifactId: "f5-report" });
+        return {
+          featureId: "F5",
+          status: "completed",
+          reviewContext,
+          artifactReferences: [
+            { artifactId: "f5-multimodal:1", kind: "f5_multimodal", relativePath: relative(rootDir, registry.path), contentHash: registry.contentHash },
+            { artifactId: "f5-report", kind: "f5_report", relativePath: "managed/f5/Feature5-Report.json", contentHash: f5ReportHash },
+          ],
+        };
+      }
+      if (job.stage === "f6_running") {
+        const f6OptimizationHash = await writeJsonArtifact(rootDir, "managed/f6/Feature6-Optimization.json", { artifactId: "f6-optimization" });
+        const f6ReportHash = await writeJsonArtifact(rootDir, "managed/f6/Feature6-Report.json", { artifactId: "f6-report" });
+        return {
+          featureId: "F6",
+          status: "completed",
+          reviewContext,
+          artifactReferences: [
+            { artifactId: "f6-optimization", kind: "f6_optimization", relativePath: "managed/f6/Feature6-Optimization.json", contentHash: f6OptimizationHash },
+            { artifactId: "f6-report", kind: "f6_report", relativePath: "managed/f6/Feature6-Report.json", contentHash: f6ReportHash },
+          ],
+        };
+      }
+      return { status: "completed", artifactReferences: [] };
     });
     const server = await buildWorkbenchServer({
       rootDir,
@@ -536,13 +777,8 @@ describe("workbench server routes", () => {
       queueFactory: immediateQueue,
       skipWebAssets: true,
     });
-    const sessionId = "30303030-3030-4303-8303-303030303030";
     try {
       const browser = await server.testAuthenticate(sessionId);
-      await mkdir(join(rootDir, "f4"), { recursive: true });
-      await mkdir(join(rootDir, "f5"), { recursive: true });
-      await writeFile(join(rootDir, "f4", "Feature4-Calculation.json"), JSON.stringify({ artifactId: "f4-calculation" }));
-      await writeFile(join(rootDir, "f5", "Feature5-Report.json"), JSON.stringify({ artifactId: "f5-report" }));
       const store = await openSessionStore({ rootDir, sessionId });
       try {
         await store.applyCommand({
@@ -557,76 +793,103 @@ describe("workbench server routes", () => {
             ...snapshot,
             revision: snapshot.revision + 1,
             inputRevision: 1,
-            state: "analysis_context_decision_required",
-            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
+            state: "failed",
+            downstreamScopeSelection: {
+              ...governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
+              selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+              f2ReportArtifactId: "f2-current",
+              f2ReportContentHash: f2ReportHash,
+            },
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
-            activeAttempt: null,
-            artifactRefs: [
-              { artifactId: "f4-calculation", kind: "f4_calculation", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
-              { artifactId: "f5-report", kind: "f5_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
-            ],
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+            activeAttempt: {
+              attemptId: "seed-f4:f4_running",
+              stage: "f4_running",
+              status: "failed",
+              startedAt: "2026-08-25T00:00:00.000Z",
+              endedAt: "2026-08-25T00:00:01.000Z",
+            },
           },
-          artifactReferences: [
-            { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "f4/Feature4-Calculation.json", contentHash: "1".repeat(64), reviewContext: REVIEW_CONTEXT },
-            { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: "f5/Feature5-Report.json", contentHash: "2".repeat(64), reviewContext: REVIEW_CONTEXT },
-          ],
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: "managed/f2/Feature2-Report.json", contentHash: f2ReportHash }],
+          },
         }));
       } finally {
         await store.close();
       }
 
-      let expectedRevision = 1;
-      const submit = async (commandId: string, command: string, payload: Record<string, unknown>) => {
-        const response = await server.inject({
-          method: "POST",
-          url: `/api/sessions/${sessionId}/commands`,
-          headers: browser.headers,
-          payload: { contractVersion: "f8-session-command-v1", sessionId, commandId, expectedRevision, command, payload },
-        });
-        if (response.statusCode === 202) expectedRevision = response.json<{ revision: number }>().revision;
-        return response;
-      };
-
-      expect((await submit("confirm-analysis-context", "confirm_analysis_context", { decision: "not_provided", rationale: "No additional analysis context supplied." })).statusCode).toBe(202);
-      expect((await submit("confirm-optimization-targets", "confirm_optimization_targets", { decision: "not_provided", rationale: "Use governed default optimization targets." })).statusCode).toBe(202);
+      const standardRun = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: { contractVersion: "f8-session-command-v1", sessionId, commandId: "retry-f4", expectedRevision: 1, command: "retry", payload: { stage: "f4_running" } },
+      });
+      expect(standardRun.statusCode).toBe(202);
 
       const reopened = await openSessionStore({ rootDir, sessionId });
+      let requests: Awaited<ReturnType<typeof buildSelectedWorksheetInterpretationContexts>>;
       try {
         const snapshot = await reopened.readSnapshot();
-        expect(snapshot.state).toBe("ado_decision_required");
-        expectedRevision = snapshot.revision;
+        const runnerError = await readFile(join(rootDir, "runtime", "workbench", "registries", "runner-errors", `${sessionId}.json`), "utf8").catch(() => undefined);
+        expect(snapshot.state, runnerError).toBe("f5_running");
+        expect(snapshot.state).not.toBe("image_decision_required");
+        expect(await reopened.readCommandReceipt("retry-f4:f4_running:image-default")).toBeNull();
+        expect(await reopened.readCommandReceipt("confirm-analysis-context")).toBeNull();
+        expect(await reopened.readCommandReceipt("confirm-optimization-targets")).toBeNull();
+
+        const f4Reference = await reopened.readArtifactReference("f4-current");
+        requests = await buildSelectedWorksheetInterpretationContexts(snapshot, workflowOwnedMultimodalArtifactReader(sessionId, f2Report, f2ReportHash, f4Result, f4Reference!.contentHash!));
+        expect(requests.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
       } finally {
         await reopened.close();
       }
 
-      expect((await submit("ado-local-only", "confirm_ado_decision", { decision: "local_only" })).statusCode).toBe(202);
-
-      const reviewed = await openSessionStore({ rootDir, sessionId });
+      const hostActionStore = await createHostActionStore({ rootDir, sessionId });
       try {
-        const snapshot = await reviewed.readSnapshot();
-        const f4Reference = await reviewed.readArtifactReference("f4-calculation");
-        expect(snapshot.state).toBe("review_required");
-        expect(snapshot.artifactRefs?.map((artifact) => artifact.revision)).toEqual([1, 1, 1, 1]);
-        expect(f4Reference?.metadata?.reviewContext).toEqual(REVIEW_CONTEXT);
-        expect(selectCompleteReviewContext(snapshot)?.reviewContextId).toMatch(/^[a-f0-9]{64}$/);
-        expect(projectWorksheetReview({ sessionId, snapshot, f4Report: { calculations: [] }, f5Report: { worksheets: [] }, f6Report: { worksheets: [] } }, "Analysis-A").worksheets).toHaveLength(1);
+        for (const request of requests) {
+          const record = await hostActionStore.getHostAction(`multimodal:${request.requestHash}`);
+          expect(record?.request.kind).toBe("vscode_worksheet_multimodal_request");
+          expect(record?.request.request.worksheetName).toBe(request.worksheetName);
+        }
       } finally {
-        await reviewed.close();
+        await hostActionStore.close();
       }
-      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f6_running"]);
-      expect(runner.mock.calls.map(([job]) => job.payload)).toEqual([
-        { sessionId, reviewContext: REVIEW_CONTEXT },
-      ]);
-      const artifactResponse = await server.inject({
-        method: "GET",
-        url: `/api/sessions/${sessionId}/artifacts/f4-calculation`,
-        headers: browser.headers,
-      });
-      expect({ statusCode: artifactResponse.statusCode, payload: artifactResponse.payload }).toEqual({
-        statusCode: 200,
-        payload: JSON.stringify({ artifactId: "f4-calculation" }),
-      });
-      expect(artifactResponse.json()).toEqual({ artifactId: "f4-calculation" });
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running"]);
+
+      const firstRequest = requests[0]!;
+      const firstActionId = `multimodal:${firstRequest.requestHash}`;
+      const firstClaimToken = server.issueHostBearer(sessionId, ["host-actions:claim"], { actionId: firstActionId, hostInstanceId: "host-a" });
+      const firstClaim = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/host-actions/${encodeURIComponent(firstActionId)}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${firstClaimToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(firstClaim.statusCode).toBe(200);
+      const firstPayload = completedMultimodalPayload(firstRequest);
+      const firstResultToken = server.issueHostBearer(sessionId, ["host-actions:result"], { actionId: firstActionId, hostInstanceId: "host-a" });
+      const firstResult = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/host-actions/${encodeURIComponent(firstActionId)}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${firstResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: firstActionId, hostInstanceId: "host-a", leaseId: firstClaim.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(firstPayload)).digest("hex"), payload: firstPayload } });
+      expect(firstResult.statusCode).toBe(204);
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running"]);
+
+      const secondRequest = requests[1]!;
+      const secondActionId = `multimodal:${secondRequest.requestHash}`;
+      const secondClaimToken = server.issueHostBearer(sessionId, ["host-actions:claim"], { actionId: secondActionId, hostInstanceId: "host-a" });
+      const secondClaim = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/host-actions/${encodeURIComponent(secondActionId)}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${secondClaimToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(secondClaim.statusCode).toBe(200);
+      const secondPayload = completedMultimodalPayload(secondRequest);
+      const secondResultToken = server.issueHostBearer(sessionId, ["host-actions:result"], { actionId: secondActionId, hostInstanceId: "host-a" });
+      const secondResult = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/host-actions/${encodeURIComponent(secondActionId)}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${secondResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: secondActionId, hostInstanceId: "host-a", leaseId: secondClaim.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(secondPayload)).digest("hex"), payload: secondPayload } });
+      expect(secondResult.statusCode).toBe(204);
+
+      const completed = await openSessionStore({ rootDir, sessionId });
+      try {
+        const snapshot = await completed.readSnapshot();
+        const runnerError = await readFile(join(rootDir, "runtime", "workbench", "registries", "runner-errors", `${sessionId}.json`), "utf8").catch(() => undefined);
+        expect(snapshot.state, runnerError).toBe("ado_decision_required");
+        expect(snapshot.priorRunReferences).toEqual(expect.arrayContaining([
+          expect.objectContaining({ featureId: "F6", contractVersion: "f6-input-decision-v1", referenceId: "f6-analysis-context:not_provided" }),
+          expect.objectContaining({ featureId: "F6", contractVersion: "f6-input-decision-v1", referenceId: "f6-optimization-targets:not_provided" }),
+        ]));
+      } finally {
+        await completed.close();
+      }
+      expect(runner.mock.calls.map(([job]) => job.stage)).toEqual(["f4_running", "f5_running", "f6_running"]);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

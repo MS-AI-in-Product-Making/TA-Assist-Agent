@@ -9,11 +9,29 @@ const SESSION_ID = "89898989-8989-4989-8989-898989898989";
 const IMAGE_BYTES = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
 
 describe("executeWorksheetMultimodalModel", () => {
+  it.each(["missing", "incomplete", "duplicate", "not_evaluated"])("fails a %s five-scope evaluation", async (variant) => {
+    const request = multimodalRequest();
+    const candidate: Record<string, unknown> = { result: validResult(request), scopeEvaluations: scopeEvaluations() };
+    if (variant === "missing") delete candidate.scopeEvaluations;
+    if (variant === "incomplete") candidate.scopeEvaluations = scopeEvaluations().slice(1);
+    if (variant === "duplicate") candidate.scopeEvaluations = [...scopeEvaluations().slice(1), scopeEvaluations()[1]];
+    if (variant === "not_evaluated") candidate.scopeEvaluations = scopeEvaluations().map((scope) => ({ ...scope, status: "not_evaluated" }));
+    expect(await executeWorksheetMultimodalModel(dependencies(request, JSON.stringify(candidate))))
+      .toMatchObject({ status: "failed", error: { code: "evaluation_incomplete" } });
+  });
+
+  it("returns exactly five assessed scopes without modifying the v3 pair", async () => {
+    const request = multimodalRequest();
+    const result = validResult(request);
+    const execution = await executeWorksheetMultimodalModel(dependencies(request, JSON.stringify({ result, scopeEvaluations: scopeEvaluations() })));
+    expect(execution).toEqual({ status: "completed", outcome: { kind: "worksheet_multimodal_response", result, scopeEvaluations: scopeEvaluations() } });
+  });
+
   it("sends exactly one binary image part and one complete Factor-table text part", async () => {
     const request = multimodalRequest();
     const sendRequest = vi.fn(async (messages: unknown[]) => {
       const result = validResult(request);
-      return { text: stream(JSON.stringify(result)), messages };
+      return { text: stream(JSON.stringify({ result, scopeEvaluations: scopeEvaluations() })), messages };
     });
     const parts: unknown[] = [];
 
@@ -77,7 +95,7 @@ describe("executeWorksheetMultimodalModel", () => {
   it("skips an explicitly text-only model and uses an image-capable model once", async () => {
     const request = multimodalRequest();
     const textOnly = vi.fn();
-    const imageCapable = vi.fn(async () => ({ text: stream(JSON.stringify(validResult(request))) }));
+    const imageCapable = vi.fn(async () => ({ text: stream(JSON.stringify({ result: validResult(request), scopeEvaluations: scopeEvaluations() })) }));
     const execution = await executeWorksheetMultimodalModel({
       ...dependencies(request, "unused"),
       models: [
@@ -107,7 +125,7 @@ describe("executeWorksheetMultimodalModel", () => {
 
     const ambiguous = validResult(request);
     ambiguous.rowMappings[1]!.factorOrdinal.value = "A";
-    const invalidMapping = await executeWorksheetMultimodalModel(dependencies(request, JSON.stringify(ambiguous)));
+    const invalidMapping = await executeWorksheetMultimodalModel(dependencies(request, JSON.stringify({ result: ambiguous, scopeEvaluations: scopeEvaluations() })));
     expect(invalidMapping).toMatchObject({ status: "failed", error: { code: "model_result_invalid" } });
   });
 });
@@ -136,4 +154,10 @@ function validResult(request: ReturnType<typeof multimodalRequest>) {
 
 async function* stream(value: string) {
   yield value;
+}
+
+function scopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low", visibleBasis: "The supplied image does not establish this geometry.",
+  }));
 }

@@ -14,7 +14,9 @@ import {
   createF5MultimodalRequestHash,
 } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
+import { marked } from "marked";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
+import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
 import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
 import {
   createF6ArtifactBundleFixture,
@@ -35,6 +37,23 @@ function readJson(filePath) {
 function row(values) {
   return `| ${values.join(" | ")} |`;
 }
+
+const expectedFactorHeaders = [
+  "Factor Description",
+  "Part Name",
+  "Part Category",
+  "Drawing Number",
+  "DIM ID",
+  "Design Nominal",
+  "+ Tolerance",
+  "- Tolerance",
+  "Long Term / Safety Factor",
+  "Sigma Level",
+  "Mean",
+  "Tolerance",
+  "One Sigma",
+  "Capability / Knowledge Guidance",
+];
 
 function createMultimodalV3(inputs) {
   const f2Worksheet = inputs.f2Report.worksheets[0];
@@ -114,6 +133,136 @@ function createMultimodalV3(inputs) {
       },
     }],
   };
+}
+
+function createMixedMultimodalV4(inputs, { completedWorksheetName = "Analysis-A", failedWorksheetName = "Analysis-B", reasonCode = "evaluation_failed", summary = "worksheet image evaluation failed" } = {}) {
+  const completedWorksheet = inputs.f2Report.worksheets.find((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const failedWorksheet = inputs.f2Report.worksheets.find((worksheet) => worksheet.worksheetName === failedWorksheetName);
+  const completedCalculation = inputs.f4Report.calculations.find((calculation) => calculation.worksheetSelection.worksheetName === completedWorksheetName);
+  const failedCalculation = inputs.f4Report.calculations.find((calculation) => calculation.worksheetSelection.worksheetName === failedWorksheetName);
+  const completedF5Worksheet = inputs.f5Report.worksheets.find((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const failedF5Worksheet = inputs.f5Report.worksheets.find((worksheet) => worksheet.worksheetName === failedWorksheetName);
+  if (!completedWorksheet || !failedWorksheet || !completedCalculation || !failedCalculation || !completedF5Worksheet || !failedF5Worksheet) {
+    throw new Error("Expected mixed multimodal fixture worksheets.");
+  }
+  const requestFor = (worksheet, calculation, f5Worksheet) => {
+    const f2Row = worksheet.rows[0];
+    const factor = calculation.factors[0];
+    const factorRows = [{
+      worksheetName: worksheet.worksheetName,
+      tableId: f2Row.tableId,
+      sourceRow: f2Row.sourceRow,
+      factorOrdinal: structuredClone(f2Row.factorOrdinal),
+      factorName: factor.factorName,
+      partName: f2Row.actualFields.partName,
+      partCategory: f2Row.actualFields.partCategory,
+      drawingNumber: f2Row.actualFields.drawingNumber,
+      dimId: f2Row.actualFields.dimCharacteristicId,
+      nominal: factor.input.nominalValue,
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
+      longTermSafetyFactor: factor.input.longTermSafetyFactor,
+      sigmaLevel: factor.input.sigmaLevel,
+      distribution: factor.input.distribution,
+      sourceCells: structuredClone(f2Row.sourceCells),
+    }];
+    const request = {
+      contractVersion: "f5-multimodal-request-v3",
+      inputClassification: "confidential",
+      requestHash: "",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      revision: 7,
+      inputRevision: 3,
+      workbook: {
+        fileName: inputs.f2Report.workbook.fileName,
+        contentHash: inputs.f2Report.workbook.contentHash,
+      },
+      worksheetName: worksheet.worksheetName,
+      tableId: f2Row.tableId,
+      activeFactorCount: factorRows.length,
+      factorSetHash: createF5MultimodalFactorSetHash(factorRows),
+      image: { mediaType: "image/png", contentHash: f5Worksheet.imageReference.contentHash, byteLength: 100, artifactPath: f5Worksheet.imageReference.relativePath },
+      factorRows,
+    };
+    request.requestHash = createF5MultimodalRequestHash(request);
+    return request;
+  };
+  const completedRequest = requestFor(completedWorksheet, completedCalculation, completedF5Worksheet);
+  const failedRequest = requestFor(failedWorksheet, failedCalculation, failedF5Worksheet);
+  return {
+    contractVersion: "f5-multimodal-artifact-v4",
+    outputClassification: "confidential",
+    sessionId: completedRequest.sessionId,
+    revision: completedRequest.revision,
+    inputRevision: completedRequest.inputRevision,
+    workbookContentHash: completedRequest.workbook.contentHash,
+    selectedWorksheetNames: [completedWorksheetName, failedWorksheetName],
+    worksheets: [{
+      status: "completed",
+      request: completedRequest,
+      scopeEvaluations: requiredScopeEvaluations(),
+      result: {
+        contractVersion: "f5-multimodal-result-v3",
+        outputClassification: "confidential",
+        requestHash: completedRequest.requestHash,
+        sessionId: completedRequest.sessionId,
+        revision: completedRequest.revision,
+        inputRevision: completedRequest.inputRevision,
+        workbookContentHash: completedRequest.workbook.contentHash,
+        worksheetName: completedRequest.worksheetName,
+        tableId: completedRequest.tableId,
+        imageContentHash: completedRequest.image.contentHash,
+        model: { modelId: "vision-model", supportsImage: true },
+        imageTableInterpretation: "Image and complete Factor table jointly support the tolerance path interpretation.",
+        rowMappings: completedRequest.factorRows.map((factorRow) => ({
+          worksheetName: factorRow.worksheetName,
+          tableId: factorRow.tableId,
+          sourceRow: factorRow.sourceRow,
+          factorOrdinal: structuredClone(factorRow.factorOrdinal),
+          mappingStatus: "matched",
+          visibleStatus: "visible",
+          interpretation: "Factor A is visible and mapped to the table row.",
+        })),
+      },
+    }, {
+      status: "failed",
+      request: failedRequest,
+      reasonCode,
+      summary,
+    }],
+  };
+}
+
+function requiredScopeEvaluations() {
+  return ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({
+    scope, status: "insufficient_evidence", observedValue: "ambiguous", confidence: "low",
+    visibleBasis: "The supplied image does not establish this geometry.",
+  }));
+}
+
+function keepCompletedWorksheetOnly(inputs, { completedWorksheetName = "Analysis-A", failedWorksheetName = "Analysis-B" } = {}) {
+  inputs.f5Report.worksheets = inputs.f5Report.worksheets.filter((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  inputs.f5Report.status = "completed";
+  inputs.f5Report.summary.worksheetCount = inputs.f5Report.worksheets.length;
+  inputs.f5Report.summary.completedWorksheetCount = inputs.f5Report.worksheets.length;
+  inputs.f5Report.summary.inputRejectedWorksheetCount = 0;
+  inputs.f5Report.summary.statementCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0);
+  inputs.f5Report.summary.clarificationCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0);
+  inputs.f5Report.summary.assumptionCount = inputs.f5Report.worksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0);
+
+  inputs.f6Optimization.worksheets = inputs.f6Optimization.worksheets.filter((worksheet) => worksheet.worksheetName === completedWorksheetName);
+  const completedWorksheet = inputs.f6Optimization.worksheets[0];
+  const options = completedWorksheet.steps[3].options;
+  inputs.f6Optimization.provenance.reportScope = {
+    worksheetNames: [completedWorksheetName, failedWorksheetName],
+    blockedWorksheetNames: [failedWorksheetName],
+  };
+  inputs.f6Optimization.summary.worksheetCount = 1;
+  inputs.f6Optimization.summary.completedWorksheetCount = completedWorksheet.runStatus === "COMPLETED" ? 1 : 0;
+  inputs.f6Optimization.summary.clarificationRequiredWorksheetCount = completedWorksheet.runStatus === "COMPLETED" ? 0 : 1;
+  inputs.f6Optimization.summary.completedOptionCount = options.filter((option) => option.status === "completed").length;
+  inputs.f6Optimization.summary.calculationFailedOptionCount = options.filter((option) => option.status === "calculation_failed").length;
+  inputs.f6Optimization.runStatus = completedWorksheet.runStatus === "COMPLETED" ? "COMPLETED" : "CLARIFICATION_REQUIRED";
 }
 
 function numberText(value, fallback = "N/A") {
@@ -442,6 +591,21 @@ describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
 
   it("rejects a new-workflow final report when multimodal v3 is missing", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
+  });
+
+  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], f5Variant: "supported", modelInterpretationVersion: "v2" });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
+
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
+    ]));
+    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
+    expect(projection.markdown).toContain("- Status: FAIL");
+    expect(projection.markdown).toContain("worksheet image evaluation failed");
   });
 
   it("renders image-plus-table context and every Factor mapping from multimodal v3", () => {
@@ -844,20 +1008,43 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
     expect(markdown).toContain("f6-top3-tolerance-policy-v1");
   });
 
-  it("renders all factor rows in the worksheet body and keeps blocked worksheets evidence-only", () => {
+  it("renders a complete 14-column factor table for ready worksheets", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A"],
-      blockedWorksheetNames: ["Blocked-A"],
       f5Variant: "supported",
     });
     const { markdown } = createF6FinalReportProjection(inputs);
     const readyCalculation = inputs.f4Report.calculations[0];
-    const blockedMarkdown = markdown.split("# 3. Worksheet：Blocked-A")[1] ?? "";
+    const readySection = markdown.slice(
+      markdown.indexOf("# 3-1 Worksheet: Analysis-A"),
+      markdown.indexOf("## Tolerance Path Image"),
+    );
 
-    expect(markdown.match(/^\| \d+ \| Factor /gm) ?? []).toHaveLength(readyCalculation.factorCount);
-    expect(markdown).toContain("| Blocked-A |");
-    expect(blockedMarkdown).toContain("输入或计算链被阻断");
-    expect(blockedMarkdown).not.toContain("## 3.7 结果与规格符合性");
+    expect(readySection).toContain(row(expectedFactorHeaders));
+    expect(readySection).not.toContain("Source Row");
+    expect(readySection).not.toContain("Notes");
+    expect(readySection).not.toContain("Validation Status");
+    expect(readySection).not.toContain("Missing Fields");
+    expect(readySection).not.toContain("Ordinal");
+    expect(readySection).not.toContain("Distribution");
+    expect(readySection).not.toContain("Variance Contribution");
+    expect((readySection.match(/^\| Factor /gm) ?? [])).toHaveLength(readyCalculation.factorCount);
+  });
+
+  it("renders the governed ready14 list as a single non-legacy report slice", () => {
+    const worksheetNames = Array.from({ length: 14 }, (_, index) => `Analysis-${index + 1}`);
+    const inputs = loadRealF6Inputs({
+      worksheetNames,
+      f5Variant: "supported",
+    });
+
+    const { markdown, projection } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.worksheets).toHaveLength(14);
+    expect(markdown.match(/^# 3-\d+ Worksheet: Analysis-/gm) ?? []).toHaveLength(14);
+    for (const worksheetName of worksheetNames) {
+      expect(markdown).toContain(`Worksheet: ${worksheetName}`);
+    }
   });
 
   it("uses approved explicit missing states when optional context, image, and reviewer are absent", () => {
@@ -950,26 +1137,101 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
 });
 
 describe("createF6FinalReportProjection v3", () => {
+  it("marks ready identifier gaps as MISSING with the printable row marker", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const sourceRow = inputs.f2Report.worksheets[0].rows[0];
+    sourceRow.actualFields.drawingNumber = null;
+    sourceRow.actualFields.dimCharacteristicId = null;
+    sourceRow.missingIdentifiers = ["drawingNumber", "dimCharacteristicId"];
+    inputs.f2Report.summary.missingPartNumberCount = 1;
+    inputs.f2Report.summary.missingDimIdCount = 1;
+    inputs.f2Report.f4Handoffs[0] = createF4Handoff({ workbookContentHash: inputs.f2Report.workbook.contentHash, worksheet: inputs.f2Report.worksheets[0] });
+    inputs.modelInterpretation = createMultimodalV3(inputs);
+    const { markdown } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const tableRow = markdown.split("\n").find((line) => line.startsWith("| Factor Analysis-A"));
+    expect(tableRow).toContain("| MISSING | MISSING |");
+    expect(tableRow).toContain(`data-f6-marker="required-missing" data-source-row="${sourceRow.sourceRow}"`);
+  });
+
   it("shows exact row and image blockers for evidence-only worksheets", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A"],
       blockedWorksheetNames: ["Blocked-A"],
     });
     const blockedWorksheet = inputs.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Blocked-A");
-    blockedWorksheet.missingFieldSummary = [{ field: "nominalValue", factorCount: 1, sourceRows: [20] }];
+    const missingRow = structuredClone(blockedWorksheet.rows[0]);
+    missingRow.sourceRow = 16;
+    missingRow.factorOrdinal = { value: "B", rawText: "B", sourceCell: "Blocked-A!Z16" };
+    missingRow.missingRequiredFields = ["factorName"];
+    missingRow.missingIdentifiers = ["drawingNumber"];
+    missingRow.sourceCells = {
+      ...missingRow.sourceCells,
+      factorName: "Blocked-A!A16",
+      partName: "Blocked-A!B16",
+      partCategory: "Blocked-A!C16",
+      nominalValue: "Blocked-A!D16",
+      upperTolerance: "Blocked-A!E16",
+      lowerTolerance: "Blocked-A!F16",
+      longTermSafetyFactor: "Blocked-A!G16",
+      standardDeviation: "Blocked-A!H16",
+      distribution: "Blocked-A!I16",
+    };
+    const secondMissingRow = structuredClone(missingRow);
+    secondMissingRow.sourceRow = 17;
+    secondMissingRow.factorOrdinal = { value: "C", rawText: "C", sourceCell: "Blocked-A!Z17" };
+    secondMissingRow.missingRequiredFields = [];
+    secondMissingRow.missingIdentifiers = ["dimCharacteristicId"];
+    secondMissingRow.sourceCells = {
+      ...secondMissingRow.sourceCells,
+      factorName: "Blocked-A!A17",
+      partName: "Blocked-A!B17",
+      partCategory: "Blocked-A!C17",
+      nominalValue: "Blocked-A!D17",
+      upperTolerance: "Blocked-A!E17",
+      lowerTolerance: "Blocked-A!F17",
+      longTermSafetyFactor: "Blocked-A!G17",
+      standardDeviation: "Blocked-A!H17",
+      distribution: "Blocked-A!I17",
+    };
+    blockedWorksheet.rows.push(missingRow, secondMissingRow);
+    blockedWorksheet.missingFieldSummary = [{ field: "factorName", factorCount: 1, sourceRows: [16] }];
+    inputs.f2Report.summary = {
+      ...inputs.f2Report.summary,
+      factorRowCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.length, 0),
+      rowsWithRequiredMissing: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingRequiredFields.length > 0).length, 0),
+      requiredMissingFieldCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.reduce((rowCount, row) => rowCount + row.missingRequiredFields.length, 0), 0),
+      missingDimIdCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length, 0),
+      missingPartNumberCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingIdentifiers.includes("drawingNumber") || row.missingIdentifiers.includes("partNumber")).length, 0),
+      nonF0ProcessCategoryCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.capabilityStatus === "non_f0_process_category").length, 0),
+    };
 
     const { markdown, reportSummary } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const blockedSectionStart = markdown.indexOf("# 3-2 Worksheet: Blocked-A");
+    const blockedSection = markdown.slice(blockedSectionStart, markdown.indexOf("## Tolerance Path Image", blockedSectionStart));
 
     expect(reportSummary.worksheetDispositions).toEqual([
       { worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" },
       { worksheetName: "Blocked-A", disposition: "FAIL" },
     ]);
     expect(reportSummary.workbookDisposition).toBe("FAIL");
-    expect(markdown).toContain("Worksheet: Blocked-A");
-    expect(markdown).toContain("Model interpretation unavailable");
-    expect(markdown).toContain("Row 20: Design Nominal is missing.");
-    expect(markdown).toContain("Tolerance path image is missing.");
-    expect(markdown).not.toContain("Required input, image, or calculation is missing");
+    expect(blockedSection).toContain(row(expectedFactorHeaders));
+    expect(blockedSection).toContain(`| MISSING <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span> | Part Blocked-A | CNC | MISSING | DIM-100 | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |`);
+    expect(blockedSection).toContain(`| Factor Blocked-A <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span> | Part Blocked-A | CNC | DRAW-100 | MISSING | 0 mm | 0.200000 mm | -0.200000 mm | 1 | 4 | N/A | N/A | N/A | N/A |`);
+    expect(blockedSection).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span>`);
+    expect(blockedSection).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span>`);
+    expect(blockedSection).not.toContain("<!-- factor-row-state=required-missing source-row=16 -->");
+    expect(blockedSection).not.toContain("<!-- factor-row-state=required-missing source-row=17 -->");
+    const html = marked.parse(markdown, { async: false });
+    expect(html).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="16" hidden aria-hidden="true"></span>`);
+    expect(html).toContain(`<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="17" hidden aria-hidden="true"></span>`);
+    expect(blockedSection.match(/\| Factor Description \| Part Name \| Part Category \| Drawing Number \| DIM ID \| Design Nominal \| \+ Tolerance \| - Tolerance \| Long Term \/ Safety Factor \| Sigma Level \| Mean \| Tolerance \| One Sigma \| Capability \/ Knowledge Guidance \|/g) ?? []).toHaveLength(1);
+    expect(blockedSection).not.toContain("Source Row");
+    expect(blockedSection).not.toContain("Notes");
+    expect(blockedSection).not.toContain("Validation Status");
+    expect(blockedSection).not.toContain("Missing Fields");
+    expect(blockedSection).not.toContain("Ordinal");
+    expect(blockedSection).not.toContain("Distribution");
+    expect(blockedSection).not.toContain("Variance Contribution");
   });
 
   it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {
@@ -1076,12 +1338,20 @@ describe("createF6FinalReportProjection v3", () => {
     });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
     const markdown = report.markdown;
+    const factorSectionStart = markdown.indexOf("## Complete Factor Table");
+    const factorSection = markdown.slice(factorSectionStart, markdown.indexOf("## Tolerance Path Image", factorSectionStart));
 
     expect(markdown).toContain("## 1. Document Overview");
     expect(markdown).toContain("## 2. Workbook Summary");
-    expect(markdown).toContain("| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |");
-    expect(markdown).toContain("| A | 2 | Factor Analysis-A | Part Analysis-A | DRAW-100 | DIM-100 | CNC |");
-    expect(markdown).toContain("Review assembly stack.");
+    expect(factorSection).toContain(row(expectedFactorHeaders));
+    expect(factorSection).toContain("| Factor Analysis-A | Part Analysis-A | CNC | DRAW-100 | DIM-100 |");
+    expect(factorSection).toContain(String.raw`Capability: non\_f0\_process\_category`);
+    expect(factorSection).not.toContain("Ordinal");
+    expect(factorSection).not.toContain("Row");
+    expect(factorSection).not.toContain("Distribution");
+    expect(factorSection).not.toContain("Notes");
+    expect(factorSection).not.toContain("Variance Contribution");
+    expect(markdown).not.toContain("Review assembly stack.");
 
     expect(markdown).toContain("## Requirements and Statistical Results");
     for (const label of [
@@ -1199,6 +1469,47 @@ describe("createF6FinalReportProjection v3", () => {
     expect(JSON.stringify(report.projection)).not.toMatch(/"(?:source|evidence|来源|证据)"\s*:/iu);
     expect(inputs.f6Optimization.provenance).toEqual(provenance);
     expect(report.projection.worksheets[0].gatingEvidenceReferences).toHaveLength(2);
+  });
+});
+
+describe("createF6FinalReportProjection v4 mixed outcomes", () => {
+  it("uses F2-ready F3 scope when F2 blocked and image failed coexist", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], blockedWorksheetNames: ["Blocked-C"] });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
+    inputs.f6Optimization.provenance.reportScope = {
+      worksheetNames: ["Analysis-A", "Analysis-B", "Blocked-C"],
+      blockedWorksheetNames: ["Analysis-B", "Blocked-C"],
+    };
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      { worksheetName: "Analysis-B", disposition: "FAIL" },
+      { worksheetName: "Blocked-C", disposition: "FAIL" },
+    ]));
+    expect(projection.projection.worksheets).toHaveLength(3);
+  });
+
+  it("rejects a new-workflow final report when multimodal v3 is missing", () => {
+    expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
+  });
+
+  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A", "Analysis-B"],
+      f5Variant: "supported",
+      modelInterpretationVersion: "v2",
+    });
+    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
+
+    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
+    ]));
+    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
+    expect(projection.markdown).toContain("- Status: FAIL");
+    expect(projection.markdown).toContain("worksheet image evaluation failed");
   });
 });
 

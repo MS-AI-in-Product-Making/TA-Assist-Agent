@@ -17,7 +17,7 @@ import {
   f6OptimizationTargetsSchema,
   f6SupplierCapabilityEvidenceSchema,
 } from "../packages/contracts/dist/contracts.js";
-import { f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
+import { f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import {
@@ -444,6 +444,28 @@ function blockedValidation(worksheet, f2Reference) {
   return { worksheetName: worksheet.worksheetName, findings };
 }
 
+function multimodalBlockedValidation(outcome, multimodalReference) {
+  return {
+    worksheetName: outcome.request.worksheetName,
+    findings: [{
+      findingCode: `multimodal_blocker:${outcome.reasonCode}`,
+      findingKind: "validation_abnormality",
+      severity: "Critical",
+      message: outcome.summary,
+      affectsCapabilityData: false,
+      evidenceReferences: [multimodalReference],
+    }],
+  };
+}
+
+const requiredMultimodalArtifactSchema = {
+  safeParse(value) {
+    const v4 = f5MultimodalArtifactV4Schema.safeParse(value);
+    if (v4.success) return v4;
+    return f5MultimodalArtifactV3Schema.safeParse(value);
+  },
+};
+
 function f2WorksheetMatchesHandoff(worksheet, handoff, workbookContentHash) {
   try {
     return isDeepStrictEqual(createF4Handoff({ workbookContentHash, worksheet }), handoff);
@@ -523,8 +545,54 @@ export function loadF6ArtifactBundle({
       .filter(({ status }) => status === "blocked")
       .map(({ worksheetName }) => worksheetName),
   };
-  const selection = exactUniqueSelection(selectedWorksheetNames, readyWorksheets.map(({ worksheetName }) => worksheetName));
+  const readyWorksheetNames = readyWorksheets.map(({ worksheetName }) => worksheetName);
+  let selection = exactUniqueSelection(selectedWorksheetNames, readyWorksheetNames);
   if (!selection) return inputRejected("worksheet_selection_invalid", "selectedWorksheetNames");
+
+  let requiredMultimodalLoaded;
+  let requiredCompletedMultimodalWorksheets = [];
+  let requiredFailedMultimodalWorksheets = [];
+  if (requireMultimodalV3 === true) {
+    if (typeof modelInterpretationArtifactRoot !== "string"
+      || typeof modelInterpretationArtifact !== "string"
+      || typeof expectedModelInterpretationContentHash !== "string") {
+      return inputRejected("model_interpretation_required", "modelInterpretationArtifact");
+    }
+    const validatedModelRoot = validatedGovernedRoot(modelInterpretationArtifactRoot, "modelInterpretationArtifactRoot", publishRoot);
+    if (validatedModelRoot.rejection) return validatedModelRoot.rejection;
+    const loadedModel = readOptionalArtifact(validatedModelRoot.filePath, modelInterpretationArtifact, requiredMultimodalArtifactSchema, hooks);
+    if (loadedModel.rejection) return loadedModel.rejection;
+    const isMixedV4 = loadedModel.value.contractVersion === "f5-multimodal-artifact-v4";
+    const completedMultimodalWorksheets = isMixedV4
+      ? loadedModel.value.worksheets.filter((worksheet) => worksheet.status === "completed")
+      : loadedModel.value.worksheets;
+    const failedMultimodalWorksheets = isMixedV4
+      ? loadedModel.value.worksheets.filter((worksheet) => worksheet.status === "failed")
+      : [];
+    const completedWorksheetNames = completedMultimodalWorksheets.map(({ request }) => request.worksheetName);
+    const requestedSelectionMatchesMultimodal = isMixedV4
+      ? isDeepStrictEqual(selection, completedWorksheetNames)
+        || isDeepStrictEqual(selection, loadedModel.value.selectedWorksheetNames)
+      : isDeepStrictEqual(selection, loadedModel.value.selectedWorksheetNames);
+    if (loadedModel.reference.contentHash !== expectedModelInterpretationContentHash
+      || loadedModel.value.workbookContentHash !== workbook.contentHash
+      || !requestedSelectionMatchesMultimodal) {
+      return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
+    }
+    if (isMixedV4) {
+      selection = completedWorksheetNames;
+      reportScope.blockedWorksheetNames = [
+        ...new Set([
+          ...reportScope.blockedWorksheetNames,
+          ...failedMultimodalWorksheets.map(({ request }) => request.worksheetName),
+        ]),
+      ];
+    }
+    requiredMultimodalLoaded = loadedModel;
+    requiredCompletedMultimodalWorksheets = completedMultimodalWorksheets;
+    requiredFailedMultimodalWorksheets = failedMultimodalWorksheets;
+  }
+
   const f2ByName = indexExactlyOnce(readyWorksheets, selection);
   const handoffByName = indexExactlyOnce(f2.f4Handoffs, selection);
   const f3ByName = indexExactlyOnce(f3.worksheets, selection);
@@ -769,6 +837,7 @@ export function loadF6ArtifactBundle({
   let analysisContext;
   let optimizationTargets;
   let modelInterpretation;
+  let multimodalBlockedWorksheets = [];
   const inputDecisions = {
     analysisContext: { outcome: "NOT_PROVIDED" },
     optimizationTargets: { outcome: "NOT_PROVIDED" },
@@ -912,60 +981,50 @@ export function loadF6ArtifactBundle({
     }
   }
 
-  if (requireMultimodalV3 === true) {
-  if (typeof modelInterpretationArtifactRoot !== "string"
-    || typeof modelInterpretationArtifact !== "string"
-    || typeof expectedModelInterpretationContentHash !== "string") {
-    return inputRejected("model_interpretation_required", "modelInterpretationArtifact");
-  }
-  const validatedModelRoot = validatedGovernedRoot(modelInterpretationArtifactRoot, "modelInterpretationArtifactRoot", publishRoot);
-  if (validatedModelRoot.rejection) return validatedModelRoot.rejection;
-  const loadedModel = readOptionalArtifact(validatedModelRoot.filePath, modelInterpretationArtifact, f5MultimodalArtifactV3Schema, hooks);
-  if (loadedModel.rejection) return loadedModel.rejection;
-  if (loadedModel.reference.contentHash !== expectedModelInterpretationContentHash
-    || loadedModel.value.workbookContentHash !== workbook.contentHash
-    || !isDeepStrictEqual(loadedModel.value.selectedWorksheetNames, selection)) {
-    return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
-  }
-  for (const [index, pair] of loadedModel.value.worksheets.entries()) {
+  if (requiredMultimodalLoaded !== undefined) {
+    if (requiredFailedMultimodalWorksheets.length > 0) {
+      multimodalBlockedWorksheets = requiredFailedMultimodalWorksheets.map((outcome) =>
+        multimodalBlockedValidation(outcome, requiredMultimodalLoaded.reference));
+    }
+    for (const [index, pair] of requiredCompletedMultimodalWorksheets.entries()) {
     const requestWorksheet = requestWorksheets[index];
     const f2Worksheet = f2ByName.get(pair.request.worksheetName);
     const f3Worksheet = f3ByName.get(pair.request.worksheetName);
     const f5Worksheet = f5ByName.get(pair.request.worksheetName);
-    if (requestWorksheet === undefined || f2Worksheet === undefined || f3Worksheet === undefined || f5Worksheet === undefined
-      || pair.request.workbook.fileName !== workbook.fileName
-      || pair.request.tableId !== requestWorksheet.baselineCalculation.worksheetSelection.tableId
-      || pair.request.image.contentHash !== f5Worksheet.imageReference.contentHash
-      || pair.request.image.artifactPath !== f5Worksheet.imageReference.relativePath
-      || pair.request.factorRows.length !== requestWorksheet.baselineCalculation.factors.length) {
-      return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
-    }
-    for (const row of pair.request.factorRows) {
-      const factor = requestWorksheet.baselineCalculation.factors.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
-      const f2Row = f2Worksheet.rows.find(({ sourceRow, tableId }) => sourceRow === row.sourceRow && tableId === row.tableId);
-      const f3Row = f3Worksheet.rows.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
-      if (factor === undefined || f2Row === undefined || f3Row === undefined
-        || !isDeepStrictEqual(row.factorOrdinal, f2Row.factorOrdinal)
-        || !isDeepStrictEqual(row.factorOrdinal, f3Row.factorOrdinal)
-        || row.factorName !== factor.factorName
-        || row.partName !== f2Row.actualFields.partName
-        || row.partCategory !== f2Row.actualFields.partCategory
-        || row.drawingNumber !== f2Row.actualFields.drawingNumber
-        || !sameDimId(row.dimId, f2Row.actualFields.dimCharacteristicId)
-        || row.nominal !== factor.input.nominalValue
-        || row.upperTolerance !== factor.input.upperTolerance
-        || row.lowerTolerance !== factor.input.lowerTolerance
-        || row.longTermSafetyFactor !== factor.input.longTermSafetyFactor
-        || row.sigmaLevel !== factor.input.sigmaLevel
-        || row.distribution !== factor.input.distribution
-        || !isDeepStrictEqual(row.sourceCells, f2Row.sourceCells)) {
-        return inputRejected("artifact_identity_mismatch", loadedModel.reference.artifact);
+      if (requestWorksheet === undefined || f2Worksheet === undefined || f3Worksheet === undefined || f5Worksheet === undefined
+        || pair.request.workbook.fileName !== workbook.fileName
+        || pair.request.tableId !== requestWorksheet.baselineCalculation.worksheetSelection.tableId
+        || pair.request.image.contentHash !== f5Worksheet.imageReference.contentHash
+        || pair.request.image.artifactPath !== f5Worksheet.imageReference.relativePath
+        || pair.request.factorRows.length !== requestWorksheet.baselineCalculation.factors.length) {
+        return inputRejected("artifact_identity_mismatch", requiredMultimodalLoaded.reference.artifact);
+      }
+      for (const row of pair.request.factorRows) {
+        const factor = requestWorksheet.baselineCalculation.factors.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
+        const f2Row = f2Worksheet.rows.find(({ sourceRow, tableId }) => sourceRow === row.sourceRow && tableId === row.tableId);
+        const f3Row = f3Worksheet.rows.find(({ source }) => source.sourceRow === row.sourceRow && source.tableId === row.tableId);
+        if (factor === undefined || f2Row === undefined || f3Row === undefined
+          || !isDeepStrictEqual(row.factorOrdinal, f2Row.factorOrdinal)
+          || !isDeepStrictEqual(row.factorOrdinal, f3Row.factorOrdinal)
+          || row.factorName !== factor.factorName
+          || row.partName !== f2Row.actualFields.partName
+          || row.partCategory !== f2Row.actualFields.partCategory
+          || row.drawingNumber !== f2Row.actualFields.drawingNumber
+          || !sameDimId(row.dimId, f2Row.actualFields.dimCharacteristicId)
+          || row.nominal !== factor.input.nominalValue
+          || row.upperTolerance !== factor.input.upperTolerance
+          || row.lowerTolerance !== factor.input.lowerTolerance
+          || row.longTermSafetyFactor !== factor.input.longTermSafetyFactor
+          || row.sigmaLevel !== factor.input.sigmaLevel
+          || row.distribution !== factor.input.distribution
+          || !isDeepStrictEqual(row.sourceCells, f2Row.sourceCells)) {
+          return inputRejected("artifact_identity_mismatch", requiredMultimodalLoaded.reference.artifact);
+        }
       }
     }
-  }
-  modelInterpretation = loadedModel.value;
-  inputDecisions.modelInterpretation = { outcome: "CALLER_AUTHORIZED", artifactReference: loadedModel.reference };
-  sourceReferences.modelInterpretation = loadedModel.reference;
+    modelInterpretation = requiredMultimodalLoaded.value;
+    inputDecisions.modelInterpretation = { outcome: "CALLER_AUTHORIZED", artifactReference: requiredMultimodalLoaded.reference };
+    sourceReferences.modelInterpretation = requiredMultimodalLoaded.reference;
   } else if (modelInterpretationArtifactRoot !== undefined || modelInterpretationArtifact !== undefined) {
     const validatedRoot = validatedGovernedRoot(
       modelInterpretationArtifactRoot,
@@ -1103,9 +1162,9 @@ export function loadF6ArtifactBundle({
     f3Report: f3,
     f4Report: f4,
     f5Report: f5,
-    blockedWorksheets: f2.worksheets
+    blockedWorksheets: [...f2.worksheets
       .filter(({ status }) => status === "blocked")
-      .map((worksheet) => blockedValidation(worksheet, sourceReferences.f2)),
+      .map((worksheet) => blockedValidation(worksheet, sourceReferences.f2)), ...multimodalBlockedWorksheets],
     sourceReferences,
     analysisContext,
     optimizationTargets,

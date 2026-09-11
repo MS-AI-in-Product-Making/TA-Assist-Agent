@@ -301,14 +301,43 @@ function transitionAfterCompletion(
   nextState: F8SessionState,
   transitionKey: string,
 ): F8SessionSnapshot {
+  const standardF6InputReferences = completedStage === "f5_running"
+    ? appendF6InputDecisionReference(
+        {
+          ...snapshot,
+          priorRunReferences: appendF6InputDecisionReference(snapshot, {
+            ...f8SessionCommandSchema.parse({
+              contractVersion: "f8-session-command-v1",
+              sessionId: snapshot.sessionId,
+              commandId: `${transitionKey}:analysis-context-default`,
+              expectedRevision: snapshot.revision,
+              command: "confirm_analysis_context",
+              payload: { decision: "not_provided" },
+            }),
+          }, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX),
+        },
+        f8SessionCommandSchema.parse({
+          contractVersion: "f8-session-command-v1",
+          sessionId: snapshot.sessionId,
+          commandId: `${transitionKey}:optimization-targets-default`,
+          expectedRevision: snapshot.revision,
+          command: "confirm_optimization_targets",
+          payload: { decision: "not_provided" },
+        }),
+        F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX,
+      )
+    : snapshot.priorRunReferences;
+
   if (isRunningState(nextState)) {
     return nextSnapshot(snapshot, {
+      priorRunReferences: standardF6InputReferences,
       state: nextState,
       activeAttempt: createRunningAttempt(nextState, `${transitionKey}:next`),
     });
   }
 
   return nextSnapshot(snapshot, {
+    priorRunReferences: standardF6InputReferences,
     state: nextState,
     activeAttempt: null,
   });
@@ -327,9 +356,9 @@ function resolveCompletionState(stage: F8SessionState): F8SessionState {
     case "ado_action_pending":
       return "ado_action_pending";
     case "f4_running":
-      return "image_decision_required";
+      return "f5_running";
     case "f5_running":
-      return "analysis_context_decision_required";
+      return "f6_running";
     case "f6_running":
       return "ado_decision_required";
     case "f7_running":
@@ -543,7 +572,7 @@ function assertCompletedF5MultimodalReference(snapshot: F8SessionSnapshot, resul
       code: "evidence_mismatch",
       summary: "Result Interpretation cannot complete without the current governed multimodal artifact.",
       suggestedAction: "Complete image and Factor-table interpretation for every selected worksheet.",
-      affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision)],
+      affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision), `revision:${snapshot.revision}`, `artifacts:${(snapshot.artifactRefs ?? []).map(({ artifactId }) => artifactId).join(",") || "none"}`],
     });
   }
 }

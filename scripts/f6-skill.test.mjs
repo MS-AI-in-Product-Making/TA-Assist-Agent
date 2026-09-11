@@ -113,6 +113,10 @@ describe("Design Optimization skill contract", () => {
 
   it("orders the complete workbook flow and preserves both worksheet gates", () => {
     const { internal } = splitSkillSections(readSkill());
+    expect(internal).not.toContain("optionally collect image observations");
+    expect(internal).not.toContain("independent Analysis Context and Optimization Targets confirmations");
+    expect(internal).not.toContain("continue deterministic F5 with `not_evaluated`");
+    expect(internal).toContain("must not downgrade a required evaluation failure to `not_evaluated`");
     expectOrdered(internal, [
       "### Phase W0 - Validate workbook and F0 capabilities",
       "### Phase W1 - Generate F1 worksheet selection",
@@ -120,13 +124,9 @@ describe("Design Optimization skill contract", () => {
       "### Phase W3 - Select ready downstream worksheets",
       "### Phase W4 - Run and validate current F3",
       "### Phase W5 - Run F4",
-      "### Phase W6 - Evaluate optional F5 v2 image evidence",
+      "### Phase W6 - Run workflow-owned F5 image evaluation",
       "### Phase W7 - Run and validate F5",
       "### Phase W8 - Generate governed model interpretation",
-      "### Phase W8A - Collect optional TA Analysis Context",
-      "Confirm analysis context",
-      "### Phase W8B - Collect optional Optimization Targets",
-      "Confirm optimization targets",
       "### Phase W9 - Run and validate F6",
       "### Phase W9A - Govern optional F3 ADO publishing",
       "### Phase W10 - Present every Feature output",
@@ -137,30 +137,47 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selection succeeds");
     expect(internal).toContain("No F3, F4, F5, or F6 execution may begin before the second selection succeeds");
     expect(internal).toContain("The exact downstream worksheet set is reused by F3, F5, and F6");
+    expect(internal).not.toContain("### Phase W8A - Collect optional TA Analysis Context");
+    expect(internal).not.toContain("### Phase W8B - Collect optional Optimization Targets");
   });
 
-  it("governs context and targets with separate confirmations before any scenario", () => {
+  it("records standard-path context and targets as not provided without extra vscode_askQuestions", () => {
     const { internal } = splitSkillSections(readSkill());
     expectOrdered(internal, [
-      "Collect optional TA Analysis Context",
-      "Confirm analysis context",
-      "Collect optional Optimization Targets",
-      "Confirm optimization targets",
+      "Record Analysis Context as `NOT_PROVIDED` on the standard workbook path.",
+      "Record Optimization Targets as `NOT_PROVIDED` on the standard workbook path.",
       "### Phase W9 - Run and validate F6",
     ]);
-    expect(internal).toContain("two separate `vscode_askQuestions` calls");
-    expect(internal).toContain("Declined or not-provided analysis context omits `--analysis-context`");
-    expect(internal).toContain("Declined or not-provided optimization targets omit `--optimization-targets`");
-    expect(internal).toContain("Collect analysis context from chat natural language only");
-    expect(internal).toContain("Collect optimization targets from chat natural language only");
-    expect(internal).toContain("Do not ask for JSON content, filesystem paths, artifact IDs, or hashes in user-facing prompts");
-    expect(internal).toContain("Do not ask for JSON payloads, local paths, artifact locations, or hash strings in user-facing prompts");
-    expect(internal).toContain("shared governed proposal materializer");
-    expect(internal).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
+    expect(internal).toContain("Do not prompt for Analysis Context or Optimization Targets on the standard workbook path.");
+    expect(internal).toContain("Omit `--analysis-context` and `--optimization-targets` unless an existing artifact entry mode explicitly supplies them.");
     expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
-    expect(internal).toContain("must not be combined with the F3 ADO confirmation");
     expect(internal).toContain("f6-optimization-v3");
     expect(internal).not.toContain("reduce_top_contributor_20");
+    expect(internal).not.toContain("Confirm analysis context");
+    expect(internal).not.toContain("Confirm optimization targets");
+    expect(internal).not.toContain("two separate `vscode_askQuestions` calls");
+  });
+
+  it("keeps image evaluation internal on the standard workbook path while preserving governed gates", () => {
+    const { internal } = splitSkillSections(readSkill());
+    const resultInterpretationSkill = readFileSync(path.join(root, ".github", "skills", "result-interpretation", "SKILL.md"), "utf8");
+    const entrySkill = readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+
+    expect(internal).toContain("Run workflow-owned F5 image evaluation");
+    expect(internal).toContain("Do not ask the user whether to evaluate the already verified F1 images");
+    expect(internal).toContain("Record the workflow-owned outcome internally and continue to W7 without a caller confirmation gate");
+    expect(internal).toContain("mixed-outcome behavior");
+    expect(internal).toContain("incomplete five-scope evidence");
+    expect(internal).toContain("makes that worksheet a governed `FAIL`; other worksheets continue");
+    expect(internal).toContain("f5-image-observation-v2");
+    expect(internal).toContain("must be reviewed by ME");
+    expect(internal).toContain("Record Analysis Context as `NOT_PROVIDED` on the standard workbook path.");
+    expect(internal).toContain("Record Optimization Targets as `NOT_PROVIDED` on the standard workbook path.");
+    expect(internal).toContain("f6-top3-tolerance-policy-v1");
+    expect(internal).toContain("Confirm write");
+    expect(internal).toContain("Feature6-Report.pdf");
+    expect(resultInterpretationSkill).toContain("When Design Optimization owns the end-to-end workbook workflow, this capability must not add a separate caller image-confirmation gate");
+    expect(entrySkill).toContain("internal image evaluation before recording standard-path Analysis Context and Optimization Targets as NOT_PROVIDED");
   });
 
   it("runs current-run F3 before F4 and defers the optional ADO gate until after F6", () => {
@@ -235,8 +252,6 @@ describe("Design Optimization skill contract", () => {
     expectOrdered(internal, [
       "### Phase W7 - Run and validate F5",
       "### Phase W8 - Generate governed model interpretation",
-      "### Phase W8A - Collect optional TA Analysis Context",
-      "### Phase W8B - Collect optional Optimization Targets",
       "### Phase W9 - Run and validate F6",
     ]);
     for (const marker of [
@@ -283,21 +298,24 @@ describe("Design Optimization skill contract", () => {
 
   it("requires validator-confirmed Markdown and PDF links for every successful completion", () => {
     const { internal } = splitSkillSections(readSkill());
+    const markdownLabel = "<Excel basename> - TA Report";
+    const pdfLabel = "<Excel basename> - TA Report PDF";
+
     expect(internal).toContain("For every successful completion response");
-    expect(internal).toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
-    expect(internal).toContain("[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)");
-    expect(internal).toContain("完整 Markdown 报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.md");
-    expect(internal).toContain("完整 PDF 报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.pdf");
-    expect(internal).toContain("both clickable links and both complete report paths");
+    expect(internal).toContain("exactly two workspace-relative links");
+    expect(internal).toContain("basename from the validator-confirmed source workbook path with .xlsx removed");
+    expect(internal).toContain(`[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`);
+    expect(internal).toContain(`[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`);
+    expect(internal).toContain("Do not render absolute paths in the success response");
     expect(internal).toContain("use only the validated final report paths");
     expect(internal).toContain("do not present any report link");
-    expect(internal.match(/\[Design Optimization Report\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.md\)/g)).toHaveLength(1);
-    expect(internal.match(/\[Design Optimization PDF\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
+    expect(internal).not.toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
+    expect(internal).not.toContain("[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)");
+    expect(internal.match(/\[<Excel basename> - TA Report\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.md\)/g)).toHaveLength(1);
+    expect(internal.match(/\[<Excel basename> - TA Report PDF\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
     expectOrdered(internal, [
-      "[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)",
-      "[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)",
-      "完整 Markdown 报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.md",
-      "完整 PDF 报告路径: C:\\<workspace>\\test\\demo-output\\f6-runs\\<run-id>\\Feature6-Report.pdf",
+      `[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`,
+      `[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`,
     ]);
   });
 

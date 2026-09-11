@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
 import { renderF6PdfSync } from "@ai-assist/product-export";
 import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
 
@@ -381,7 +381,7 @@ export function runF6Optimization(
       || !verifyCallerAuthorizedHash(request.expectedAnalysisContextContentHash, inputDecisions.analysisContext)
       || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)
       || loaded.modelInterpretation === undefined
-      || loaded.modelInterpretation.contractVersion !== "f5-multimodal-artifact-v3"
+      || !["f5-multimodal-artifact-v3", "f5-multimodal-artifact-v4"].includes(loaded.modelInterpretation.contractVersion)
       || typeof request.expectedModelInterpretationContentHash !== "string"
       || !verifyCallerAuthorizedHash(request.expectedModelInterpretationContentHash, inputDecisions.modelInterpretation)) {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
@@ -390,7 +390,9 @@ export function runF6Optimization(
     failureStage = "optimization";
     const optimizationCandidate = createOptimization(loaded.request, {
       interactionLanguage: request.interactionLanguage,
-      multimodalInterpretation: loaded.modelInterpretation,
+      multimodalInterpretation: loaded.modelInterpretation.contractVersion === "f5-multimodal-artifact-v4"
+        ? completedF5MultimodalProjection(loaded.modelInterpretation)
+        : loaded.modelInterpretation,
       multimodalReference: inputDecisions.modelInterpretation.artifactReference,
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
       optimizationTargetsDecision: inputDecisions.optimizationTargets,

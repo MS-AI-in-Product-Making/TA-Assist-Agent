@@ -1,6 +1,6 @@
 import type { F8AdoProjection, F8AdoWriteConfirmation } from "@ai-assist/contracts";
 import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 const PROJECTION_STATES_WITH_CONFIRMATION = ["preview_ready", "write_pending", "write_outcome_unknown", "completed"] as const;
@@ -24,6 +24,8 @@ export function AdoWorkspaceDecision({ visible, workbookFileName, projection, on
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(() => defaultCreateTitle(workbookFileName));
   const [sponsorEmail, setSponsorEmail] = useState("");
+  const exampleTitle = defaultCreateTitle(workbookFileName);
+  const exampleTitleInputRef = useRef<HTMLInputElement | null>(null);
   const metadata = inputMetadata(language).existing_work_item;
   const copy = language === "zh" ? {
     target: "ADO 目标",
@@ -88,7 +90,24 @@ export function AdoWorkspaceDecision({ visible, workbookFileName, projection, on
             {creating ? (
               <div>
                 <label>{copy.title}<input aria-label={copy.title} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-                <label>{copy.titleExample}<input aria-label={copy.titleExample} readOnly value={CREATE_TITLE_EXAMPLE} onFocus={(event) => event.currentTarget.select()} /></label>
+                <div>
+                  <label>{copy.titleExample}<input ref={exampleTitleInputRef} aria-label={copy.titleExample} readOnly value={exampleTitle} onFocus={(event) => event.currentTarget.select()} /></label>
+                  <button type="button" className="icon-button" title="Copy title example" aria-label="Copy title example" onClick={() => {
+                    const input = exampleTitleInputRef.current;
+                    const copyText = async () => {
+                      try {
+                        if (navigator.clipboard?.writeText !== undefined) {
+                          await navigator.clipboard.writeText(exampleTitle);
+                          return;
+                        }
+                      } catch {
+                        // Fall through to selection fallback.
+                      }
+                      input?.select();
+                    };
+                    void copyText();
+                  }}>⧉</button>
+                </div>
                 <label>{copy.sponsorEmail}<input aria-label={copy.sponsorEmail} type="email" value={sponsorEmail} onChange={(event) => setSponsorEmail(event.target.value)} /></label>
                 <button type="button" className="button button--primary" disabled={title.trim().length === 0 || !isEmail(sponsorEmail)} onClick={() => { void onSubmit("create_new", undefined, { title: title.trim(), sponsorEmail: sponsorEmail.trim() }); }}>{copy.createAndValidate}</button>
               </div>

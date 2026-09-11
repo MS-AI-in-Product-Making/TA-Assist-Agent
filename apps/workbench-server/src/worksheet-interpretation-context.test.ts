@@ -15,6 +15,27 @@ const IMAGE_A_HASH = createHash("sha256").update(IMAGE_A_BYTES).digest("hex");
 const IMAGE_B_HASH = createHash("sha256").update(IMAGE_B_BYTES).digest("hex");
 
 describe("buildSelectedWorksheetInterpretationContexts", () => {
+  it.each(["missing", "hash_mismatch", "mapping"])("isolates a %s request-build failure and keeps the other worksheet current", async (failure) => {
+    const reader = artifacts(({ f2 }) => {
+      if (failure === "mapping") f2.worksheets[1].rows[0].factorOrdinal.value = "";
+    });
+    const inspect = reader.inspectWorksheetImage;
+    reader.inspectWorksheetImage = async (input) => {
+      if (input.worksheetName === "Analysis-B" && failure !== "mapping") throw new Error(failure === "missing" ? "image missing" : "image content hash mismatch");
+      return inspect(input);
+    };
+    const contexts = await buildSelectedWorksheetInterpretationContexts(snapshot(), reader, { isolateFailures: true });
+    expect(contexts.map((entry) => entry.worksheetName)).toEqual(["Analysis-B", "Analysis-A"]);
+    expect(contexts[0]).toMatchObject({ contractVersion: "f5-multimodal-request-failure-v4", worksheetName: "Analysis-B", activeFactorCount: 1,
+      reasonCode: failure === "missing" ? "image_missing" : failure === "hash_mismatch" ? "image_hash_mismatch" : "factor_mapping_failed",
+      evidence: { f2ContentHash: createHash("sha256").update("f2_report").digest("hex"), f4ContentHash: createHash("sha256").update("f4_calculation").digest("hex") },
+    });
+    expect(contexts[0]).not.toHaveProperty("image");
+    expect(contexts[0]).not.toHaveProperty("factorRows");
+    expect(contexts[1]).toMatchObject({ contractVersion: "f5-multimodal-request-v3", worksheetName: "Analysis-A" });
+    await expect(assertCurrentWorksheetInterpretationRequest(snapshot(), contexts[1] as any, reader)).resolves.toBeUndefined();
+  });
+
   it("preserves selected order and isolates each image with every authoritative F4 Factor", async () => {
     const requests = await buildSelectedWorksheetInterpretationContexts(snapshot(), artifacts());
 

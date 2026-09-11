@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { InteractionLanguage } from "@ai-assist/product-language";
 import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
-import { f5MultimodalWorksheetRequestV3Schema, f5MultimodalWorksheetResultV3Schema } from "./ta-multimodal-contracts.js";
+import { f5MultimodalScopeEvaluationsSchema, f5MultimodalWorksheetRequestV3Schema, f5MultimodalWorksheetResultV3Schema } from "./ta-multimodal-contracts.js";
 
 const nonEmptyStringSchema = z.string().min(1);
 const nonEmptyStringArraySchema = z.array(nonEmptyStringSchema);
@@ -1016,7 +1016,7 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
         state: z.literal("absent"),
       }).strict(),
       z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema, proposal: f6InputProposalSchema.optional() }).strict(),
-      z.object({ kind: z.literal("worksheet_multimodal_response"), result: f5MultimodalWorksheetResultV3Schema }).strict(),
+      z.object({ kind: z.literal("worksheet_multimodal_response"), result: f5MultimodalWorksheetResultV3Schema, scopeEvaluations: f5MultimodalScopeEvaluationsSchema.optional() }).strict(),
     ]).optional(),
   }).strict(),
   z.object({

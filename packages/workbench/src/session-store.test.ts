@@ -291,6 +291,79 @@ describe("SessionStore", () => {
     }
   });
 
+  it.each([
+    ["f3_running", "f4_running"],
+    ["f4_running", "f5_running"],
+  ] as const)("accepts legal automatic successor %s -> %s", async (stage, successor) => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => {
+        const accepted = acceptWorkbook(snapshot);
+        return { ...accepted, snapshot: { ...accepted.snapshot, state: stage,
+          activeAttempt: { ...accepted.snapshot.activeAttempt, stage } } };
+      });
+
+      const receipt = await store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: successor,
+          activeAttempt: {
+            attemptId: `${COMMAND_ID}:next:${successor}`,
+            stage: successor,
+            status: "running",
+            commandId: `${COMMAND_ID}:next`,
+            startedAt: "2026-08-24T01:00:00.000Z",
+          },
+        }),
+      });
+
+      expect(receipt.accepted).toBe(true);
+      expect(receipt.snapshot).toMatchObject({
+        state: successor,
+        activeAttempt: {
+          attemptId: `${COMMAND_ID}:next:${successor}`,
+          stage: successor,
+          status: "running",
+        },
+      });
+    } finally {
+      await store.close();
+    }
+  });
+
+  it.each([
+    ["f1_f2_running", "f3_running"],
+    ["f0_validating", "f1_f2_running"],
+    ["f3_running", "f6_running"],
+    ["f6_running", "f7_running"],
+    ["f5_running", "f6_running"],
+  ] as const)("rejects automatic gate bypass %s -> %s without evidence", async (stage, successor) => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => {
+        const accepted = acceptWorkbook(snapshot);
+        return { ...accepted, snapshot: { ...accepted.snapshot, state: stage,
+          activeAttempt: { ...accepted.snapshot.activeAttempt, stage } } };
+      });
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID, status: "completed", result: { ok: true },
+        snapshot: snapshotWithAttempt({ revision: 1, state: successor, activeAttempt: {
+          attemptId: `${COMMAND_ID}:next:${successor}`, commandId: `${COMMAND_ID}:next`,
+          stage: successor, status: "running", startedAt: "2026-08-24T01:00:00.000Z",
+        } }),
+      })).rejects.toBeDefined();
+      expect((await store.readSnapshot()).activeAttempt?.attemptId).toBe(ATTEMPT_ID);
+      expect(readStageAttemptRows(rootDir)).toEqual([
+        expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
+      ]);
+    } finally { await store.close(); }
+  });
+
   it("rejects terminal attempt results without a snapshot transition", async () => {
     const rootDir = await createTempRoot();
     const store = await createStore(rootDir);
@@ -586,6 +659,26 @@ describe("SessionStore", () => {
       }));
 
       expect(readArtifactRefMetadata(rootDir)).toEqual([expect.objectContaining({ reviewContextId: expect.stringMatching(/^[a-f0-9]{64}$/) })]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("projects snapshot-mutation artifact references into the returned and persisted snapshot", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+      const reference = { ...artifactReference("f2-current"), kind: "f2_report" as const };
+
+      const updated = await store.applySnapshotMutation(1, (snapshot) => ({
+        snapshot,
+        artifactReferenceOps: { upsert: [reference] },
+      }));
+
+      expect(updated.artifactRefs).toEqual([expect.objectContaining({ artifactId: "f2-current", kind: "f2_report" })]);
+      expect((await store.readSnapshot()).artifactRefs).toEqual(updated.artifactRefs);
+      expect(readArtifactRefRows(rootDir).map((row) => row.artifact_id)).toEqual(["f2-current"]);
     } finally {
       await store.close();
     }

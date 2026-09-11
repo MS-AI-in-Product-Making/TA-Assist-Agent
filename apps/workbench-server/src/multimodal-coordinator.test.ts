@@ -21,9 +21,9 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const requests = [request("Analysis-B", "table-b", "B", 21), request("Analysis-A", "table-a", "A", 11)];
     const records = new Map([[`multimodal:${requests[0]!.requestHash}`, completedRecord(requests[0]!)]]);
     const context = {
-      buildWorksheetInterpretationRequests: async () => requests,
+      buildWorksheetInterpretationRequestsForSnapshot: async () => requests,
       hostActions: { readRecord: async (_sessionId: string, actionId: string) => records.get(actionId) },
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions">;
 
     await expect(materializeCompletedMultimodalArtifact(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(await readdir(rootDir)).toEqual([]);
@@ -42,6 +42,44 @@ describe("materializeCompletedMultimodalArtifact", () => {
     expect(() => assertF5MultimodalRunnerReference(rootDir, snapshot(), [{ artifactId: "f5-multimodal:3", kind: "f5_multimodal", relativePath, contentHash: registry.contentHash }])).not.toThrow();
   });
 
+  it.each(["failed", "blocked", "incomplete"])("reconciles mixed completed and %s worksheet results without failing the attempt", async (failure) => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-multimodal-mixed-"));
+    roots.push(rootDir);
+    const requests = [request("Analysis-B", "table-b", "B", 21), request("Analysis-A", "table-a", "A", 11)];
+    const failActiveMultimodalAttempt = vi.fn(async () => undefined);
+    const records = new Map([
+      [`multimodal:${requests[0]!.requestHash}`, failedRecord(requests[0]!)],
+      [`multimodal:${requests[1]!.requestHash}`, completedRecord(requests[1]!)],
+    ]);
+    const context = {
+      buildWorksheetInterpretationRequestsForSnapshot: async () => requests,
+      hostActions: { readRecord: async (_sessionId: string, actionId: string) => records.get(actionId) },
+      failActiveMultimodalAttempt,
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
+
+    if (failure !== "failed") {
+      const record = JSON.parse(JSON.stringify(completedRecord(requests[0]!)));
+      if (failure === "blocked") {
+        record.status = "blocked";
+        record.result.payload = { status: "blocked", reason: "ordinal_mapping_unavailable" };
+      } else {
+        record.result.payload.outcome.scopeEvaluations.pop();
+      }
+      records.set(`multimodal:${requests[0]!.requestHash}`, record as never);
+    }
+
+    await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(true);
+    expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
+
+    const files = (await readdir(join(rootDir, "runtime", "workbench", "multimodal", SESSION_ID, "7"))).filter((name) => name.endsWith(".json"));
+    expect(files).toHaveLength(1);
+    const artifact = JSON.parse(await readFile(join(rootDir, "runtime", "workbench", "multimodal", SESSION_ID, "7", files[0]!), "utf8"));
+    expect(artifact.selectedWorksheetNames).toEqual(["Analysis-B", "Analysis-A"]);
+    expect(artifact.worksheets.map((entry: { status: string }) => entry.status)).toEqual(["failed", "completed"]);
+    expect(artifact.worksheets[0]).toMatchObject({ request: { worksheetName: "Analysis-B" }, reasonCode: failure === "blocked" ? "factor_mapping_failed" : failure === "incomplete" ? "evaluation_incomplete" : "evaluation_failed" });
+    expect(artifact.worksheets[1].scopeEvaluations).toHaveLength(5);
+  });
+
   it("replays a persisted terminal failure instead of starting the F5 runner", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "ta-multimodal-recovery-"));
     roots.push(rootDir);
@@ -49,7 +87,7 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const failActiveMultimodalAttempt = vi.fn(async () => undefined);
     const actionRequest = completedRecord(requestValue).request;
     const context = {
-      buildWorksheetInterpretationRequests: async () => [requestValue],
+      buildWorksheetInterpretationRequestsForSnapshot: async () => [requestValue],
       hostActions: {
         readRecord: async () => ({
           status: "blocked",
@@ -58,7 +96,7 @@ describe("materializeCompletedMultimodalArtifact", () => {
         }),
       },
       failActiveMultimodalAttempt,
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
 
     await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(failActiveMultimodalAttempt).toHaveBeenCalledWith(snapshot(), "model_capability_unavailable");
@@ -70,10 +108,10 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const requestValue = request("Analysis-A", "table-a", "A", 11);
     const failActiveMultimodalAttempt = vi.fn();
     const context = {
-      buildWorksheetInterpretationRequests: async () => [requestValue],
+      buildWorksheetInterpretationRequestsForSnapshot: async () => [requestValue],
       hostActions: { readRecord: async () => ({ status: "pending", request: completedRecord(requestValue).request }) },
       failActiveMultimodalAttempt,
-    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">;
 
     await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
     expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
@@ -95,5 +133,12 @@ function completedRecord(requestValue: ReturnType<typeof request>) {
   const actionId = `multimodal:${requestValue.requestHash}`;
   const request = { contractVersion: "f8-host-action-request-v1" as const, actionId, sessionId: SESSION_ID, expectedRevision: 7, expiresAt: "2026-09-08T00:00:00.000Z", kind: "vscode_worksheet_multimodal_request" as const, confirmationHash: requestValue.requestHash, expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const, request: requestValue };
   const result = { contractVersion: "f5-multimodal-result-v3" as const, outputClassification: "confidential" as const, requestHash: requestValue.requestHash, sessionId: SESSION_ID, revision: 7, inputRevision: 3, workbookContentHash: "a".repeat(64), worksheetName: requestValue.worksheetName, tableId: requestValue.tableId, imageContentHash: requestValue.image.contentHash, model: { modelId: "vision-model", supportsImage: true as const }, imageTableInterpretation: "Image and complete table interpreted.", rowMappings: requestValue.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched" as const, visibleStatus: "visible" as const, interpretation: `${row.factorOrdinal.value} is visible.` })) };
-  return { actionId, sessionId: SESSION_ID, status: "completed", request, result: { payload: { status: "completed", outcome: { kind: "worksheet_multimodal_response", result } } } } as never;
+  const scopeEvaluations = ["tolerance_loop_closure", "datum_chain", "assembly_datum_face", "stack_start", "direction"].map((scope) => ({ scope, status: "needs_review", observedValue: "ambiguous", confidence: "low", visibleBasis: "The visible geometry needs engineering review." }));
+  return { actionId, sessionId: SESSION_ID, status: "completed", request, result: { payload: { status: "completed", outcome: { kind: "worksheet_multimodal_response", result, scopeEvaluations } } } } as never;
+}
+
+function failedRecord(requestValue: ReturnType<typeof request>) {
+  const actionId = `multimodal:${requestValue.requestHash}`;
+  const request = { contractVersion: "f8-host-action-request-v1" as const, actionId, sessionId: SESSION_ID, expectedRevision: 7, expiresAt: "2026-09-08T00:00:00.000Z", kind: "vscode_worksheet_multimodal_request" as const, confirmationHash: requestValue.requestHash, expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const, request: requestValue };
+  return { actionId, sessionId: SESSION_ID, status: "completed", request, result: { payload: { status: "failed", error: { reasonCode: "evaluation_failed", summary: "worksheet image evaluation failed" } } } } as never;
 }

@@ -69,10 +69,12 @@ describe("workbench state machine", () => {
       confirmAnalysisContextCommand(0),
     )).toThrow(/not allowed/i);
 
-    expect(api.acceptAttemptResult(
+    const afterF4 = api.acceptAttemptResult(
       runningSnapshot("f4_running"),
       completedAttemptResult(),
-    ).state).toBe("image_decision_required");
+    );
+    expect(afterF4.state).toBe("f5_running");
+    expect(afterF4.activeAttempt).toMatchObject({ status: "running", stage: "f5_running" });
 
     expect(() => api.acceptAttemptResult(
       runningSnapshot("f5_running"),
@@ -93,10 +95,24 @@ describe("workbench state machine", () => {
       completedAttemptResult({ artifactReferences: [{ ...multimodalReference, contentHash: "e".repeat(64) }] }),
     )).toThrow(/multimodal/i);
 
-    expect(api.acceptAttemptResult(
+    const afterF5 = api.acceptAttemptResult(
       runningSnapshot("f5_running", [multimodalReference]),
       completedAttemptResult({ artifactReferences: [multimodalReference] }),
-    ).state).toBe("analysis_context_decision_required");
+    );
+    expect(afterF5.state).toBe("f6_running");
+    expect(afterF5.activeAttempt).toMatchObject({ status: "running", stage: "f6_running" });
+    expect(afterF5.priorRunReferences).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        featureId: "F6",
+        contractVersion: "f6-input-decision-v1",
+        referenceId: "f6-analysis-context:not_provided",
+      }),
+      expect.objectContaining({
+        featureId: "F6",
+        contractVersion: "f6-input-decision-v1",
+        referenceId: "f6-optimization-targets:not_provided",
+      }),
+    ]));
 
     expect(api.reduceSessionCommand(
       baseSnapshot({ state: "analysis_context_decision_required" }),

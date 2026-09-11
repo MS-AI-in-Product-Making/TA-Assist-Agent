@@ -30,7 +30,7 @@ describe("AdoWorkspaceDecision", () => {
     const sponsorEmail = screen.getByRole("textbox", { name: "Sponsor email" });
     const create = screen.getByRole("button", { name: "Create and validate work item" });
     expect(title).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx");
-    expect(screen.getByRole("textbox", { name: "Title example" })).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for <TA Excel Name>");
+    expect(screen.getByRole("textbox", { name: "Title example" })).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx");
     expect(screen.getByRole("textbox", { name: "Title example" })).toHaveAttribute("readonly");
     expect(create).toBeDisabled();
 
@@ -43,6 +43,44 @@ describe("AdoWorkspaceDecision", () => {
       title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx",
       sponsorEmail: "sponsor@example.com",
     });
+  });
+
+  it("expands the adjacent example title with the workbook name and copies it when available", async () => {
+    const clipboardWriteText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWriteText },
+    });
+
+    render(<AdoWorkspaceDecision visible workbookFileName="Gearbox TA.xlsx" onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create work item" }));
+
+    const example = screen.getByRole("textbox", { name: "Title example" });
+    expect(example).toHaveValue("[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx");
+    expect(screen.getByRole("button", { name: "Copy title example" })).toHaveAttribute("title", "Copy title example");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy title example" }));
+
+    expect(clipboardWriteText).toHaveBeenCalledOnce();
+    expect(clipboardWriteText).toHaveBeenCalledWith("[TA Requirement][Project][Phase] Update Drawing Requirements for Gearbox TA.xlsx");
+  });
+
+  it("falls back to selecting the example title when clipboard copy is unavailable", () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+
+    render(<AdoWorkspaceDecision visible workbookFileName="Gearbox TA.xlsx" onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create work item" }));
+
+    const example = screen.getByRole("textbox", { name: "Title example" }) as HTMLInputElement;
+    const selectSpy = vi.spyOn(example, "select");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy title example" }));
+
+    expect(selectSpy).toHaveBeenCalledOnce();
+    selectSpy.mockRestore();
   });
 
   it("renders the complete preview and requires a separate Web confirmation", async () => {

@@ -209,8 +209,7 @@ function imageRuleViolations(markdown) {
       values: [
         "F1 physical image or imageReference missing",
         "Image mode unavailable",
-        "User skips image evaluation",
-        "No observation artifact generated",
+        "Incomplete or invalid observation",
       ],
     },
     {
@@ -421,7 +420,7 @@ describe("result-interpretation skill contract", () => {
       "Phase W3 - Select ready worksheets",
       "Phase W4 - Run local F3",
       "Phase W5 - Run F4 from F2",
-      "Phase W6 - Optional image observations",
+      "Phase W6 - Required workflow-owned image observations",
       "Phase W7 - Run F5 with the same selection",
       "Phase W8 - Validate and present F5",
     ]);
@@ -498,7 +497,7 @@ describe("result-interpretation skill contract", () => {
       "Create the observation artifact with create_file only.",
       "Never edit, overwrite, append to, or reuse an observation artifact or target.",
       "Before creation, check every existing ancestor for a reparse point, symlink, or junction.",
-      "If ancestry is unverifiable, do not create the artifact; continue deterministic F5 with not_evaluated plus clarification.",
+      "If ancestry is unverifiable, record the affected worksheet as failed and continue only other validated worksheets.",
       "After creation, read back and validate the artifact with f5ImageObservationArtifactSchema.",
       "Readback must exactly match the validated workbook content hash and selected worksheets.",
       "Each readback imageReference must exactly match the W3-verified relativePath, contentHash, and worksheetName; W6 does not independently rehash the physical image or the new observation artifact.",
@@ -537,7 +536,7 @@ describe("result-interpretation skill contract", () => {
       "Ask exactly five image-mode questions per selected worksheet",
       "Create one immutable `f5-image-observation-v2` artifact",
       "Read back and validate schema, identity, and source rows",
-      "Pass the validated v2 artifact to F5, or discard the whole artifact and use deterministic fallback",
+      "Pass completed worksheet evidence to F5 and preserve failed worksheet outcomes for the final report",
     ]);
   });
 
@@ -620,16 +619,14 @@ describe("result-interpretation skill contract", () => {
     expect(skill).not.toMatch(/(?:run|use|invoke|execute)\s+(?:an?\s+)?(?:independent\s+)?(?:shell\s+)?(?:hash|sha-?256)\s+command/i);
   });
 
-  it("rejects partial v2 consumption and distinguishes fallback from baseline failure", () => {
+  it("isolates invalid required image evidence by worksheet", () => {
     const skill = readSkill();
     const normalizedSkill = normalizeContractText(skill);
 
     for (const phrase of [
-      "The v2 selected worksheet set must be exact.",
-      "Any worksheet, scope, or snapshot mismatch discards the entire v2 artifact; partial consumption is prohibited.",
-      "A missing, unreadable, malformed JSON, unknown, or invalid optional observation artifact uses the same whole-artifact deterministic fallback.",
-      "When the validated baseline remains valid, continue deterministic F5 with not_evaluated plus clarification.",
-      "A baseline identity mismatch fails closed and prohibits F5 continuation.",
+      "Every selected worksheet reaches one terminal outcome.",
+      "Any worksheet, scope, snapshot, readback, image, or mapping mismatch fails that worksheet without discarding valid completed worksheets.",
+      "A worksheet baseline identity mismatch fails that worksheet and prohibits its F5 continuation while preserving other valid worksheets.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
     }
@@ -644,7 +641,7 @@ describe("result-interpretation skill contract", () => {
     expect(structuralScopeList(readSkill())).toEqual(structuralScopes);
   });
 
-  it("fails closed for a missing F1 physical image or imageReference but continues deterministic F5 when observation is skipped", () => {
+  it("fails required image evaluation by worksheet while preserving other worksheets", () => {
     const routes = markdownTable(readSkill(), "Image availability routing");
     const physicalMissing = rowBy(routes, "Condition", "F1 physical image or imageReference missing");
     expect(physicalMissing["Worksheet routing"]).toBe("fail_closed; exclude from F5 ready");
@@ -653,14 +650,13 @@ describe("result-interpretation skill contract", () => {
 
     for (const condition of [
       "Image mode unavailable",
-      "User skips image evaluation",
-      "No observation artifact generated",
+      "Incomplete or invalid observation",
     ]) {
       const route = rowBy(routes, "Condition", condition);
       expect(route["Prerequisite"]).toBe("verified existing F1 imageReference");
-      expect(route["Worksheet routing"]).toBe("remain F5 ready");
-      expect(route["F5 continuation"]).toBe("continue deterministic F5");
-      expect(route["Tolerance result"]).toBe("not_evaluated + clarification");
+      expect(route["Worksheet routing"]).toBe("worksheet FAIL");
+      expect(route["F5 continuation"]).toBe("prohibit that worksheet; continue others");
+      expect(route["Tolerance result"]).toBe("required evaluation failed");
     }
   });
 

@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 
 import {
+  f5CoreStructuralScopeSchema,
+  f5MultimodalScopeEvaluationsSchema,
   f5MultimodalWorksheetPairV3Schema,
   f5MultimodalWorksheetRequestV3Schema,
   type F5MultimodalWorksheetRequestV3,
   type F5MultimodalWorksheetResultV3,
+  type F5MultimodalScopeEvaluations,
 } from "@ai-assist/contracts";
 
 interface MultimodalModel {
@@ -23,9 +26,9 @@ export interface WorksheetMultimodalModelDependencies {
 }
 
 export type WorksheetMultimodalExecution =
-  | { readonly status: "completed"; readonly outcome: { readonly kind: "worksheet_multimodal_response"; readonly result: F5MultimodalWorksheetResultV3 } }
+  | { readonly status: "completed"; readonly outcome: { readonly kind: "worksheet_multimodal_response"; readonly result: F5MultimodalWorksheetResultV3; readonly scopeEvaluations: F5MultimodalScopeEvaluations } }
   | { readonly status: "blocked"; readonly reason: "model_capability_unavailable" | "ordinal_mapping_unavailable" }
-  | { readonly status: "failed"; readonly error: { readonly code: "image_identity_mismatch" | "model_result_invalid" | "image_read_failed" | "model_execution_failed" } };
+  | { readonly status: "failed"; readonly error: { readonly code: "image_identity_mismatch" | "model_result_invalid" | "image_read_failed" | "model_execution_failed" | "evaluation_incomplete" } };
 
 export async function executeWorksheetMultimodalModel(
   dependencies: WorksheetMultimodalModelDependencies,
@@ -77,14 +80,19 @@ export async function executeWorksheetMultimodalModel(
     return failed("model_result_invalid");
   }
   if (isOrdinalMappingBlocker(candidate)) return { status: "blocked", reason: "ordinal_mapping_unavailable" };
-  const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request, result: candidate });
+  const envelope = candidate as { result?: unknown; scopeEvaluations?: unknown } | null;
+  const scopes = f5MultimodalScopeEvaluationsSchema.safeParse(envelope?.scopeEvaluations);
+  if (!scopes.success) return failed("evaluation_incomplete");
+  if (typeof candidate !== "object" || candidate === null || Object.keys(candidate).some((key) => !["result", "scopeEvaluations"].includes(key))) return failed("model_result_invalid");
+  const pair = f5MultimodalWorksheetPairV3Schema.safeParse({ request, result: envelope?.result });
   if (!pair.success || pair.data.result.model.modelId !== model.id) return failed("model_result_invalid");
-  return { status: "completed", outcome: { kind: "worksheet_multimodal_response", result: pair.data.result } };
+  return { status: "completed", outcome: { kind: "worksheet_multimodal_response", result: pair.data.result, scopeEvaluations: scopes.data } };
 }
 
 function buildStructuredPrompt(request: F5MultimodalWorksheetRequestV3, modelId: string): string {
   return JSON.stringify({
-    instruction: "Interpret the attached worksheet image together with every Factor row. Return only one JSON object matching f5-multimodal-result-v3 when every exact factorOrdinal is visibly mapped. Map every row by worksheetName, tableId, sourceRow, and exact factorOrdinal, with visibleStatus=visible. If any ordinal is not visible or is ambiguous, return exactly {\"status\":\"blocked\",\"reason\":\"ordinal_mapping_unavailable\"}. Do not infer unseen image evidence.",
+    instruction: "Interpret the attached worksheet image together with every Factor row. Return only {result, scopeEvaluations}, with result matching f5-multimodal-result-v3 and exactly one evaluation for each required scope. Each evaluation contains scope, status (supported, needs_review, insufficient_evidence), observedValue (visible, not_visible, ambiguous), confidence (high, medium, low), and nonblank visibleBasis (max 500 characters). supported requires visible evidence and non-low confidence. Missing scopes and not_evaluated are failures. Map every row by worksheetName, tableId, sourceRow, and exact factorOrdinal, with visibleStatus=visible. If any ordinal is not visible or is ambiguous, return exactly {\"status\":\"blocked\",\"reason\":\"ordinal_mapping_unavailable\"}. Do not infer unseen geometry, identifiers, datum identity, or labels.",
+    requiredScopes: f5CoreStructuralScopeSchema.options,
     requiredResultIdentity: {
       contractVersion: "f5-multimodal-result-v3",
       outputClassification: "confidential",
@@ -102,7 +110,7 @@ function buildStructuredPrompt(request: F5MultimodalWorksheetRequestV3, modelId:
   });
 }
 
-function failed(code: "image_identity_mismatch" | "model_result_invalid" | "image_read_failed" | "model_execution_failed"): WorksheetMultimodalExecution {
+function failed(code: "image_identity_mismatch" | "model_result_invalid" | "image_read_failed" | "model_execution_failed" | "evaluation_incomplete"): WorksheetMultimodalExecution {
   return { status: "failed", error: { code } };
 }
 
