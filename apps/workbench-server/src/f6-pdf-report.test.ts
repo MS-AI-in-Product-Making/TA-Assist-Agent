@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderF6PdfHtml } from "@ai-assist/product-export";
+import { renderF6PdfHtml } from "../../../packages/product-export/src/f6-pdf-report.js";
 
 const REPORT = `# Tolerance Analysis Engineering Report
 
@@ -21,10 +21,10 @@ const REPORT = `# Tolerance Analysis Engineering Report
 
 ## Complete Factor Table
 
-| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |
-|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|
-| A | 14 | Frame Post Location | Frame | DWG-1 | DIM-1 | Part | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | normal | 0 mm | 0.2 mm | 0.050 mm | 50.5% | Review | Controlled guidance |
-| B | 15 | Top Enclosure Height | Enclosure | DWG-2 | DIM-2 | Part | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.040 mm | 32.3% | Review | Controlled guidance |
+| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Frame Post Location <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> | Frame | Part | MISSING | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | N/A | N/A | N/A | Controlled guidance |
+| Top Enclosure Height | Enclosure | Part | DWG-2 | DIM-2 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |
 
 ## Tolerance Path Image
 
@@ -94,8 +94,10 @@ describe("renderF6PdfHtml", () => {
     expect(html).not.toContain("border-radius:");
     expect(html).not.toContain("box-shadow:");
     expect(html).toContain("class=\"worksheet-section\"");
-    expect(html).not.toContain("class=\"factor-table\"");
-    expect(html).toContain("class=\"drawing-health\"");
+    expect(html).toContain("class=\"factor-table factor-table--complete\"");
+    expect(html).toContain("data-f6-marker=\"required-missing\"");
+    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Frame Post Location <span class="f6-inline-marker"/u);
+    expect(html).not.toContain("class=\"drawing-health\"");
     expect(html).toContain("class=\"analysis-grid\"");
     expect(html).toContain("analysis-panel--image");
     expect(html).toContain("analysis-panel--results");
@@ -107,6 +109,11 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("class=\"spec-change-graph\"");
     expect(html).toContain("Frame Post Location");
     expect(html).toContain("width:50.5%");
+    expect(html).toContain("@page { size:A4 landscape;");
+    expect(html).not.toContain("fitWorksheetPages");
+    expect(html).not.toContain("height:174mm");
+    expect(html).not.toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden;");
+    expect(html).not.toContain("overflow-wrap:anywhere");
   });
 
   it("accepts validated inline images without changing report semantics", () => {
@@ -127,7 +134,7 @@ describe("renderF6PdfHtml", () => {
       inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
     });
 
-    expect(html).toContain("fitWorksheetPages");
+    expect(html).toContain("data-f6-marker=\"required-missing\"");
     expect(html).not.toContain("globalThis.compromised");
     expect(html).not.toContain("onerror=");
     expect(html).not.toContain("<img src=x");

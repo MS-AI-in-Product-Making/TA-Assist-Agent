@@ -91,7 +91,7 @@ describe("renderF6PdfSync", () => {
       sourceHash: createHash("sha256").update(markdown).digest("hex"),
     });
 
-    expect(html).toContain("@page { size:320mm 180mm;");
+    expect(html).toContain("@page { size:A4 landscape;");
     expect(html).toContain('<section class="worksheet-section" id="worksheet-1">');
     expect(html).toContain('href="#worksheet-1"');
     expect(html).toContain('class="comment comment--pass">Pass</span>');
@@ -99,8 +99,8 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="comment comment--fail">Fail</span>');
     expect(html).toContain('class="contribution-chart"');
     expect(html).not.toContain('<table class="contribution-table"');
-    expect(html).toContain("fitWorksheetPages");
-    expect(html).toContain("break-after:page");
+    expect(html).not.toContain("fitWorksheetPages");
+    expect(html).not.toContain("break-after:page");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
     expect(html).toContain("gap:0");
@@ -108,19 +108,21 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("grid-template-rows:auto auto");
     expect(html).toContain(".analysis-panel--results { display:grid; grid-template-columns:1fr 1fr;");
     expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm;");
+    expect(html).not.toContain("height:174mm");
+    expect(html).not.toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden;");
+    expect(html).not.toContain("overflow-wrap:anywhere");
   });
 
-  it("builds a graph-first engineering brief while retaining complete Factor data in Markdown", () => {
+  it("renders the Task 3 complete Factor table with hidden missing markers preserved", () => {
     const markdown = [
       "# 3-1 Worksheet: Analysis-A",
       "",
       "## Complete Factor Table",
       "",
-      "| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |",
-      "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|",
-      "| 1 | 14 | Factor A | Part A | MISSING | 21 | CNC | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.025 mm | 60.0% | Preserve this note | Capability: f0\\_information\\_insufficient; Knowledge: missing\\_process\\_context |",
-      "| 2 | 15 | Factor B | Part B | DWG-2 | 1 | PCBA | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.020 mm | 40.0% | Preserve this note | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.2 mm; Knowledge: internal-v1 |",
-      "| 3 | 16 | Factor C | Part C | DWG-3 | 202 | Other | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | normal | 0 mm | 0.1 mm | 0.015 mm | 10.0% | Preserve this note | Capability: non\\_f0\\_process\\_category |",
+      "| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| Factor A <span class=\"f6-inline-marker\" data-f6-marker=\"required-missing\" data-source-row=\"14\" hidden aria-hidden=\"true\"></span> | Part A | CNC | MISSING | DIM-14 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | N/A | N/A | N/A | Capability: f0_information_insufficient; Knowledge: missing_process_context |",
+      "| Factor B | Part B | PCBA | DWG-2 | DIM-15 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.2 mm; Knowledge: internal-v1 |",
       "",
       "## Requirements and Statistical Results",
       "",
@@ -169,15 +171,12 @@ describe("renderF6PdfSync", () => {
     ].join("\n");
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(markdown).toContain("| Ordinal | Row | Factor Description");
-    expect(markdown).toContain("| Notes | Capability and Knowledge Guidance |");
-    expect(markdown).toContain("Preserve this note");
-    expect(html).not.toContain('<table class="factor-table">');
-    expect(html).not.toContain("Preserve this note");
-    expect(html).toContain('class="drawing-health"');
-    expect(html).toContain('data-missing-drawings="1"');
-    expect(html).toContain('data-invalid-dim-ids="1"');
-    expect(html).toContain("1 of 3 Factors have complete drawing identifiers.");
+    expect(html).toContain('<table class="factor-table factor-table--complete">');
+    expect(html).toContain('<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden="" aria-hidden="true"></span>');
+    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Factor A <span class="f6-inline-marker"/u);
+    expect(html).toContain("Factor A");
+    expect(html).toContain("MISSING");
+    expect(html).not.toContain('class="drawing-health"');
     expect(html).toContain('class="capability-spectrum"');
     expect(html).toContain('data-target-cpk="1.333"');
     expect(html).toContain('class="spec-range-graph"');
@@ -189,9 +188,9 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="spec-change-graph"');
     expect(html).not.toContain('<table class="result-table">');
     expect(html).not.toContain('<table class="analysis-table">');
-    expect(html).toContain("Graph-first engineering brief");
-    expect(html).toContain(".report-content { padding:4mm; }");
-    expect(html).toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm;");
+    expect(html).not.toContain("Graph-first engineering brief");
+    expect(html).toContain(".factor-table { table-layout:fixed;");
+    expect(html).toContain(".factor-table td,.factor-table th { font-size:8.5pt;");
   });
 
   it("fails graph values closed instead of treating unsafe or unavailable evidence as zero", () => {
