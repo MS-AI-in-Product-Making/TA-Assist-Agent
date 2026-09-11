@@ -1351,6 +1351,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
       modelInterpretationVersion: "v2",
     });
     inputs.modelInterpretation = createMixedMultimodalV4(inputs);
+    keepCompletedWorksheetOnly(inputs);
 
     const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 

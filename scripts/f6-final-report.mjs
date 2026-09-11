@@ -79,16 +79,18 @@ function indexByWorksheetName(records) {
   return new Map(records.map((record) => [record.worksheetName, record]));
 }
 
-function assertExactWorksheetSet(worksheetNames, readyNames, label) {
+function isExactWorksheetSet(worksheetNames, readyNames) {
   const worksheetNameSet = new Set(worksheetNames);
   const readyNameSet = new Set(readyNames);
 
-  const isExactMatch = worksheetNames.length === worksheetNameSet.size
+  return worksheetNames.length === worksheetNameSet.size
     && readyNames.length === readyNameSet.size
     && worksheetNameSet.size === readyNameSet.size
     && [...worksheetNameSet].every((name) => readyNameSet.has(name));
+}
 
-  if (!isExactMatch) {
+function assertExactWorksheetSet(worksheetNames, readyNames, label) {
+  if (!isExactWorksheetSet(worksheetNames, readyNames)) {
     throw new Error(`Invalid F6 final report input: ${label}.`);
   }
 }
@@ -660,10 +662,17 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
   assertWorkbookIdentity({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
   assertReportScope(f2Report, f6Optimization, blockedWorksheetDetailsByName);
   const blockedScopeNameSet = new Set(f6Optimization.provenance.reportScope.blockedWorksheetNames);
+  const scopeWorksheetNames = f6Optimization.provenance.reportScope.worksheetNames;
   const readyNames = f6Optimization.provenance.reportScope.worksheetNames
     .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName));
 
-  assertExactWorksheetSet(f3Report.worksheets.map(({ worksheetName }) => worksheetName), readyNames, "f3Report");
+  const f3WorksheetNames = f3Report.worksheets.map(({ worksheetName }) => worksheetName);
+  const f3MatchesReadyScope = isExactWorksheetSet(f3WorksheetNames, readyNames);
+  const f3MatchesReportScope = blockedScopeNameSet.size > 0
+    && isExactWorksheetSet(f3WorksheetNames, scopeWorksheetNames);
+  if (!f3MatchesReadyScope && !f3MatchesReportScope) {
+    throw new Error("Invalid F6 final report input: f3Report.");
+  }
   assertExactWorksheetSet(
     f5Report.worksheets.filter(({ status }) => status === "completed").map(({ worksheetName }) => worksheetName),
     readyNames,
@@ -738,7 +747,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
 
     return {
       worksheetName,
-      disposition: blocker !== undefined ? "FAIL" : resolveWorksheetDisposition({ f2Worksheet, f3Worksheet, f4Calculation, f5Worksheet }),
+      disposition: resolveWorksheetDisposition({ f2Worksheet, f3Worksheet, f4Calculation, f5Worksheet }),
       f2Worksheet,
       f3Worksheet,
       f4Calculation,
