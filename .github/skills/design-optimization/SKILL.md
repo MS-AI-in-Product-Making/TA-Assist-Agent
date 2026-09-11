@@ -36,7 +36,7 @@ Plan and communicate using product capability names only:
 4. Drawing Governance: execute current-run drawing governance analysis and preserve its validated result for the optional post-report ADO publishing gate.
 5. TA Calculation: execute governed calculation for the confirmed downstream scope.
 6. Result Interpretation: optionally collect image observations, then execute and validate interpreted outputs.
-7. Design Optimization: collect optional Analysis Context and optional Optimization Targets through two independent confirmations, run optimization, and validate final outputs.
+7. Design Optimization: keep workflow-owned image/model evaluation, record standard workbook Analysis Context and Optimization Targets as `NOT_PROVIDED`, run optimization, and validate final outputs.
 8. Feedback Application: present final governed output ledger and preserve required decision and evidence disclosures.
 
 Workbook mode must preserve two worksheet gates, optional ADO publishing gate behavior, optional image-observation behavior, independent Analysis Context and Optimization Targets confirmations, built-in top-contributor policy behavior, and final output disposition reporting.
@@ -109,7 +109,7 @@ Validate `Feature5-Report.json`, run summary, manifest, output containment, sour
 
 ### Phase W8 - Generate governed model interpretation
 
-Generate exactly one required `f5-multimodal-artifact-v3` after F5 validation and before the two caller-input gates. This workflow-owned artifact does not require an additional caller confirmation. Generate each selected worksheet independently using only that worksheet's W3-verified image, all active Factor rows, validated F2/F3/F4 identities, and validated F5 evidence; never combine image or Factor context across worksheets. Use validated F5 evidence for image facts, contextual signals, and clarifications without treating it as authority for unseen geometry or Factor identity.
+Generate exactly one required `f5-multimodal-artifact-v3` after F5 validation and before F6. This workflow-owned artifact does not require an additional caller confirmation. Generate each selected worksheet independently using only that worksheet's W3-verified image, all active Factor rows, validated F2/F3/F4 identities, and validated F5 evidence; never combine image or Factor context across worksheets. Use validated F5 evidence for image facts, contextual signals, and clarifications without treating it as authority for unseen geometry or Factor identity.
 
 Analyze each verified image against its matching complete ordered Factor set and current F5 evidence. Keep image-visible facts distinct from engineering interpretation, state that model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME, and produce one concise response row for every active Factor source row. Compare explicit visible arrow direction and label mapping with linked structured Factor descriptions and nominal signs only when the visible evidence and matching Factor context support that mapping. Do not infer unseen geometry, Drawing Number, DIM ID, datum identity, or a label-to-row mapping that is not visible and supported by the current worksheet evidence.
 
@@ -121,19 +121,19 @@ Require the materializer's completed result and validator-confirmed path at `tes
 
 The W8 artifact is a required input for the current F6 run. Any generation, read-back, contract, authority, identity, image, hash, worksheet coverage, or Factor mapping failure stops the run. Never substitute a historical artifact, downgrade to a legacy freeform model contract, omit `--model-interpretation`, or continue with an unavailable-model fallback.
 
-### Phase W8A - Collect optional TA Analysis Context
+### Standard-path caller input policy
 
-Collect analysis context from chat natural language only, then route the text through the same governed proposal materializer used by the web gate. Do not ask for JSON content, filesystem paths, artifact IDs, or hashes in user-facing prompts. The materializer either returns clarifications or a preview-ready pending draft bound to the current workbook lineage.
+Do not prompt for Analysis Context or Optimization Targets on the standard workbook path.
 
-Present the complete sanitized clarification and preview result, then run a dedicated `vscode_askQuestions` confirmation with the exact affirmative choice `Confirm analysis context`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`; missing user input is `NOT_PROVIDED`. Declined or not-provided analysis context omits `--analysis-context` and continues with explicit context gaps.
+Record Analysis Context as `NOT_PROVIDED` on the standard workbook path.
 
-### Phase W8B - Collect optional Optimization Targets
+Record Optimization Targets as `NOT_PROVIDED` on the standard workbook path.
 
-Collect optimization targets from chat natural language only after W8A is terminal, using the shared governed proposal materializer for the active gate. Do not ask for JSON payloads, local paths, artifact locations, or hash strings in user-facing prompts. The materializer returns clarifications or a preview-ready pending draft with workbook/worksheet/factor/unit identity preserved.
+Omit `--analysis-context` and `--optimization-targets` unless an existing artifact entry mode explicitly supplies them.
 
-Show every target, policy, selected factor, value, ratio, and unit from the sanitized preview. Then run a second dedicated `vscode_askQuestions` confirmation with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`; missing user input is `NOT_PROVIDED`. Declined or not-provided optimization targets omit `--optimization-targets`; caller-target options remain unavailable.
+Historical schema, materializers, command reducers, artifact readers, and CLI compatibility for caller-provided Analysis Context and Optimization Targets remain read/write compatible where already supported; the standard workbook path simply does not collect those prompts.
 
-W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be merged with the other, and each must not be combined with the F3 ADO confirmation. Caller-target optimization scenarios may not be generated before target confirmation. Only caller-authorized targets may create caller-target quantified scenarios.
+Historical caller-provided Analysis Context and Optimization Targets still come from chat natural language only, route through the governed proposal materializer, and may produce a preview-ready pending draft when an existing artifact entry mode explicitly supplies them.
 
 The sole no-target exception is the versioned built-in policy `f6-top3-tolerance-policy-v1`. For a worksheet where `CpkL` or `CpkU` is below that worksheet's recorded Target Cpk, F6 automatically freezes the baseline Top 3 variance contributors and runs exactly these F4-backed options: `OP1` = Top 1 tolerance band reduced 25% and Top 2/3 reduced 10%; `OP2` = Top 1 reduced 20% and Top 2/3 reduced 15%; `OP3` = Top 1 reduced 40% and Top 2/3 reduced 5%. The policy preserves each tolerance-band center, does not change specifications, and records policy, factor, ratio, baseline, and scenario calculation provenance. A worksheet whose `CpkL` and `CpkU` both meet Target Cpk receives no built-in option. No other automatic percentage scenario is permitted.
 
@@ -141,7 +141,7 @@ Preserve each optional input decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJEC
 
 ### Phase W9 - Run and validate F6
 
-Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Pass the workflow-locked language tag with `--language <locked-language-tag>`. Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`. Append `--analysis-context <artifact-path>` only after W8A caller authorization and `--optimization-targets <artifact-path>` only after W8B caller authorization. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
+Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Pass the workflow-locked language tag with `--language <locked-language-tag>`. Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`. On the standard workbook path, omit `--analysis-context` and `--optimization-targets` and keep both decisions fixed at `NOT_PROVIDED`. Existing-artifact entry mode may still validate or reuse already-supplied caller-authorized inputs. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
 Validate `Feature6-Optimization.json` as `f6-optimization-v3` with `f6OptimizationResultV3Schema` and validate the hash-bound `Feature6-Report.md` and `Feature6-Report.pdf` only through their recorded SHA-256 values before presentation. Validate the PDF signature, run summary, manifest, five-file `f6-artifact-set-v3` output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, interaction language, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, built-in policy IDs/ratios/side-Cpk trigger/F4 scenario references, required multimodal reference, and `reportSummary`. PDF rendering or validation failure fails closed and must not publish or present a Markdown-only successful run. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject legacy optimization artifacts as unsupported rather than converting or presenting them. Never parse Markdown to derive disposition.
 
@@ -201,7 +201,7 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 - `npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact>`
 - `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
 
-The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the accepted W8 model artifact and the two documented, separately authorized V2 caller input pairs to the final allowed command.
+The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the accepted W8 model artifact to the final allowed command on the standard workbook path. Existing-artifact entry mode may still validate the documented V2 caller input pairs without changing the standard workbook prompt policy.
 
 W4A does not add F3 ADO commands to this local runner list. When W4A is entered, use drawing-governance as the required sub-skill authority for local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
 

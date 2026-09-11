@@ -291,6 +291,43 @@ describe("SessionStore", () => {
     }
   });
 
+  it("accepts a completed attempt that starts its deterministic next stage", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      const receipt = await store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: "f3_running",
+          activeAttempt: {
+            attemptId: `${COMMAND_ID}:next:f3_running`,
+            stage: "f3_running",
+            status: "running",
+            commandId: `${COMMAND_ID}:next`,
+            startedAt: "2026-08-24T01:00:00.000Z",
+          },
+        }),
+      });
+
+      expect(receipt.accepted).toBe(true);
+      expect(receipt.snapshot).toMatchObject({
+        state: "f3_running",
+        activeAttempt: {
+          attemptId: `${COMMAND_ID}:next:f3_running`,
+          stage: "f3_running",
+          status: "running",
+        },
+      });
+    } finally {
+      await store.close();
+    }
+  });
+
   it("rejects terminal attempt results without a snapshot transition", async () => {
     const rootDir = await createTempRoot();
     const store = await createStore(rootDir);

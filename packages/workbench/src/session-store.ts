@@ -1019,6 +1019,18 @@ function validateAttemptResultSnapshot(
   }
 
   if (nextAttempt.attemptId !== currentSnapshot.activeAttempt.attemptId) {
+    const currentCommandId = currentSnapshot.activeAttempt.commandId;
+    const expectedNextCommandId = currentCommandId === undefined ? undefined : `${currentCommandId}:next`;
+    const expectedNextAttemptId = expectedNextCommandId === undefined
+      ? undefined
+      : `${expectedNextCommandId}:${nextAttempt.stage}`;
+    if (result.status === "completed"
+      && nextAttempt.status === "running"
+      && nextSnapshot.state === nextAttempt.stage
+      && nextAttempt.commandId === expectedNextCommandId
+      && nextAttempt.attemptId === expectedNextAttemptId) {
+      return;
+    }
     throw createTypedError({
       code: "validation_error",
       summary: `Attempt result for ${result.attemptId} cannot switch the active attempt to ${nextAttempt.attemptId}.`,

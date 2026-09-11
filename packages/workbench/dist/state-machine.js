@@ -238,14 +238,16 @@ function transitionAfterCompletion(snapshot, completedStage, nextState, transiti
     const standardF6InputReferences = completedStage === "f5_running"
         ? appendF6InputDecisionReference({
             ...snapshot,
-            priorRunReferences: appendF6InputDecisionReference(snapshot, f8SessionCommandSchema.parse({
-                contractVersion: "f8-session-command-v1",
-                sessionId: snapshot.sessionId,
-                commandId: `${transitionKey}:analysis-context-default`,
-                expectedRevision: snapshot.revision,
-                command: "confirm_analysis_context",
-                payload: { decision: "not_provided" },
-            }), F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX),
+            priorRunReferences: appendF6InputDecisionReference(snapshot, {
+                ...f8SessionCommandSchema.parse({
+                    contractVersion: "f8-session-command-v1",
+                    sessionId: snapshot.sessionId,
+                    commandId: `${transitionKey}:analysis-context-default`,
+                    expectedRevision: snapshot.revision,
+                    command: "confirm_analysis_context",
+                    payload: { decision: "not_provided" },
+                }),
+            }, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX),
         }, f8SessionCommandSchema.parse({
             contractVersion: "f8-session-command-v1",
             sessionId: snapshot.sessionId,

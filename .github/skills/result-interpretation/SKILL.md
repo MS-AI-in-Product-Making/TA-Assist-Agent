@@ -68,6 +68,8 @@ Ask whether image evidence should be evaluated. Optional observation availabilit
 
 When Design Optimization owns the end-to-end workbook workflow, this capability must not add a separate caller image-confirmation gate.
 
+When Design Optimization owns the end-to-end workbook workflow, this capability also must not collect Analysis Context or Optimization Targets; that workflow records the standard-path decisions as `NOT_PROVIDED` after internal image evaluation.
+
 ### Image availability routing
 
 | Condition | Prerequisite | Worksheet routing | F5 continuation | Tolerance result |

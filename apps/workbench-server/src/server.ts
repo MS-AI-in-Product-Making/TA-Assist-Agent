@@ -202,6 +202,8 @@ export interface WorkbenchServerContext {
   createAdoPreview(sessionId: string, prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]): Promise<AdoPreviewIdentity>;
   materializeF6InputDraftFromProposal(sessionId: string, input: { readonly expectedRevision: number; readonly proposal: F6InputProposal }): Promise<{ readonly status: string; readonly pendingDraft?: unknown; readonly preview?: unknown; readonly snapshotRevision?: number; readonly clarifications?: readonly { readonly clarificationId: string; readonly reasonCode: string; readonly question: string; readonly requiredFields: readonly string[] }[] }>;
   syncSessionRecord(sessionId: string): Promise<void>;
+  buildWorksheetInterpretationRequestsForSnapshot(snapshot: F8SessionSnapshot): Promise<readonly F5MultimodalWorksheetRequestV3[]>;
+  ensurePendingMultimodalHostActions(snapshot: F8SessionSnapshot): Promise<void>;
   createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
   failActiveMultimodalAttempt(snapshot: F8SessionSnapshot, reason: string): Promise<void>;
@@ -368,32 +370,44 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       }
       return { draft, promotionPreview: await effectiveWhatIfService.createPromotionPreview(snapshot, draft) };
     },
+    async ensurePendingMultimodalHostActions(snapshot) {
+      if (snapshot.state !== "f5_running") return;
+      const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+      if (requests.length === 0) {
+        throw createTypedError({ code: "evidence_mismatch", summary: "Result Interpretation has no governed worksheet requests.", suggestedAction: "Reconfirm the current downstream worksheet scope.", affectedInputReferences: [snapshot.sessionId] });
+      }
+      const expiresAt = new Date(Date.parse(snapshot.activeAttempt?.startedAt ?? new Date().toISOString()) + 24 * 60 * 60_000).toISOString();
+      for (const request of requests) {
+        const actionId = `multimodal:${request.requestHash}`;
+        const created = await context.hostActions.create({
+          contractVersion: "f8-host-action-request-v1",
+          actionId,
+          sessionId: snapshot.sessionId,
+          expectedRevision: snapshot.revision,
+          expiresAt,
+          kind: "vscode_worksheet_multimodal_request",
+          confirmationHash: request.requestHash,
+          expectedTargetVersion: "vscode-worksheet-multimodal-v3",
+          request,
+        });
+        if (created !== undefined) continue;
+        const existing = await context.hostActions.readRecord(snapshot.sessionId, actionId);
+        if (existing?.request.kind !== "vscode_worksheet_multimodal_request"
+          || existing.request.request.requestHash !== request.requestHash) {
+          throw createTypedError({ code: "dependency_error", summary: "Unable to create the required worksheet interpretation action.", suggestedAction: "Retry Result Interpretation for the current workbook.", affectedInputReferences: [actionId] });
+        }
+      }
+    },
     async createPendingHostAction(snapshot, command) {
       if (command.command === "confirm_image_decision") {
         if (snapshot.state !== "f5_running") {
           throw createTypedError({ code: "evidence_mismatch", summary: "Image confirmation did not enter Result Interpretation.", suggestedAction: "Refresh the session and confirm the current image decision.", affectedInputReferences: [snapshot.sessionId, snapshot.state] });
         }
-        const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
-        if (requests.length === 0) {
-          throw createTypedError({ code: "evidence_mismatch", summary: "Result Interpretation has no governed worksheet requests.", suggestedAction: "Reconfirm the current downstream worksheet scope.", affectedInputReferences: [snapshot.sessionId] });
-        }
-        const expiresAt = new Date(Date.parse(snapshot.activeAttempt?.startedAt ?? new Date().toISOString()) + 24 * 60 * 60_000).toISOString();
-        for (const request of requests) {
-          const actionId = `multimodal:${request.requestHash}`;
-          const created = await context.hostActions.create({
-            contractVersion: "f8-host-action-request-v1",
-            actionId,
-            sessionId: snapshot.sessionId,
-            expectedRevision: snapshot.revision,
-            expiresAt,
-            kind: "vscode_worksheet_multimodal_request",
-            confirmationHash: request.requestHash,
-            expectedTargetVersion: "vscode-worksheet-multimodal-v3",
-            request,
-          });
-          if (created === undefined) throw createTypedError({ code: "dependency_error", summary: "Unable to create the required worksheet interpretation action.", suggestedAction: "Retry Result Interpretation for the current workbook.", affectedInputReferences: [actionId] });
-        }
+        await context.ensurePendingMultimodalHostActions(snapshot);
         return;
+      }
+      if (snapshot.state === "f5_running") {
+        await context.ensurePendingMultimodalHostActions(snapshot);
       }
       if (snapshot.state !== "ado_action_pending" || command.command !== "confirm_ado_decision") return;
       const decision = (command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" }).decision;
@@ -419,7 +433,10 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       }
     },
     async enqueueActiveAttempt(snapshot) {
-      if (snapshot.state === "f5_running" && !await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+      if (snapshot.state === "f5_running") {
+        await context.ensurePendingMultimodalHostActions(snapshot);
+        if (!await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+      }
       await enqueueSnapshotAttempt(rootDir, queue, snapshot);
     },
     async failActiveMultimodalAttempt(snapshot, reason) {
@@ -499,7 +516,10 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (snapshot === undefined) {
         throw createTypedError({ code: "validation_error", summary: "Session is unavailable for worksheet interpretation.", suggestedAction: "Refresh the workbench and retry.", affectedInputReferences: [sessionId] });
       }
-      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, sessionId));
+      return context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
+    },
+    async buildWorksheetInterpretationRequestsForSnapshot(snapshot) {
+      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, snapshot.sessionId));
     },
     async validateWorksheetInterpretationRequest(sessionId, request) {
       const snapshot = await context.sessions.read(sessionId);
@@ -615,7 +635,10 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     },
   };
   queueSessionStore.setFollowUp(async (snapshot) => {
-    if (snapshot.state === "f5_running" && !await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+    if (snapshot.state === "f5_running") {
+      await context.ensurePendingMultimodalHostActions(snapshot);
+      if (!await reconcileActiveMultimodalAttempt(rootDir, snapshot, context)) return;
+    }
     await enqueueSnapshotAttempt(rootDir, queue, snapshot, true);
   });
   try {
@@ -769,6 +792,7 @@ async function recoverActiveAttempts(
       }
       if (current.state === "f5_running") {
         await queue.discardForExternalGate(current.activeAttempt.attemptId);
+        await context.ensurePendingMultimodalHostActions(current);
         if (!await reconcileActiveMultimodalAttempt(rootDir, current, context)) continue;
       }
       const job = await stageJobForSnapshot(rootDir, current);
@@ -2054,9 +2078,9 @@ function worksheetInterpretationArtifactReader(rootDir: string, sessionId: strin
 export async function materializeCompletedMultimodalArtifact(
   rootDir: string,
   snapshot: F8SessionSnapshot,
-  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions">,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions">,
 ): Promise<boolean> {
-  const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+  const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
   const worksheets = [];
   for (const request of requests) {
     const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
@@ -2124,9 +2148,9 @@ export async function materializeCompletedMultimodalArtifact(
 export async function reconcileActiveMultimodalAttempt(
   rootDir: string,
   snapshot: F8SessionSnapshot,
-  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">,
+  context: Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequestsForSnapshot" | "hostActions" | "failActiveMultimodalAttempt">,
 ): Promise<boolean> {
-  const requests = await context.buildWorksheetInterpretationRequests(snapshot.sessionId);
+  const requests = await context.buildWorksheetInterpretationRequestsForSnapshot(snapshot);
   for (const request of requests) {
     const record = await context.hostActions.readRecord(snapshot.sessionId, `multimodal:${request.requestHash}`);
     if (record?.request.kind !== "vscode_worksheet_multimodal_request"

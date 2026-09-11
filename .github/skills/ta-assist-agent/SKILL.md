@@ -33,6 +33,6 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 
 Present the workflow as **TA Assist Agent** and use product capability names in user-facing communication. Do not expose internal feature IDs, runner names, schema names, or artifact implementation details.
 
-The source workbook remains read-only. Preserve worksheet confirmations, internal image evaluation before the optional Analysis Context and Optimization Targets gates, drawing-governance publishing confirmation, multimodal image and complete-Factor validation, deterministic calculation authority, artifact containment, hashes, and final report validation.
+The source workbook remains read-only. Preserve worksheet confirmations, internal image evaluation before recording standard-path Analysis Context and Optimization Targets as NOT_PROVIDED, drawing-governance publishing confirmation, multimodal image and complete-Factor validation, deterministic calculation authority, artifact containment, hashes, and final report validation.
 
 On success, present only the validator-confirmed final `Feature6-Report.md` and `Feature6-Report.pdf` links and absolute paths as the engineering reports. Internal JSON, run-summary, and manifest artifacts remain governed implementation records, not additional user reports.
