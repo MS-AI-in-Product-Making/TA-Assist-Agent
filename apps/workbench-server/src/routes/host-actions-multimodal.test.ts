@@ -181,6 +181,39 @@ describe("multimodal HostAction image route", () => {
       await app.close();
     }
   });
+
+  it("reconciles a blocked worksheet result without failing the whole attempt", async () => {
+    const auth = new WorkbenchAuth(new Uint8Array(32).fill(11));
+    const nestedRequest = multimodalRequest();
+    const actionId = `multimodal:${nestedRequest.requestHash}`;
+    const request = { contractVersion: "f8-host-action-request-v1" as const, actionId, sessionId: SESSION_ID, expectedRevision: 4, expiresAt: "2026-09-07T00:15:00.000Z", kind: "vscode_worksheet_multimodal_request" as const, confirmationHash: nestedRequest.requestHash, expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const, request: nestedRequest };
+    const payload = { status: "blocked" as const, reason: "ordinal_mapping_unavailable" as const };
+    const storedResult = { contractVersion: "f8-host-action-result-v1" as const, actionId, hostInstanceId: "host-1", leaseId: "lease-1", status: "blocked" as const, resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"), payload };
+    const enqueueActiveAttempt = vi.fn(async () => undefined);
+    const failActiveMultimodalAttempt = vi.fn(async () => undefined);
+    const context = {
+      auth,
+      hostActions: { readRecord: vi.fn(async () => ({ request })), complete: vi.fn(async () => "accepted" as const) },
+      sessions: { read: vi.fn(async () => ({ state: "f5_running", revision: 4 })) },
+      enqueueActiveAttempt,
+      failActiveMultimodalAttempt,
+      validateWorksheetInterpretationRequest: vi.fn(async () => true),
+      requireAuthenticated(requestValue: Parameters<WorkbenchServerContext["requireAuthenticated"]>[0]) { return auth.authenticate(requestValue); },
+    } as unknown as WorkbenchServerContext;
+    const app = Fastify();
+    await app.register(hostActionsRoutes, { context });
+    await app.ready();
+    try {
+      const token = auth.issueHostBearer(SESSION_ID, ["host-actions:result"], { actionId, hostInstanceId: "host-1" });
+      const response = await app.inject({ method: "POST", url: `/api/sessions/${SESSION_ID}/host-actions/${encodeURIComponent(actionId)}/result`, headers: { authorization: `Bearer ${token}` }, payload: storedResult });
+
+      expect(response.statusCode).toBe(204);
+      expect(enqueueActiveAttempt).toHaveBeenCalledOnce();
+      expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 function validOutcome(request: ReturnType<typeof multimodalRequest>) {

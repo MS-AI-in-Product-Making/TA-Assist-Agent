@@ -783,7 +783,7 @@ async function recoverActiveAttempts(
       if (!parsed.success || parsed.data.sessionId !== row.session_id) throw new Error(`Persisted session snapshot is invalid for ${row.session_id}.`);
       await writeSessionRecord(rootDir, parsed.data);
       if (parsed.data.activeAttempt === null) continue;
-      const current = await sessions.read(row.session_id);
+      let current = await sessions.read(row.session_id);
       if (current?.activeAttempt === null || current === undefined) continue;
       if (current.activeAttempt.commandId !== undefined) {
         const command = await sessions.readCommittedCommand(row.session_id, current.activeAttempt.commandId);
@@ -797,6 +797,7 @@ async function recoverActiveAttempts(
         await queue.discardForExternalGate(current.activeAttempt.attemptId);
         await context.ensurePendingMultimodalHostActions(current);
         if (!await reconcileActiveMultimodalAttempt(rootDir, current, context)) continue;
+        current = await authorizeMultimodalArtifact(rootDir, current);
       }
       const job = await stageJobForSnapshot(rootDir, current);
       if (job !== undefined) await queue.recover(job);
