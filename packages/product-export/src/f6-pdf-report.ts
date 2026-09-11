@@ -24,7 +24,7 @@ const COMPLETE_FACTOR_TABLE_HEADERS = [
   "Capability / Knowledge Guidance",
 ] as const;
 
-const REQUIRED_MISSING_MARKER_OPEN = /^<span\s+class="f6-inline-marker"\s+data-f6-marker="required-missing"\s+data-source-row="(\d+)"\s+hidden(?:="")?\s+aria-hidden="true"\s*>$/u;
+const REQUIRED_MISSING_MARKER_OPEN = /<span\s+class="f6-inline-marker"\s+data-f6-marker="required-missing"\s+data-source-row="(\d+)"\s+hidden(?:="")?\s+aria-hidden="true"\s*>/u;
 const REQUIRED_MISSING_MARKER_CLOSE = /^<\/span>$/u;
 
 function escapeHtml(value: string): string {
@@ -40,12 +40,12 @@ function exactHeadersMatch(headers: readonly string[], expected: readonly string
 }
 
 function requiredMissingMarker(text: string): string | undefined {
-  const match = REQUIRED_MISSING_MARKER_OPEN.exec(text.trim());
+  const match = REQUIRED_MISSING_MARKER_OPEN.exec(text);
   return match?.[1];
 }
 
 function hasRequiredMissingMarker(cell: Tokens.TableCell): boolean {
-  return cell.text.includes('data-f6-marker="required-missing"');
+  return requiredMissingMarker(cell.text) !== undefined;
 }
 
 function numericValue(value: string): number | undefined {
@@ -155,6 +155,7 @@ class F6PdfRenderer extends Renderer {
   private analysisGridOpen = false;
   private analysisPanelOpen = false;
   private analysisPanelType: string | undefined;
+  private requiredMissingMarkerDepth = 0;
   private readonly requirements = new Map<string, string>();
 
   constructor(private readonly inlineImages: ReadonlyMap<string, string>) {
@@ -181,9 +182,15 @@ class F6PdfRenderer extends Renderer {
   override html({ text }: Tokens.HTML | Tokens.Tag): string {
     const sourceRow = requiredMissingMarker(text);
     if (sourceRow !== undefined) {
+      this.requiredMissingMarkerDepth += 1;
       return `<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${sourceRow}" hidden="" aria-hidden="true">`;
     }
-    return REQUIRED_MISSING_MARKER_CLOSE.test(text.trim()) ? "</span>" : "";
+    if (REQUIRED_MISSING_MARKER_CLOSE.test(text.trim())) {
+      if (this.requiredMissingMarkerDepth === 0) return "";
+      this.requiredMissingMarkerDepth -= 1;
+      return "</span>";
+    }
+    return "";
   }
 
   override heading(token: Tokens.Heading): string {

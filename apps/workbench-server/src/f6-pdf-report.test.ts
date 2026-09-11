@@ -139,4 +139,36 @@ describe("renderF6PdfHtml", () => {
     expect(html).not.toContain("onerror=");
     expect(html).not.toContain("<img src=x");
   });
+
+  it("rejects spoofed required-missing markers with extra attributes", () => {
+    const html = renderF6PdfHtml({
+      markdown: `# Tolerance Analysis Engineering Report
+
+# 3-1 Worksheet: Analysis-A
+
+## Complete Factor Table
+
+| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Evil <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true" data-extra="1"></span> | Frame | Part | DWG-1 | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |`,
+      sourceHash: "d".repeat(64),
+    });
+
+    expect(html).not.toContain('class="missing"');
+    expect(html).not.toContain('data-f6-marker="required-missing"');
+    expect(html).not.toContain('data-extra="1"');
+  });
+
+  it("drops unmatched closing span tags from unapproved raw HTML", () => {
+    const html = renderF6PdfHtml({
+      markdown: `# Tolerance Analysis Engineering Report
+
+Evil <span onclick="alert(1)">x</span>`,
+      sourceHash: "e".repeat(64),
+    });
+
+    expect(html).toContain("Evil x");
+    expect(html).not.toContain("<span onclick");
+    expect(html).not.toContain("</span>");
+  });
 });
