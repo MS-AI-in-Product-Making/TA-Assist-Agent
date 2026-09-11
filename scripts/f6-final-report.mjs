@@ -187,6 +187,93 @@ function factorSourceKey(tableId, sourceRow) {
   return JSON.stringify([tableId, sourceRow]);
 }
 
+const COMPLETE_FACTOR_TABLE_HEADERS = [
+  "Factor Description",
+  "Part Name",
+  "Part Category",
+  "Drawing Number",
+  "DIM ID",
+  "Design Nominal",
+  "+ Tolerance",
+  "- Tolerance",
+  "Long Term / Safety Factor",
+  "Sigma Level",
+  "Mean",
+  "Tolerance",
+  "One Sigma",
+  "Capability / Knowledge Guidance",
+];
+
+function blockedMissingFieldMap(missingFieldSummary) {
+  const bySourceRow = new Map();
+  for (const item of missingFieldSummary ?? []) {
+    if (!Array.isArray(item.sourceRows)) continue;
+    for (const sourceRow of item.sourceRows) {
+      const missingFields = bySourceRow.get(sourceRow) ?? new Set();
+      missingFields.add(item.field);
+      bySourceRow.set(sourceRow, missingFields);
+    }
+  }
+  return bySourceRow;
+}
+
+function renderCompleteFactorTable(rows) {
+  return [
+    row(COMPLETE_FACTOR_TABLE_HEADERS),
+    row(COMPLETE_FACTOR_TABLE_HEADERS.map(() => "---")),
+    ...rows.map(({ cells, marker }) => {
+      const renderedCells = [...cells];
+      if (marker !== undefined) {
+        renderedCells[renderedCells.length - 1] = `${renderedCells[renderedCells.length - 1]} ${marker}`;
+      }
+      return row(renderedCells);
+    }),
+  ];
+}
+
+function readyFactorTableRows(factors) {
+  return factors.map(({ f2Row, modelRow, calculation: factor, f0 }) => {
+    const actual = f2Row.actualFields;
+    return {
+      cells: [
+        clean(modelRow.factorName), clean(actual.partName), clean(actual.partCategory), clean(actual.drawingNumber),
+        clean(actual.dimCharacteristicId, "MISSING"), engineeringText(factor.input.nominalValue, factor.unit),
+        engineeringText(factor.input.upperTolerance, factor.unit), engineeringText(factor.input.lowerTolerance, factor.unit),
+        numberText(factor.input.longTermSafetyFactor), numberText(factor.input.sigmaLevel), engineeringText(factor.mean, factor.unit),
+        engineeringText(factor.halfTolerance, factor.unit), engineeringText(factor.sigma, factor.unit),
+        f0GuidanceText(f2Row, f0),
+      ],
+    };
+  });
+}
+
+function blockedFactorTableRows(worksheet) {
+  const missingFieldsBySourceRow = blockedMissingFieldMap(worksheet.f2Worksheet.missingFieldSummary);
+  return worksheet.f2Worksheet.rows.map((f2Row) => {
+    const missingFields = missingFieldsBySourceRow.get(f2Row.sourceRow) ?? new Set();
+    const actual = f2Row.actualFields;
+    return {
+      cells: [
+        missingFields.has("factorName") ? "MISSING" : clean(actual.factorName),
+        missingFields.has("partName") ? "MISSING" : clean(actual.partName),
+        missingFields.has("partCategory") ? "MISSING" : clean(actual.partCategory),
+        missingFields.has("drawingNumber") ? "MISSING" : clean(actual.drawingNumber),
+        missingFields.has("dimCharacteristicId") ? "MISSING" : clean(actual.dimCharacteristicId),
+        missingFields.has("nominalValue") ? "MISSING" : engineeringText(actual.nominalValue, "mm"),
+        missingFields.has("upperTolerance") ? "MISSING" : engineeringText(actual.upperTolerance, "mm"),
+        missingFields.has("lowerTolerance") ? "MISSING" : engineeringText(actual.lowerTolerance, "mm"),
+        missingFields.has("longTermSafetyFactor") ? "MISSING" : numberText(actual.longTermSafetyFactor),
+        missingFields.has("sigmaLevel") ? "MISSING" : numberText(actual.sigmaLevel),
+        NA,
+        NA,
+        NA,
+        NA,
+      ],
+      marker: missingFields.size > 0 ? `<!-- factor-row-state=required-missing source-row=${f2Row.sourceRow} -->` : undefined,
+    };
+  });
+}
+
 function f0Recommendation(row) {
   const recommendation = row.recommendation;
   if (recommendation?.kind === "public") return {
@@ -311,21 +398,8 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     `<a id="worksheet-${ordinal}"></a>`, "",
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`, "",
     `## ${catalog.factors}`, "",
-    `| Ordinal | Row | Factor Description | ${catalog.part} | ${catalog.drawing} | ${catalog.dimId} | Part Category | ${catalog.nominal} | ${catalog.upperTolerance} | ${catalog.lowerTolerance} | Long Term/Safety Factor | ${catalog.sigmaLevel} | ${catalog.distribution} | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |`,
-    "|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|",
+    ...renderCompleteFactorTable(readyFactorTableRows(factors)),
   ];
-  for (const { f2Row, modelRow, calculation: factor, f0 } of factors) {
-    const actual = f2Row.actualFields;
-    lines.push(row([
-      clean(f2Row.factorOrdinal?.value), f2Row.sourceRow, clean(modelRow.factorName), clean(actual.partName),
-      clean(actual.drawingNumber, "MISSING"), clean(actual.dimCharacteristicId, "MISSING"), clean(actual.partCategory),
-      engineeringText(factor.input.nominalValue, factor.unit), engineeringText(factor.input.upperTolerance, factor.unit),
-      engineeringText(factor.input.lowerTolerance, factor.unit), numberText(factor.input.longTermSafetyFactor),
-      numberText(factor.input.sigmaLevel), clean(factor.input.distribution), engineeringText(factor.mean, factor.unit),
-      engineeringText(factor.halfTolerance, factor.unit), engineeringText(factor.sigma, factor.unit),
-      percentText(factor.contribution), clean(actual.notes), f0GuidanceText(f2Row, f0),
-    ]));
-  }
   lines.push(
     "", `## ${catalog.image}`, "", imageLink, "", interpretationText, "", `*${MODEL_RISK_DISCLOSURE}*`,
     "", `## ${catalog.results}`, "",
@@ -391,6 +465,10 @@ function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog, language) {
     `- ${clean(blockedWorksheetFinding(worksheet, language))}`,
     `- ${catalog.modelUnavailable}`,
     `- Required Action: ${clean(requiredAction(worksheet))}`,
+    "",
+    `## ${catalog.factors}`,
+    "",
+    ...renderCompleteFactorTable(blockedFactorTableRows(worksheet)),
   ];
 }
 

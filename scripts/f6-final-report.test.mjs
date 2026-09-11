@@ -36,6 +36,23 @@ function row(values) {
   return `| ${values.join(" | ")} |`;
 }
 
+const expectedFactorHeaders = [
+  "Factor Description",
+  "Part Name",
+  "Part Category",
+  "Drawing Number",
+  "DIM ID",
+  "Design Nominal",
+  "+ Tolerance",
+  "- Tolerance",
+  "Long Term / Safety Factor",
+  "Sigma Level",
+  "Mean",
+  "Tolerance",
+  "One Sigma",
+  "Capability / Knowledge Guidance",
+];
+
 function createMultimodalV3(inputs) {
   const f2Worksheet = inputs.f2Report.worksheets[0];
   const f2Row = f2Worksheet.rows[0];
@@ -981,20 +998,27 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
     expect(markdown).toContain("f6-top3-tolerance-policy-v1");
   });
 
-  it("renders all factor rows in the worksheet body and keeps blocked worksheets evidence-only", () => {
+  it("renders a complete 14-column factor table for ready worksheets", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A"],
-      blockedWorksheetNames: ["Blocked-A"],
       f5Variant: "supported",
     });
     const { markdown } = createF6FinalReportProjection(inputs);
     const readyCalculation = inputs.f4Report.calculations[0];
-    const blockedMarkdown = markdown.split("# 3. Worksheet：Blocked-A")[1] ?? "";
+    const readySection = markdown.slice(
+      markdown.indexOf("# 3-1 Worksheet: Analysis-A"),
+      markdown.indexOf("## Tolerance Path Image"),
+    );
 
-    expect(markdown.match(/^\| \d+ \| Factor /gm) ?? []).toHaveLength(readyCalculation.factorCount);
-    expect(markdown).toContain("| Blocked-A |");
-    expect(blockedMarkdown).toContain("输入或计算链被阻断");
-    expect(blockedMarkdown).not.toContain("## 3.7 结果与规格符合性");
+    expect(readySection).toContain(row(expectedFactorHeaders));
+    expect(readySection).not.toContain("Source Row");
+    expect(readySection).not.toContain("Notes");
+    expect(readySection).not.toContain("Validation Status");
+    expect(readySection).not.toContain("Missing Fields");
+    expect(readySection).not.toContain("Ordinal");
+    expect(readySection).not.toContain("Distribution");
+    expect(readySection).not.toContain("Variance Contribution");
+    expect((readySection.match(/^\| Factor /gm) ?? [])).toHaveLength(readyCalculation.factorCount);
   });
 
   it("uses approved explicit missing states when optional context, image, and reviewer are absent", () => {
@@ -1093,20 +1117,54 @@ describe("createF6FinalReportProjection v3", () => {
       blockedWorksheetNames: ["Blocked-A"],
     });
     const blockedWorksheet = inputs.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Blocked-A");
-    blockedWorksheet.missingFieldSummary = [{ field: "nominalValue", factorCount: 1, sourceRows: [20] }];
+    const missingRow = structuredClone(blockedWorksheet.rows[0]);
+    missingRow.sourceRow = 16;
+    missingRow.factorOrdinal = { value: "B", rawText: "B", sourceCell: "Blocked-A!Z16" };
+    missingRow.missingRequiredFields = ["factorName"];
+    missingRow.sourceCells = {
+      ...missingRow.sourceCells,
+      factorName: "Blocked-A!A16",
+      partName: "Blocked-A!B16",
+      partCategory: "Blocked-A!C16",
+      nominalValue: "Blocked-A!D16",
+      upperTolerance: "Blocked-A!E16",
+      lowerTolerance: "Blocked-A!F16",
+      longTermSafetyFactor: "Blocked-A!G16",
+      standardDeviation: "Blocked-A!H16",
+      distribution: "Blocked-A!I16",
+    };
+    blockedWorksheet.rows.push(missingRow);
+    blockedWorksheet.missingFieldSummary = [{ field: "factorName", factorCount: 1, sourceRows: [16] }];
+    inputs.f2Report.summary = {
+      ...inputs.f2Report.summary,
+      factorRowCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.length, 0),
+      rowsWithRequiredMissing: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.missingRequiredFields.length > 0).length, 0),
+      requiredMissingFieldCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.reduce((rowCount, row) => rowCount + row.missingRequiredFields.length, 0), 0),
+      nonF0ProcessCategoryCount: inputs.f2Report.worksheets.reduce((count, worksheet) => count + worksheet.rows.filter((row) => row.capabilityStatus === "non_f0_process_category").length, 0),
+    };
 
     const { markdown, reportSummary } = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const blockedSectionStart = markdown.indexOf("# 3-2 Worksheet: Blocked-A");
+    const blockedSection = markdown.slice(blockedSectionStart, markdown.indexOf("## Tolerance Path Image", blockedSectionStart));
 
     expect(reportSummary.worksheetDispositions).toEqual([
       { worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" },
       { worksheetName: "Blocked-A", disposition: "FAIL" },
     ]);
     expect(reportSummary.workbookDisposition).toBe("FAIL");
-    expect(markdown).toContain("Worksheet: Blocked-A");
-    expect(markdown).toContain("Model interpretation unavailable");
-    expect(markdown).toContain("Row 20: Design Nominal is missing.");
-    expect(markdown).toContain("Tolerance path image is missing.");
-    expect(markdown).not.toContain("Required input, image, or calculation is missing");
+    expect(blockedSection).toContain(row(expectedFactorHeaders));
+    expect(blockedSection).toContain("| Factor Blocked-A |");
+    expect(blockedSection).toContain("| MISSING |");
+    expect(blockedSection).toContain("| N/A | N/A | N/A | N/A <!-- factor-row-state=required-missing source-row=16 --> |");
+    expect(blockedSection).toContain("<!-- factor-row-state=required-missing source-row=16 -->");
+    expect(blockedSection.match(/\| Factor Description \| Part Name \| Part Category \| Drawing Number \| DIM ID \| Design Nominal \| \+ Tolerance \| - Tolerance \| Long Term \/ Safety Factor \| Sigma Level \| Mean \| Tolerance \| One Sigma \| Capability \/ Knowledge Guidance \|/g) ?? []).toHaveLength(1);
+    expect(blockedSection).not.toContain("Source Row");
+    expect(blockedSection).not.toContain("Notes");
+    expect(blockedSection).not.toContain("Validation Status");
+    expect(blockedSection).not.toContain("Missing Fields");
+    expect(blockedSection).not.toContain("Ordinal");
+    expect(blockedSection).not.toContain("Distribution");
+    expect(blockedSection).not.toContain("Variance Contribution");
   });
 
   it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {
@@ -1213,12 +1271,20 @@ describe("createF6FinalReportProjection v3", () => {
     });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
     const markdown = report.markdown;
+    const factorSectionStart = markdown.indexOf("## Complete Factor Table");
+    const factorSection = markdown.slice(factorSectionStart, markdown.indexOf("## Tolerance Path Image", factorSectionStart));
 
     expect(markdown).toContain("## 1. Document Overview");
     expect(markdown).toContain("## 2. Workbook Summary");
-    expect(markdown).toContain("| Ordinal | Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | Capability and Knowledge Guidance |");
-    expect(markdown).toContain("| A | 2 | Factor Analysis-A | Part Analysis-A | DRAW-100 | DIM-100 | CNC |");
-    expect(markdown).toContain("Review assembly stack.");
+    expect(factorSection).toContain(row(expectedFactorHeaders));
+    expect(factorSection).toContain("| Factor Analysis-A | Part Analysis-A | CNC | DRAW-100 | DIM-100 |");
+    expect(factorSection).toContain(String.raw`Capability: non\_f0\_process\_category`);
+    expect(factorSection).not.toContain("Ordinal");
+    expect(factorSection).not.toContain("Row");
+    expect(factorSection).not.toContain("Distribution");
+    expect(factorSection).not.toContain("Notes");
+    expect(factorSection).not.toContain("Variance Contribution");
+    expect(markdown).not.toContain("Review assembly stack.");
 
     expect(markdown).toContain("## Requirements and Statistical Results");
     for (const label of [
