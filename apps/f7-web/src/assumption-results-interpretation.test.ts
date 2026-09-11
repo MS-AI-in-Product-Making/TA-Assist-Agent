@@ -81,6 +81,89 @@ function equalityBoundarySnapshot(): F7SessionSnapshot {
 }
 
 describe("assumption results enhanced interpretation", () => {
+  it("ranks every contributor by percent contribution and calculates the cumulative Pareto share", () => {
+    const snapshot = enhancedInterpretationSnapshot();
+    const baseFactor = snapshot.factors[0];
+    if (baseFactor?.evidence === undefined) throw new Error("expected factor evidence");
+    const tolerances = [0.1, 0.3, 0.2];
+    const result = buildAssumptionResultsInterpretation({
+      ...snapshot,
+      factors: tolerances.map((tolerance, index) => ({
+        ...baseFactor,
+        factorCandidate: {
+          ...baseFactor.factorCandidate,
+          factorCandidateId: `factor-0${index + 1}`,
+          factorName: `Factor 0${index + 1}`,
+        },
+        evidence: {
+          ...baseFactor.evidence,
+          sourceRow: index + 1,
+          factorName: `Factor 0${index + 1}`,
+          designNominal: index === 1 ? -2.5 : index + 1,
+          upperTolerance: tolerance,
+          lowerTolerance: -tolerance,
+        },
+      })),
+    } as F7SessionSnapshot);
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") return;
+    expect(result.contributorPriorities.map(({ factorName }) => factorName)).toEqual([
+      "Factor 02",
+      "Factor 03",
+      "Factor 01",
+    ]);
+    expect(result.contributorPriorities.map(({ designNominal, upperTolerance, lowerTolerance }) => ({
+      designNominal,
+      upperTolerance,
+      lowerTolerance,
+    }))).toEqual([
+      { designNominal: 2.5, upperTolerance: 0.3, lowerTolerance: -0.3 },
+      { designNominal: 3, upperTolerance: 0.2, lowerTolerance: -0.2 },
+      { designNominal: 1, upperTolerance: 0.1, lowerTolerance: -0.1 },
+    ]);
+    expect(result.contributorPriorities).toHaveLength(3);
+    expect(result.contributorPriorities[0]?.cumulativePercent).toBeCloseTo(
+      result.contributorPriorities[0]?.contributionPercent ?? 0,
+      10,
+    );
+    expect(result.contributorPriorities[1]?.cumulativePercent).toBeGreaterThan(
+      result.contributorPriorities[0]?.cumulativePercent ?? 0,
+    );
+    expect(result.contributorPriorities[2]?.cumulativePercent).toBeCloseTo(100, 10);
+  });
+
+  it("provides contributor priorities whenever excessive variation is present without concentration", () => {
+    const snapshot = enhancedInterpretationSnapshot();
+    const baseFactor = snapshot.factors[0];
+    if (baseFactor?.evidence === undefined) throw new Error("expected factor evidence");
+    const result = buildAssumptionResultsInterpretation({
+      ...snapshot,
+      factors: Array.from({ length: 4 }, (_, index) => ({
+        ...baseFactor,
+        factorCandidate: {
+          ...baseFactor.factorCandidate,
+          factorCandidateId: `factor-0${index + 1}`,
+          factorName: `Factor 0${index + 1}`,
+        },
+        evidence: {
+          ...baseFactor.evidence,
+          sourceRow: index + 1,
+          factorName: `Factor 0${index + 1}`,
+          designNominal: index + 1,
+          upperTolerance: 0.3,
+          lowerTolerance: -0.3,
+        },
+      })),
+    } as F7SessionSnapshot);
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") return;
+    expect(result.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toContain("root-cause-excessive-variation");
+    expect(result.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).not.toContain("root-cause-contributor-concentration");
+    expect(result.contributorPriorities).toHaveLength(4);
+  });
+
   it("uses the governed system design nominal as the Mean reference", () => {
     const snapshot = enhancedInterpretationSnapshot();
     const specification = snapshot.systemSpecification;
@@ -123,11 +206,11 @@ describe("assumption results enhanced interpretation", () => {
       "upper-cpk",
     ]);
     expect(result.narrative.rootCauseAnalysis.map((item: NarrativeRuleLike) => item.ruleId)).toEqual([
-      "root-cause-excessive-variation",
       "root-cause-mean-shift",
+      "root-cause-excessive-variation",
       "root-cause-contributor-concentration",
     ]);
-    expect(result.narrative.rootCauseAnalysis[1]?.quantitativeEvidence).toMatchObject({
+    expect(result.narrative.rootCauseAnalysis[0]?.quantitativeEvidence).toMatchObject({
       cpCpkGap: expect.any(Number),
       specificationMidpoint: expect.any(Number),
       meanOffset: expect.any(Number),
@@ -142,18 +225,27 @@ describe("assumption results enhanced interpretation", () => {
       "improvement-center-mean",
       "improvement-reduce-variation",
       "improvement-reduce-contributor",
+      "improvement-relax-final-specification",
     ]);
     expect(result.narrative.evidenceDisclosure).toContain("Assumption-based RSS evidence; this is not measured capability evidence.");
     expect(result.engineeringInterpretations).toEqual([
-      "RC01 Excessive variation hypothesis",
-      "RC02 Mean shift hypothesis",
-      "RC03 Contributor concentration hypothesis",
+      "Mean shift hypothesis",
+      "Excessive variation hypothesis",
+      "Contributor concentration hypothesis",
     ]);
     expect(result.improvementOptions).toEqual([
       "Center the process mean",
       "Reduce the dominant contributor",
       "Reduce total variation",
+      "Relax the final specification as a fallback",
     ]);
+    expect(result.specificationFallback).toMatchObject({
+      currentLowerSpecLimit: -0.1,
+      currentUpperSpecLimit: 0.1,
+      targetCpk: 4 / 3,
+    });
+    expect(result.specificationFallback.calculatedLowerSpecLimit).toBeCloseTo(-0.37, 10);
+    expect(result.specificationFallback.calculatedUpperSpecLimit).toBeCloseTo(0.43, 10);
     expect(result.validationRequirements).toContain("Update representative variation evidence.");
     expect(result.validationRequirements).toContain("Confirm physical centering feasibility through ME review.");
     expect(result.validationRequirements).toContain("Validate the dominant contributor evidence before changing its tolerance or process controls.");

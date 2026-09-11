@@ -3,6 +3,8 @@ import { computed, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
+import { buildSpecificationFallbackDisplay } from "../specification-fallback-display";
+import ContributorParetoChart from "./ContributorParetoChart.vue";
 
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
@@ -14,14 +16,21 @@ const processGuidanceEntries = computed(() => (
     ? interpretation.value.processGuidance.entries
     : []
 ));
-const processGuidanceVersion = computed(() => (
-  interpretation.value.processGuidance.status === "available"
-    ? interpretation.value.processGuidance.version
-    : ""
-));
 const shouldRenderProcessGuidance = computed(() => (
   interpretation.value.processGuidance.status === "available"
   && interpretation.value.processGuidance.entries.length > 0
+));
+const specificationFallbackDisplay = computed(() => (
+  interpretation.value.status === "available"
+    ? buildSpecificationFallbackDisplay(interpretation.value.specificationFallback)
+    : undefined
+));
+const displayedRootCauseAnalysis = computed(() => (
+  interpretation.value.status === "available"
+    ? interpretation.value.narrative.rootCauseAnalysis.filter((item) => (
+        item.ruleId !== "root-cause-contributor-concentration"
+      ))
+    : []
 ));
 
 function formatEvidenceValue(key: string, value: number | string): string {
@@ -34,22 +43,6 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   return item.quantitativeEvidenceLabels?.[key] ?? key;
 }
 
-function processGuidanceEntryTypeLabel(entryType: string): string {
-  switch (entryType) {
-    case "escalation":
-      return "Escalation";
-    case "warning":
-      return "Warning";
-    case "requirement":
-      return "Requirement";
-    case "milestone":
-      return "Milestone";
-    case "instruction":
-      return "Instruction";
-    default:
-      return entryType;
-  }
-}
 </script>
 
 <template>
@@ -170,19 +163,19 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
 
         <section class="narrative-section">
           <h3>Root Cause Analysis</h3>
-          <ul
-            v-if="interpretation.narrative.rootCauseAnalysis.length > 0"
+          <ol
+            v-if="displayedRootCauseAnalysis.length > 0"
             class="narrative-list"
+            data-root-cause-list
           >
             <li
-              v-for="item in interpretation.narrative.rootCauseAnalysis"
+              v-for="item in displayedRootCauseAnalysis"
               :key="item.ruleId"
               class="narrative-item"
               data-root-cause-item
             >
               <div class="narrative-item-header">
                 <strong>{{ item.title }}</strong>
-                <span class="rule-id">{{ item.ruleId }}</span>
               </div>
               <p>{{ item.narrative }}</p>
               <p class="subtle">
@@ -200,22 +193,20 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
                   <dd>{{ formatEvidenceValue(key, value) }}</dd>
                 </template>
               </dl>
+              <template v-if="item.ruleId === 'root-cause-excessive-variation' && interpretation.contributorPriorities.length > 0">
+                <div class="narrative-item-header">
+                  <strong>Tolerance Adjustment Priority (% Cont. to σ)</strong>
+                </div>
+                <ContributorParetoChart :contributors="interpretation.contributorPriorities" />
+              </template>
             </li>
-          </ul>
+          </ol>
           <p
             v-else
             class="subtle"
           >
             No controlled root-cause signal.
           </p>
-        </section>
-
-        <section
-          class="narrative-section emphasis-card"
-          data-engineering-risk
-        >
-          <h3>Engineering Risk</h3>
-          <p>{{ interpretation.narrative.engineeringRisk }}</p>
         </section>
 
         <section class="narrative-section">
@@ -235,6 +226,73 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
                 <span class="rule-id">{{ item.optionId }}</span>
               </div>
               <p>{{ item.narrative }}</p>
+              <div
+                v-if="item.optionId === 'improvement-relax-final-specification'"
+                class="specification-fallback"
+                data-specification-fallback
+              >
+                <div
+                  class="specification-adjustments-scroll"
+                  role="region"
+                  aria-label="Recommended specification limit changes"
+                  tabindex="0"
+                >
+                  <table data-specification-adjustments>
+                    <caption>Required specification change</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">
+                          Limit
+                        </th>
+                        <th scope="col">
+                          Current
+                        </th>
+                        <th scope="col">
+                          Recommended
+                        </th>
+                        <th scope="col">
+                          Adjustment
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr data-specification-row>
+                        <th scope="row">
+                          LSL
+                        </th>
+                        <td>{{ specificationFallbackDisplay?.lower.current }}</td>
+                        <td class="recommended-specification">
+                          <span aria-hidden="true">→</span>
+                          {{ specificationFallbackDisplay?.lower.recommended }}
+                        </td>
+                        <td class="specification-adjustment">
+                          {{ specificationFallbackDisplay?.lower.adjustment }}
+                        </td>
+                      </tr>
+                      <tr data-specification-row>
+                        <th scope="row">
+                          USL
+                        </th>
+                        <td>{{ specificationFallbackDisplay?.upper.current }}</td>
+                        <td class="recommended-specification">
+                          <span aria-hidden="true">→</span>
+                          {{ specificationFallbackDisplay?.upper.recommended }}
+                        </td>
+                        <td class="specification-adjustment">
+                          {{ specificationFallbackDisplay?.upper.adjustment }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="specification-outcome">
+                  <span data-specification-outcome-label>Expected result</span>
+                  <strong data-specification-outcome-value>
+                    Cpk {{ formatEvidenceValue('targetCpk', interpretation.specificationFallback.targetCpk) }}
+                  </strong>
+                  <small>after applying both recommended limits</small>
+                </div>
+              </div>
             </li>
           </ol>
           <p
@@ -263,41 +321,32 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
       data-process-guidance
     >
       <div class="process-guidance-heading">
-        <h3>F0 Process Guidance</h3>
-        <span
-          class="process-guidance-version"
-          data-process-guidance-version
-        >{{ processGuidanceVersion }}</span>
+        <h3>TA Process and Requirements</h3>
       </div>
       <p
         class="process-guidance-context"
         data-process-guidance-context
       >
-        Triggered by the current TA worksheet and analysis state.
+        Evaluated against the current TA worksheet and analysis state.
       </p>
-      <ol class="process-guidance-list">
+      <ol class="process-guidance-list action-sequence">
         <li
           v-for="entry in processGuidanceEntries"
           :key="entry.entryId"
-          class="process-guidance-entry"
+          class="narrative-item process-guidance-entry"
           data-process-guidance-entry
-          :data-entry-type="entry.entryType"
+          :data-guidance-state="entry.state"
         >
           <div class="process-guidance-entry-header">
             <span
-              class="process-guidance-type-label"
-              data-process-guidance-entry-type-label
-            >{{ processGuidanceEntryTypeLabel(entry.entryType) }}</span>
+              v-if="entry.state === 'warning'"
+              class="process-guidance-warning"
+              data-process-guidance-warning
+            >Warning</span>
             <strong data-process-guidance-entry-title>
               {{ entry.title }}
             </strong>
           </div>
-          <p
-            class="process-guidance-entry-meta"
-            data-process-guidance-entry-id
-          >
-            {{ entry.entryId }}
-          </p>
           <p data-process-guidance-entry-message>
             {{ entry.message }}
           </p>
@@ -628,6 +677,88 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
   margin: 0;
 }
 
+.specification-fallback {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.24fr);
+  gap: 12px;
+  align-items: stretch;
+  margin: 10px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.specification-adjustments-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.specification-adjustments-scroll table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  text-align: right;
+}
+
+.specification-adjustments-scroll caption {
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 6px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: left;
+}
+
+.specification-adjustments-scroll th,
+.specification-adjustments-scroll td {
+  border-bottom: 1px solid var(--line);
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.specification-adjustments-scroll thead th {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.specification-adjustments-scroll th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.recommended-specification,
+.specification-adjustment {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.recommended-specification span {
+  margin-right: 5px;
+  color: var(--ink-soft);
+}
+
+.specification-outcome {
+  display: flex;
+  min-width: 0;
+  border-left: 3px solid var(--success);
+  background: #edf8f4;
+  padding: 10px 12px;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.specification-outcome span,
+.specification-outcome small {
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.specification-outcome strong {
+  margin: 2px 0;
+  color: var(--success);
+  font-size: 1.05rem;
+}
+
 .process-guidance-heading {
   display: flex;
   flex-wrap: wrap;
@@ -635,14 +766,6 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
   justify-content: space-between;
   gap: 8px 16px;
   margin-bottom: 6px;
-}
-
-.process-guidance-version {
-  color: var(--ink-soft);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
 }
 
 .process-guidance-context {
@@ -653,23 +776,12 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
 }
 
 .process-guidance-list {
-  display: grid;
-  gap: 10px;
-  list-style: none;
-  padding-left: 0;
+  padding-left: 20px;
 }
 
 .process-guidance-entry {
-  display: grid;
-  gap: 4px;
   min-width: 0;
-  padding: 10px 0;
-  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-}
-
-.process-guidance-entry:first-child {
-  padding-top: 0;
-  border-top: none;
+  padding-left: 1px;
 }
 
 .process-guidance-entry-header {
@@ -681,52 +793,24 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
 }
 
 .process-guidance-entry-header strong,
-.process-guidance-entry-meta,
 .process-guidance-entry p {
   overflow-wrap: anywhere;
 }
 
-.process-guidance-type-label {
+.process-guidance-warning {
   display: inline-flex;
   align-items: center;
   border: 1px solid currentColor;
   border-radius: 3px;
+  background: #fff1ef;
   padding: 2px 7px;
   font-size: 0.74rem;
   font-weight: 750;
   line-height: 1.2;
 }
 
-.process-guidance-entry[data-entry-type="escalation"] .process-guidance-type-label {
-  background: #fff1ef;
+.process-guidance-entry[data-guidance-state="warning"] {
   color: var(--danger);
-}
-
-.process-guidance-entry[data-entry-type="warning"] .process-guidance-type-label {
-  background: #fff7e8;
-  color: #9a5b08;
-}
-
-.process-guidance-entry[data-entry-type="requirement"] .process-guidance-type-label {
-  background: #eef3f7;
-  color: #31556b;
-}
-
-.process-guidance-entry[data-entry-type="milestone"] .process-guidance-type-label {
-  background: #eff6ef;
-  color: #4d6a4e;
-}
-
-.process-guidance-entry[data-entry-type="instruction"] .process-guidance-type-label {
-  background: #f5f2ee;
-  color: #6d5844;
-}
-
-.process-guidance-entry-meta {
-  margin-bottom: 0;
-  color: var(--ink-soft);
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.74rem;
 }
 
 .interpretation-unavailable {
@@ -738,6 +822,10 @@ function processGuidanceEntryTypeLabel(entryType: string): string {
 
 @media (max-width: 720px) {
   .evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .specification-fallback {
     grid-template-columns: 1fr;
   }
 }

@@ -83,8 +83,8 @@ export interface F7EngineeringNarrative {
 }
 
 const ROOT_CAUSE_ORDER: Readonly<Record<string, number>> = Object.freeze({
-  "root-cause-excessive-variation": 0,
-  "root-cause-mean-shift": 1,
+  "root-cause-mean-shift": 0,
+  "root-cause-excessive-variation": 1,
   "root-cause-contributor-concentration": 2,
 });
 
@@ -92,6 +92,7 @@ const ACTION_ORDER: Readonly<Record<string, number>> = Object.freeze({
   "improvement-center-mean": 0,
   "improvement-reduce-variation": 1,
   "improvement-reduce-contributor": 2,
+  "improvement-relax-final-specification": 3,
 });
 
 function assertSupportedRuleIds(input: BuildF7EngineeringNarrativeInput): void {
@@ -573,6 +574,8 @@ function buildSuggestedActions(input: BuildF7EngineeringNarrativeInput): F7Narra
       narrative = "Reduce total variation only after representative variation evidence confirms the modeled shortfall.";
     } else if (option.ruleId === "improvement-reduce-contributor") {
       narrative = "Investigate the dominant contributor before changing its tolerance or process controls.";
+    } else if (option.ruleId === "improvement-relax-final-specification") {
+      narrative = "As a final fallback, consider relaxing the final specification only after feasible process and tolerance improvements are exhausted and the requirement owner approves the change.";
     }
     return {
       optionId: option.ruleId,
@@ -628,15 +631,15 @@ function buildEngineeringRisk(
   } else if (resultJudgment.nearerSpecificationSide === "balanced") {
     clauses.push("the mean remains geometrically balanced between the specification limits");
   }
-  if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-excessive-variation" && item.completeEvidence)) {
-    clauses.push("RC01 indicates variation-related exposure");
-  }
   if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-mean-shift" && item.completeEvidence)) {
     if (resultJudgment.nearerSpecificationSide === "balanced") {
       clauses.push("RC02 indicates the mean remains at or balanced around the specification midpoint");
     } else {
       clauses.push("RC02 indicates centering loss");
     }
+  }
+  if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-excessive-variation" && item.completeEvidence)) {
+    clauses.push("RC01 indicates variation-related exposure");
   }
   if (rootCauseAnalysis.some((item) => item.ruleId === "root-cause-contributor-concentration" && item.completeEvidence)) {
     clauses.push("RC03 indicates contributor concentration");

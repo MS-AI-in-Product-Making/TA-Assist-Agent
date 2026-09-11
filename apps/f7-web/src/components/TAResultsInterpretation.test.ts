@@ -7,7 +7,7 @@ import type {
   F7NarrativeResultJudgment,
   F7NarrativeRootCauseItem,
 } from "@ai-assist/product-language/f7-engineering-narrative";
-import type { ProcessRequirementMatchedEntry } from "@ai-assist/contracts";
+import type { F0ProcessGuidanceEntry } from "../f0-process-guidance";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
 let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
@@ -59,7 +59,7 @@ function overrideResultJudgment(
   };
 }
 
-function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
+function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
   return [
     {
       entryId: "guidance-escalation",
@@ -68,6 +68,7 @@ function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
       title: "Escalate tolerance ownership",
       message: "Escalate to the owning engineering lead before closing the worksheet review.",
       normativeStrength: "must",
+      state: "warning",
       relatedFactReferences: ["analysisMethod"],
       evidence: {
         sourceAlias: "ta-process-requirements",
@@ -88,6 +89,7 @@ function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
       title: "Check workbook evidence freshness",
       message: "Warning entries should stay visible beside stronger guidance types.",
       normativeStrength: "should",
+      state: "guidance",
       relatedFactReferences: ["toleranceCount"],
       evidence: {
         sourceAlias: "ta-process-requirements",
@@ -108,6 +110,7 @@ function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
       title: "Capture governed requirement linkage",
       message: "Requirement entries should retain their own semantic styling.",
       normativeStrength: "must",
+      state: "warning",
       relatedFactReferences: ["requirementGapPresent"],
       evidence: {
         sourceAlias: "ta-process-requirements",
@@ -128,6 +131,7 @@ function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
       title: "Schedule the next F0 review milestone",
       message: "Milestone guidance should remain distinct from requirements and instructions.",
       normativeStrength: "should",
+      state: "guidance",
       relatedFactReferences: ["actor"],
       evidence: {
         sourceAlias: "ta-process-requirements",
@@ -148,6 +152,7 @@ function processGuidanceEntries(): readonly ProcessRequirementMatchedEntry[] {
       title: "Document the operator follow-up action",
       message: "Instruction guidance should render after milestone entries in source order.",
       normativeStrength: "should",
+      state: "guidance",
       relatedFactReferences: ["analysisMethod", "toleranceCount"],
       evidence: {
         sourceAlias: "ta-process-requirements",
@@ -230,22 +235,47 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.get("[data-overall-assessment]").text()).not.toContain("hypothesis");
     expect(wrapper.find("[data-engineering-summary]").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Engineering Summary");
-    expect(wrapper.findAll("[data-root-cause-item]")).toHaveLength(3);
+    expect(wrapper.findAll("[data-root-cause-item]")).toHaveLength(2);
     expect(wrapper.findAll("[data-root-cause-item]").map((item) => item.text())).toEqual([
-      expect.stringContaining("root-cause-excessive-variation"),
-      expect.stringContaining("root-cause-mean-shift"),
-      expect.stringContaining("root-cause-contributor-concentration"),
+      expect.stringContaining("Mean shift hypothesis"),
+      expect.stringContaining("Excessive variation hypothesis"),
     ]);
-    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("Cp-Cpk gap");
-    expect(wrapper.findAll("[data-root-cause-item]")[2]?.text()).toContain("Contribution");
-    expect(wrapper.findAll("[data-root-cause-item]")[2]?.text()).toContain("hypothesis");
-    expect(wrapper.get("[data-engineering-risk]").text()).toContain("requires validation");
-    expect(wrapper.findAll("[data-action-sequence-item]")).toHaveLength(3);
+    expect(wrapper.findAll("[data-root-cause-item]")[0]?.text()).toContain("Cp-Cpk gap");
+    expect(wrapper.findAll("[data-root-cause-item]")[0]?.text()).not.toMatch(/RC\d+|root-cause-/);
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).not.toMatch(/RC\d+|root-cause-/);
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("Tolerance Adjustment Priority (% Cont. to σ)");
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).not.toContain("Contributor concentration hypothesis");
+    expect(wrapper.findAll("[data-root-cause-item]")[1]?.text()).toContain("State hypothesis");
+    expect(wrapper.get("[data-root-cause-list]").element.tagName).toBe("OL");
+    expect(wrapper.find("[data-engineering-risk]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Engineering Risk");
+    expect(wrapper.findAll("[data-action-sequence-item]")).toHaveLength(4);
     expect(wrapper.findAll("[data-action-sequence-item]").map((item) => item.text())).toEqual([
       expect.stringContaining("improvement-center-mean"),
       expect.stringContaining("improvement-reduce-variation"),
       expect.stringContaining("improvement-reduce-contributor"),
+      expect.stringContaining("improvement-relax-final-specification"),
     ]);
+    const fallbackAction = wrapper.findAll("[data-action-sequence-item]").at(-1);
+    const fallback = fallbackAction?.get("[data-specification-fallback]");
+    expect(fallback?.get(".specification-adjustments-scroll").attributes()).toMatchObject({
+      role: "region",
+      "aria-label": "Recommended specification limit changes",
+      tabindex: "0",
+    });
+    expect(fallback?.get("[data-specification-adjustments] caption").text()).toBe("Required specification change");
+    expect(fallback?.findAll("[data-specification-adjustments] thead th").map((item) => item.text())).toEqual([
+      "Limit",
+      "Current",
+      "Recommended",
+      "Adjustment",
+    ]);
+    expect(fallback?.findAll("[data-specification-row]").map((item) => item.findAll("th, td").map((cell) => cell.text()))).toEqual([
+      ["LSL", "-0.1", "→ -0.37", "-0.27"],
+      ["USL", "0.1", "→ 0.43", "+0.33"],
+    ]);
+    expect(fallback?.get("[data-specification-outcome-label]").text()).toBe("Expected result");
+    expect(fallback?.get("[data-specification-outcome-value]").text()).toBe("Cpk 1.33");
     expect(wrapper.find("[data-engineering-interpretation]").exists()).toBe(false);
     expect(wrapper.find("[data-assumption-disclosure]").exists()).toBe(false);
     expect(wrapper.find("[data-input-readiness]").exists()).toBe(false);
@@ -256,31 +286,33 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.text()).not.toContain("Input Readiness");
 
     const processGuidance = wrapper.get("[data-process-guidance]");
-    expect(processGuidance.text()).toContain("F0 Process Guidance");
-    expect(processGuidance.text()).toContain("Triggered by the current TA worksheet and analysis state.");
-    expect(processGuidance.get("[data-process-guidance-version]").text()).toContain("process-requirements-v1");
+    expect(processGuidance.text()).toContain("TA Process and Requirements");
+    expect(processGuidance.text()).not.toContain("F0 Process Guidance");
+    expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
+    expect(processGuidance.text()).not.toContain("Triggered by");
+    expect(processGuidance.find("[data-process-guidance-version]").exists()).toBe(false);
     expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(5);
-    expect(processGuidance.findAll("[data-process-guidance-entry]").map((item) => item.attributes("data-entry-type"))).toEqual([
-      "escalation",
+    expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
+    expect(processGuidance.get("ol").classes()).toContain("action-sequence");
+    expect(processGuidance.findAll("[data-process-guidance-entry]").every((item) => (
+      item.classes().includes("narrative-item")
+    ))).toBe(true);
+    expect(processGuidance.findAll("[data-process-guidance-entry]").map((item) => item.attributes("data-guidance-state"))).toEqual([
       "warning",
-      "requirement",
-      "milestone",
-      "instruction",
+      "guidance",
+      "warning",
+      "guidance",
+      "guidance",
     ]);
-    expect(processGuidance.findAll("[data-process-guidance-entry-id]").map((item) => item.text())).toEqual([
-      "guidance-escalation",
-      "guidance-warning",
-      "guidance-requirement",
-      "guidance-milestone",
-      "guidance-instruction",
-    ]);
-    expect(processGuidance.findAll("[data-process-guidance-entry-type-label]").map((item) => item.text())).toEqual([
-      "Escalation",
+    expect(processGuidance.find("[data-process-guidance-entry-id]").exists()).toBe(false);
+    expect(processGuidance.find("[data-process-guidance-entry-type-label]").exists()).toBe(false);
+    expect(processGuidance.text()).not.toContain("guidance-escalation");
+    expect(processGuidance.findAll("[data-process-guidance-warning]")).toHaveLength(2);
+    expect(processGuidance.findAll("[data-process-guidance-warning]").map((item) => item.text())).toEqual([
       "Warning",
-      "Requirement",
-      "Milestone",
-      "Instruction",
+      "Warning",
     ]);
+    expect(processGuidance.findAll('[data-guidance-state="guidance"] [data-process-guidance-warning]')).toHaveLength(0);
     expect(processGuidance.findAll("[data-process-guidance-entry-title]").map((item) => item.text())).toEqual([
       "Escalate tolerance ownership",
       "Check workbook evidence freshness",
@@ -298,7 +330,6 @@ describe("TAResultsInterpretation", () => {
 
     const topLevelSections = wrapper.findAll(".narrative-flow > section");
     expect(topLevelSections[0]?.attributes("data-result-judgment")).toBe("");
-    expect(topLevelSections[2]?.attributes("data-engineering-risk")).toBe("");
     const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
     expect(panelChildren[panelChildren.length - 1]?.attributes("data-process-guidance")).toBe("");
   });
@@ -325,6 +356,68 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
     const panelChildren = wrapper.findAll(".ta-results-interpretation > *");
     expect(panelChildren[panelChildren.length - 1]?.attributes("data-process-guidance")).toBe("");
+  });
+
+  it("renders contributor priorities as a descending Pareto chart", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      contributorPriorities: [
+        { factorName: "Factor B", reference: "ref-b", designNominal: 2.5, upperTolerance: 0.3, lowerTolerance: -0.2, contributionPercent: 50, cumulativePercent: 50 },
+        { factorName: "Factor C", reference: "ref-c", designNominal: 1.25, upperTolerance: 0.2, lowerTolerance: -0.1, contributionPercent: 30, cumulativePercent: 80 },
+        { factorName: "Factor A", reference: "ref-a", designNominal: 0.75, upperTolerance: 0.1, lowerTolerance: -0.05, contributionPercent: 20, cumulativePercent: 100 },
+      ],
+    });
+
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const chart = wrapper.get("[data-contributor-pareto]");
+    expect(chart.get("[data-pareto-layout]").classes()).toContain("pareto-layout");
+    expect(chart.find("[data-pareto-chart-pane]").exists()).toBe(true);
+    expect(chart.find("[data-pareto-table-pane]").exists()).toBe(true);
+    expect(chart.get("svg").attributes("role")).toBe("img");
+    expect(chart.get("svg title").text()).toBe("Contributor priority Pareto chart");
+    expect(chart.findAll("[data-pareto-bar]").map((bar) => bar.attributes("data-factor-name"))).toEqual([
+      "Factor B",
+      "Factor C",
+      "Factor A",
+    ]);
+    expect(chart.findAll("[data-pareto-bar]").map((bar) => bar.attributes("data-contribution"))).toEqual([
+      "50",
+      "30",
+      "20",
+    ]);
+    expect(chart.find("[data-pareto-cumulative-line]").exists()).toBe(true);
+    expect(chart.get("[data-pareto-table-pane]").attributes()).toMatchObject({
+      role: "region",
+      "aria-label": "Contributor priority details",
+      tabindex: "0",
+    });
+    expect(chart.findAll("thead th").map((cell) => cell.text())).toEqual([
+      "Priority",
+      "Contributor",
+      "Design Nominal",
+      "+ Tol",
+      "- Tol",
+      "% Cont. to σ",
+      "Cumulative",
+    ]);
+    expect(chart.findAll("[data-pareto-rank-row]").map((row) => row.text())).toEqual([
+      expect.stringMatching(/1.*Factor B.*2\.5.*\+0\.3.*-0\.2.*50\.00%.*50\.00%/s),
+      expect.stringMatching(/2.*Factor C.*1\.25.*\+0\.2.*-0\.1.*30\.00%.*80\.00%/s),
+      expect.stringMatching(/3.*Factor A.*0\.75.*\+0\.1.*-0\.05.*20\.00%.*100\.00%/s),
+    ]);
+    const excessiveVariationItem = wrapper.findAll("[data-root-cause-item]")[1];
+    if (!excessiveVariationItem) throw new Error("expected excessive variation item");
+    expect(excessiveVariationItem.text()).toContain("Excessive variation hypothesis");
+    expect(excessiveVariationItem.find(".evidence-grid").exists()).toBe(true);
+    expect(excessiveVariationItem.find("[data-pareto-layout]").exists()).toBe(true);
+    const evidence = excessiveVariationItem.get(".evidence-grid").element;
+    const pareto = excessiveVariationItem.get("[data-pareto-layout]").element;
+    expect(evidence.compareDocumentPosition(pareto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("omits the entire guidance section when no process guidance entries are available", () => {
@@ -522,8 +615,10 @@ describe("TAResultsInterpretation", () => {
     expect(rootCauseText).toContain("Mean offset");
     expect(rootCauseText).toContain("Direction");
     expect(rootCauseText).toContain("Contributor");
-    expect(rootCauseText).toContain("Contributor reference");
-    expect(rootCauseText).toContain("Contribution (%)");
+    expect(rootCauseText).toContain("% Cont. to σ");
+    expect(rootCauseText).toContain("Cumulative");
+    expect(rootCauseText).not.toContain("Contributor reference");
+    expect(rootCauseText).not.toContain("Contribution (%)");
     expect(rootCauseText).not.toContain("cpTargetGap");
     expect(rootCauseText).not.toContain("cpCpkGap");
     expect(rootCauseText).not.toContain("specificationMidpoint");

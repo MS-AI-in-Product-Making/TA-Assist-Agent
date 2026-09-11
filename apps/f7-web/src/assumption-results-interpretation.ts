@@ -26,12 +26,17 @@ const INTERPRETATION_VERSION = "interpretation-rules-v2" as const;
 const PROVENANCE = "F0 interpretation-rules-v2" as const;
 const CONCENTRATION_RULE_ID = "root-cause-contributor-concentration" as const;
 const ROOT_CAUSE_DISPLAY_ORDER = [
-  "root-cause-excessive-variation",
   "root-cause-mean-shift",
+  "root-cause-excessive-variation",
   CONCENTRATION_RULE_ID,
 ] as const;
 const ASSUMPTION_DISCLOSURE = "These results are based on confirmed Factor Setup assumptions and RSS analysis; they are not measured or Monte Carlo evidence.";
 const CONCENTRATION_DISCLOSURE = "The contributor concentration hypothesis requires engineering validation.";
+
+function finiteSpecificationBoundary(value: number): number {
+  if (Number.isFinite(value)) return value;
+  return Math.sign(value) * Number.MAX_VALUE;
+}
 
 const REASON_LABELS = {
   subgroup_too_small: "Subgroup too small",
@@ -61,12 +66,13 @@ const DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>>
 const RULE_TITLES = {
   "performance-cpk": "Cpk meets target",
   "performance-cpk-below-target": "Cpk below target",
-  "root-cause-excessive-variation": "RC01 Excessive variation hypothesis",
-  "root-cause-mean-shift": "RC02 Mean shift hypothesis",
-  "root-cause-contributor-concentration": "RC03 Contributor concentration hypothesis",
+  "root-cause-excessive-variation": "Excessive variation hypothesis",
+  "root-cause-mean-shift": "Mean shift hypothesis",
+  "root-cause-contributor-concentration": "Contributor concentration hypothesis",
   "improvement-reduce-variation": "Reduce total variation",
   "improvement-center-mean": "Center the process mean",
   "improvement-reduce-contributor": "Reduce the dominant contributor",
+  "improvement-relax-final-specification": "Relax the final specification as a fallback",
 } as const;
 
 type ControlledRuleId = keyof typeof RULE_TITLES;
@@ -100,6 +106,22 @@ export type AssumptionResultsInterpretation =
         readonly reference: string;
         readonly contributionPercent: number;
       }[];
+      readonly contributorPriorities: readonly {
+        readonly factorName: string;
+        readonly reference: string;
+        readonly designNominal: number;
+        readonly upperTolerance: number;
+        readonly lowerTolerance: number;
+        readonly contributionPercent: number;
+        readonly cumulativePercent: number;
+      }[];
+      readonly specificationFallback: {
+        readonly currentLowerSpecLimit: number;
+        readonly currentUpperSpecLimit: number;
+        readonly calculatedLowerSpecLimit: number;
+        readonly calculatedUpperSpecLimit: number;
+        readonly targetCpk: number;
+      };
       readonly concentrationHypothesisMatched: boolean;
       readonly engineeringInterpretations: readonly string[];
       readonly improvementOptions: readonly string[];
@@ -273,6 +295,9 @@ export function buildAssumptionResultsInterpretation(
         factor.source.tableId,
         factor.source.sourceRow,
       ]),
+      designNominal: Math.abs(factor.input.nominalValue),
+      upperTolerance: factor.input.upperTolerance,
+      lowerTolerance: factor.input.lowerTolerance,
       contributionPercent: factor.contribution * 100,
     }))
     .sort((left, right) => (
@@ -324,6 +349,9 @@ export function buildAssumptionResultsInterpretation(
     const rootCauseRules = evaluation.matchedRules.filter((rule) => rule.entryType === "root-cause-signal");
     const improvementRules = evaluation.matchedRules.filter((rule) => rule.entryType === "improvement-option");
     const concentrationMatched = rootCauseRules.some((rule) => rule.entryId === CONCENTRATION_RULE_ID);
+    const excessiveVariationMatched = rootCauseRules.some((rule) => (
+      rule.entryId === "root-cause-excessive-variation"
+    ));
     const engineeringInterpretations = ROOT_CAUSE_DISPLAY_ORDER
       .filter((entryId) => rootCauseRules.some((rule) => rule.entryId === entryId))
       .map(controlledTitle);
@@ -336,7 +364,10 @@ export function buildAssumptionResultsInterpretation(
       mean: calculation.system.mean,
       lowerSpecLimit: calculation.capability.lowerSpecLimit,
       upperSpecLimit: calculation.capability.upperSpecLimit,
-      rootCauseRules: rootCauseRules.map((rule) => ({ ruleId: rule.entryId, title: rule.title })),
+      rootCauseRules: rootCauseRules.map((rule) => ({
+        ruleId: rule.entryId,
+        title: controlledTitle(rule.entryId),
+      })),
       controlledOptions: improvementRules.map((rule) => ({
         ruleId: rule.entryId,
         title: rule.title,
@@ -381,6 +412,34 @@ export function buildAssumptionResultsInterpretation(
             .slice(0, 1)
             .map(({ factorName, reference, contributionPercent }) => ({ factorName, reference, contributionPercent }))
         : [],
+      contributorPriorities: excessiveVariationMatched
+        ? contributors.map(({ factorName, reference, designNominal, upperTolerance, lowerTolerance, contributionPercent }, index) => ({
+            factorName,
+            reference,
+            designNominal,
+            upperTolerance,
+            lowerTolerance,
+            contributionPercent,
+            cumulativePercent: index === contributors.length - 1
+              ? 100
+              : contributors
+                  .slice(0, index + 1)
+                  .reduce((total, contributor) => total + contributor.contributionPercent, 0),
+          }))
+        : [],
+      specificationFallback: {
+        currentLowerSpecLimit: calculation.capability.lowerSpecLimit,
+        currentUpperSpecLimit: calculation.capability.upperSpecLimit,
+        calculatedLowerSpecLimit: Math.min(
+          calculation.capability.lowerSpecLimit,
+          finiteSpecificationBoundary(calculation.system.mean - 3 * calculation.system.rssSigma * targetCpk),
+        ),
+        calculatedUpperSpecLimit: Math.max(
+          calculation.capability.upperSpecLimit,
+          finiteSpecificationBoundary(calculation.system.mean + 3 * calculation.system.rssSigma * targetCpk),
+        ),
+        targetCpk,
+      },
       concentrationHypothesisMatched: concentrationMatched,
       engineeringInterpretations,
       improvementOptions: improvementRules.map((rule) => controlledTitle(rule.entryId)),

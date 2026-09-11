@@ -125,11 +125,11 @@ describe("buildF7EngineeringNarrative", () => {
     });
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
     expect(narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId)).toEqual([
-      "root-cause-excessive-variation",
       "root-cause-mean-shift",
+      "root-cause-excessive-variation",
       "root-cause-contributor-concentration",
     ]);
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       completeEvidence: true,
       quantitativeEvidence: {
@@ -138,7 +138,7 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "USL",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.26, 12);
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.26, 12);
     expect(narrative.rootCauseAnalysis[2]).toMatchObject({
       ruleId: "root-cause-contributor-concentration",
       completeEvidence: true,
@@ -147,6 +147,7 @@ describe("buildF7EngineeringNarrative", () => {
         contributionPercent: 46,
       },
     });
+    expect(narrative.engineeringRisk.indexOf("RC02")).toBeLessThan(narrative.engineeringRisk.indexOf("RC01"));
     expect(narrative.suggestedActionSequence.map(({ optionId }) => ({ optionId }))).toEqual([
       { optionId: "improvement-center-mean" },
       { optionId: "improvement-reduce-variation" },
@@ -448,7 +449,7 @@ describe("buildF7EngineeringNarrative", () => {
     });
 
     expect(narrative.resultJudgment.nearerSpecificationSide).toBe("balanced");
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       completeEvidence: true,
       quantitativeEvidence: {
@@ -456,10 +457,10 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "balanced",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { meanOffset?: number } | undefined)?.meanOffset).toBeCloseTo(Number.EPSILON * 8, 20);
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("balanced around the specification midpoint");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward USL");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).not.toContain("toward LSL");
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { meanOffset?: number } | undefined)?.meanOffset).toBeCloseTo(Number.EPSILON * 8, 20);
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("balanced around the specification midpoint");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).not.toContain("toward USL");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).not.toContain("toward LSL");
     expect(narrative.engineeringRisk).toContain("mean remains at or balanced around the specification midpoint");
   });
 
@@ -476,12 +477,12 @@ describe("buildF7EngineeringNarrative", () => {
 
     expect(narrative.rootCauseAnalysis).toEqual([
       expect.objectContaining({
-        ruleId: "root-cause-excessive-variation",
+        ruleId: "root-cause-mean-shift",
         completeEvidence: false,
         narrative: "Evidence is incomplete for this matched hypothesis.",
       }),
       expect.objectContaining({
-        ruleId: "root-cause-mean-shift",
+        ruleId: "root-cause-excessive-variation",
         completeEvidence: false,
         narrative: "Evidence is incomplete for this matched hypothesis.",
       }),
@@ -558,12 +559,12 @@ describe("buildF7EngineeringNarrative", () => {
     const narrative = buildF7EngineeringNarrative(input);
 
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.41, 12);
-    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidence).toMatchObject({
+    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidence).toMatchObject({
       cp: 1.18,
       targetCpk: 1.33,
     });
-    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
-    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidenceLabels).toEqual({
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.15, 12);
+    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidenceLabels).toEqual({
       cp: "Cp",
       targetCpk: "Target Cpk",
       cpTargetGap: "Cp vs target gap",
@@ -586,16 +587,16 @@ describe("buildF7EngineeringNarrative", () => {
     });
 
     expect(narrative.resultJudgment.margin).toBeCloseTo(-0.408, 12);
-    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
+    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
       ruleId: "root-cause-excessive-variation",
       quantitativeEvidence: {
         cp: 1.184,
         targetCpk: 1.331,
       },
     });
-    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.147, 12);
-    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("a 0.15 shortfall");
-    expect(narrative.rootCauseAnalysis[1]).toMatchObject({
+    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.147, 12);
+    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("a 0.15 shortfall");
+    expect(narrative.rootCauseAnalysis[0]).toMatchObject({
       ruleId: "root-cause-mean-shift",
       quantitativeEvidence: {
         specificationMidpoint: 0,
@@ -603,15 +604,15 @@ describe("buildF7EngineeringNarrative", () => {
         direction: "USL",
       },
     });
-    expect((narrative.rootCauseAnalysis[1]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
-    expect(narrative.rootCauseAnalysis[1]?.quantitativeEvidenceLabels).toEqual({
+    expect((narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cpCpkGap?: number } | undefined)?.cpCpkGap).toBeCloseTo(0.261, 12);
+    expect(narrative.rootCauseAnalysis[0]?.quantitativeEvidenceLabels).toEqual({
       cpCpkGap: "Cp-Cpk gap",
       specificationMidpoint: "Specification midpoint",
       meanOffset: "Mean offset",
       direction: "Direction",
     });
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("Cp exceeds Cpk by 0.26");
-    expect(narrative.rootCauseAnalysis[1]?.narrative).toContain("the mean is +0.08");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("Cp exceeds Cpk by 0.26");
+    expect(narrative.rootCauseAnalysis[0]?.narrative).toContain("the mean is +0.08");
   });
 
   it("labels contributor evidence with explicit engineering names", () => {

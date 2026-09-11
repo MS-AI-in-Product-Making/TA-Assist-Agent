@@ -694,6 +694,7 @@ describe("createF7ReportProjection", () => {
     expect((report.analysis.narrative.rootCauseAnalysis[0]?.quantitativeEvidence as { cp?: number; targetCpk?: number; cpTargetGap?: number } | undefined)?.cpTargetGap).toBeCloseTo(-0.33333333333333326, 12);
     expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
       "improvement-reduce-variation",
+      "improvement-relax-final-specification",
     ]);
     expect(report.analysis.narrative.suggestedActionSequence[0]?.sourceAlias).toBeDefined();
     expect(report.analysis.narrative.suggestedActionSequence[0]?.sourceFileHash).toBeDefined();
@@ -798,6 +799,7 @@ describe("createF7ReportProjection", () => {
     );
     expect(report.analysis.narrative.suggestedActionSequence.map(({ optionId }) => optionId)).toEqual([
       "improvement-reduce-variation",
+      "improvement-relax-final-specification",
     ]);
   });
 
