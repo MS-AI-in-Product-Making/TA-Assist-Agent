@@ -322,7 +322,6 @@ describe("renderF6Report V2", () => {
     });
 
     const baseline = snapshot("Analysis-A:baseline", "baseline", null, selectedStatus === "baseline_meets_target" ? "PASS" : "FAIL", 0);
-    const step1 = snapshot("Analysis-A:step1", "meanResponseCentering", baseline.scenarioId, "PASS", 0.01);
     const step2Pass = snapshot("Analysis-A:step2-pass", "toleranceReverseSolve", baseline.scenarioId, "PASS", 0.02);
     const step2Fail = snapshot("Analysis-A:step2-fail", "toleranceReverseSolve", baseline.scenarioId, "FAIL", 0.02);
     const step3 = {

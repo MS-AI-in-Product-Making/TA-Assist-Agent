@@ -32,7 +32,7 @@ function recomputeOptimizationHash(runRoot: string): void {
   writeJson(summaryPath, summary);
 }
 
-function syncSummaryCounts(runRoot: string, optimization: any): void {
+function syncSummaryCounts(runRoot: string, optimization: { readonly summary: unknown }): void {
   const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
   const summary = readJson(summaryPath);
   summary.counts = optimization.summary;
