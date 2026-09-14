@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { Socket } from "node:net";
 import {
@@ -8,10 +9,36 @@ import {
   type F7SessionService,
 } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
+import {
+  encodeRfc5987FileName,
+  safePdfDownloadFileName,
+  safeUnicodePdfDownloadFileName,
+  type AssumptionResultsPdfRouteRequest,
+} from "./assumption-results-pdf-contract.js";
+import {
+  AssumptionResultsPdfQueueFullError,
+  type AssumptionResultsPdfRenderer,
+} from "./assumption-results-pdf-renderer.js";
 import { createF7SessionService } from "./f7-session-service.js";
-import { createF7LocalServer, listenF7LocalServer } from "./server.js";
+import {
+  createF7LocalServer as createProductionF7LocalServer,
+  listenF7LocalServer,
+} from "./server.js";
 
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+type ServerOptions = Parameters<typeof createProductionF7LocalServer>[0];
+
+function createF7LocalServer(
+  options: Omit<ServerOptions, "assumptionResultsPdfRenderer"> & {
+    readonly assumptionResultsPdfRenderer?: AssumptionResultsPdfRenderer;
+  },
+): ReturnType<typeof createProductionF7LocalServer> {
+  const assumptionResultsPdfRenderer = options.assumptionResultsPdfRenderer ?? {
+    render: vi.fn(async () => Buffer.from("%PDF-1.7\ntest-fake")),
+  };
+  return createProductionF7LocalServer({ ...options, assumptionResultsPdfRenderer });
+}
 
 function worksheet(rows: string): string {
   return `<?xml version="1.0"?><worksheet xmlns="${NS}"><sheetData>${rows}</sheetData></worksheet>`;
@@ -55,6 +82,67 @@ function createRealService(): F7SessionService {
     createId: () => "session-fixed",
     now: () => "2026-08-19T08:00:00.000Z",
   });
+}
+
+function validAssumptionResultsPdfRequest(): AssumptionResultsPdfRouteRequest {
+  return {
+    sessionId: "session-fixed",
+    workbookName: "Design 装配.xlsx",
+    worksheetName: "TA Result",
+    resultJudgment: {
+      status: "below-target",
+      headline: "Capability is below target",
+    },
+    resultSummaryCaption: "Comparison of assumption-based RSS results with system specifications and derived targets",
+    summaryRows: [{
+      metric: "Mean",
+      result: "1.20",
+      reference: "1.00",
+      difference: "+0.20",
+      assessment: "Below target",
+      performanceContext: "80% of target",
+      tone: "fail",
+    }],
+    overallAssessment: "The assumed result is outside the target.",
+    rootCauseItems: [{
+      title: "Excessive variation hypothesis",
+      narrative: "Variation exceeds the resolved target.",
+      hypothesisStatus: "hypothesis",
+      incompleteEvidence: false,
+      quantitativeEvidence: [{ label: "Cp vs target gap", value: "-1" }],
+    }],
+    actionItems: [{
+      optionId: "improvement-center-mean",
+      title: "Center the process mean",
+      narrative: "Confirm mean-centering feasibility.",
+      meanCenteringAdjustment: {
+        current: "+0.03",
+        recommended: "0",
+        adjustment: "-0.03 toward LSL",
+      },
+      outcome: {
+        label: "Expected result",
+        value: "Mean 0",
+        context: "after applying the recommended adjustment",
+      },
+    }, {
+      optionId: "improvement-relax-final-specification",
+      title: "Relax the final specification",
+      narrative: "Apply only as a final fallback.",
+      specificationAdjustment: {
+        lower: { current: "-0.1", recommended: "-0.37", adjustment: "-0.27" },
+        upper: { current: "0.1", recommended: "0.43", adjustment: "+0.33" },
+      },
+      outcome: {
+        label: "Expected result",
+        value: "Cpk 1.33",
+        context: "after applying both recommended limits",
+      },
+    }],
+    contributors: [],
+    processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+    processGuidance: [],
+  };
 }
 
 function createTypedErrorService(code: Parameters<typeof createTypedError>[0]["code"]): F7SessionService {
@@ -221,6 +309,19 @@ describe("f7 local server", () => {
         server.close(() => resolve());
       });
     }));
+  });
+
+  it("requires an assumption-results PDF renderer at the server factory boundary", () => {
+    const compileOnlyMissingRendererCall = (): void => {
+      // @ts-expect-error The application assembly must inject the PDF renderer.
+      createProductionF7LocalServer({ service: createRealService() });
+    };
+    const serverSource = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
+    expect(compileOnlyMissingRendererCall).toBeTypeOf("function");
+    expect(serverSource).not.toContain("createAssumptionResultsPdfRenderer");
+    expect(serverSource).toMatch(
+      /readonly assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer;/u,
+    );
   });
 
   it("binds on loopback and supports end-to-end import/get", async () => {
@@ -850,6 +951,17 @@ describe("f7 local server", () => {
       contentType: "application/json",
     });
     expectRequestEnvelope(withBody, 400);
+
+    const missingSession = await httpJson({
+      port: address.port,
+      method: "GET",
+      path: "/f7/session/abc",
+    });
+    expect(missingSession.status).toBe(400);
+    expect(missingSession.json).toMatchObject({
+      code: "validation_error",
+      summary: "F7 session state was not found.",
+    });
   });
 
   it("serves the session-bound Dimension Chain image as private binary content", async () => {
@@ -873,6 +985,267 @@ describe("f7 local server", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.headers["x-content-type-options"]).toBe("nosniff");
     expect(response.rawBytes).toEqual(Buffer.from(imageBytes));
+  });
+
+  it("renders assumption results as a private PDF download after validating the session", async () => {
+    const calls: string[] = [];
+    const pdfBytes = Buffer.from("%PDF-1.7\nroute-test");
+    const seededService = createRealService();
+    seededService.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const service: F7SessionService = {
+      ...seededService,
+      getSession: (sessionId) => {
+        calls.push(`session:${sessionId}`);
+        return seededService.getSession(sessionId);
+      },
+    };
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async (routeRequest) => {
+        calls.push(`render:${routeRequest.sessionId}`);
+        await Promise.resolve();
+        return pdfBytes;
+      }),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({
+      service,
+      assumptionResultsPdfRenderer,
+      onEvent: (event) => events.push({ ...event }),
+    });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const body = validAssumptionResultsPdfRequest();
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body,
+    });
+
+    const fallbackName = safePdfDownloadFileName(body.workbookName, body.worksheetName);
+    const unicodeName = safeUnicodePdfDownloadFileName(body.workbookName, body.worksheetName);
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["content-length"]).toBe(String(pdfBytes.byteLength));
+    expect(response.headers["content-disposition"]).toBe(
+      `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeRfc5987FileName(unicodeName)}`,
+    );
+    expect(response.rawBytes).toEqual(pdfBytes);
+    expect(calls).toEqual(["session:session-fixed", "render:session-fixed"]);
+    expect(assumptionResultsPdfRenderer.render).toHaveBeenCalledWith(body);
+    expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 200 }]);
+  });
+
+  it("rejects invalid assumption-results PDF bodies before session lookup or rendering", async () => {
+    const realService = createRealService();
+    const getSession = vi.fn((sessionId: string) => realService.getSession(sessionId));
+    const service: F7SessionService = { ...realService, getSession };
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-invalid")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: { ...validAssumptionResultsPdfRequest(), unexpected: true },
+    });
+
+    expectRequestEnvelope(response, 400);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("accepts every structurally valid Web action variant", async () => {
+    const service = createRealService();
+    service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const base = validAssumptionResultsPdfRequest();
+
+    for (const actionItem of [
+      {
+        optionId: "improvement-reduce-variation",
+        title: "Reduce variation",
+        narrative: "Reduce total variation.",
+      },
+      base.actionItems[0],
+      base.actionItems[1],
+    ]) {
+      const response = await httpJson({
+        port: address.port,
+        method: "POST",
+        path: "/f7/assumption-results/pdf",
+        body: { ...base, actionItems: [actionItem] },
+      });
+      expect(response.status).toBe(200);
+    }
+  });
+
+  it("uses controlled session error mapping and does not render a missing session", async () => {
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-invalid")),
+    };
+    const server = createF7LocalServer({ service: createRealService(), assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: validAssumptionResultsPdfRequest(),
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.json).toMatchObject({
+      code: "validation_error",
+      summary: "F7 session state was not found.",
+    });
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["empty", Buffer.alloc(0)],
+    ["non-PDF", Buffer.from("not-a-pdf")],
+  ])("maps %s assumption-results renderer output to controlled 500 JSON", async (_caseName, pdfBytes) => {
+    const service = createRealService();
+    service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => pdfBytes),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({
+      service,
+      assumptionResultsPdfRenderer,
+      onEvent: (event) => events.push({ ...event }),
+    });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: validAssumptionResultsPdfRequest(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.rawBytes.subarray(0, 5).toString("ascii")).not.toBe("%PDF-");
+    expect(response.json).toEqual({
+      code: "internal_error",
+      summary: "F7 local API request failed.",
+      suggestedAction: "Retry the request. If the problem persists, restart the local API.",
+      affectedInputReferences: ["f7-local-api"],
+    });
+    expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 500 }]);
+  });
+
+  it("maps assumption-results renderer failures to controlled 500 without PDF bytes", async () => {
+    const service = createRealService();
+    service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => {
+        throw new Error("private-renderer-detail");
+      }),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({
+      service,
+      assumptionResultsPdfRenderer,
+      onEvent: (event) => events.push({ ...event }),
+    });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: validAssumptionResultsPdfRequest(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.rawBytes.subarray(0, 5).toString("ascii")).not.toBe("%PDF-");
+    expect(response.rawBody).not.toContain("private-renderer-detail");
+    expect(response.json).toEqual({
+      code: "internal_error",
+      summary: "F7 local API request failed.",
+      suggestedAction: "Retry the request. If the problem persists, restart the local API.",
+      affectedInputReferences: ["f7-local-api"],
+    });
+    expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 500 }]);
+  });
+
+  it("maps assumption-results renderer queue saturation to controlled 503", async () => {
+    const service = createRealService();
+    service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => {
+        throw new AssumptionResultsPdfQueueFullError();
+      }),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({
+      service,
+      assumptionResultsPdfRenderer,
+      onEvent: (event) => events.push({ ...event }),
+    });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: validAssumptionResultsPdfRequest(),
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.json).toEqual({
+      code: "pdf_renderer_busy",
+      summary: "The local PDF renderer is at capacity.",
+      suggestedAction: "Wait for an active PDF generation to finish, then retry.",
+      affectedInputReferences: ["f7-assumption-results-pdf"],
+    });
+    expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 503 }]);
   });
 
   it("rejects unsupported transfer-encoding and does not dispatch service", async () => {

@@ -752,6 +752,7 @@ function createMockClient(
       return session;
     }),
     generateReport,
+    generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
     getSession: vi.fn(async () => session),
   };
 }
@@ -3466,6 +3467,7 @@ describe("F7 workbench shell", () => {
       approveDistribution: vi.fn(async () => measurementEntrySnapshot()),
       runMonteCarlo: vi.fn(async () => measurementEntrySnapshot()),
       generateReport: vi.fn(async () => { throw new Error("Report generation is not used by App tests."); }),
+      generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       getSession: vi.fn(async () => createSnapshot({ status: "worksheet_selection" })),
     };
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
@@ -3523,6 +3525,7 @@ describe("F7 workbench shell", () => {
       approveDistribution: vi.fn(async () => measurementEntrySnapshot()),
       runMonteCarlo: vi.fn(async () => measurementEntrySnapshot()),
       generateReport: vi.fn(async () => { throw new Error("Report generation is not used by App tests."); }),
+      generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       getSession: vi.fn(async () => createSnapshot({ status: "worksheet_selection" })),
     };
     const wrapper = mount(App, { props: { client } });
@@ -3547,5 +3550,28 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text()).toContain("Import a workbook before continuing.");
     expect(wrapper.text()).not.toContain("Session is not available");
     expect(wrapper.text()).not.toContain("missing session");
+  });
+
+  it("13) wires assumption-results PDF generation through the injected client", async () => {
+    const client = createMockClient(measurementEntrySnapshot());
+    const generateAssumptionResultsPdf = vi.mocked(client.generateAssumptionResultsPdf);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:app-assumption-results"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledOnce();
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-01",
+      workbookName: "demo.xlsx",
+      worksheetName: "Anonymous_TA",
+    }));
+    click.mockRestore();
+    vi.unstubAllGlobals();
   });
 });

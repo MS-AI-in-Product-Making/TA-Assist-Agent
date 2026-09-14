@@ -71,6 +71,7 @@ const INTERNAL_REFERENCE = "f7-session-service";
 const DISTRIBUTION_FIT_SUMMARY = "F7 distribution fitting could not be calculated.";
 const SELECTED_WORKSHEET_SUMMARY = "F7 selected worksheet could not be read.";
 
+export const F7_SESSION_NOT_FOUND_REASON_CODE = "f7_session_not_found";
 export const MAX_F7_LOCAL_SESSIONS = 8;
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -80,12 +81,17 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   return Object.freeze(value);
 }
 
-function fixedError(summary: string, code: "validation_error" | "prerequisite_not_ready" | "internal_error"): Error {
+function fixedError(
+  summary: string,
+  code: "validation_error" | "prerequisite_not_ready" | "internal_error",
+  details?: Record<string, unknown>,
+): Error {
   return createTypedError({
     code,
     summary,
     suggestedAction: "Confirm session identity and complete each phase in order.",
     affectedInputReferences: [INTERNAL_REFERENCE],
+    ...(details === undefined ? {} : { details }),
   });
 }
 
@@ -177,7 +183,11 @@ export function createF7SessionService(dependencies: {
 
   const readSession = (sessionId: string): InternalSession => {
     const session = sessions.get(sessionId);
-    if (!session) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
+    if (!session) {
+      throw fixedError(NOT_FOUND_SUMMARY, "validation_error", {
+        reasonCode: F7_SESSION_NOT_FOUND_REASON_CODE,
+      });
+    }
     return session;
   };
 

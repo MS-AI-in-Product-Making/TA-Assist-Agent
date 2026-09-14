@@ -17,17 +17,28 @@ export function formatMeanAdjustment(meanCentering: MeanCenteringAdjustment): st
 </script>
 
 <script setup lang="ts">
-import { computed, type DeepReadonly } from "vue";
+import { FileDown } from "lucide-vue-next";
+import { computed, onBeforeUnmount, ref, watch, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
-import type { F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
 import { buildSpecificationFallbackDisplay } from "../specification-fallback-display";
 import ContributorParetoChart from "./ContributorParetoChart.vue";
 
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
+  readonly generatePdf?: (request: AssumptionResultsPdfRequest) => Promise<globalThis.Blob>;
 }>();
 
+const generatingPdf = ref(false);
+const pdfError = ref("");
+let disposed = false;
+let generationToken = 0;
+const resultSummaryCaption = "Comparison of assumption-based RSS results with system specifications and derived targets";
+const processGuidanceContext = "Evaluated against the current TA worksheet and analysis state.";
+const outcomeLabel = "Expected result";
+const meanCenteringOutcomeContext = "after applying the recommended adjustment";
+const specificationOutcomeContext = "after applying both recommended limits";
 const interpretation = computed(() => buildAssumptionResultsInterpretation(props.session));
 const processGuidanceEntries = computed(() => (
   interpretation.value.processGuidance.status === "available"
@@ -50,6 +61,25 @@ const displayedRootCauseAnalysis = computed(() => (
       ))
     : []
 ));
+const selectedWorksheetName = computed(() => props.session.selectedWorksheetNames[0] ?? "");
+const canGeneratePdf = computed(() => (
+  interpretation.value.status === "available"
+  && props.generatePdf !== undefined
+  && props.session.sessionId.length > 0
+  && props.session.workbook.fileName.length > 0
+  && selectedWorksheetName.value.length > 0
+));
+
+watch(() => props.session.sessionId, () => {
+  generationToken += 1;
+  generatingPdf.value = false;
+  pdfError.value = "";
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
+  generationToken += 1;
+});
 
 function formatEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
@@ -61,6 +91,180 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
   return item.quantitativeEvidenceLabels?.[key] ?? key;
 }
 
+type PdfActionOptionId = AssumptionResultsPdfRequest["actionItems"][number]["optionId"];
+
+function isPdfActionOptionId(value: string): value is PdfActionOptionId {
+  return value === "improvement-center-mean"
+    || value === "improvement-reduce-variation"
+    || value === "improvement-reduce-contributor"
+    || value === "improvement-relax-final-specification";
+}
+
+function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
+  const current = interpretation.value;
+  if (current.status !== "available" || !canGeneratePdf.value) return undefined;
+  const fallbackDisplay = specificationFallbackDisplay.value;
+
+  return {
+    sessionId: props.session.sessionId,
+    workbookName: props.session.workbook.fileName,
+    worksheetName: selectedWorksheetName.value,
+    resultJudgment: {
+      status: current.narrative.resultJudgment.status,
+      headline: current.narrative.resultJudgment.headline,
+    },
+    resultSummaryCaption,
+    summaryRows: current.resultSummary.map((row) => ({
+      metric: row.metric,
+      result: row.result,
+      reference: row.reference,
+      ...(row.referenceDetail ? { referenceDetail: row.referenceDetail } : {}),
+      difference: row.difference,
+      assessment: row.assessment,
+      performanceContext: row.performanceContext,
+      ...(row.tone === "pass" || row.tone === "fail" || row.tone === "warning" ? { tone: row.tone } : {}),
+    })),
+    overallAssessment: current.overallAssessment,
+    rootCauseItems: displayedRootCauseAnalysis.value.map((item) => ({
+      title: item.title,
+      narrative: item.narrative,
+      hypothesisStatus: item.hypothesisStatus,
+      incompleteEvidence: !item.completeEvidence,
+      quantitativeEvidence: Object.entries(item.quantitativeEvidence ?? {}).map(([key, value]) => ({
+        label: evidenceLabel(item, key),
+        value: formatEvidenceValue(key, value),
+      })),
+    })),
+    actionItems: current.narrative.suggestedActionSequence
+      .flatMap<AssumptionResultsPdfRequest["actionItems"][number]>((item) => {
+      if (!isPdfActionOptionId(item.optionId)) return [];
+      const base = {
+        title: item.title,
+        narrative: item.optionId === "improvement-center-mean" && item.meanCentering
+          ? item.meanCentering.feasibilityNarrative
+          : item.narrative,
+      };
+      if (item.optionId === "improvement-center-mean") {
+        if (!item.meanCentering) return [];
+        return [{
+          ...base,
+          optionId: item.optionId,
+          meanCenteringAdjustment: {
+            current: item.meanCentering.display.currentMean,
+            recommended: item.meanCentering.display.targetMean,
+            adjustment: formatMeanAdjustment(item.meanCentering),
+          },
+          outcome: {
+            label: outcomeLabel,
+            value: `Mean ${item.meanCentering.display.targetMean}`,
+            context: meanCenteringOutcomeContext,
+          },
+        }];
+      }
+      if (item.optionId === "improvement-relax-final-specification") {
+        if (!fallbackDisplay) return [];
+        return [{
+          ...base,
+          optionId: item.optionId,
+          specificationAdjustment: {
+            lower: fallbackDisplay.lower,
+            upper: fallbackDisplay.upper,
+          },
+          outcome: {
+            label: outcomeLabel,
+            value: `Cpk ${formatEvidenceValue("targetCpk", current.specificationFallback.targetCpk)}`,
+            context: specificationOutcomeContext,
+          },
+        }];
+      }
+        return [{ ...base, optionId: item.optionId }];
+      }),
+    contributors: current.contributorPriorities.map((item) => ({
+      factorName: item.factorName,
+      reference: item.reference,
+      designNominal: item.designNominal,
+      upperTolerance: item.upperTolerance,
+      lowerTolerance: item.lowerTolerance,
+      contributionPercent: item.contributionPercent,
+      cumulativePercent: item.cumulativePercent,
+    })),
+    processGuidanceContext,
+    processGuidance: current.processGuidance.status === "available"
+      ? current.processGuidance.entries.map(({ state, title, message }) => ({ state, title, message }))
+      : [],
+  };
+}
+
+function safeFileNamePart(value: string): string {
+  return [...value]
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint < 32 || (codePoint >= 127 && codePoint <= 159) || /[<>:"/\\|?*]/u.test(character)
+        ? "-"
+        : character;
+    })
+    .join("")
+    .replace(/\s+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/^[.-]+|[.-]+$/gu, "");
+}
+
+function pdfFileName(workbookName: string, worksheetName: string): string {
+  const workbookBase = workbookName.replace(/\.[^.]+$/u, "");
+  const stem = [safeFileNamePart(workbookBase), safeFileNamePart(worksheetName)]
+    .filter(Boolean)
+    .join("-") || "ta-results";
+  const suffix = "-assumption-results.pdf";
+  return `${[...stem].slice(0, 180 - suffix.length).join("").replace(/[.-]+$/u, "")}${suffix}`;
+}
+
+function exportErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "Unable to generate the assumption-results PDF. Retry the action.";
+  }
+  const value = error as { readonly summary?: unknown; readonly suggestedAction?: unknown };
+  const summary = typeof value.summary === "string" ? value.summary : "Unable to generate the assumption-results PDF.";
+  const suggestedAction = typeof value.suggestedAction === "string" ? value.suggestedAction : "Retry the action.";
+  return `${summary} ${suggestedAction}`;
+}
+
+async function handleGeneratePdf(): Promise<void> {
+  const request = buildPdfRequest();
+  const generatePdf = props.generatePdf;
+  if (!request || !generatePdf || generatingPdf.value) return;
+
+  const sessionId = request.sessionId;
+  const downloadFileName = pdfFileName(request.workbookName, request.worksheetName);
+  const currentToken = ++generationToken;
+  const isCurrentGeneration = (): boolean => (
+    !disposed
+    && generationToken === currentToken
+    && props.session.sessionId === sessionId
+  );
+
+  generatingPdf.value = true;
+  pdfError.value = "";
+  let objectUrl: string | undefined;
+  let anchor: globalThis.HTMLAnchorElement | undefined;
+  try {
+    const blob = await generatePdf(request);
+    if (!isCurrentGeneration()) return;
+    objectUrl = URL.createObjectURL(blob);
+    anchor = globalThis.document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = downloadFileName;
+    anchor.hidden = true;
+    globalThis.document.body.append(anchor);
+    anchor.click();
+  } catch (error) {
+    if (isCurrentGeneration()) pdfError.value = exportErrorMessage(error);
+  } finally {
+    anchor?.remove();
+    if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+    if (isCurrentGeneration()) generatingPdf.value = false;
+  }
+}
+
 </script>
 
 <template>
@@ -68,7 +272,35 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
     class="workbench-panel ta-results-interpretation"
     aria-label="TA results interpretation based on assumptions"
   >
-    <h2>TA Results Interpretation (based on Assumptions)</h2>
+    <header class="interpretation-header">
+      <h2>TA Results Interpretation (based on Assumptions)</h2>
+      <button
+        type="button"
+        class="action-button generate-pdf-action"
+        data-generate-assumption-results-pdf
+        :disabled="!canGeneratePdf || generatingPdf"
+        :aria-busy="generatingPdf"
+        :title="interpretation.status === 'available'
+          ? 'Download assumption results as PDF'
+          : 'PDF generation requires available assumption results'"
+        @click="handleGeneratePdf"
+      >
+        <FileDown
+          :size="17"
+          aria-hidden="true"
+        />
+        <span>{{ generatingPdf ? "Generating PDF…" : "Generate PDF" }}</span>
+      </button>
+    </header>
+
+    <p
+      v-if="pdfError"
+      class="pdf-export-error"
+      data-assumption-results-pdf-error
+      aria-live="polite"
+    >
+      {{ pdfError }}
+    </p>
 
     <template v-if="interpretation.status === 'available'">
       <div class="narrative-flow">
@@ -94,7 +326,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
           >
             <table class="result-summary-table">
               <caption data-result-summary-caption>
-                Comparison of assumption-based RSS results with system specifications and derived targets
+                {{ resultSummaryCaption }}
               </caption>
               <thead>
                 <tr>
@@ -290,11 +522,11 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
                   </table>
                 </div>
                 <div class="specification-outcome">
-                  <span data-mean-centering-outcome-label>Expected result</span>
+                  <span data-mean-centering-outcome-label>{{ outcomeLabel }}</span>
                   <strong data-mean-centering-outcome-value>
                     Mean {{ item.meanCentering.display.targetMean }}
                   </strong>
-                  <small>after applying the recommended adjustment</small>
+                  <small>{{ meanCenteringOutcomeContext }}</small>
                 </div>
               </div>
               <template v-if="item.optionId === 'improvement-reduce-variation' && interpretation.contributorPriorities.length > 0">
@@ -363,11 +595,11 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
                   </table>
                 </div>
                 <div class="specification-outcome">
-                  <span data-specification-outcome-label>Expected result</span>
+                  <span data-specification-outcome-label>{{ outcomeLabel }}</span>
                   <strong data-specification-outcome-value>
                     Cpk {{ formatEvidenceValue('targetCpk', interpretation.specificationFallback.targetCpk) }}
                   </strong>
-                  <small>after applying both recommended limits</small>
+                  <small>{{ specificationOutcomeContext }}</small>
                 </div>
               </div>
             </li>
@@ -404,7 +636,7 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
         class="process-guidance-context"
         data-process-guidance-context
       >
-        Evaluated against the current TA worksheet and analysis state.
+        {{ processGuidanceContext }}
       </p>
       <ol class="process-guidance-list action-sequence">
         <li
@@ -437,6 +669,40 @@ function evidenceLabel(item: { quantitativeEvidenceLabels?: Readonly<Record<stri
 .ta-results-interpretation {
   display: grid;
   gap: 12px;
+}
+
+.interpretation-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.interpretation-header h2 {
+  min-width: min(100%, 280px);
+  margin-bottom: 0;
+}
+
+.generate-pdf-action {
+  display: inline-flex;
+  min-width: 142px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.generate-pdf-action svg {
+  flex: 0 0 17px;
+}
+
+.pdf-export-error {
+  margin-bottom: 0;
+  border-left: 3px solid var(--danger);
+  padding-left: 10px;
+  color: var(--danger);
 }
 
 .narrative-flow {

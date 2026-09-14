@@ -24,6 +24,7 @@ function createClient(): F7Client {
     approveDistribution: vi.fn(async () => snapshot),
     runMonteCarlo: vi.fn(async () => snapshot),
     generateReport: vi.fn(async () => report),
+    generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
     getSession: vi.fn(async () => snapshot),
   };
 }
