@@ -701,6 +701,8 @@ describe("createAssumptionResultsPdfRenderer", () => {
     expect(executeFile.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([
       "--headless=new",
       "--disable-background-networking",
+      "--disable-extensions",
+      "--disable-default-apps",
       "--no-first-run",
       "--no-pings",
     ]));

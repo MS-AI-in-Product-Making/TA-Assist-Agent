@@ -419,6 +419,8 @@ export function createAssumptionResultsPdfRenderer(
             "--disable-breakpad",
             "--disable-crash-reporter",
             "--disable-component-update",
+            "--disable-extensions",
+            "--disable-default-apps",
             "--disable-sync",
             "--no-first-run",
             "--no-pings",
