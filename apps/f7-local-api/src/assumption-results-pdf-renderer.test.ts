@@ -354,7 +354,7 @@ describe("createAssumptionResultsPdfRenderer", () => {
     await expect(promise).rejects.toThrow("PDF browser exited with code 3");
   });
 
-  it("times out, kills the process with SIGKILL, and rejects with an actionable error", async () => {
+  it("waits for browser close after a successful timeout kill before rejecting", async () => {
     vi.useFakeTimers();
     try {
       const child = new EventEmitter() as ChildProcess;
@@ -362,15 +362,47 @@ describe("createAssumptionResultsPdfRenderer", () => {
       const spawnProcess = vi.fn(() => child);
 
       const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 25);
-
-      const rejection = expect(promise).rejects.toThrow(
-        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
+      let outcome = "pending";
+      void promise.then(
+        () => { outcome = "resolved"; },
+        () => { outcome = "rejected"; },
       );
 
       await vi.advanceTimersByTimeAsync(25);
 
       expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(outcome).toBe("pending");
+
+      child.emit("close", null, "SIGKILL");
+      await expect(promise).rejects.toThrow(
+        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
+      );
+      expect(child.listenerCount("error")).toBe(0);
+      expect(child.listenerCount("close")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["returns false", vi.fn(() => false)],
+    ["throws", vi.fn(() => { throw new Error("kill failed"); })],
+  ])("rejects without waiting for close when the timeout kill %s", async (_case, kill) => {
+    vi.useFakeTimers();
+    try {
+      const child = new EventEmitter() as ChildProcess;
+      child.kill = kill as ChildProcess["kill"];
+      const spawnProcess = vi.fn(() => child);
+      const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 25);
+
+      const rejection = expect(promise).rejects.toThrow(
+        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
+      );
+      await vi.advanceTimersByTimeAsync(25);
+
       await rejection;
+      expect(child.listenerCount("error")).toBe(0);
+      expect(child.listenerCount("close")).toBe(0);
     } finally {
       vi.useRealTimers();
     }

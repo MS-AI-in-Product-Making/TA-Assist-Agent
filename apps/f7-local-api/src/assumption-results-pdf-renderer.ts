@@ -273,6 +273,7 @@ export async function executePdfBrowser(
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
     let child: ChildProcess | undefined;
+    let timeoutError: Error | undefined;
 
     const settle = (error?: Error): void => {
       if (settled) return;
@@ -293,10 +294,15 @@ export async function executePdfBrowser(
     };
 
     const onError = (error: Error): void => {
+      if (timeoutError !== undefined) return;
       settle(new Error(`Failed to launch PDF browser: ${error.message}`));
     };
 
     const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (timeoutError !== undefined) {
+        settle(timeoutError);
+        return;
+      }
       if (code === 0) {
         settle();
         return;
@@ -323,12 +329,13 @@ export async function executePdfBrowser(
     child.once("error", onError);
     child.once("close", onClose);
     timer = setTimeout(() => {
+      timeoutError = new Error(`PDF browser timed out after ${timeoutMs} ms. Check for stale browser/crashpad processes and retry.`);
       try {
-        child?.kill("SIGKILL");
+        if (child?.kill("SIGKILL")) return;
       } catch {
-        // Ignore kill exceptions and reject with a bounded timeout message.
+        // Reject below when the termination request cannot be made.
       }
-      settle(new Error(`PDF browser timed out after ${timeoutMs} ms. Check for stale browser/crashpad processes and retry.`));
+      settle(timeoutError);
     }, timeoutMs);
   });
 }
