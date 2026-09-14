@@ -484,6 +484,65 @@ describe("TAResultsInterpretation", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:download");
   });
 
+  it("announces a successful PDF download with elapsed time", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    let currentTime = 1_000;
+    let resolvePdf: ((blob: Blob) => void) | undefined;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => currentTime);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:timed-download"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; })),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    currentTime = 2_800;
+    resolvePdf?.(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    await vi.waitFor(() => expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(true));
+
+    const status = wrapper.get("[data-assumption-results-pdf-status]");
+    expect(status.attributes("aria-live")).toBe("polite");
+    expect(status.text()).toBe("PDF downloaded in 1.8 seconds.");
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(false);
+    now.mockRestore();
+  });
+
+  it("clears PDF success feedback when the session changes", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:session-change"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(true);
+
+    await wrapper.setProps({
+      session: renamedInterpretationSnapshot({
+        sessionId: "session-export-02",
+        fileName: "Current.xlsx",
+        worksheetName: "Current TA",
+      }),
+    });
+
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(false);
+  });
+
   it("announces a controlled export failure without attempting a download", async () => {
     buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
     const createObjectURL = vi.fn();

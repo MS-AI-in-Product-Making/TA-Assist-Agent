@@ -32,6 +32,7 @@ const props = defineProps<{
 
 const generatingPdf = ref(false);
 const pdfError = ref("");
+const pdfStatus = ref("");
 let disposed = false;
 let generationToken = 0;
 const resultSummaryCaption = "Comparison of assumption-based RSS results with system specifications and derived targets";
@@ -74,6 +75,7 @@ watch(() => props.session.sessionId, () => {
   generationToken += 1;
   generatingPdf.value = false;
   pdfError.value = "";
+  pdfStatus.value = "";
 });
 
 onBeforeUnmount(() => {
@@ -235,6 +237,7 @@ async function handleGeneratePdf(): Promise<void> {
 
   const sessionId = request.sessionId;
   const downloadFileName = pdfFileName(request.workbookName, request.worksheetName);
+  const startedAt = performance.now();
   const currentToken = ++generationToken;
   const isCurrentGeneration = (): boolean => (
     !disposed
@@ -244,6 +247,7 @@ async function handleGeneratePdf(): Promise<void> {
 
   generatingPdf.value = true;
   pdfError.value = "";
+  pdfStatus.value = "";
   let objectUrl: string | undefined;
   let anchor: globalThis.HTMLAnchorElement | undefined;
   try {
@@ -256,6 +260,8 @@ async function handleGeneratePdf(): Promise<void> {
     anchor.hidden = true;
     globalThis.document.body.append(anchor);
     anchor.click();
+    const elapsedSeconds = (performance.now() - startedAt) / 1_000;
+    pdfStatus.value = `PDF downloaded in ${elapsedSeconds.toFixed(1)} seconds.`;
   } catch (error) {
     if (isCurrentGeneration()) pdfError.value = exportErrorMessage(error);
   } finally {
@@ -300,6 +306,15 @@ async function handleGeneratePdf(): Promise<void> {
       aria-live="polite"
     >
       {{ pdfError }}
+    </p>
+
+    <p
+      v-if="pdfStatus"
+      class="pdf-export-status"
+      data-assumption-results-pdf-status
+      aria-live="polite"
+    >
+      {{ pdfStatus }}
     </p>
 
     <template v-if="interpretation.status === 'available'">
@@ -703,6 +718,13 @@ async function handleGeneratePdf(): Promise<void> {
   border-left: 3px solid var(--danger);
   padding-left: 10px;
   color: var(--danger);
+}
+
+.pdf-export-status {
+  margin-bottom: 0;
+  border-left: 3px solid var(--success, #34785f);
+  padding-left: 10px;
+  color: var(--success, #34785f);
 }
 
 .narrative-flow {
