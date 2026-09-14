@@ -168,15 +168,17 @@ describe("Design Optimization skill contract", () => {
   it("defines v4 sequential optimization governance for Step2 stop and Step3 approval boundaries", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(internal).toContain("For `f6-sequential-optimization-policy-v2`, Step2 is target-RSS reverse solve");
-    expect(internal).toContain("When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), stop the sequential path after Step2 and do not enter Step3");
+    expect(internal).toContain("When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), do not enter the sequential optimization path");
+    expect(internal).toContain("When the Step2 F4 scenario reports PASS, stop the sequential path after Step2 and do not enter Step3");
     expect(internal).toContain("Step3 specification relaxation is a requirement change");
-    expect(internal).toContain("Step3 requires explicit engineering and requirement-owner approval before execution");
+    expect(internal).toContain("F6 may calculate and report the Step3 scenario, but applying the proposed specification change requires explicit engineering and requirement-owner approval");
     expect(internal).toContain("Do not describe Step3 specification relaxation as a design capability improvement or manufacturing capability improvement");
     expectOrdered(internal, [
       "For `f6-sequential-optimization-policy-v2`, Step2 is target-RSS reverse solve",
-      "When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), stop the sequential path after Step2 and do not enter Step3",
+      "When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), do not enter the sequential optimization path",
+      "When the Step2 F4 scenario reports PASS, stop the sequential path after Step2 and do not enter Step3",
       "Step3 specification relaxation is a requirement change",
-      "Step3 requires explicit engineering and requirement-owner approval before execution",
+      "F6 may calculate and report the Step3 scenario, but applying the proposed specification change requires explicit engineering and requirement-owner approval",
     ]);
   });
 
