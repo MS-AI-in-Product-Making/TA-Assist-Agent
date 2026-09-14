@@ -173,21 +173,23 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
   <meta charset="utf-8">
   <title>TA Results Interpretation</title>
   <style>
-    @page { size: A4 landscape; margin: 12mm; }
+    @page { size: A4 landscape; margin: 8mm; }
     * { box-sizing: border-box; }
-    html { color: #1f2933; font-family: "Segoe UI", sans-serif; font-size: 9pt; line-height: 1.4; overflow-wrap: anywhere; }
+    html { color: #1f2933; font-family: "Segoe UI", sans-serif; font-size: 8pt; line-height: 1.3; overflow-wrap: anywhere; }
     body { margin: 0; }
-    header { border-bottom: 2px solid #176b75; margin-bottom: 8mm; padding-bottom: 4mm; }
+    .report-page { break-inside: avoid-page; }
+    .report-page--action { break-before: page; }
+    header { border-bottom: 2px solid #176b75; margin-bottom: 4mm; padding-bottom: 2.5mm; }
     h1 { color: #123c47; font-size: 19pt; margin: 0 0 2mm; }
-    h2 { break-after: avoid; color: #176b75; font-size: 13pt; margin: 7mm 0 3mm; }
-    p { margin: 1.5mm 0 0; }
+    h2 { break-after: avoid; color: #176b75; font-size: 11pt; margin: 4mm 0 2mm; }
+    p { margin: 1mm 0 0; }
     .source { color: #52616b; display: flex; flex-wrap: wrap; gap: 8mm; min-width: 0; overflow-wrap: anywhere; }
     .source > span { min-width: 0; }
     .assessment { background: #edf7f5; border-left: 3px solid #176b75; break-inside: avoid; padding: 4mm; }
     .result-heading, .narrative-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 2mm 5mm; justify-content: space-between; }
     .result-heading h2 { margin-bottom: 0; }
     .result-status { border: 1px solid #6a7b83; font-weight: 700; padding: 1mm 2mm; }
-    table { border-collapse: collapse; margin-top: 3mm; width: 100%; }
+    table { border-collapse: collapse; margin-top: 2mm; width: 100%; }
     caption { color: #123c47; font-weight: 700; padding-bottom: 1.5mm; text-align: left; }
     thead { display: table-header-group; }
     tr { break-inside: avoid; }
@@ -197,10 +199,10 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .status { font-weight: 600; }
     .status--pass { color: #176b3a; }
     .status--fail { color: #a3342d; }
-    .narrative-list { margin: 0; padding-left: 6mm; }
-    .narrative-list li { break-inside: avoid; margin-bottom: 3mm; padding-left: 1mm; }
+    .narrative-list { margin: 0; padding-left: 5mm; }
+    .narrative-list li { break-inside: avoid; margin-bottom: 2mm; padding-left: 1mm; }
     .narrative-heading span, .state { color: #52616b; }
-    .evidence { display: grid; grid-template-columns: minmax(35mm, 55mm) 1fr; margin: 2mm 0 0; }
+    .evidence { display: grid; grid-template-columns: minmax(35mm, 55mm) 1fr; margin: 1.5mm 0 0; }
     .evidence dt { color: #52616b; }
     .evidence dd { margin: 0; }
     .adjustment { break-inside: avoid; }
@@ -208,7 +210,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .outcome span { color: #52616b; }
     .outcome small { color: #52616b; flex-basis: 100%; }
     .empty { color: #66737a; font-style: italic; }
-    .pareto-chart { border: 1px solid #b8c4c8; break-inside: avoid; margin: 3mm 0 0; padding: 2mm; }
+    .pareto-chart { border: 1px solid #b8c4c8; break-inside: avoid; margin: 2mm 0 0; padding: 1.5mm; }
     .pareto-chart svg { display: block; height: auto; max-width: 100%; width: 100%; }
     .pareto-grid { stroke: #d4dde0; stroke-width: 1; }
     .pareto-axis, .pareto-rank, .pareto-legend { fill: #52616b; font-size: 10px; }
@@ -221,24 +223,28 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
   </style>
 </head>
 <body>
-  <header>
-    <h1>TA Results Interpretation (based on Assumptions)</h1>
-    <div class="source"><span><strong>Workbook:</strong> ${escapeHtml(request.workbookName)}</span><span><strong>Worksheet:</strong> ${escapeHtml(request.worksheetName)}</span></div>
-  </header>
   <main>
-    <section>
-      <div class="result-heading"><h2>TA Result Summary</h2><span class="result-status status--${escapeHtml(request.resultJudgment.status)}">${escapeHtml(request.resultJudgment.headline)}</span></div>
-      <table>
-        <caption>${escapeHtml(request.resultSummaryCaption)}</caption>
-        <thead><tr><th>Metric</th><th>Result</th><th>Specification / Reference</th><th>Difference</th><th>Assessment</th><th>Performance Context</th></tr></thead>
-        <tbody>${renderSummaryRows(request)}</tbody>
-      </table>
+    <section class="report-page report-page--decision">
+      <header>
+        <h1>TA Results Interpretation (based on Assumptions)</h1>
+        <div class="source"><span><strong>Workbook:</strong> ${escapeHtml(request.workbookName)}</span><span><strong>Worksheet:</strong> ${escapeHtml(request.worksheetName)}</span></div>
+      </header>
+      <section>
+        <div class="result-heading"><h2>TA Result Summary</h2><span class="result-status status--${escapeHtml(request.resultJudgment.status)}">${escapeHtml(request.resultJudgment.headline)}</span></div>
+        <table>
+          <caption>${escapeHtml(request.resultSummaryCaption)}</caption>
+          <thead><tr><th>Metric</th><th>Result</th><th>Specification / Reference</th><th>Difference</th><th>Assessment</th><th>Performance Context</th></tr></thead>
+          <tbody>${renderSummaryRows(request)}</tbody>
+        </table>
+      </section>
+      <section class="assessment"><h2>Overall Assessment</h2><p>${escapeHtml(request.overallAssessment)}</p></section>
+      <section><h2>Root Cause Analysis</h2>${renderRootCauseItems(request.rootCauseItems)}</section>
     </section>
-    <section class="assessment"><h2>Overall Assessment</h2><p>${escapeHtml(request.overallAssessment)}</p></section>
-    <section><h2>Root Cause Analysis</h2>${renderRootCauseItems(request.rootCauseItems)}</section>
-    <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
-    <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
-    <section><h2>TA Process and Requirements</h2><p>${escapeHtml(request.processGuidanceContext)}</p>${renderGuidance(request.processGuidance)}</section>
+    <section class="report-page report-page--action">
+      <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
+      <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
+      <section><h2>TA Process and Requirements</h2><p>${escapeHtml(request.processGuidanceContext)}</p>${renderGuidance(request.processGuidance)}</section>
+    </section>
   </main>
 </body>
 </html>`;

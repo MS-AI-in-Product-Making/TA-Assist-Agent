@@ -261,6 +261,44 @@ describe("renderAssumptionResultsPdfHtml", () => {
   it("renders an escaped, self-contained A4 landscape report with all required sections", () => {
     const html = renderAssumptionResultsPdfHtml(validRequest());
 
+    const reportPageGroups = [...html.matchAll(/class="report-page report-page--(decision|action)"/g)].map((match) => match[1]);
+    expect(reportPageGroups).toEqual(["decision", "action"]);
+    expect(reportPageGroups).toHaveLength(2);
+
+    const decisionPageMatch = html.match(/<section class="report-page report-page--decision">([\s\S]*?)<\/section>\s*<section class="report-page report-page--action">/);
+    expect(decisionPageMatch).not.toBeNull();
+    const decisionPage = decisionPageMatch?.[1] ?? "";
+    const decisionOrder = [
+      "TA Results Interpretation (based on Assumptions)",
+      '<div class="source">',
+      "TA Result Summary",
+      "Overall Assessment",
+      "Root Cause Analysis",
+    ];
+    let lastDecisionIndex = -1;
+    for (const marker of decisionOrder) {
+      const markerIndex = decisionPage.indexOf(marker);
+      expect(markerIndex).toBeGreaterThan(lastDecisionIndex);
+      lastDecisionIndex = markerIndex;
+    }
+
+    const actionPageMatch = html.match(/<section class="report-page report-page--action">([\s\S]*?)<\/section>\s*<\/main>/);
+    expect(actionPageMatch).not.toBeNull();
+    const actionPage = actionPageMatch?.[1] ?? "";
+    const actionOrder = [
+      "Suggested Action Sequence",
+      "Tolerance Adjustment Priority",
+      "TA Process and Requirements",
+    ];
+    let lastActionIndex = -1;
+    for (const marker of actionOrder) {
+      const markerIndex = actionPage.indexOf(marker);
+      expect(markerIndex).toBeGreaterThan(lastActionIndex);
+      lastActionIndex = markerIndex;
+    }
+    expect(actionPage).toContain("data-pareto-chart");
+    expect(actionPage).toContain("<th>Priority</th>");
+
     expect(html).toContain("TA Result Summary");
     expect(html).toContain("Comparison &lt;img src=x onerror=&quot;alert(&#39;unsafe&#39;)&quot;&gt; &amp; analysis");
     expect(html).toContain("Capability &lt;img src=x onerror=&quot;alert(&#39;unsafe&#39;)&quot;&gt; &amp; analysis");
@@ -299,6 +337,7 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).toMatch(/@page\s*{[^}]*size:\s*A4 landscape;/);
     expect(html).toMatch(/thead\s*{[^}]*display:\s*table-header-group;/);
     expect(html).toMatch(/\.pareto-chart\s*{[^}]*break-inside:\s*avoid;/);
+    expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
     expect(html).toContain("Workbook &lt;img src=x onerror=&quot;alert(&#39;unsafe&#39;)&quot;&gt; &amp; analysis.xlsx");
     expect(html).not.toContain(INJECTED_TEXT);
     expect(html).not.toMatch(/<script|<img|https?:\/\//i);
