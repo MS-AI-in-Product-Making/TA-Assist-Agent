@@ -593,19 +593,12 @@ describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
   });
 
-  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+  it("rejects mixed multimodal v4 outcomes in the required multimodal path so V4 cannot silently render as V3", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], f5Variant: "supported", modelInterpretationVersion: "v2" });
     inputs.modelInterpretation = createMixedMultimodalV4(inputs);
-    keepCompletedWorksheetOnly(inputs);
 
-    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
-
-    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
-    ]));
-    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
-    expect(projection.markdown).toContain("- Status: FAIL");
-    expect(projection.markdown).toContain("worksheet image evaluation failed");
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true }))
+      .toThrow(/multimodal v3/i);
   });
 
   it("renders image-plus-table context and every Factor mapping from multimodal v3", () => {
@@ -1493,23 +1486,16 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
   });
 
-  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+  it("rejects mixed multimodal v4 outcomes in the required multimodal path so V4 cannot silently render as V3", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],
       f5Variant: "supported",
       modelInterpretationVersion: "v2",
     });
     inputs.modelInterpretation = createMixedMultimodalV4(inputs);
-    keepCompletedWorksheetOnly(inputs);
 
-    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
-
-    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ worksheetName: "Analysis-B", disposition: "FAIL" }),
-    ]));
-    expect(projection.markdown).toContain("# 3-2 Worksheet: Analysis-B");
-    expect(projection.markdown).toContain("- Status: FAIL");
-    expect(projection.markdown).toContain("worksheet image evaluation failed");
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true }))
+      .toThrow(/multimodal v3/i);
   });
 });
 

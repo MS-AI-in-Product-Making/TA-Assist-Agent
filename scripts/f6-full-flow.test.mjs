@@ -28,6 +28,7 @@ import {
   installRequiredMultimodalV3,
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
+import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
@@ -634,7 +635,7 @@ describe("runF6FullValidation", () => {
 describe("F6 real artifact full flow", () => {
   it.each([
     [false, "unchanged"], [true, "unchanged"], [true, "missing"], [true, "hash_mismatch"],
-  ])("publishes real v4 consumers with mixed=%s and failed image=%s", (mixed, failedImage) => {
+  ])("fails closed for real v4 consumers with mixed=%s and failed image=%s before Task 4 dispatch", (mixed, failedImage) => {
     const bundle = createRealBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const modelPath = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
     rewriteFixtureJson(modelPath, (model) => {
@@ -670,14 +671,17 @@ describe("F6 real artifact full flow", () => {
       optimizationTargetsDecision: loaded.inputDecisions.optimizationTargets,
     });
     expect(optimized.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(mixed ? ["Analysis-A"] : ["Analysis-A", "Analysis-B"]);
-    const { result, runRoot } = runRealF6(bundle, `v4-${mixed}-${failedImage}`);
-    expect(result.status, JSON.stringify(result)).toBe("completed");
-    expect(readdirSync(runRoot).sort()).toEqual(["Feature6-Optimization.json", "Feature6-Report.md", "Feature6-Report.pdf", "Feature6-Run-Summary.json", "manifest.json"]);
+    const { result, runRoot } = runRealF6(bundle, `v4-${mixed}-${failedImage}`, {
+      createFinalReport: createF6FinalReportProjection,
+    });
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(runRoot).sort()).toEqual(["manifest.json"]);
     const manifest = readJson(path.join(runRoot, "manifest.json"));
-    expect(manifest.inputDecisions.modelInterpretation.artifactReference.contentHash).toBe(bundle.expectedModelInterpretationContentHash);
-    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
-    expect(summary.hashes.finalReportMarkdownSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.md")));
-    if (mixed) expect(summary.reportSummary.worksheetDispositions).toContainEqual({ worksheetName: "Analysis-B", disposition: "FAIL" });
+    expect(manifest).toMatchObject({ status: "failed", reasonCode: "report_failed", artifacts: {} });
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Optimization.json");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Report.md");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Report.pdf");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Run-Summary.json");
     expect(readFileSync(modelPath)).toEqual(original);
   });
 
@@ -791,10 +795,21 @@ describe("F6 real artifact full flow", () => {
     }
   });
 
-  it("runs the package workflow:f6 script with an isolated successful fixture", () => {
+  it("runs the package workflow:f6 script and fails closed with report_failed for multimodal v4 before Task 4 dispatch", () => {
     const bundle = createRealBundle();
     const evidence = installF6V2Evidence(bundle);
     const outputRoot = path.join(bundle.publishRoot, "f6-runs", "package-script");
+    const modelPath = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    const originalModel = readFileSync(modelPath);
+    rewriteFixtureJson(modelPath, (model) => {
+      model.contractVersion = "f5-multimodal-artifact-v4";
+      model.worksheets = model.worksheets.map((pair) => ({
+        status: "completed",
+        ...pair,
+        scopeEvaluations: requiredScopeEvaluations(),
+      }));
+    });
+    bundle.expectedModelInterpretationContentHash = fixtureFileSha256(modelPath);
     const f5Bytes = readFileSync(bundle.paths.f5);
     const f5Sha256 = fixtureFileSha256(bundle.paths.f5);
     const npmExecutable = process.platform === "win32" ? process.execPath : "npm";
@@ -827,28 +842,23 @@ describe("F6 real artifact full flow", () => {
     });
 
     expect(child.error).toBeUndefined();
-    expect(child.status, child.stderr || child.stdout).toBe(0);
+    expect(child.status, child.stderr || child.stdout).toBe(1);
     expect(child.stderr).toBe("");
     const result = JSON.parse(child.stdout);
-    expect(result.status).toBe("completed");
-    expect(readdirSync(result.outputDirectory).sort()).toEqual([
-      "Feature6-Optimization.json",
-      "Feature6-Report.md",
-      "Feature6-Report.pdf",
-      "Feature6-Run-Summary.json",
-      "manifest.json",
-    ]);
-    expect(result.finalReportMdPath).toBe(path.join(result.outputDirectory, "Feature6-Report.md"));
-    expect(result.finalReportPdfPath).toBe(path.join(result.outputDirectory, "Feature6-Report.pdf"));
-    expect(result).not.toHaveProperty("composedReportJsonPath");
-    expect(result).not.toHaveProperty("composedReportMdPath");
-    const summary = readJson(path.join(result.outputDirectory, "Feature6-Run-Summary.json"));
-    const manifest = readJson(path.join(result.outputDirectory, "manifest.json"));
-    const optimization = readJson(path.join(result.outputDirectory, "Feature6-Optimization.json"));
-    assertRunSummaryMatchesProjection(summary, manifest, result);
-    assertWorksheetLineageMatchesProvenance(optimization);
+    expect(result).toEqual({ status: "failed", reasonCode: "report_failed" });
+    const runDirectories = readdirSync(outputRoot);
+    expect(runDirectories).toHaveLength(1);
+    const runRoot = path.join(outputRoot, runDirectories[0]);
+    expect(readdirSync(runRoot).sort()).toEqual(["manifest.json"]);
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(manifest).toMatchObject({ status: "failed", reasonCode: "report_failed", artifacts: {} });
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Optimization.json");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Report.md");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Report.pdf");
+    expect(readdirSync(runRoot)).not.toContain("Feature6-Run-Summary.json");
     expect(readFileSync(bundle.paths.f5).equals(f5Bytes)).toBe(true);
     expect(fixtureFileSha256(bundle.paths.f5)).toBe(f5Sha256);
+    expect(readFileSync(modelPath)).not.toEqual(originalModel);
   });
 
   it("rejects an out-of-bound core root when layout validation is bypassed", () => {

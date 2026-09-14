@@ -792,7 +792,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
   const f6ByName = indexByWorksheetName(f6Optimization.worksheets);
   const { byName: f4ByName, counts: f4Counts } = indexCalculationsByWorksheetName(f4Report.calculations);
   const f2ReadyByName = indexByWorksheetName(f2Report.worksheets.filter(({ status }) => status === "ready"));
-  const f2HandoffByName = indexByWorksheetName(f2Report.f4Handoffs ?? []);
+  const f2HandoffByName = indexByWorksheetName(f2Report.f4Handoffs);
   const f4CalculationIndexes = new Map(f4Report.calculations.map((calculation, index) => [
     calculation.worksheetSelection.worksheetName,
     index + 1,
@@ -920,7 +920,7 @@ function topFactor(calculation) {
 }
 
 function factorGovernanceBySource(f3Worksheet) {
-  return new Map((f3Worksheet?.rows ?? []).map((item) => [
+  return new Map(f3Worksheet.rows.map((item) => [
     `${item.source.tableId}:${item.source.sourceRow}`,
     item,
   ]));
@@ -958,7 +958,7 @@ function v3PrimaryFinding(context) {
     return "The statistical or worst-case range does not meet the worksheet specification.";
   }
 
-  const governanceRows = context.f3Worksheet?.rows ?? [];
+  const governanceRows = context.f3Worksheet.rows;
   const missingDrawing = governanceRows.filter(({ drawingNumber }) => drawingNumber == null || drawingNumber === "").length;
   const missingDimId = governanceRows.filter(({ dimId }) => dimId == null || dimId === "").length;
   const openDrawingDefinition = governanceRows.some(({ governanceStatus }) => governanceStatus !== "complete");
@@ -1857,8 +1857,6 @@ function assertMultimodalAuthority(artifact, { f2Report, f3Report, f4Report, f5R
 }
 
 function parseRequiredMultimodalArtifact(value) {
-  const v4 = f5MultimodalArtifactV4Schema.safeParse(value);
-  if (v4.success) return v4.data;
   return parseOrThrow(f5MultimodalArtifactV3Schema, value, "multimodal v3 modelInterpretation");
 }
 
