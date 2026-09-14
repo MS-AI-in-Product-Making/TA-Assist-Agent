@@ -257,6 +257,41 @@ const committedArtifacts = [
   ["runSummary", "Feature6-Run-Summary.json"],
 ];
 
+function assertRunSummaryMatchesProjection(summary, manifest, cliResult) {
+  expect(summary.status).toBe("completed");
+  expect(manifest.status).toBe(summary.status);
+  expect(cliResult.status).toBe(summary.status);
+  expect(summary.reportSummary).toEqual({
+    workbookDisposition: cliResult.finalReportProjection.workbookDisposition,
+    worksheetDispositions: cliResult.finalReportProjection.worksheetDispositions,
+  });
+}
+
+function assertWorksheetLineageMatchesProvenance(optimization) {
+  for (const worksheet of optimization.worksheets) {
+    const f4Reference = optimization.provenance.f4Reference;
+    expect(worksheet.baselineResult.calculationReference).toEqual(f4Reference);
+    expect(worksheet.selectedResult.snapshot.calculationReference).toEqual(f4Reference);
+    expect(worksheet.selectedResult.snapshot.baselineIdentity).toEqual(worksheet.baselineIdentity);
+
+    const scenarioById = new Map([[worksheet.baselineResult.scenarioId, worksheet.baselineResult]]);
+    for (const step of worksheet.steps) {
+      if (step.result !== undefined) scenarioById.set(step.result.scenarioId, step.result);
+    }
+    expect(scenarioById.has(worksheet.selectedResult.snapshot.scenarioId)).toBe(true);
+
+    if (worksheet.selectedResult.snapshot.inputScenarioId !== null) {
+      expect(scenarioById.has(worksheet.selectedResult.snapshot.inputScenarioId)).toBe(true);
+    }
+
+    for (const step of worksheet.steps) {
+      if (step.result?.inputScenarioId !== undefined && step.result.inputScenarioId !== null) {
+        expect(scenarioById.has(step.result.inputScenarioId)).toBe(true);
+      }
+    }
+  }
+}
+
 describe("runF6FullValidation", () => {
   it("rejects four roots from the direct CLI without creating artifacts", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-direct-cli-"));
@@ -703,7 +738,8 @@ describe("F6 real artifact full flow", () => {
     ]);
     const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
     const cliResult = JSON.parse(lines.join("\n"));
-    expect(summary.status).toBe("completed");
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    assertRunSummaryMatchesProjection(summary, manifest, cliResult);
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
       finalReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Report.md")),
@@ -716,12 +752,7 @@ describe("F6 real artifact full flow", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(optimization.worksheets.every(({ steps }) =>
       steps.map(({ step }) => step).join(",") === "meanResponseCentering,toleranceReverseSolve,specificationRelaxation")).toBe(true);
-    expect(summary.reportSummary).toEqual(expect.objectContaining({
-      workbookDisposition: expect.any(String),
-      worksheetDispositions: expect.arrayContaining([
-        expect.objectContaining({ worksheetName: "Analysis-A", disposition: expect.any(String) }),
-      ]),
-    }));
+    assertWorksheetLineageMatchesProvenance(optimization);
     expect(finalMarkdown).toContain("Analysis-A");
     expect(finalMarkdown).toContain("# F6 final report");
     expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
@@ -729,7 +760,7 @@ describe("F6 real artifact full flow", () => {
     expect(cliResult.finalReportPdfPath).toBe(path.join(runRoot, "Feature6-Report.pdf"));
     expect(cliResult).not.toHaveProperty("composedReportJsonPath");
     expect(cliResult).not.toHaveProperty("composedReportMdPath");
-    expect(readJson(path.join(runRoot, "manifest.json"))).toEqual({
+    expect(manifest).toEqual({
       contractVersion: "v1",
       artifactSetVersion: "f6-artifact-set-v3",
       featureId: "F6",
@@ -760,7 +791,7 @@ describe("F6 real artifact full flow", () => {
     }
   });
 
-  it.skip("runs the package workflow:f6 script with an isolated successful fixture", () => {
+  it("runs the package workflow:f6 script with an isolated successful fixture", () => {
     const bundle = createRealBundle();
     const evidence = installF6V2Evidence(bundle);
     const outputRoot = path.join(bundle.publishRoot, "f6-runs", "package-script");
@@ -811,6 +842,11 @@ describe("F6 real artifact full flow", () => {
     expect(result.finalReportPdfPath).toBe(path.join(result.outputDirectory, "Feature6-Report.pdf"));
     expect(result).not.toHaveProperty("composedReportJsonPath");
     expect(result).not.toHaveProperty("composedReportMdPath");
+    const summary = readJson(path.join(result.outputDirectory, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(result.outputDirectory, "manifest.json"));
+    const optimization = readJson(path.join(result.outputDirectory, "Feature6-Optimization.json"));
+    assertRunSummaryMatchesProjection(summary, manifest, result);
+    assertWorksheetLineageMatchesProvenance(optimization);
     expect(readFileSync(bundle.paths.f5).equals(f5Bytes)).toBe(true);
     expect(fixtureFileSha256(bundle.paths.f5)).toBe(f5Sha256);
   });

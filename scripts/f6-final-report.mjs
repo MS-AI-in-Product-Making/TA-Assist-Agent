@@ -460,23 +460,26 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
   lines.push("", `## ${catalog.contributors}`, "",
     `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---:|---:|---|---|");
-  for (const item of contributors.priorities) {
+  const contributorPriorities = Array.isArray(contributors?.priorities) ? contributors.priorities : [];
+  for (const item of contributorPriorities) {
     const factor = v3CalculationFactor(calculation, item.factor);
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution),
-      v3PriorityLabel(item.rank, contributors.priorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
+      v3PriorityLabel(item.rank, contributorPriorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
   }
   lines.push("", catalog.topThree);
   if (worksheet.disposition !== "PASS") {
+    const specificationProposals = Array.isArray(specifications?.proposals) ? specifications.proposals : [];
+    const specificationClarifications = Array.isArray(specifications?.clarifications) ? specifications.clarifications : [];
     lines.push("", `## ${catalog.specifications}`, "");
-    if (specifications.proposals.length === 0) lines.push(catalog.noProposal);
+    if (specificationProposals.length === 0) lines.push(catalog.noProposal);
     else {
       lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
-      for (const proposal of specifications.proposals) {
+      for (const proposal of specificationProposals) {
         lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
       }
     }
-    for (const item of specifications.clarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
+    for (const item of specificationClarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
   }
   return lines;
 }
