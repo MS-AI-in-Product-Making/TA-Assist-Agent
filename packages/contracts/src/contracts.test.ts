@@ -6205,6 +6205,145 @@ describe("F5.1 objective interpretation contracts", () => {
             clarificationRequiredWorksheetCount: 0,
           },
         }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+            ],
+            selectedResult: {
+              status: "step1_centered",
+              snapshot: {
+                ...step1Snapshot,
+                capability: { ...step1Snapshot.capability, status: "FAIL" },
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+            noValidatedResultWorksheetCount: 0,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "PASS" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+            ],
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: baselineSnapshot,
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 0,
+            noValidatedResultWorksheetCount: 1,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step2Snapshot,
+                  capability: { ...step2Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "specificationRelaxation",
+                status: "COMPLETED_TARGET_NOT_MET",
+                changeClass: "requirement_change",
+                approvalRequired: true,
+                capabilityImprovementClaim: false,
+                result: {
+                  ...step3Snapshot,
+                  capability: { ...step3Snapshot.capability, status: "FAIL" },
+                },
+              },
+            ],
+            selectedResult: {
+              status: "step3_specification_relaxed_pending_approval",
+              snapshot: {
+                ...step3Snapshot,
+                capability: { ...step3Snapshot.capability, status: "FAIL" },
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+            noValidatedResultWorksheetCount: 0,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
       });
     });
 

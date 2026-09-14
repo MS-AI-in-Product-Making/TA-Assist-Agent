@@ -303,6 +303,12 @@ function resultSnapshot(step: any): any | undefined {
     : undefined;
 }
 
+function completedStepCapabilityMatches(step: any): boolean {
+  if (step?.status === "COMPLETED_TARGET_MET") return step?.result?.capability?.status === "PASS";
+  if (step?.status === "COMPLETED_TARGET_NOT_MET") return step?.result?.capability?.status === "FAIL";
+  return true;
+}
+
 function validateV4WorksheetLineage(worksheet: any, f4Reference: any): boolean {
   const step1 = worksheet?.steps?.[0];
   const step2 = worksheet?.steps?.[1];
@@ -314,6 +320,12 @@ function validateV4WorksheetLineage(worksheet: any, f4Reference: any): boolean {
   const step1Snapshot = resultSnapshot(step1);
   const step2Snapshot = resultSnapshot(step2);
   const step3Snapshot = resultSnapshot(step3);
+
+  if (!completedStepCapabilityMatches(step1)
+    || !completedStepCapabilityMatches(step2)
+    || !completedStepCapabilityMatches(step3)) {
+    return false;
+  }
 
   const snapshots = [baseline, step1Snapshot, step2Snapshot, step3Snapshot, selected].filter((snapshot) => snapshot !== undefined);
   if (snapshots.some((snapshot) => snapshot.calculationReference?.artifact !== f4Reference?.artifact
@@ -331,11 +343,23 @@ function validateV4WorksheetLineage(worksheet: any, f4Reference: any): boolean {
     case "baseline_meets_target":
       return sameJson(selected, baseline);
     case "step1_centered":
-      return step1Snapshot !== undefined && sameJson(selected, step1Snapshot);
+      return step1?.status === "COMPLETED_TARGET_MET"
+        && step1Snapshot !== undefined
+        && step1Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step1Snapshot);
     case "step2_tolerance_optimized":
-      return step2Snapshot !== undefined && sameJson(selected, step2Snapshot);
+      return step2?.status === "COMPLETED_TARGET_MET"
+        && step2Snapshot !== undefined
+        && step2Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step2Snapshot);
     case "step3_specification_relaxed_pending_approval":
-      return step3Snapshot !== undefined && sameJson(selected, step3Snapshot);
+      return step3?.status === "COMPLETED_TARGET_MET"
+        && step3Snapshot !== undefined
+        && step3Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step3Snapshot);
     case "no_validated_optimized_result":
       return [baseline, step1Snapshot, step2Snapshot, step3Snapshot]
         .filter((snapshot) => snapshot !== undefined)

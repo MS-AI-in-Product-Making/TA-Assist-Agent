@@ -9146,6 +9146,31 @@ const f6OptimizationWorksheetV4Schema = z.object({
   const step2Snapshot = "result" in step2 ? step2.result : undefined;
   const step3Snapshot = "result" in step3 ? step3.result : undefined;
 
+  const completedTargetCapabilityMatches = (
+    step: z.infer<typeof f6MeanResponseCenteringStepV4Schema>
+      | z.infer<typeof f6ToleranceReverseSolveStepV4Schema>
+      | z.infer<typeof f6SpecificationRelaxationStepV4Schema>,
+    pathIndex: number,
+  ) => {
+    if (!("result" in step)) return;
+    const expectedCapability = step.status === "COMPLETED_TARGET_MET"
+      ? "PASS"
+      : step.status === "COMPLETED_TARGET_NOT_MET"
+        ? "FAIL"
+        : undefined;
+    if (expectedCapability !== undefined && step.result.capability.status !== expectedCapability) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completed step status must match result capability status",
+        path: ["steps", pathIndex, "result", "capability", "status"],
+      });
+    }
+  };
+
+  completedTargetCapabilityMatches(step1, 0);
+  completedTargetCapabilityMatches(step2, 1);
+  completedTargetCapabilityMatches(step3, 2);
+
   if (worksheet.baselineResult.capability.status === "PASS") {
     if (worksheet.selectedResult.status !== "baseline_meets_target"
       || step1.status !== "NOT_NEEDED"
@@ -9185,17 +9210,29 @@ const f6OptimizationWorksheetV4Schema = z.object({
     }
   }
   if (selected.status === "step1_centered") {
-    if (step1.status !== "COMPLETED_TARGET_MET" || step1Snapshot === undefined || selected.snapshot.scenarioId !== step1Snapshot.scenarioId) {
+    if (step1.status !== "COMPLETED_TARGET_MET"
+      || step1Snapshot === undefined
+      || step1Snapshot.capability.status !== "PASS"
+      || selected.snapshot.capability.status !== "PASS"
+      || selected.snapshot.scenarioId !== step1Snapshot.scenarioId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 1 result must match stopping Step 1 snapshot", path: ["selectedResult"] });
     }
   }
   if (selected.status === "step2_tolerance_optimized") {
-    if (step2.status !== "COMPLETED_TARGET_MET" || step2Snapshot === undefined || selected.snapshot.scenarioId !== step2Snapshot.scenarioId) {
+    if (step2.status !== "COMPLETED_TARGET_MET"
+      || step2Snapshot === undefined
+      || step2Snapshot.capability.status !== "PASS"
+      || selected.snapshot.capability.status !== "PASS"
+      || selected.snapshot.scenarioId !== step2Snapshot.scenarioId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 2 result must match stopping Step 2 snapshot", path: ["selectedResult"] });
     }
   }
   if (selected.status === "step3_specification_relaxed_pending_approval") {
-    if (step3Snapshot === undefined || selected.snapshot.scenarioId !== step3Snapshot.scenarioId) {
+    if (step3.status !== "COMPLETED_TARGET_MET"
+      || step3Snapshot === undefined
+      || step3Snapshot.capability.status !== "PASS"
+      || selected.snapshot.capability.status !== "PASS"
+      || selected.snapshot.scenarioId !== step3Snapshot.scenarioId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 3 result must match stopping Step 3 snapshot", path: ["selectedResult"] });
     }
   }
