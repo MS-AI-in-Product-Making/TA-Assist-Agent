@@ -167,6 +167,89 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(6);
   });
 
+  it("renders worksheet -> optimization -> next worksheet in dedicated slide order", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Contributor Priorities",
+      "",
+      "| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |",
+      "|---:|---|---:|---:|---|---|",
+      "| 1 | Factor A | 0.1 mm | 60.0% | High | Tighten tolerance |",
+      "",
+      "<!-- f6-optimization-comparison -->",
+      "## Optimization Comparison",
+      "",
+      "| Metric | Raw Data | Optimized Data |",
+      "|---|---:|---:|",
+      "| Predictive Cpk | 0.740000 | 1.333000 |",
+      "",
+      "# 3-2 Worksheet: Analysis-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toMatch(/slide-worksheet[\s\S]*slide-optimization[\s\S]*slide-worksheet/u);
+    expect((html.match(/class="[^"]*slide-optimization/g) ?? [])).toHaveLength(1);
+    expect(html).toContain("width:1920px");
+    expect(html).toContain("height:1080px");
+  });
+
+  it("keeps worksheet flow unchanged when optimization heading has no marker", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Optimization Comparison",
+      "",
+      "| Metric | Raw Data | Optimized Data |",
+      "|---|---:|---:|",
+      "| Predictive Cpk | 0.740000 | 1.333000 |",
+      "",
+      "# 3-2 Worksheet: Analysis-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html.match(/class="[^"]*slide-optimization/g)).toBeNull();
+    expect(html).toContain('<h2>Optimization Comparison</h2>');
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
+  });
+
+  it("renders continuation marker as a continuation optimization slide and preserves balanced closure", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "<!-- f6-optimization-comparison continuation=\"1\" -->",
+      "## Optimization Comparison (Continued)",
+      "",
+      "| Factor | Table / Row | Nominal Before | Nominal After |",
+      "|---|---|---:|---:|",
+      "| Factor A | Main / 12 | 0.000 (+0.100 / -0.100) | 0.000 (+0.080 / -0.080) |",
+      "",
+      "# 3-2 Worksheet: Analysis-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect((html.match(/class="[^"]*slide-optimization-continuation/g) ?? [])).toHaveLength(1);
+    expect(html).toMatch(/slide-optimization-continuation"[^>]*>[\s\S]*<\/section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">/u);
+    expect(html.match(/class="report-content slide slide-summary"/gu)).toHaveLength(1);
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
+    expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(4);
+  });
+
   it("renders the Task 3 complete Factor table with hidden missing markers preserved", () => {
     const markdown = [
       "# 3-1 Worksheet: Analysis-A",

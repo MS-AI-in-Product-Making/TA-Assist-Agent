@@ -26,6 +26,10 @@ const COMPLETE_FACTOR_TABLE_HEADERS = [
 
 const REQUIRED_MISSING_MARKER_OPEN = /^<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="(\d+)" hidden(?:="")? aria-hidden="true">$/u;
 const REQUIRED_MISSING_MARKER_CLOSE = /^<\/span>$/u;
+const F6_OPTIMIZATION_COMPARISON_MARKER = "<!-- f6-optimization-comparison -->";
+const F6_OPTIMIZATION_CONTINUATION_MARKER = "<!-- f6-optimization-comparison continuation=\"1\" -->";
+
+type SlideSection = "summary" | "worksheet" | "optimization" | "optimization-continuation";
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -185,7 +189,8 @@ function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
 }
 
 class F6PdfRenderer extends Renderer {
-  private worksheetSectionOpen = false;
+  private section: SlideSection = "summary";
+  private pendingOptimizationSection: "optimization" | "optimization-continuation" | undefined;
   private analysisGridOpen = false;
   private analysisPanelOpen = false;
   private analysisPanelType: string | undefined;
@@ -196,11 +201,27 @@ class F6PdfRenderer extends Renderer {
   }
 
   get hasWorksheetSection(): boolean {
-    return this.worksheetSectionOpen;
+    return this.section === "worksheet";
   }
 
   finishContent(): string {
-    return `${this.closeAnalysisGrid()}${this.worksheetSectionOpen ? "</div></section>" : "</section>"}`;
+    return this.closeCurrentSection();
+  }
+
+  private closeCurrentSection(): string {
+    if (this.section === "worksheet") {
+      this.section = "summary";
+      return `${this.closeAnalysisGrid()}</div></section>`;
+    }
+    if (this.section === "optimization" || this.section === "optimization-continuation") {
+      this.section = "summary";
+      return "</div></section>";
+    }
+    return "</section>";
+  }
+
+  private inOptimizationSection(): boolean {
+    return this.section === "optimization" || this.section === "optimization-continuation";
   }
 
   private closeAnalysisGrid(): string {
@@ -212,7 +233,16 @@ class F6PdfRenderer extends Renderer {
     return closing;
   }
 
-  override html(): string {
+  override html(token: Tokens.HTML | Tokens.Tag): string {
+    const raw = token.raw.trim();
+    if (raw === F6_OPTIMIZATION_COMPARISON_MARKER) {
+      this.pendingOptimizationSection = "optimization";
+      return "";
+    }
+    if (raw === F6_OPTIMIZATION_CONTINUATION_MARKER) {
+      this.pendingOptimizationSection = "optimization-continuation";
+      return "";
+    }
     return "";
   }
 
@@ -220,9 +250,23 @@ class F6PdfRenderer extends Renderer {
     const content = this.parser.parseInline(token.tokens);
     const worksheetMatch = token.depth === 1 ? /^3-(\d+)\s+Worksheet:/i.exec(token.text.trim()) : null;
     if (worksheetMatch !== null) {
-      const closePrevious = this.worksheetSectionOpen ? `${this.closeAnalysisGrid()}</div></section>` : "</section>";
-      this.worksheetSectionOpen = true;
+      const closePrevious = this.closeCurrentSection();
+      this.section = "worksheet";
+      this.pendingOptimizationSection = undefined;
       return `${closePrevious}<section class="worksheet-section slide slide-worksheet" id="worksheet-${worksheetMatch[1]}"><div class="worksheet-fit"><h1>${content}</h1>\n`;
+    }
+    const optimizationHeading = token.depth === 2
+      && /^Optimization Comparison(?: \(Continued\))?$/u.test(token.text.trim())
+      && this.pendingOptimizationSection !== undefined;
+    if (optimizationHeading) {
+      const closePrevious = this.closeCurrentSection();
+      const optimizationSection = this.pendingOptimizationSection;
+      this.pendingOptimizationSection = undefined;
+      this.section = optimizationSection;
+      const classes = optimizationSection === "optimization-continuation"
+        ? "optimization-section slide slide-optimization slide-optimization-continuation"
+        : "optimization-section slide slide-optimization";
+      return `${closePrevious}<section class="${classes}"><div class="optimization-fit"><h1>${content}</h1><section class="optimization-grid">\n`;
     }
     const panelTypes = new Map([
       ["Tolerance Path Image", "image"],
@@ -259,6 +303,11 @@ class F6PdfRenderer extends Renderer {
 
   override list(token: Tokens.List): string {
     const items = token.items.map((item) => item.text.replace(/<[^>]*>/gu, "").trim());
+    if (this.inOptimizationSection()) {
+      const list = token.ordered ? "ol" : "ul";
+      const rows = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      return `<section class="optimization-decision"><h2>Decision Summary</h2><${list}>${rows}</${list}></section>`;
+    }
     if (this.analysisPanelType === "center") return meanOffsetGraph(items);
     if (this.analysisPanelType === "results") {
       return `<p class="system-summary">${items.map(escapeHtml).join(" · ")}</p>`;
@@ -287,6 +336,18 @@ class F6PdfRenderer extends Renderer {
     if (headers.length === 2 && headers[0] === "Requirement" && headers[1] === "Value") {
       for (const row of token.rows) this.requirements.set(cellText(row[0]!), cellText(row[1]!));
       return "";
+    }
+    if (this.inOptimizationSection()) {
+      if (headers.length === 3 && headers[0] === "Metric" && headers[1] === "Raw Data" && headers[2] === "Optimized Data") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--system">');
+      }
+      if (headers.length === 4 && headers[0] === "Step" && headers[1] === "Status" && headers[2] === "Action" && headers[3] === "Result") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--path">');
+      }
+      if (headers.length === 4 && headers[0] === "Factor" && headers[1] === "Table / Row" && headers[2] === "Nominal Before" && headers[3] === "Nominal After") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--factors">');
+      }
+      return super.table(token).replace("<table>", '<table class="optimization-table">');
     }
     if (headers.length === 5 && headers[0] === "Metric" && headers[1] === "Lower" && headers[2] === "Upper") {
       return specificationRangeGraph(this.requirements, token.rows);
@@ -418,6 +479,23 @@ const PRINT_CSS = `
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--st-ink); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
+  .slide-optimization { display:flex; flex-direction:column; border:0; }
+  .slide-optimization>.optimization-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 1fr; gap:10px; }
+  .slide-optimization>.optimization-fit>h1 { margin:0; padding:0; border:0; color:var(--st-ink); font:700 54px/.95 var(--st-display); text-transform:uppercase; }
+  .optimization-grid { display:grid; min-height:0; grid-template-columns:1fr 1fr; grid-template-rows:220px 1fr 1fr; gap:12px; }
+  .optimization-decision { min-height:0; padding:18px 20px; border-radius:22px; background:var(--st-orange); }
+  .optimization-decision h2 { margin:0 0 8px; color:var(--st-ink); font:700 24px/1 var(--st-display); text-transform:uppercase; }
+  .optimization-decision ul,.optimization-decision ol { margin:0; padding-left:20px; font-size:16px; line-height:1.25; }
+  .optimization-decision li { margin:4px 0; color:var(--st-ink); }
+  .optimization-table { width:100%; margin:0; table-layout:fixed; overflow:hidden; border:2px solid var(--st-ink); border-radius:20px; border-collapse:separate; border-spacing:0; background:var(--st-paper); }
+  .optimization-table th { padding:10px 11px; border:0; border-bottom:2px solid var(--st-ink); background:var(--st-black); color:var(--st-bone); font:800 15px/1 var(--st-meta); letter-spacing:.03em; text-transform:uppercase; }
+  .optimization-table td { padding:8px 10px; border:0; border-bottom:1px solid rgba(10,10,10,.22); color:var(--st-ink); font-size:14px; line-height:1.2; }
+  .optimization-table--system { grid-column:1; grid-row:2/span 2; }
+  .optimization-table--path { grid-column:2; grid-row:1/span 2; }
+  .optimization-table--factors { grid-column:1/span 2; grid-row:3; }
+  .slide-optimization-continuation .optimization-table--factors { grid-row:2/span 2; }
+  .slide-optimization-continuation .optimization-table--path { grid-row:1; }
+  .slide-optimization-continuation .optimization-table--system { grid-row:1; }
   .factor-table { height:330px; margin:0; overflow:hidden; border:2px solid var(--st-ink); border-radius:22px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--st-paper); }
   .factor-table th { padding:10px 9px; border:0; border-bottom:2px solid var(--st-ink); background:var(--st-black); color:var(--st-bone); font:800 15px/1 var(--st-meta); letter-spacing:.03em; text-transform:uppercase; }
   .factor-table td { padding:8px 9px; border:0; border-bottom:1px solid rgba(10,10,10,.2); color:var(--st-ink); font-size:14px; line-height:1.1; }
