@@ -3,6 +3,7 @@ import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-as
 import type { F7SessionSnapshot } from "./api/f7-client";
 import {
   buildConfirmedEngineeringEvidence,
+  type AssumptionResultsCurrentCalculationInput,
   type DimensionChainReportProjection,
 } from "./assumption-results-pdf-evidence";
 
@@ -192,6 +193,16 @@ function generatedChain(): DimensionChainReportProjection {
 
 function expectationStatus(status: unknown): "PASS" | "FAIL" {
   return status === "PASS" ? "PASS" : "FAIL";
+}
+
+function currentInput(
+  session: F7SessionSnapshot,
+  additionalMeanShift = 0,
+): AssumptionResultsCurrentCalculationInput {
+  return {
+    additionalMeanShift,
+    calculation: buildCurrentCalculation(session, additionalMeanShift),
+  };
 }
 
 describe("buildConfirmedEngineeringEvidence", () => {
@@ -763,5 +774,142 @@ describe("buildConfirmedEngineeringEvidence", () => {
     expect(result?.responseSummary.responseAndSpecifications.adjustedMean).toBeCloseTo(current.system.mean, 10);
     expect(result?.responseSummary.sigmaLevelAndCapability.calculatedCpk.value).toBeCloseTo(current.capability.cpk, 10);
     expect(result?.responseSummary.defectsPerMillion.totalDpm).toBeCloseTo(current.capability.totalDpm, 10);
+  });
+
+  it("requires explicit current calculation input and does not fallback to a kernel recomputation", () => {
+    const session = confirmedSnapshot();
+
+    expect(buildConfirmedEngineeringEvidence(session, generatedChain(), undefined as unknown as AssumptionResultsCurrentCalculationInput)).toBeUndefined();
+  });
+
+  it("rejects negative or non-integer volume and allows zero with zero failures", () => {
+    const invalidVolumes = [-1, 1.5] as const;
+    for (const volume of invalidVolumes) {
+      const session = confirmedSnapshot();
+      session.systemSpecification = {
+        ...session.systemSpecification,
+        status: "available",
+        volume: { status: "available", actualValue: volume, valueOrigin: "numeric_literal" },
+      } as F7SessionSnapshot["systemSpecification"];
+
+      expect(buildConfirmedEngineeringEvidence(session, generatedChain(), currentInput(session, 0))).toBeUndefined();
+    }
+
+    const zeroVolume = confirmedSnapshot();
+    zeroVolume.systemSpecification = {
+      ...zeroVolume.systemSpecification,
+      status: "available",
+      volume: { status: "available", actualValue: 0, valueOrigin: "numeric_literal" },
+    } as F7SessionSnapshot["systemSpecification"];
+
+    const zeroResult = buildConfirmedEngineeringEvidence(zeroVolume, generatedChain(), currentInput(zeroVolume, 0));
+    expect(zeroResult).toBeDefined();
+    expect(zeroResult?.responseSummary.defectsPerMillion.volume).toBe(0);
+    expect(zeroResult?.responseSummary.defectsPerMillion.failuresOverVolume).toBe(0);
+  });
+
+  it("rejects duplicate, missing, extra, or mispaired factor identity between session and current calculation", () => {
+    const duplicateSession = confirmedSnapshot();
+    duplicateSession.factors = [
+      duplicateSession.factors[0]!,
+      {
+        ...duplicateSession.factors[1]!,
+        evidence: {
+          ...duplicateSession.factors[1]!.evidence!,
+          worksheetName: duplicateSession.factors[0]!.evidence!.worksheetName,
+          tableId: duplicateSession.factors[0]!.evidence!.tableId,
+          sourceRow: duplicateSession.factors[0]!.evidence!.sourceRow,
+          factorName: duplicateSession.factors[0]!.evidence!.factorName,
+        },
+      },
+    ] as F7SessionSnapshot["factors"];
+    expect(buildConfirmedEngineeringEvidence(duplicateSession, generatedChain(), currentInput(duplicateSession, 0))).toBeUndefined();
+
+    const session = confirmedSnapshot();
+    const baseline = buildCurrentCalculation(session, 0);
+
+    const duplicateCalculation = {
+      ...baseline,
+      factors: [baseline.factors[0]!, { ...baseline.factors[0]! }],
+    } satisfies KernelCalculationResult;
+    expect(buildConfirmedEngineeringEvidence(session, generatedChain(), {
+      additionalMeanShift: 0,
+      calculation: duplicateCalculation,
+    })).toBeUndefined();
+
+    const missingCalculation = {
+      ...baseline,
+      factorCount: baseline.factorCount - 1,
+      factors: baseline.factors.slice(0, 1),
+    } satisfies KernelCalculationResult;
+    expect(buildConfirmedEngineeringEvidence(session, generatedChain(), {
+      additionalMeanShift: 0,
+      calculation: missingCalculation,
+    })).toBeUndefined();
+
+    const extraFactor = {
+      ...baseline.factors[0]!,
+      source: {
+        ...baseline.factors[0]!.source,
+        sourceRow: 99,
+      },
+      name: "Extra factor",
+    };
+    const extraCalculation = {
+      ...baseline,
+      factorCount: baseline.factorCount + 1,
+      factors: [...baseline.factors, extraFactor],
+    } satisfies KernelCalculationResult;
+    expect(buildConfirmedEngineeringEvidence(session, generatedChain(), {
+      additionalMeanShift: 0,
+      calculation: extraCalculation,
+    })).toBeUndefined();
+
+    const mispairedCalculation = {
+      ...baseline,
+      factors: baseline.factors.map((factor, index, list) => ({
+        ...factor,
+        input: index === 0 ? list[1]!.input : list[0]!.input,
+      })),
+    } satisfies KernelCalculationResult;
+    expect(buildConfirmedEngineeringEvidence(session, generatedChain(), {
+      additionalMeanShift: 0,
+      calculation: mispairedCalculation,
+    })).toBeUndefined();
+  });
+
+  it("accepts negligible relative drift at large scale but rejects meaningful tiny-scale drift", () => {
+    const largeScale = confirmedSnapshot();
+    withFirstFactor(largeScale, (factor) => ({
+      ...factor,
+      setup: {
+        ...factor.setup!,
+        designNominal: 1_000_000_000.001,
+      },
+      evidence: {
+        ...factor.evidence!,
+        designNominal: 1_000_000_000,
+      },
+    }));
+    const largeScaleResult = buildConfirmedEngineeringEvidence(
+      largeScale,
+      generatedChain(),
+      currentInput(largeScale, 0),
+    );
+    expect(largeScaleResult).toBeDefined();
+
+    const tinyScale = confirmedSnapshot();
+    withFirstFactor(tinyScale, (factor) => ({
+      ...factor,
+      setup: {
+        ...factor.setup!,
+        designNominal: 0.0000000015,
+      },
+      evidence: {
+        ...factor.evidence!,
+        designNominal: 0.000000001,
+      },
+    }));
+    expect(buildConfirmedEngineeringEvidence(tinyScale, generatedChain(), currentInput(tinyScale, 0))).toBeUndefined();
   });
 });
