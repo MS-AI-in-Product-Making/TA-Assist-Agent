@@ -8949,6 +8949,379 @@ export const f6OptimizationResultV3Schema = z.object({
   }
 });
 
+const f6ScenarioSnapshotV4Schema = z.object({
+  scenarioId: z.string().min(1),
+  sourceStep: z.enum(["baseline", "meanResponseCentering", "toleranceReverseSolve", "specificationRelaxation"]),
+  inputScenarioId: z.string().min(1).nullable(),
+  calculationVersion: z.literal("excel-ta-v1"),
+  calculationReference: f6ArtifactReferenceSchema,
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  system: z.object({
+    designNominal: z.number().finite(),
+    mean: z.number().finite(),
+    additionalMeanShift: z.number().finite(),
+    rssSigma: z.number().finite().positive(),
+    worstCaseLower: z.number().finite(),
+    worstCaseUpper: z.number().finite(),
+  }).strict(),
+  capability: z.object({
+    lowerSpecLimit: z.number().finite(),
+    upperSpecLimit: z.number().finite(),
+    targetCpk: z.number().finite().positive(),
+    lowerCpk: z.number().finite(),
+    upperCpk: z.number().finite(),
+    cpk: z.number().finite(),
+    yield: z.number().finite(),
+    totalDpm: z.number().finite(),
+    status: z.enum(["PASS", "FAIL"]),
+  }).strict(),
+  factors: z.array(z.object({
+    factor: f6FactorIdentitySchema,
+    nominalValue: z.number().finite(),
+    lowerTolerance: z.number().finite(),
+    upperTolerance: z.number().finite(),
+    mean: z.number().finite(),
+    sigma: z.number().finite().positive(),
+    contribution: z.number().finite().nonnegative(),
+  }).strict()).min(1),
+  factorOverrides: z.array(z.object({
+    factor: f6FactorIdentitySchema,
+    nominalValue: z.number().finite().optional(),
+    lowerTolerance: z.number().finite().optional(),
+    upperTolerance: z.number().finite().optional(),
+  }).strict()),
+  systemSpecificationOverride: z.object({
+    lowerSpecLimit: z.number().finite().optional(),
+    upperSpecLimit: z.number().finite().optional(),
+    additionalMeanShift: z.number().finite().optional(),
+  }).strict().optional(),
+  formulaReferences: z.array(f6V2FormulaReferenceSchema),
+}).strict();
+
+const f6MeanResponseCenteringStepV4Schema = z.discriminatedUnion("status", [
+  z.object({
+    step: z.literal("meanResponseCentering"),
+    status: z.enum(["NOT_NEEDED", "NOT_RUN_EARLIER_STEP_MET_TARGET"]),
+  }).strict(),
+  z.object({
+    step: z.literal("meanResponseCentering"),
+    status: z.enum(["COMPLETED_TARGET_MET", "COMPLETED_TARGET_NOT_MET"]),
+    result: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    step: z.literal("meanResponseCentering"),
+    status: z.enum(["ENGINEERING_CONFIRMATION_REQUIRED", "ENGINEERING_REVIEW_REQUIRED", "NOT_FEASIBLE", "CALCULATION_FAILED"]),
+    reasonCode: z.string().min(1),
+  }).strict(),
+]);
+
+const f6ToleranceReverseSolveStepV4Schema = z.discriminatedUnion("status", [
+  z.object({
+    step: z.literal("toleranceReverseSolve"),
+    status: z.enum(["NOT_NEEDED", "NOT_RUN_EARLIER_STEP_MET_TARGET"]),
+  }).strict(),
+  z.object({
+    step: z.literal("toleranceReverseSolve"),
+    status: z.enum(["COMPLETED_TARGET_MET", "COMPLETED_TARGET_NOT_MET"]),
+    result: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    step: z.literal("toleranceReverseSolve"),
+    status: z.enum(["ENGINEERING_CONFIRMATION_REQUIRED", "ENGINEERING_REVIEW_REQUIRED", "NOT_FEASIBLE", "CALCULATION_FAILED"]),
+    reasonCode: z.string().min(1),
+  }).strict(),
+]);
+
+const f6SpecificationRelaxationStepV4Schema = z.discriminatedUnion("status", [
+  z.object({
+    step: z.literal("specificationRelaxation"),
+    status: z.enum(["NOT_NEEDED", "NOT_RUN_EARLIER_STEP_MET_TARGET"]),
+  }).strict(),
+  z.object({
+    step: z.literal("specificationRelaxation"),
+    status: z.enum(["COMPLETED_TARGET_MET", "COMPLETED_TARGET_NOT_MET"]),
+    changeClass: z.literal("requirement_change"),
+    approvalRequired: z.literal(true),
+    capabilityImprovementClaim: z.literal(false),
+    result: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    step: z.literal("specificationRelaxation"),
+    status: z.enum(["ENGINEERING_CONFIRMATION_REQUIRED", "ENGINEERING_REVIEW_REQUIRED", "NOT_FEASIBLE", "CALCULATION_FAILED"]),
+    reasonCode: z.string().min(1),
+  }).strict(),
+]);
+
+const f6SelectedResultV4Schema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("baseline_meets_target"),
+    snapshot: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    status: z.literal("step1_centered"),
+    snapshot: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    status: z.literal("step2_tolerance_optimized"),
+    snapshot: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    status: z.literal("step3_specification_relaxed_pending_approval"),
+    snapshot: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+  z.object({
+    status: z.literal("no_validated_optimized_result"),
+    snapshot: f6ScenarioSnapshotV4Schema,
+  }).strict(),
+]);
+
+const f6WorksheetTriggerV4Schema = z.object({
+  lowerCpk: z.number().finite(),
+  upperCpk: z.number().finite(),
+  targetCpk: z.number().finite().positive(),
+  failedSides: z.array(z.enum(["lowerCpk", "upperCpk"])).max(2),
+}).strict().superRefine((trigger, context) => {
+  const expectedFailedSides = [
+    ...(trigger.lowerCpk < trigger.targetCpk ? ["lowerCpk" as const] : []),
+    ...(trigger.upperCpk < trigger.targetCpk ? ["upperCpk" as const] : []),
+  ];
+  if (expectedFailedSides.length !== trigger.failedSides.length
+    || expectedFailedSides.some((side, index) => side !== trigger.failedSides[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "trigger failed sides must match capability", path: ["failedSides"] });
+  }
+});
+
+const f6OptimizationWorksheetV4Schema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  baselineResult: f6ScenarioSnapshotV4Schema,
+  trigger: f6WorksheetTriggerV4Schema,
+  steps: z.tuple([
+    f6MeanResponseCenteringStepV4Schema,
+    f6ToleranceReverseSolveStepV4Schema,
+    f6SpecificationRelaxationStepV4Schema,
+  ]),
+  selectedResult: f6SelectedResultV4Schema,
+  sensitivityScenarios: z.array(f6ToleranceOptionV3Schema).length(3),
+  runStatus: z.enum(["COMPLETED", "CLARIFICATION_REQUIRED"]),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName
+    || worksheet.baselineIdentity.tableId !== worksheet.tableId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match worksheet and table", path: ["baselineIdentity"] });
+  }
+  if (worksheet.baselineResult.sourceStep !== "baseline" || worksheet.baselineResult.inputScenarioId !== null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline result must be a root scenario", path: ["baselineResult"] });
+  }
+  if (!f6NearlyEqual(worksheet.baselineResult.capability.lowerCpk, worksheet.trigger.lowerCpk)
+    || !f6NearlyEqual(worksheet.baselineResult.capability.upperCpk, worksheet.trigger.upperCpk)
+    || !f6NearlyEqual(worksheet.baselineResult.capability.targetCpk, worksheet.trigger.targetCpk)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "trigger capability must match baseline result", path: ["trigger"] });
+  }
+
+  const step1 = worksheet.steps[0];
+  const step2 = worksheet.steps[1];
+  const step3 = worksheet.steps[2];
+
+  const step1Snapshot = "result" in step1 ? step1.result : undefined;
+  const step2Snapshot = "result" in step2 ? step2.result : undefined;
+  const step3Snapshot = "result" in step3 ? step3.result : undefined;
+
+  if (worksheet.baselineResult.capability.status === "PASS") {
+    if (worksheet.selectedResult.status !== "baseline_meets_target"
+      || step1.status !== "NOT_NEEDED"
+      || step2.status !== "NOT_NEEDED"
+      || step3.status !== "NOT_NEEDED") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline PASS requires baseline-only selection and no optimization steps", path: ["selectedResult"] });
+    }
+  }
+
+  if (step1.status === "COMPLETED_TARGET_MET"
+    && (step2.status !== "NOT_RUN_EARLIER_STEP_MET_TARGET" || step3.status !== "NOT_RUN_EARLIER_STEP_MET_TARGET")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "later steps must not run after Step 1 meets target", path: ["steps"] });
+  }
+
+  if (step2.status === "COMPLETED_TARGET_MET" && step3.status !== "NOT_RUN_EARLIER_STEP_MET_TARGET") {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Step 3 must not run after Step 2 meets target", path: ["steps", 2, "status"] });
+  }
+
+  if (step2Snapshot !== undefined) {
+    const expectedInputScenarioId = step1Snapshot?.scenarioId ?? worksheet.baselineResult.scenarioId;
+    if (step2Snapshot.inputScenarioId !== expectedInputScenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Step 2 inputScenarioId must chain from Step 1 or baseline", path: ["steps", 1, "result", "inputScenarioId"] });
+    }
+  }
+
+  if (step3Snapshot !== undefined) {
+    const expectedInputScenarioId = step2Snapshot?.scenarioId ?? step1Snapshot?.scenarioId ?? worksheet.baselineResult.scenarioId;
+    if (step3Snapshot.inputScenarioId !== expectedInputScenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Step 3 inputScenarioId must chain from Step 2 or last valid fallback", path: ["steps", 2, "result", "inputScenarioId"] });
+    }
+  }
+
+  const selected = worksheet.selectedResult;
+  if (selected.status === "baseline_meets_target") {
+    if (selected.snapshot.scenarioId !== worksheet.baselineResult.scenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected baseline result must match baseline snapshot", path: ["selectedResult", "snapshot"] });
+    }
+  }
+  if (selected.status === "step1_centered") {
+    if (step1.status !== "COMPLETED_TARGET_MET" || step1Snapshot === undefined || selected.snapshot.scenarioId !== step1Snapshot.scenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 1 result must match stopping Step 1 snapshot", path: ["selectedResult"] });
+    }
+  }
+  if (selected.status === "step2_tolerance_optimized") {
+    if (step2.status !== "COMPLETED_TARGET_MET" || step2Snapshot === undefined || selected.snapshot.scenarioId !== step2Snapshot.scenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 2 result must match stopping Step 2 snapshot", path: ["selectedResult"] });
+    }
+  }
+  if (selected.status === "step3_specification_relaxed_pending_approval") {
+    if (step3Snapshot === undefined || selected.snapshot.scenarioId !== step3Snapshot.scenarioId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 3 result must match stopping Step 3 snapshot", path: ["selectedResult"] });
+    }
+  }
+
+  const sensitivityIds = new Set(["f6-top3-tolerance-policy-v1:OP1", "f6-top3-tolerance-policy-v1:OP2", "f6-top3-tolerance-policy-v1:OP3"]);
+  if (selected.status !== "no_validated_optimized_result" && sensitivityIds.has(selected.snapshot.scenarioId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenarios cannot become selected optimized results", path: ["selectedResult", "snapshot", "scenarioId"] });
+  }
+
+  const requiredOptions = ["OP1", "OP2", "OP3"] as const;
+  worksheet.sensitivityScenarios.forEach((scenario, index) => {
+    const optionCode = requiredOptions[index];
+    if (scenario.optionCode !== optionCode) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenarios must remain OP1, OP2, OP3 in order", path: ["sensitivityScenarios", index, "optionCode"] });
+    }
+    if (scenario.status === "completed"
+      && scenario.scenarioEvidence.targetId !== `f6-top3-tolerance-policy-v1:${scenario.optionCode}`) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenario IDs must remain fixed policy IDs", path: ["sensitivityScenarios", index, "scenarioEvidence", "targetId"] });
+    }
+  });
+
+  if ((step3.status === "COMPLETED_TARGET_MET" || step3.status === "COMPLETED_TARGET_NOT_MET")
+    && (step3.changeClass !== "requirement_change"
+      || step3.approvalRequired !== true
+      || step3.capabilityImprovementClaim !== false)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "specification step must carry requirement-change approval literals", path: ["steps", 2] });
+  }
+
+  const clarificationRequired = [step1.status, step2.status, step3.status].some((status) =>
+    status === "ENGINEERING_CONFIRMATION_REQUIRED"
+    || status === "ENGINEERING_REVIEW_REQUIRED"
+    || status === "CALCULATION_FAILED");
+  if ((worksheet.runStatus === "CLARIFICATION_REQUIRED") !== clarificationRequired) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet runStatus must match step clarification requirements", path: ["runStatus"] });
+  }
+});
+
+const f6OptimizationSummaryV4Schema = z.object({
+  worksheetCount: z.number().int().nonnegative(),
+  baselineMeetsTargetWorksheetCount: z.number().int().nonnegative(),
+  optimizedWorksheetCount: z.number().int().nonnegative(),
+  noValidatedResultWorksheetCount: z.number().int().nonnegative(),
+  clarificationRequiredWorksheetCount: z.number().int().nonnegative(),
+}).strict();
+
+export const f6OptimizationResultV4Schema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F6"),
+  optimizationVersion: z.literal("f6-optimization-v4"),
+  sequentialPolicyId: z.literal("f6-sequential-optimization-policy-v2"),
+  interactionLanguage: f6InteractionLanguageSchema,
+  runStatus: z.enum(["COMPLETED", "CLARIFICATION_REQUIRED"]),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  worksheets: z.array(f6OptimizationWorksheetV4Schema).min(1),
+  summary: f6OptimizationSummaryV4Schema,
+  provenance: f6ProvenanceV3Schema,
+}).strict().superRefine((result, context) => {
+  const worksheetNames = result.worksheets.map(({ worksheetName }) => worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+
+  const blockedScopeNameSet = new Set(result.provenance.reportScope.blockedWorksheetNames);
+  const nonblockedScopeNames = result.provenance.reportScope.worksheetNames.filter((name) => !blockedScopeNameSet.has(name));
+  if (nonblockedScopeNames.length !== worksheetNames.length
+    || nonblockedScopeNames.some((name, index) => name !== worksheetNames[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization worksheets must match nonblocked report scope order", path: ["provenance", "reportScope"] });
+  }
+
+  const baselineMatchesWorksheet = (snapshot: z.infer<typeof f6ScenarioSnapshotV4Schema>, worksheet: z.infer<typeof f6OptimizationWorksheetV4Schema>) => {
+    const identity = snapshot.baselineIdentity;
+    const baseline = worksheet.baselineIdentity;
+    return identity.calculationVersion === baseline.calculationVersion
+      && identity.projectReference === baseline.projectReference
+      && identity.runReference === baseline.runReference
+      && identity.workbookContentHash === baseline.workbookContentHash
+      && identity.worksheetName === baseline.worksheetName
+      && identity.tableId === baseline.tableId;
+  };
+
+  result.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet baseline workbook must match root workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+
+    const snapshots = [
+      worksheet.baselineResult,
+      ...("result" in worksheet.steps[0] ? [worksheet.steps[0].result] : []),
+      ...("result" in worksheet.steps[1] ? [worksheet.steps[1].result] : []),
+      ...("result" in worksheet.steps[2] ? [worksheet.steps[2].result] : []),
+      worksheet.selectedResult.snapshot,
+    ];
+    snapshots.forEach((snapshot, snapshotIndex) => {
+      if (!baselineMatchesWorksheet(snapshot, worksheet)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "all snapshots must keep worksheet baseline identity", path: ["worksheets", worksheetIndex, "snapshots", snapshotIndex, "baselineIdentity"] });
+      }
+      if (snapshot.calculationReference.artifact !== result.provenance.f4Reference.artifact
+        || snapshot.calculationReference.contentHash !== result.provenance.f4Reference.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "all snapshots must reference governed F4 artifact", path: ["worksheets", worksheetIndex, "snapshots", snapshotIndex, "calculationReference"] });
+      }
+    });
+
+    worksheet.sensitivityScenarios.forEach((scenario, scenarioIndex) => {
+      const baseline = scenario.status === "completed" ? scenario.scenarioEvidence.baselineIdentity : undefined;
+      if (baseline !== undefined
+        && (baseline.calculationVersion !== worksheet.baselineIdentity.calculationVersion
+          || baseline.projectReference !== worksheet.baselineIdentity.projectReference
+          || baseline.runReference !== worksheet.baselineIdentity.runReference
+          || baseline.workbookContentHash !== worksheet.baselineIdentity.workbookContentHash
+          || baseline.worksheetName !== worksheet.baselineIdentity.worksheetName
+          || baseline.tableId !== worksheet.baselineIdentity.tableId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenario baseline must match worksheet baseline", path: ["worksheets", worksheetIndex, "sensitivityScenarios", scenarioIndex, "scenarioEvidence", "baselineIdentity"] });
+      }
+      const reference = scenario.status === "completed" ? scenario.scenarioEvidence.calculationReference : scenario.calculationReference;
+      if (reference.artifact !== result.provenance.f4Reference.artifact
+        || reference.contentHash !== result.provenance.f4Reference.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenarios must reference governed F4 artifact", path: ["worksheets", worksheetIndex, "sensitivityScenarios", scenarioIndex] });
+      }
+    });
+  });
+
+  const selectedStatuses = result.worksheets.map(({ selectedResult }) => selectedResult.status);
+  const baselineMeetsTargetWorksheetCount = selectedStatuses.filter((status) => status === "baseline_meets_target").length;
+  const optimizedWorksheetCount = selectedStatuses.filter((status) =>
+    status === "step1_centered"
+    || status === "step2_tolerance_optimized"
+    || status === "step3_specification_relaxed_pending_approval").length;
+  const noValidatedResultWorksheetCount = selectedStatuses.filter((status) => status === "no_validated_optimized_result").length;
+  const clarificationRequiredWorksheetCount = result.worksheets.filter(({ runStatus }) => runStatus === "CLARIFICATION_REQUIRED").length;
+
+  if (result.summary.worksheetCount !== result.worksheets.length
+    || result.summary.baselineMeetsTargetWorksheetCount !== baselineMeetsTargetWorksheetCount
+    || result.summary.optimizedWorksheetCount !== optimizedWorksheetCount
+    || result.summary.noValidatedResultWorksheetCount !== noValidatedResultWorksheetCount
+    || result.summary.clarificationRequiredWorksheetCount !== clarificationRequiredWorksheetCount) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "summary must match worksheet selected results", path: ["summary"] });
+  }
+
+  const expectedStatus = clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED";
+  if (result.runStatus !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "root runStatus must match worksheet statuses", path: ["runStatus"] });
+  }
+});
+
 function f6FactorIdentityKey(factor: z.infer<typeof f6FactorIdentitySchema>): string {
   return JSON.stringify([factor.worksheetName, factor.tableId, factor.sourceRow, factor.factorName, factor.unit]);
 }
@@ -8964,9 +9337,10 @@ function f6CompareFactorIdentity(left: z.infer<typeof f6FactorIdentitySchema>, r
 export const f6ReadableOptimizationResultSchema = z.union([
   f6OptimizationResultV2Schema,
   f6OptimizationResultV3Schema,
+  f6OptimizationResultV4Schema,
 ]);
 
-export const f6OptimizationResultSchema = f6OptimizationResultV3Schema;
+export const f6OptimizationResultSchema = f6OptimizationResultV4Schema;
 
 export type F6OptionKind = z.infer<typeof f6OptionKindSchema>;
 export type F6FactorIdentity = z.infer<typeof f6FactorIdentitySchema>;
@@ -9015,8 +9389,9 @@ export type F6Provenance = z.infer<typeof f6ProvenanceSchema>;
 export type F6LegacyOptimizationResult = z.infer<typeof f6LegacyOptimizationResultSchema>;
 export type F6OptimizationResultV2 = z.infer<typeof f6OptimizationResultV2Schema>;
 export type F6OptimizationResultV3 = z.infer<typeof f6OptimizationResultV3Schema>;
+export type F6OptimizationResultV4 = z.infer<typeof f6OptimizationResultV4Schema>;
 export type F6ReadableOptimizationResult = z.infer<typeof f6ReadableOptimizationResultSchema>;
-export type F6OptimizationResult = F6OptimizationResultV3;
+export type F6OptimizationResult = F6OptimizationResultV4;
 
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;
 export type CalculationRecommendation = z.infer<typeof calculationRecommendationSchema>;
