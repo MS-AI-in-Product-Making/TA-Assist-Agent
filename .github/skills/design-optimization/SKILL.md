@@ -139,6 +139,16 @@ The sole no-target exception is the versioned built-in policy `f6-top3-tolerance
 
 For the current write path, F6 runs `f6-optimization-v4` with `f6-sequential-optimization-policy-v2`: mean response centering before tolerance reverse solve, and specification relaxation only after tolerance cannot meet target. OP1/OP2/OP3 are sensitivity/fallback and never selectedResult.
 
+For `f6-sequential-optimization-policy-v2`, Step2 is target-RSS reverse solve.
+
+When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), stop the sequential path after Step2 and do not enter Step3.
+
+Step3 specification relaxation is a requirement change.
+
+Step3 requires explicit engineering and requirement-owner approval before execution.
+
+Do not describe Step3 specification relaxation as a design capability improvement or manufacturing capability improvement.
+
 Preserve each optional input decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED` in Optimization, run summary, manifest, and the final ledger. Built-in policy execution does not change the Optimization Targets input decision.
 
 ### Phase W9 - Run and validate F6
