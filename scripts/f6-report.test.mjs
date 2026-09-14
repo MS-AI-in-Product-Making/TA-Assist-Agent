@@ -1,7 +1,10 @@
 /* global structuredClone */
 
 import { describe, expect, it } from "vitest";
-import { f6LegacyOptimizationResultSchema as f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
+import {
+  f6LegacyOptimizationResultSchema as f6OptimizationResultSchema,
+  f6OptimizationResultV4Schema,
+} from "../packages/contracts/dist/contracts.js";
 import { renderF6Report as renderF6ReportV2, renderLegacyF6Report as renderF6Report } from "./f6-report.mjs";
 
 const HASH = "a".repeat(64);
@@ -237,6 +240,191 @@ describe("renderF6Report", () => {
 });
 
 describe("renderF6Report V2", () => {
+  function resultV4(selectedStatus = "step2_tolerance_optimized") {
+    const reference = (artifact) => ({ artifact, contentHash: HASH });
+    const workbook = { fileName: "Anonymous.xlsx", contentHash: HASH };
+    const interactionLanguage = {
+      languageTag: "en-US",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "turn-1",
+      source: "workflow_start",
+      fallbackUsed: false,
+    };
+    const baselineIdentity = {
+      calculationVersion: "excel-ta-v1",
+      projectReference: "project-a",
+      runReference: "run-a",
+      workbookContentHash: HASH,
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    };
+    const factorIdentity = {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+      sourceRow: 14,
+      factorName: "Factor A",
+      unit: "mm",
+    };
+    const trigger = selectedStatus === "baseline_meets_target"
+      ? { lowerCpk: 1.4, upperCpk: 1.4, targetCpk: 1.33, failedSides: [] }
+      : { lowerCpk: 1.1, upperCpk: 1.35, targetCpk: 1.33, failedSides: ["lowerCpk"] };
+
+    const snapshot = (scenarioId, sourceStep, inputScenarioId, capabilityStatus, factorDelta = 0) => ({
+      scenarioId,
+      sourceStep,
+      inputScenarioId,
+      calculationVersion: "excel-ta-v1",
+      calculationReference: reference("Feature4-Calculation.json"),
+      baselineIdentity,
+      system: {
+        designNominal: 0,
+        mean: factorDelta,
+        additionalMeanShift: factorDelta,
+        rssSigma: 0.1,
+        worstCaseLower: -0.3,
+        worstCaseUpper: 0.3,
+      },
+      capability: {
+        lowerSpecLimit: -0.3,
+        upperSpecLimit: 0.3,
+        targetCpk: 1.33,
+        lowerCpk: capabilityStatus === "PASS" ? 1.35 : 1.1,
+        upperCpk: capabilityStatus === "PASS" ? 1.35 : 1.35,
+        cpk: capabilityStatus === "PASS" ? 1.35 : 1.1,
+        yield: capabilityStatus === "PASS" ? 0.999 : 0.95,
+        totalDpm: capabilityStatus === "PASS" ? 100 : 50000,
+        status: capabilityStatus,
+      },
+      factors: [{
+        factor: factorIdentity,
+        nominalValue: factorDelta,
+        lowerTolerance: -0.1 - factorDelta,
+        upperTolerance: 0.1 + factorDelta,
+        mean: factorDelta,
+        sigma: 0.1,
+        contribution: 1,
+      }],
+      factorOverrides: factorDelta === 0
+        ? []
+        : [{
+          factor: factorIdentity,
+          nominalValue: factorDelta,
+          lowerTolerance: -0.1 - factorDelta,
+          upperTolerance: 0.1 + factorDelta,
+        }],
+      formulaReferences: [],
+    });
+
+    const baseline = snapshot("Analysis-A:baseline", "baseline", null, selectedStatus === "baseline_meets_target" ? "PASS" : "FAIL", 0);
+    const step1 = snapshot("Analysis-A:step1", "meanResponseCentering", baseline.scenarioId, "PASS", 0.01);
+    const step2Pass = snapshot("Analysis-A:step2-pass", "toleranceReverseSolve", baseline.scenarioId, "PASS", 0.02);
+    const step2Fail = snapshot("Analysis-A:step2-fail", "toleranceReverseSolve", baseline.scenarioId, "FAIL", 0.02);
+    const step3 = {
+      ...snapshot("Analysis-A:step3", "specificationRelaxation", step2Fail.scenarioId, "PASS", 0.03),
+      systemSpecificationOverride: { lowerSpecLimit: -0.5, upperSpecLimit: 0.5 },
+    };
+
+    let steps;
+    let selectedResult;
+    if (selectedStatus === "baseline_meets_target") {
+      steps = [
+        { step: "meanResponseCentering", status: "NOT_NEEDED" },
+        { step: "toleranceReverseSolve", status: "NOT_NEEDED" },
+        { step: "specificationRelaxation", status: "NOT_NEEDED" },
+      ];
+      selectedResult = { status: "baseline_meets_target", snapshot: baseline };
+    } else if (selectedStatus === "step3_specification_relaxed_pending_approval") {
+      steps = [
+        { step: "meanResponseCentering", status: "NOT_NEEDED" },
+        { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_NOT_MET", result: step2Fail },
+        {
+          step: "specificationRelaxation",
+          status: "COMPLETED_TARGET_MET",
+          changeClass: "requirement_change",
+          approvalRequired: true,
+          capabilityImprovementClaim: false,
+          result: step3,
+        },
+      ];
+      selectedResult = { status: "step3_specification_relaxed_pending_approval", snapshot: step3 };
+    } else if (selectedStatus === "no_validated_optimized_result") {
+      steps = [
+        { step: "meanResponseCentering", status: "NOT_NEEDED" },
+        { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_NOT_MET", result: step2Fail },
+        { step: "specificationRelaxation", status: "NOT_FEASIBLE", reasonCode: "no_validated_path" },
+      ];
+      selectedResult = { status: "no_validated_optimized_result", snapshot: step2Fail };
+    } else {
+      steps = [
+        { step: "meanResponseCentering", status: "NOT_NEEDED" },
+        { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_MET", result: step2Pass },
+        { step: "specificationRelaxation", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" },
+      ];
+      selectedResult = { status: "step2_tolerance_optimized", snapshot: step2Pass };
+    }
+
+    return f6OptimizationResultV4Schema.parse({
+      contractVersion: "v1",
+      outputClassification: "confidential",
+      featureId: "F6",
+      optimizationVersion: "f6-optimization-v4",
+      sequentialPolicyId: "f6-sequential-optimization-policy-v2",
+      interactionLanguage,
+      runStatus: "COMPLETED",
+      workbook,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        baselineIdentity,
+        baselineResult: baseline,
+        trigger,
+        steps,
+        selectedResult,
+        sensitivityScenarios: ["OP1", "OP2", "OP3"].map((optionCode) => ({
+          optionCode,
+          status: "calculation_failed",
+          reductionRatios: [0.2, 0.1, 0.1],
+          reductions: [{
+            factor: factorIdentity,
+            rank: 1,
+            reductionRatio: 0.2,
+            scale: 0.8,
+            baselineLowerTolerance: -0.1,
+            baselineUpperTolerance: 0.1,
+          }],
+          reasonCode: "f4_failed",
+          baselineMetrics: {
+            mean: 0,
+            rssSigma: 0.1,
+            worstCaseLower: -0.3,
+            worstCaseUpper: 0.3,
+            cp: 1,
+            cpk: 1,
+            yield: 0.99,
+            dpm: 10000,
+          },
+          calculationReference: reference("Feature4-Calculation.json"),
+        })),
+        runStatus: "COMPLETED",
+      }],
+      summary: {
+        worksheetCount: 1,
+        baselineMeetsTargetWorksheetCount: selectedStatus === "baseline_meets_target" ? 1 : 0,
+        optimizedWorksheetCount: ["step1_centered", "step2_tolerance_optimized", "step3_specification_relaxed_pending_approval"].includes(selectedStatus) ? 1 : 0,
+        noValidatedResultWorksheetCount: selectedStatus === "no_validated_optimized_result" ? 1 : 0,
+        clarificationRequiredWorksheetCount: 0,
+      },
+      provenance: {
+        f2Reference: reference("Feature2-Report.json"),
+        f3Reference: reference("Feature3-Report.json"),
+        f4Reference: reference("Feature4-Calculation.json"),
+        f5Reference: reference("Feature5-Report.json"),
+        multimodalReference: reference("Feature5-Multimodal.json"),
+        reportScope: { worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] },
+      },
+    });
+  }
+
   function resultV2() {
     const notProvided = { outcome: "NOT_PROVIDED" };
     const baselineMetrics = { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 };
@@ -580,5 +768,31 @@ describe("renderF6Report V2", () => {
 
     expect(markdown).toContain("### 4. Tolerance Optimization");
     expect(markdown).toContain("f6-top3-tolerance-policy-v1");
+  });
+
+  it("renders V4 optimization comparison with stable markers and ordered path", () => {
+    const markdown = renderF6ReportV2(resultV4("step3_specification_relaxed_pending_approval"));
+
+    expect(markdown).toContain("<!-- f6-optimization-comparison -->");
+    expect(markdown).toContain("## Optimization Comparison");
+    expect(markdown).toContain("| Metric | Raw Data | Optimized Data |");
+    expect(markdown).toContain("| Step | Status | Action | Result |");
+    expect(markdown).toContain("| Factor | Table / Row | Nominal Before | Nominal After |");
+    expect(markdown).toContain("Requirement change - engineering approval required");
+
+    const step1 = markdown.indexOf("| meanResponseCentering |");
+    const step2 = markdown.indexOf("| toleranceReverseSolve |");
+    const step3 = markdown.indexOf("| specificationRelaxation |");
+    expect(step1).toBeGreaterThan(-1);
+    expect(step2).toBeGreaterThan(step1);
+    expect(step3).toBeGreaterThan(step2);
+  });
+
+  it("renders no-result V4 comparison without optimized numeric cells", () => {
+    const markdown = renderF6ReportV2(resultV4("no_validated_optimized_result"));
+
+    expect(markdown).toContain("No validated optimized result");
+    expect(markdown).toContain("| Predictive Cpk | 1.100000 | N/A |");
+    expect(markdown).not.toMatch(/\| Predictive Cpk \| 1\.100000 \| 1\./u);
   });
 });

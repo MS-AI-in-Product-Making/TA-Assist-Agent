@@ -7,7 +7,7 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
   f6ModelInterpretationArtifactSchema,
-  f6OptimizationResultSchema,
+  f6ReadableOptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 import {
   createF5MultimodalFactorSetHash,
@@ -17,7 +17,7 @@ import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { marked } from "marked";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
-import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
+import { createF6OptimizationV3, createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
 import {
   createF6ArtifactBundleFixture,
   createF6V2ObservationArtifact,
@@ -27,6 +27,7 @@ import {
 } from "./f6-artifact-test-fixture.mjs";
 import { createF6FinalReportProjection, worstDisposition } from "./f6-final-report.mjs";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
+import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
 
@@ -355,7 +356,7 @@ function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
   }));
 }
 
-function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion } = {}) {
+function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion, optimizationVersion = "v4" } = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames, actualFieldOverrides, systemSpecificationOverrides });
   const modelInterpretation = modelInterpretationVersion === undefined
     ? undefined
@@ -363,35 +364,56 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
   const requiredMultimodal = installRequiredMultimodalV3(bundle);
   const runId = `2026-08-20T00-00-00-000Z-${worksheetNames.join("-")}`;
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+  const interactionLanguage = {
+    languageTag: "en-US",
+    uiCatalogLanguage: "en",
+    lockedAtTurnId: "turn-1",
+    source: "workflow_start",
+    fallbackUsed: false,
+  };
 
-  const result = runF6FullValidation({}, {
-    parseArgs: () => ({
+  let optimizationArtifact;
+  if (optimizationVersion === "v3") {
+    const loaded = loadF6ArtifactBundle({
       ...bundle,
-      interactionLanguage: {
-        languageTag: "en-US",
-        uiCatalogLanguage: "en",
-        lockedAtTurnId: "turn-1",
-        source: "workflow_start",
-        fallbackUsed: false,
-      },
-      modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
-    }),
-    resolveLayout: () => ({
-      artifactSetVersion: "f6-artifact-set-v3",
-      runId,
-      runRoot,
-      publishRoot: bundle.publishRoot,
-      optimizationJsonName: "Feature6-Optimization.json",
-      optimizationMdName: "Feature6-Optimization.md",
-      finalReportMdName: "Feature6-Report.md",
-      finalReportPdfName: "Feature6-Report.pdf",
-      runSummaryJsonName: "Feature6-Run-Summary.json",
-      manifestName: "manifest.json",
-    }),
-    renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
-  });
+      modelInterpretationArtifactRoot: bundle.modelInterpretationArtifactRoot,
+      modelInterpretationArtifact: bundle.modelInterpretationArtifact,
+      expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
+      requireMultimodalV3: true,
+    });
+    expect(loaded.status, JSON.stringify(loaded, null, 2)).toBe("accepted");
+    optimizationArtifact = createF6OptimizationV3(loaded.request, {
+      interactionLanguage,
+      multimodalInterpretation: loaded.modelInterpretation,
+      multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
+      optimizationTargets: loaded.optimizationTargets,
+      optimizationTargetsDecision: loaded.inputDecisions.optimizationTargets,
+    });
+  } else {
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({
+        ...bundle,
+        interactionLanguage,
+        modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
+      }),
+      resolveLayout: () => ({
+        artifactSetVersion: "f6-artifact-set-v3",
+        runId,
+        runRoot,
+        publishRoot: bundle.publishRoot,
+        optimizationJsonName: "Feature6-Optimization.json",
+        optimizationMdName: "Feature6-Optimization.md",
+        finalReportMdName: "Feature6-Report.md",
+        finalReportPdfName: "Feature6-Report.pdf",
+        runSummaryJsonName: "Feature6-Run-Summary.json",
+        manifestName: "manifest.json",
+      }),
+      renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
+    });
 
-  expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
+    expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
+    optimizationArtifact = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+  }
 
   return {
     generatedAt: "2026-08-20T00:00:00.000Z",
@@ -403,11 +425,13 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       : f5Variant === "open" || f5Variant === "open-conflict"
         ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
-    f6Optimization: f6OptimizationResultSchema.parse(readJson(path.join(runRoot, "Feature6-Optimization.json"))),
+    f6Optimization: f6ReadableOptimizationResultSchema.parse(optimizationArtifact),
     modelInterpretation: requiredMultimodal,
     ...(modelInterpretation === undefined ? {} : { legacyModelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
   };
 }
+
+const loadRealF6InputsBase = loadRealF6Inputs;
 
 function cloneF3WorksheetWithName(worksheetName, sourceWorksheet) {
   const worksheet = structuredClone(sourceWorksheet);
@@ -497,6 +521,223 @@ function addModelInterpretation(inputs, narrativeForWorksheet) {
     artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: artifactHash },
   };
   return { ...inputs, modelInterpretation };
+}
+
+function withCapability(snapshot, status) {
+  const targetCpk = snapshot.capability.targetCpk;
+  if (status === "PASS") {
+    return {
+      ...snapshot,
+      capability: {
+        ...snapshot.capability,
+        lowerCpk: targetCpk + 0.05,
+        upperCpk: targetCpk + 0.05,
+        cpk: targetCpk + 0.05,
+        yield: 0.999,
+        totalDpm: 100,
+        status: "PASS",
+      },
+    };
+  }
+  return {
+    ...snapshot,
+    capability: {
+      ...snapshot.capability,
+      lowerCpk: targetCpk - 0.2,
+      upperCpk: targetCpk + 0.02,
+      cpk: targetCpk - 0.2,
+      yield: 0.95,
+      totalDpm: 50_000,
+      status: "FAIL",
+    },
+  };
+}
+
+function expandFactorRows(baseFactors, totalRows, changedRows) {
+  const template = baseFactors[0];
+  const rows = Array.from({ length: Math.max(1, totalRows) }, (_unused, index) => ({
+    factor: {
+      ...template.factor,
+      sourceRow: template.factor.sourceRow + index,
+      factorName: `Factor-${index + 1}`,
+    },
+    nominalValue: template.nominalValue + index * 0.01,
+    lowerTolerance: template.lowerTolerance,
+    upperTolerance: template.upperTolerance,
+    mean: template.mean,
+    sigma: template.sigma,
+    contribution: Math.max(0.001, template.contribution - index * 0.01),
+  }));
+  const selectedRows = rows.map((row, index) => {
+    if (index >= changedRows) return row;
+    return {
+      ...row,
+      nominalValue: row.nominalValue + 0.005,
+      upperTolerance: row.upperTolerance + 0.01,
+      lowerTolerance: row.lowerTolerance - 0.01,
+    };
+  });
+  const factorOverrides = selectedRows
+    .filter((_row, index) => index < changedRows)
+    .map((row) => ({
+      factor: structuredClone(row.factor),
+      nominalValue: row.nominalValue,
+      lowerTolerance: row.lowerTolerance,
+      upperTolerance: row.upperTolerance,
+    }));
+  return { rows, selectedRows, factorOverrides };
+}
+
+function createDerivedSnapshot(base, {
+  scenarioId,
+  sourceStep,
+  inputScenarioId,
+  capabilityStatus,
+  factors,
+  factorOverrides,
+  systemSpecificationOverride,
+}) {
+  const updated = withCapability({
+    ...structuredClone(base),
+    scenarioId,
+    sourceStep,
+    inputScenarioId,
+    factors,
+    factorOverrides,
+    ...(systemSpecificationOverride === undefined ? {} : { systemSpecificationOverride }),
+    system: {
+      ...base.system,
+      mean: base.system.mean + (capabilityStatus === "PASS" ? 0.01 : 0.02),
+      additionalMeanShift: base.system.additionalMeanShift + (capabilityStatus === "PASS" ? 0.01 : 0.02),
+    },
+  }, capabilityStatus);
+  return updated;
+}
+
+function recomputeV4Summary(optimization) {
+  const statuses = optimization.worksheets.map((worksheet) => worksheet.selectedResult.status);
+  optimization.summary = {
+    worksheetCount: optimization.worksheets.length,
+    baselineMeetsTargetWorksheetCount: statuses.filter((status) => status === "baseline_meets_target").length,
+    optimizedWorksheetCount: statuses.filter((status) => (
+      status === "step1_centered"
+      || status === "step2_tolerance_optimized"
+      || status === "step3_specification_relaxed_pending_approval"
+    )).length,
+    noValidatedResultWorksheetCount: statuses.filter((status) => status === "no_validated_optimized_result").length,
+    clarificationRequiredWorksheetCount: optimization.worksheets.filter(({ runStatus }) => runStatus === "CLARIFICATION_REQUIRED").length,
+  };
+  optimization.runStatus = optimization.summary.clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED";
+}
+
+function configureV4Outcome(inputs, outcome, { totalFactorRows = 3, changedFactorRows = 1 } = {}) {
+  const worksheet = inputs.f6Optimization.worksheets[0];
+  const baselineResult = structuredClone(worksheet.baselineResult);
+  const { rows: baselineFactors, selectedRows, factorOverrides } = expandFactorRows(
+    baselineResult.factors,
+    totalFactorRows,
+    Math.min(changedFactorRows, totalFactorRows),
+  );
+
+  const preparedBaseline = withCapability({ ...baselineResult, factors: baselineFactors, factorOverrides: [] }, outcome === "baseline_meets_target" ? "PASS" : "FAIL");
+  worksheet.baselineResult = preparedBaseline;
+  worksheet.trigger = {
+    lowerCpk: preparedBaseline.capability.lowerCpk,
+    upperCpk: preparedBaseline.capability.upperCpk,
+    targetCpk: preparedBaseline.capability.targetCpk,
+    failedSides: [
+      ...(preparedBaseline.capability.lowerCpk < preparedBaseline.capability.targetCpk ? ["lowerCpk"] : []),
+      ...(preparedBaseline.capability.upperCpk < preparedBaseline.capability.targetCpk ? ["upperCpk"] : []),
+    ],
+  };
+
+  const step1Snapshot = createDerivedSnapshot(preparedBaseline, {
+    scenarioId: `${worksheet.worksheetName}:step1:centered`,
+    sourceStep: "meanResponseCentering",
+    inputScenarioId: preparedBaseline.scenarioId,
+    capabilityStatus: "PASS",
+    factors: selectedRows,
+    factorOverrides,
+  });
+  const step2SnapshotPass = createDerivedSnapshot(preparedBaseline, {
+    scenarioId: `${worksheet.worksheetName}:step2:optimized-pass`,
+    sourceStep: "toleranceReverseSolve",
+    inputScenarioId: preparedBaseline.scenarioId,
+    capabilityStatus: "PASS",
+    factors: selectedRows,
+    factorOverrides,
+  });
+  const step2SnapshotFail = createDerivedSnapshot(preparedBaseline, {
+    scenarioId: `${worksheet.worksheetName}:step2:optimized-fail`,
+    sourceStep: "toleranceReverseSolve",
+    inputScenarioId: preparedBaseline.scenarioId,
+    capabilityStatus: "FAIL",
+    factors: selectedRows,
+    factorOverrides,
+  });
+  const step3Snapshot = createDerivedSnapshot(step2SnapshotFail, {
+    scenarioId: `${worksheet.worksheetName}:step3:spec-relax`,
+    sourceStep: "specificationRelaxation",
+    inputScenarioId: step2SnapshotFail.scenarioId,
+    capabilityStatus: "PASS",
+    factors: selectedRows,
+    factorOverrides,
+    systemSpecificationOverride: {
+      lowerSpecLimit: step2SnapshotFail.capability.lowerSpecLimit - 0.2,
+      upperSpecLimit: step2SnapshotFail.capability.upperSpecLimit + 0.2,
+    },
+  });
+
+  if (outcome === "baseline_meets_target") {
+    worksheet.steps = [
+      { step: "meanResponseCentering", status: "NOT_NEEDED" },
+      { step: "toleranceReverseSolve", status: "NOT_NEEDED" },
+      { step: "specificationRelaxation", status: "NOT_NEEDED" },
+    ];
+    worksheet.selectedResult = { status: "baseline_meets_target", snapshot: preparedBaseline };
+    worksheet.runStatus = "COMPLETED";
+  } else if (outcome === "step1_centered") {
+    worksheet.steps = [
+      { step: "meanResponseCentering", status: "COMPLETED_TARGET_MET", result: step1Snapshot },
+      { step: "toleranceReverseSolve", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" },
+      { step: "specificationRelaxation", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" },
+    ];
+    worksheet.selectedResult = { status: "step1_centered", snapshot: step1Snapshot };
+    worksheet.runStatus = "COMPLETED";
+  } else if (outcome === "step2_tolerance_optimized") {
+    worksheet.steps = [
+      { step: "meanResponseCentering", status: "NOT_NEEDED" },
+      { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_MET", result: step2SnapshotPass },
+      { step: "specificationRelaxation", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" },
+    ];
+    worksheet.selectedResult = { status: "step2_tolerance_optimized", snapshot: step2SnapshotPass };
+    worksheet.runStatus = "COMPLETED";
+  } else if (outcome === "step3_specification_relaxed_pending_approval") {
+    worksheet.steps = [
+      { step: "meanResponseCentering", status: "NOT_NEEDED" },
+      { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_NOT_MET", result: step2SnapshotFail },
+      {
+        step: "specificationRelaxation",
+        status: "COMPLETED_TARGET_MET",
+        changeClass: "requirement_change",
+        approvalRequired: true,
+        capabilityImprovementClaim: false,
+        result: step3Snapshot,
+      },
+    ];
+    worksheet.selectedResult = { status: "step3_specification_relaxed_pending_approval", snapshot: step3Snapshot };
+    worksheet.runStatus = "COMPLETED";
+  } else {
+    worksheet.steps = [
+      { step: "meanResponseCentering", status: "NOT_NEEDED" },
+      { step: "toleranceReverseSolve", status: "COMPLETED_TARGET_NOT_MET", result: step2SnapshotFail },
+      { step: "specificationRelaxation", status: "NOT_FEASIBLE", reasonCode: "no_validated_path" },
+    ];
+    worksheet.selectedResult = { status: "no_validated_optimized_result", snapshot: step2SnapshotFail };
+    worksheet.runStatus = "COMPLETED";
+  }
+
+  recomputeV4Summary(inputs.f6Optimization);
 }
 
 describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
@@ -1122,6 +1363,11 @@ describe.skip("legacy v2 createF6FinalReportProjection final report template", (
 });
 
 describe("createF6FinalReportProjection v3", () => {
+  const loadRealF6Inputs = (options = {}) => loadRealF6InputsBase({
+    optimizationVersion: "v3",
+    ...options,
+  });
+
   it("marks ready identifier gaps as MISSING with the printable row marker", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
     const sourceRow = inputs.f2Report.worksheets[0].rows[0];
@@ -1458,7 +1704,7 @@ describe("createF6FinalReportProjection v3", () => {
 });
 
 describe("createF6FinalReportProjection v4 mixed outcomes", () => {
-  it("fails closed for required multimodal when F2 blocked and image-failed V4 outcomes coexist before Task4", () => {
+  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],
       f5Variant: "supported",
@@ -1466,8 +1712,75 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     });
     inputs.modelInterpretation = createMixedMultimodalV4(inputs);
 
-    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true }))
-      .toThrow(/multimodal v3/i);
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.reportSummary.worksheetDispositions).toEqual([
+      { worksheetName: "Analysis-A", disposition: "PASS" },
+      { worksheetName: "Analysis-B", disposition: "FAIL" },
+    ]);
+    expect(report.markdown).toContain("# TA Engineering Analysis Report");
+    expect(report.markdown).not.toContain("## Optimization Comparison");
+    expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
+    expect(report.markdown).toContain("| [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_failed): worksheet image evaluation failed. | Fail |");
+  });
+
+  it("omits the optimization comparison block for baseline PASS worksheets", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "baseline_meets_target");
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).not.toContain("## Optimization Comparison");
+    expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
+  });
+
+  it.each([
+    ["step1_centered"],
+    ["step2_tolerance_optimized"],
+    ["step3_specification_relaxed_pending_approval"],
+    ["no_validated_optimized_result"],
+  ])("renders stable V4 comparison tables for %s", (selectedStatus) => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, selectedStatus);
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const markdown = report.markdown;
+
+    expect(markdown).toContain("## Optimization Comparison");
+    expect(markdown).toContain("<!-- f6-optimization-comparison -->");
+    expect(markdown).toContain("| Metric | Raw Data | Optimized Data |");
+    expect(markdown).toContain("| Step | Status | Action | Result |");
+    expect(markdown).toContain("| Factor | Table / Row | Nominal Before | Nominal After |");
+
+    const step1Index = markdown.indexOf("| meanResponseCentering |");
+    const step2Index = markdown.indexOf("| toleranceReverseSolve |");
+    const step3Index = markdown.indexOf("| specificationRelaxation |");
+    expect(step1Index).toBeGreaterThan(-1);
+    expect(step2Index).toBeGreaterThan(step1Index);
+    expect(step3Index).toBeGreaterThan(step2Index);
+
+    if (selectedStatus === "step3_specification_relaxed_pending_approval") {
+      expect(markdown).toContain("Requirement change - engineering approval required");
+    }
+    if (selectedStatus === "no_validated_optimized_result") {
+      expect(markdown).toContain("No validated optimized result");
+      expect(markdown).toContain("| Predictive Cpk | 1.133333 | N/A |");
+      expect(markdown).not.toMatch(/\| Predictive Cpk \| 1\.133333 \| 1\./u);
+    }
+  });
+
+  it("renders only changed factors and deterministic continuation markers", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "step2_tolerance_optimized", { totalFactorRows: 20, changedFactorRows: 14 });
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const markdown = report.markdown;
+
+    expect(markdown).toContain("| Factor-1 | table-1 / 2 |");
+    expect(markdown).not.toContain("| Factor-20 | table-1 / 21 |");
+    expect(markdown).toContain("Unchanged factors: 6");
+    expect(markdown).toContain("<!-- f6-optimization-comparison continuation=\"1\" -->");
+    expect(markdown).toContain("## Optimization Comparison (Continued)");
   });
 });
 
