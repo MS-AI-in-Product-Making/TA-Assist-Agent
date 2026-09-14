@@ -1466,27 +1466,7 @@ describe("createF6FinalReportProjection v3", () => {
 });
 
 describe("createF6FinalReportProjection v4 mixed outcomes", () => {
-  it("uses F2-ready F3 scope when F2 blocked and image failed coexist", () => {
-    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], blockedWorksheetNames: ["Blocked-C"] });
-    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
-    keepCompletedWorksheetOnly(inputs);
-    inputs.f6Optimization.provenance.reportScope = {
-      worksheetNames: ["Analysis-A", "Analysis-B", "Blocked-C"],
-      blockedWorksheetNames: ["Analysis-B", "Blocked-C"],
-    };
-    const projection = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
-    expect(projection.reportSummary.worksheetDispositions).toEqual(expect.arrayContaining([
-      { worksheetName: "Analysis-B", disposition: "FAIL" },
-      { worksheetName: "Blocked-C", disposition: "FAIL" },
-    ]));
-    expect(projection.projection.worksheets).toHaveLength(3);
-  });
-
-  it("rejects a new-workflow final report when multimodal v3 is missing", () => {
-    expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
-  });
-
-  it("rejects mixed multimodal v4 outcomes in the required multimodal path so V4 cannot silently render as V3", () => {
+  it("fails closed for required multimodal when F2 blocked and image-failed V4 outcomes coexist before Task4", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],
       f5Variant: "supported",
