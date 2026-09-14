@@ -593,14 +593,6 @@ describe.skip("legacy v2 createF6FinalReportProjection policy", () => {
     expect(() => createF6FinalReportProjection({}, { requireMultimodalV3: true })).toThrow(/multimodal v3/i);
   });
 
-  it("rejects mixed multimodal v4 outcomes in the required multimodal path so V4 cannot silently render as V3", () => {
-    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], f5Variant: "supported", modelInterpretationVersion: "v2" });
-    inputs.modelInterpretation = createMixedMultimodalV4(inputs);
-
-    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true }))
-      .toThrow(/multimodal v3/i);
-  });
-
   it("renders image-plus-table context and every Factor mapping from multimodal v3", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], modelInterpretationVersion: "v2" });
     inputs.modelInterpretation = createMultimodalV3(inputs);
