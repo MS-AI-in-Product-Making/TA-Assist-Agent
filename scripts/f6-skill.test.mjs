@@ -151,7 +151,14 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Do not prompt for Analysis Context or Optimization Targets on the standard workbook path.");
     expect(internal).toContain("Omit `--analysis-context` and `--optimization-targets` unless an existing artifact entry mode explicitly supplies them.");
     expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
-    expect(internal).toContain("f6-optimization-v3");
+    expect(internal).toContain("f6-optimization-v4");
+    expect(internal).toContain("f6-sequential-optimization-policy-v2");
+    expect(internal).not.toContain("f6-sequential-optimization-policy-v1");
+    expect(internal).toContain("mean response centering before tolerance reverse solve");
+    expect(internal).toContain("specification relaxation only after tolerance cannot meet target");
+    expect(internal).toContain("OP1/OP2/OP3 are sensitivity/fallback and never selectedResult");
+    expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
+    expect(internal).toContain("f6-artifact-set-v3 remains the five-file publication contract");
     expect(internal).not.toContain("reduce_top_contributor_20");
     expect(internal).not.toContain("Confirm analysis context");
     expect(internal).not.toContain("Confirm optimization targets");
@@ -239,6 +246,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("governed proposal materializer");
     expect(internal).toContain("preview-ready pending draft");
     expect(internal).toContain("f6-top3-tolerance-policy-v1");
+    expect(internal).toContain("sensitivity/fallback");
+    expect(internal).toContain("never selectedResult");
     expect(internal).toContain("CpkL");
     expect(internal).toContain("CpkU");
     expect(internal).toContain("OP1");
@@ -285,6 +294,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Feature6-Report.md");
     expect(internal).toContain("Feature6-Report.pdf");
     expect(internal).toContain("five-file");
+    expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
     expect(internal).not.toContain("Feature6-Optimization.md");
     expect(internal).toContain("final Markdown and PDF report links");
     expect(internal).toContain("reportSummary");
