@@ -490,6 +490,22 @@ describe("validateExistingF6Artifact", () => {
     };
     worksheet.steps[2] = {
       step: "specificationRelaxation",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.selectedResult = {
+      status: "step2_tolerance_optimized",
+      snapshot: worksheet.steps[1].result,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
       status: "COMPLETED_TARGET_NOT_MET",
       changeClass: "requirement_change",
       approvalRequired: true,
