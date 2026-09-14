@@ -246,6 +246,7 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect((html.match(/class="[^"]*slide-optimization-continuation/g) ?? [])).toHaveLength(1);
+    expect(html).toContain('class="optimization-table optimization-table--factors"');
     expect(html).toMatch(/slide-optimization-continuation"[^>]*>[\s\S]*<\/section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">/u);
     expect(html.match(/class="report-content slide slide-summary"/gu)).toHaveLength(1);
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);

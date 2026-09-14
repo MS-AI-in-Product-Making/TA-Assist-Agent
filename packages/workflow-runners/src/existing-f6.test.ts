@@ -386,7 +386,11 @@ describe("validateExistingF6", () => {
     });
   });
 
-  it("rejects an unproven extra imageObservation source on current v4 run summaries", () => {
+  it.each([
+    ["imageObservation", "Feature5-Image-Observations.json"],
+    ["analysisContext", "Feature6-Analysis-Context.json"],
+    ["optimizationTargets", "Feature6-Optimization-Targets.json"],
+  ])("rejects an unproven extra %s source on current v4 run summaries", (sourceKey, artifact) => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);
     cleanup.push(bundle.root);
@@ -403,8 +407,8 @@ describe("validateExistingF6", () => {
     expect(result.status).toBe("completed");
     const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
     const summary = readJson(summaryPath);
-    summary.sources.imageObservation = {
-      artifact: "Feature5-Image-Observations.json",
+    summary.sources[sourceKey] = {
+      artifact,
       contentHash: "b".repeat(64),
     };
     writeJson(summaryPath, summary);
