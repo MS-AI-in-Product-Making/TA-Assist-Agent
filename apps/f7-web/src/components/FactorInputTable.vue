@@ -5,6 +5,12 @@ import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
+import {
+  buildConfirmedEngineeringEvidence,
+  type AssumptionResultsEngineeringEvidence,
+  type AssumptionResultsCurrentCalculationInput,
+  type DimensionChainReportProjection,
+} from "../assumption-results-pdf-evidence";
 import DimensionChainPanel from "./DimensionChainPanel.vue";
 import ResponseDistributionCurve from "./ResponseDistributionCurve.vue";
 import type { DimensionChainFactor } from "./dimension-chain";
@@ -51,6 +57,7 @@ const emit = defineEmits<{
   editSetup: [];
   setMode: [factorId: string, mode: F7SourceMode];
   openMeasurement: [factorId: string];
+  "engineering-evidence-change": [evidence: AssumptionResultsEngineeringEvidence | undefined];
 }>();
 
 interface FactorSpecificationDraft {
@@ -698,6 +705,34 @@ const f4Volume = computed(() => {
   return volume?.status === "available" ? volume.actualValue : undefined;
 });
 
+const latestDimensionChainProjection = ref<DimensionChainReportProjection | undefined>();
+
+const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {
+  const calculation = f4Calculation.value;
+  if (!calculation) return undefined;
+  return {
+    additionalMeanShift: additionalMeanShift.value,
+    calculation,
+  };
+});
+
+const engineeringEvidence = computed<AssumptionResultsEngineeringEvidence | undefined>(() => {
+  if (props.editingSetup) return undefined;
+  const chain = latestDimensionChainProjection.value;
+  if (!chain || chain.status !== "generated") return undefined;
+  const input = currentCalculationInput.value;
+  if (!input) return undefined;
+  return buildConfirmedEngineeringEvidence(props.session, chain, input);
+});
+
+watch(engineeringEvidence, (evidence) => {
+  emit("engineering-evidence-change", evidence);
+}, { immediate: true });
+
+function onReportProjectionChange(projection: DimensionChainReportProjection): void {
+  latestDimensionChainProjection.value = projection;
+}
+
 function formatFixed(value: number | undefined, digits: number): string {
   return value === undefined || !Number.isFinite(value)
     ? "—"
@@ -1299,6 +1334,7 @@ function onModeChange(factorId: string, event: Event): void {
         :editable="setupEditable && !busy"
         @reverse-all="reverseAllFactors"
         @factor-sign-change="applyFactorSigns"
+        @report-projection-change="onReportProjectionChange"
       />
       <ResponseDistributionCurve
         :calculation="f4Calculation"

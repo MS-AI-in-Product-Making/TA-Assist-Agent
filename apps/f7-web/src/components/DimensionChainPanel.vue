@@ -29,6 +29,10 @@ import {
   type DimensionChainManualLayout,
   type DimensionChainOrientation,
 } from "./dimension-chain";
+import type {
+  DimensionChainReportFactor,
+  DimensionChainReportProjection,
+} from "../assumption-results-pdf-evidence";
 
 const props = withDefaults(defineProps<{
   readonly factors: readonly DimensionChainFactor[];
@@ -45,6 +49,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   "reverse-all": [];
   "factor-sign-change": [changes: readonly { factorId: string; sign: 1 | -1 }[]];
+  "report-projection-change": [projection: DimensionChainReportProjection];
 }>();
 
 const AXIS_PADDING = 64;
@@ -100,6 +105,51 @@ const currentSignature = computed(() => props.sourceSignature ?? dimensionChainS
 const stale = computed(() => (
   generatedFactors.value !== undefined && currentSignature.value !== generatedSourceSignature.value
 ));
+
+function finiteRecord(input: Readonly<Record<string, number>>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => Number.isFinite(value)),
+  );
+}
+
+function projectionManualLayout(targetOrientation: DimensionChainOrientation) {
+  const layout = manualLayouts[targetOrientation];
+  return {
+    boundaryOffsets: finiteRecord(layout.boundaryOffsets),
+    laneOffsets: finiteRecord(layout.laneOffsets),
+    ...(Number.isFinite(layout.closureStartOffset) ? { closureStartOffset: layout.closureStartOffset } : {}),
+    ...(Number.isFinite(layout.closureEndOffset) ? { closureEndOffset: layout.closureEndOffset } : {}),
+    ...(Number.isFinite(layout.closureLaneOffset) ? { closureLaneOffset: layout.closureLaneOffset } : {}),
+  };
+}
+
+const reportProjection = computed<DimensionChainReportProjection>(() => {
+  if (!generatedFactors.value || stale.value) {
+    return {
+      status: "fallback",
+      sourceSignature: currentSignature.value,
+    };
+  }
+  return {
+    status: "generated",
+    sourceSignature: generatedSourceSignature.value,
+    orientation: orientation.value,
+    factors: generatedFactors.value.map((factor): DimensionChainReportFactor => ({
+      ...factor,
+      distribution: factor.distribution as DimensionChainReportFactor["distribution"],
+    })),
+    manualLayout: projectionManualLayout(orientation.value),
+    reversedFactorIds: generatedFactors.value
+      .map((factor) => factor.id)
+      .filter((factorId) => reversedArrowFactorIds.has(factorId)),
+    closureDirection: closureArrowReversed.value ? "end-to-start" : "start-to-end",
+  };
+});
+
+watch(reportProjection, (projection) => {
+  emit("report-projection-change", projection);
+}, { immediate: true });
+
 const geometry = computed(() => generatedGeometry.value);
 const logicalDisplaySegments = computed(() => {
   const value = geometry.value;
