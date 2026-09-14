@@ -146,7 +146,9 @@ describe("renderF6PdfHtml", () => {
     expect(html).not.toContain("fitWorksheetPages");
     expect(html).not.toContain("height:174mm");
     expect(html).not.toContain(".worksheet-section { width:calc(100% + 8mm); height:174mm; margin:-4mm; overflow:hidden;");
-    expect(html).not.toContain("overflow-wrap:anywhere");
+    expect(html).not.toContain(".factor-table td { overflow-wrap:anywhere");
+    expect(html).not.toContain(".worksheet-section { overflow-wrap:anywhere");
+    expect(html).toContain(".optimization-table--path td { overflow-wrap:anywhere; word-break:break-word; }");
   });
 
   it("accepts validated inline images without changing report semantics", () => {
