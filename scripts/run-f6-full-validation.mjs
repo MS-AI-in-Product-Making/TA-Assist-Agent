@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runF6Optimization } from "../packages/workflow-runners/dist/index.js";
 import { createTypedError } from "../packages/contracts/dist/index.js";
-import { createF6OptimizationV3 } from "../packages/workbook-catalog/dist/index.js";
+import { createF6OptimizationV4 } from "../packages/workbook-catalog/dist/index.js";
 import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
@@ -69,7 +69,7 @@ function normalizeDependencies(overrides = {}) {
       process.env.AI_TVA_F6_PUBLISH_ROOT,
     )),
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
-    createOptimization: overrides.createOptimization ?? createF6OptimizationV3,
+    createOptimization: overrides.createOptimization ?? createF6OptimizationV4,
     createFinalReport: overrides.createFinalReport ?? createF6FinalReportProjection,
     renderFinalReportPdf: overrides.renderFinalReportPdf,
     mkdir: overrides.mkdir ?? mkdirSync,
