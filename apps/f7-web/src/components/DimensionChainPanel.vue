@@ -123,6 +123,20 @@ function projectionManualLayout(targetOrientation: DimensionChainOrientation) {
   };
 }
 
+function projectionFactors(factors: readonly DimensionChainFactor[]): readonly DimensionChainReportFactor[] {
+  return factors.map((factor): DimensionChainReportFactor => ({
+    id: factor.id,
+    itemNumber: factor.itemNumber,
+    name: factor.name,
+    designNominal: factor.designNominal,
+    upperTolerance: factor.upperTolerance,
+    lowerTolerance: factor.lowerTolerance,
+    longTermSafetyFactor: factor.longTermSafetyFactor,
+    sigmaLevel: factor.sigmaLevel,
+    distribution: factor.distribution as DimensionChainReportFactor["distribution"],
+  }));
+}
+
 const reportProjection = computed<DimensionChainReportProjection>(() => {
   if (!generatedFactors.value || stale.value) {
     return {
@@ -134,10 +148,7 @@ const reportProjection = computed<DimensionChainReportProjection>(() => {
     status: "generated",
     sourceSignature: generatedSourceSignature.value,
     orientation: orientation.value,
-    factors: generatedFactors.value.map((factor): DimensionChainReportFactor => ({
-      ...factor,
-      distribution: factor.distribution as DimensionChainReportFactor["distribution"],
-    })),
+    factors: projectionFactors(generatedFactors.value),
     manualLayout: projectionManualLayout(orientation.value),
     reversedFactorIds: generatedFactors.value
       .map((factor) => factor.id)

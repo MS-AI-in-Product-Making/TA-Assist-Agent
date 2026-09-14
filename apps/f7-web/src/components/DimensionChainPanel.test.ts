@@ -237,6 +237,80 @@ describe("DimensionChainPanel", () => {
     });
   });
 
+  it("resets to generated projection with exact report keys after stale fallback update", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+
+    await wrapper.setProps({ factors: [{ ...factors[0]!, designNominal: 7 }, ...factors.slice(1)] });
+    const staleProjection = wrapper.emitted("report-projection-change")?.at(-1)?.[0] as Record<string, unknown>;
+    expect(staleProjection).toEqual({
+      status: "fallback",
+      sourceSignature: dimensionChainSignature([{ ...factors[0]!, designNominal: 7 }, ...factors.slice(1)]),
+    });
+
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const latest = wrapper.emitted("report-projection-change")?.at(-1)?.[0] as Record<string, unknown>;
+
+    expect(latest).toEqual({
+      status: "generated",
+      sourceSignature: dimensionChainSignature([{ ...factors[0]!, designNominal: 7 }, ...factors.slice(1)]),
+      orientation: "vertical",
+      factors: [
+        {
+          id: "factor-1",
+          itemNumber: 1,
+          name: "Factor 1",
+          designNominal: 7,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        },
+        {
+          id: "factor-2",
+          itemNumber: 2,
+          name: "Factor 2",
+          designNominal: -1,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        },
+        {
+          id: "factor-3",
+          itemNumber: 3,
+          name: "Factor 3",
+          designNominal: 0.5,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        },
+      ],
+      manualLayout: {
+        boundaryOffsets: {},
+        laneOffsets: {},
+      },
+      reversedFactorIds: [],
+      closureDirection: "start-to-end",
+    });
+
+    expect(latest).not.toHaveProperty("viewX");
+    expect(latest).not.toHaveProperty("viewY");
+    expect(latest).not.toHaveProperty("viewZoom");
+    expect(latest).not.toHaveProperty("selectionMode");
+    expect(latest).not.toHaveProperty("backgroundUrl");
+    expect(latest).not.toHaveProperty("toolState");
+    expect(latest).not.toHaveProperty("blob");
+  });
+
   it("enables generation and orientation only while Factor Setup is editable", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: false },

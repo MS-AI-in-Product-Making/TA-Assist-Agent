@@ -705,7 +705,29 @@ const f4Volume = computed(() => {
   return volume?.status === "available" ? volume.actualValue : undefined;
 });
 
-const latestDimensionChainProjection = ref<DimensionChainReportProjection | undefined>();
+interface DimensionChainProjectionCacheEntry {
+  readonly sessionKey: string;
+  readonly projection: DimensionChainReportProjection;
+}
+
+const currentSessionKey = computed(() => JSON.stringify({
+  sessionId: props.session.sessionId,
+  workbookContentHash: props.session.workbook.workbookContentHash,
+  workbookFileName: props.session.workbook.fileName,
+  worksheetNames: props.session.selectedWorksheetNames,
+}));
+
+const latestDimensionChainProjection = ref<DimensionChainProjectionCacheEntry | undefined>();
+
+const currentSessionProjection = computed<DimensionChainReportProjection | undefined>(() => {
+  const cached = latestDimensionChainProjection.value;
+  return cached?.sessionKey === currentSessionKey.value ? cached.projection : undefined;
+});
+
+watch(currentSessionKey, (nextKey, previousKey) => {
+  if (previousKey === undefined || previousKey === nextKey) return;
+  latestDimensionChainProjection.value = undefined;
+});
 
 const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {
   const calculation = f4Calculation.value;
@@ -718,8 +740,8 @@ const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInpu
 
 const engineeringEvidence = computed<AssumptionResultsEngineeringEvidence | undefined>(() => {
   if (props.editingSetup) return undefined;
-  const chain = latestDimensionChainProjection.value;
-  if (!chain || chain.status !== "generated") return undefined;
+  const chain = currentSessionProjection.value;
+  if (!chain) return undefined;
   const input = currentCalculationInput.value;
   if (!input) return undefined;
   return buildConfirmedEngineeringEvidence(props.session, chain, input);
@@ -730,7 +752,11 @@ watch(engineeringEvidence, (evidence) => {
 }, { immediate: true });
 
 function onReportProjectionChange(projection: DimensionChainReportProjection): void {
-  latestDimensionChainProjection.value = projection;
+  if (projection.sourceSignature !== dimensionChainSourceSignature.value) return;
+  latestDimensionChainProjection.value = {
+    sessionKey: currentSessionKey.value,
+    projection,
+  };
 }
 
 function formatFixed(value: number | undefined, digits: number): string {

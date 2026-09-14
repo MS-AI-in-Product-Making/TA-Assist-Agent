@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import type { F7SessionSnapshot } from "../api/f7-client";
+import type { DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
 import FactorInputTable from "./FactorInputTable.vue";
 
 const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
@@ -116,6 +117,39 @@ function createSession(overrides: Partial<F7SessionSnapshot>): F7SessionSnapshot
   };
 }
 
+function projection(status: "generated" | "fallback", sourceSignature: string): DimensionChainReportProjection {
+  if (status === "fallback") {
+    return {
+      status,
+      sourceSignature,
+    };
+  }
+  return {
+    status,
+    sourceSignature,
+    orientation: "horizontal",
+    factors: [
+      {
+        id: HASH_B,
+        itemNumber: 1,
+        name: "Factor A",
+        designNominal: 1,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+      },
+    ],
+    manualLayout: {
+      boundaryOffsets: {},
+      laneOffsets: {},
+    },
+    reversedFactorIds: [],
+    closureDirection: "start-to-end",
+  };
+}
+
 describe("FactorInputTable engineering evidence event", () => {
   it("emits undefined while setup is editable", () => {
     const wrapper = mount(FactorInputTable, {
@@ -156,14 +190,19 @@ describe("FactorInputTable engineering evidence event", () => {
       attachTo: document.body,
     });
 
-    const emitted = wrapper.emitted("engineering-evidence-change");
-    expect(emitted).toHaveLength(1);
-    expect(emitted?.[0]?.[0]).toBeUndefined();
-
     const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const sourceSignature = chain.props("sourceSignature") as string;
+    const emitted = wrapper.emitted("engineering-evidence-change");
+    const initialEvidence = emitted?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(initialEvidence).toBeTruthy();
+    expect(initialEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature,
+    });
+
     await chain.vm.$emit("report-projection-change", {
       status: "generated",
-      sourceSignature: "signature-1",
+      sourceSignature,
       orientation: "horizontal",
       factors: [
         {
@@ -191,7 +230,7 @@ describe("FactorInputTable engineering evidence event", () => {
     expect(latest).toBeTruthy();
     expect(latest?.dimensionChain).toEqual(expect.objectContaining({
       status: "generated",
-      sourceSignature: "signature-1",
+      sourceSignature,
       orientation: "horizontal",
     }));
   });
@@ -238,5 +277,121 @@ describe("FactorInputTable engineering evidence event", () => {
 
     const after = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
     expect(after).toBeGreaterThan(before);
+  });
+
+  it("builds engineering evidence from fallback chain for initial, stale, and reset fallback states", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry" }),
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    await wrapper.vm.$nextTick();
+    const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+
+    const currentSourceSignature = chain.props("sourceSignature") as string;
+    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
+    await wrapper.vm.$nextTick();
+    const initialFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(initialFallbackEvidence).toBeTruthy();
+    expect(initialFallbackEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: currentSourceSignature,
+    });
+
+    await chain.vm.$emit("report-projection-change", projection("generated", currentSourceSignature));
+    await wrapper.vm.$nextTick();
+    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
+    await wrapper.vm.$nextTick();
+    const staleFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(staleFallbackEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: currentSourceSignature,
+    });
+
+    await wrapper.setProps({
+      session: createSession({
+        status: "measurement_entry",
+        factors: [
+          {
+            ...createSession({}).factors[0]!,
+            setup: createSession({}).factors[0]!.setup,
+            evidence: createSession({}).factors[0]!.evidence,
+          },
+        ],
+      }),
+    });
+    await wrapper.vm.$nextTick();
+    const resetChain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const resetSourceSignature = resetChain.props("sourceSignature") as string;
+    await resetChain.vm.$emit("report-projection-change", projection("fallback", resetSourceSignature));
+    await wrapper.vm.$nextTick();
+    const resetFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(resetFallbackEvidence).toBeTruthy();
+    expect(resetFallbackEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: resetSourceSignature,
+    });
+  });
+
+  it("clears on session replacement and only consumes chain projection that matches current session", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry", sessionId: "session-a" }),
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    let chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    await chain.vm.$emit("report-projection-change", projection("generated", "signature-a"));
+    await wrapper.vm.$nextTick();
+    const beforeReplacement = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(beforeReplacement).toBeTruthy();
+
+    await wrapper.setProps({
+      session: createSession({
+        status: "measurement_entry",
+        sessionId: "session-b",
+        workbook: {
+          fileName: "replacement.xlsx",
+          workbookContentHash: HASH_A,
+        },
+      }),
+    });
+    await wrapper.vm.$nextTick();
+    chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+
+    const afterReplacement = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];
+    expect(afterReplacement).toBeUndefined();
+
+    await chain.vm.$emit("report-projection-change", projection("generated", "signature-a"));
+    await wrapper.vm.$nextTick();
+    const oldProjectionEmission = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];
+    expect(oldProjectionEmission).toBeUndefined();
+
+    const currentSourceSignature = chain.props("sourceSignature") as string;
+    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
+    await wrapper.vm.$nextTick();
+    const currentProjectionEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(currentProjectionEvidence).toBeTruthy();
+    expect(currentProjectionEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: currentSourceSignature,
+    });
+
+    const beforeShiftChange = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    await wrapper.get("#additional-mean-shift").setValue("0.25");
+    await wrapper.vm.$nextTick();
+    const afterShiftChange = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    expect(afterShiftChange).toBeGreaterThan(beforeShiftChange);
+    const afterShiftEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(afterShiftEvidence).toBeTruthy();
+    expect(afterShiftEvidence?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: currentSourceSignature,
+    });
   });
 });
