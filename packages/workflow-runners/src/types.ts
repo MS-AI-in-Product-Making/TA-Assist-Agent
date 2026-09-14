@@ -14,7 +14,7 @@ import type {
   F5DataInterpretationResult,
   F5ImageObservationArtifact,
   F6InputDecision,
-  F6OptimizationResultV3,
+  F6OptimizationResultV4,
   TypedError,
   WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
@@ -177,7 +177,7 @@ export interface F6OptimizationRequest {
   readonly f4ArtifactRoot: string;
   readonly f5ArtifactRoot: string;
   readonly selectedWorksheetNames: readonly string[];
-  readonly interactionLanguage: F6OptimizationResultV3["interactionLanguage"];
+  readonly interactionLanguage: F6OptimizationResultV4["interactionLanguage"];
   readonly supplierCapabilityPath?: string;
   readonly datumStrategyPath?: string;
   readonly costPath?: string;
@@ -200,14 +200,14 @@ export interface F6OptimizationResult {
   readonly finalReportPdfPath?: string;
   readonly runSummaryPath?: string;
   readonly manifestPath?: string;
-  readonly optimization?: F6OptimizationResultV3;
+  readonly optimization?: F6OptimizationResultV4;
   readonly finalReportProjection?: unknown;
   readonly inputDecisions?: {
     readonly analysisContext: F6InputDecision;
     readonly optimizationTargets: F6InputDecision;
     readonly modelInterpretation: F6InputDecision;
   };
-  readonly summary?: F6OptimizationResultV3["summary"];
+  readonly summary?: F6OptimizationResultV4["summary"];
 }
 
 export interface ExistingF6ValidationRequest {

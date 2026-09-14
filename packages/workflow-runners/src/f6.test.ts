@@ -313,7 +313,7 @@ describe("runF6Optimization", () => {
     expect(createFinalReport).not.toHaveBeenCalled();
   });
 
-  it("rejects a v2 optimizer result before rendering or publishing the five-file output set", () => {
+  it("rejects a v3 optimizer result before rendering or publishing the five-file output set", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-runner-version-gate-"));
     const runRoot = path.join(root, "publish", "f6-runs", "run-1");
     const createFinalReport = vi.fn();
@@ -330,7 +330,7 @@ describe("runF6Optimization", () => {
     }, context(), {
       resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({ status: "accepted", request: {}, f2Report: { artifactRoot: "f1" }, f3Report: {}, f4Report: {}, f5Report: {}, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
-      createOptimization: vi.fn(() => ({ optimizationVersion: "f6-optimization-v2", runStatus: "COMPLETED", summary: {} }) as any),
+      createOptimization: vi.fn(optimizationV3),
       createFinalReport,
       renderOptimization,
     });

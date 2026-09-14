@@ -14,9 +14,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV4Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
 import { renderF6PdfSync } from "@ai-assist/product-export";
-import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
+import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
@@ -36,7 +36,7 @@ interface F6Layout {
 export interface F6Dependencies {
   readonly resolveOutputLayout?: (request: F6OptimizationRequest, context: RunContext) => F6Layout;
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
-  readonly createOptimization?: typeof createF6OptimizationV3;
+  readonly createOptimization?: typeof createF6OptimizationV4;
   readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
   readonly renderFinalReportPdf?: typeof renderF6PdfSync;
   readonly mkdir?: typeof mkdirSync;
@@ -328,7 +328,7 @@ export function runF6Optimization(
 ): F6OptimizationResult {
   const resolveOutputLayout = dependencies.resolveOutputLayout;
   const loadBundle = dependencies.loadBundle;
-  const createOptimization = dependencies.createOptimization ?? createF6OptimizationV3;
+  const createOptimization = dependencies.createOptimization ?? createF6OptimizationV4;
   const createFinalReport = dependencies.createFinalReport;
   const renderFinalReportPdf = dependencies.renderFinalReportPdf ?? renderF6PdfSync;
   const mkdir = dependencies.mkdir ?? mkdirSync;
@@ -397,8 +397,8 @@ export function runF6Optimization(
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
       optimizationTargetsDecision: inputDecisions.optimizationTargets,
     });
-    const parsedOptimization = f6OptimizationResultV3Schema.safeParse(optimizationCandidate);
-    if (!parsedOptimization.success) throw new Error("Feature 6 optimizer must emit a governed v3 result.");
+    const parsedOptimization = f6OptimizationResultV4Schema.safeParse(optimizationCandidate);
+    if (!parsedOptimization.success) throw new Error("Feature 6 optimizer must emit a governed v4 result.");
     const optimization = parsedOptimization.data;
 
     failureStage = "report";
