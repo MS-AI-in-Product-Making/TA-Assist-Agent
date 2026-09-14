@@ -250,6 +250,37 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(4);
   });
 
+  it("closes optimization slide wrappers in exact order before continuation and next worksheet", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "<!-- f6-optimization-comparison -->",
+      "## Optimization Comparison",
+      "",
+      "| Metric | Raw Data | Optimized Data |",
+      "|---|---:|---:|",
+      "| Predictive Cpk | 0.740000 | 1.333000 |",
+      "",
+      "<!-- f6-optimization-comparison continuation=\"1\" -->",
+      "## Optimization Comparison (Continued)",
+      "",
+      "| Factor | Table / Row | Nominal Before | Nominal After |",
+      "|---|---|---:|---:|",
+      "| Factor A | Main / 12 | 0.000 (+0.100 / -0.100) | 0.000 (+0.080 / -0.080) |",
+      "",
+      "# 3-2 Worksheet: Analysis-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain('</section></div></section><section class="optimization-section slide slide-optimization slide-optimization-continuation">');
+    expect(html).toContain('</section></div></section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">');
+  });
+
   it("renders the Task 3 complete Factor table with hidden missing markers preserved", () => {
     const markdown = [
       "# 3-1 Worksheet: Analysis-A",
@@ -383,6 +414,31 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("97.3&nbsp;%");
     expect(html).toContain("DPM 2.65 × 10^4");
     expect(html).not.toContain("0.045069 mm");
+  });
+
+  it("keeps optimization comparison values verbatim while preserving global formatting elsewhere", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "- Mean Response: -0.050000 mm",
+      "",
+      "<!-- f6-optimization-comparison -->",
+      "## Optimization Comparison",
+      "",
+      "| Metric | Raw Data | Optimized Data |",
+      "|---|---:|---:|",
+      "| Mean Offset | 1.234567 mm | 0.999999 mm |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("-0.0500&nbsp;mm");
+    expect(html).toContain("1.234567 mm");
+    expect(html).toContain("0.999999 mm");
+    expect(html).not.toContain("1.23&nbsp;mm");
+    expect(html).not.toContain("1.00&nbsp;mm");
   });
 
   it("fails graph values closed instead of treating unsafe or unavailable evidence as zero", () => {

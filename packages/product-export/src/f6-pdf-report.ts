@@ -63,8 +63,14 @@ function formatReportHtml(value: string): string {
     )
     .replaceAll("Capability: non_f0_process_category", '<span class="guidance guidance--neutral">Not covered</span>')
     .replaceAll("tighten_tolerance", "Tighten tolerance");
-  return simplified.split(/(<[^>]*>)/gu)
+  const formatOutsideOptimizationSlides = (fragment: string): string => fragment
+    .split(/(<[^>]*>)/gu)
     .map((part) => part.startsWith("<") ? part : formatReportText(part))
+    .join("");
+  const optimizationSectionPattern = /(<section class="optimization-section slide slide-optimization(?: slide-optimization-continuation)?">[\s\S]*?<\/section><\/div><\/section>)/gu;
+  return simplified
+    .split(optimizationSectionPattern)
+    .map((part) => part.startsWith('<section class="optimization-section slide slide-optimization') ? part : formatOutsideOptimizationSlides(part))
     .join("");
 }
 
@@ -215,7 +221,7 @@ class F6PdfRenderer extends Renderer {
     }
     if (this.section === "optimization" || this.section === "optimization-continuation") {
       this.section = "summary";
-      return "</div></section>";
+      return "</section></div></section>";
     }
     return "</section>";
   }
@@ -546,10 +552,10 @@ export function renderF6PdfHtml(input: F6PdfHtmlInput): string {
   if (!/^[a-f0-9]{64}$/.test(input.sourceHash)) throw new Error("F6 PDF source hash must be a SHA-256 digest.");
   if (input.markdown.trim().length === 0) throw new Error("F6 PDF source Markdown must not be empty.");
   const renderer = new F6PdfRenderer(input.inlineImages ?? new Map());
-  const content = formatReportHtml(marked.parse(input.markdown, { async: false, renderer }));
-  const closingSection = renderer.finishContent();
+  const parsedContent = marked.parse(input.markdown, { async: false, renderer });
+  const content = formatReportHtml(`${parsedContent}${renderer.finishContent()}`);
   const base = input.baseHref === undefined ? "" : `<base href="${escapeHtml(input.baseHref)}">`;
-  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}${closingSection}</main></body></html>`;
+  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}</main></body></html>`;
 }
 
 export function f6PdfImageLinks(markdown: string): readonly string[] {
