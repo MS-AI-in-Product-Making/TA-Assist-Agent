@@ -8,6 +8,7 @@ import {
   f6OptimizationRequestSchema,
   f6OptimizationResultV2Schema,
   f6OptimizationResultV3Schema,
+  f6OptimizationResultV4Schema,
   f6OptimizationTargetsSchema,
   type CalculationCompletedResult,
   type CalculationFactorResult,
@@ -23,6 +24,7 @@ import {
   type F6LegacyOptimizationResult,
   type F6OptimizationResultV2,
   type F6OptimizationResultV3,
+  type F6OptimizationResultV4,
   type F6OptimizationTargets,
   type F6Option,
   type F6OptionV2,
@@ -44,11 +46,13 @@ import {
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import {
   createReverseSolveResult,
+  F6SolverError,
   scaleToleranceBandAroundCenter,
   selectTopContributors,
   solveCenteringShift,
   solveSingleFactorTolerance,
   solveOneSidedSpecificationLimits,
+  solveGuardedTargetRssSigma,
   solveTargetRssSigma,
   solveTopNCombinedTolerance,
 } from "./f6-solver.js";
@@ -62,6 +66,14 @@ interface OptimizationDependencies {
 }
 
 export interface F6OptimizationV3Inputs {
+  readonly interactionLanguage: InteractionLanguage;
+  readonly multimodalInterpretation: F5MultimodalArtifactV3 | F5MultimodalArtifactV4;
+  readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
+  readonly optimizationTargets?: F6OptimizationTargets;
+  readonly optimizationTargetsDecision?: F6InputDecision;
+}
+
+export interface F6OptimizationV4Inputs {
   readonly interactionLanguage: InteractionLanguage;
   readonly multimodalInterpretation: F5MultimodalArtifactV3 | F5MultimodalArtifactV4;
   readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
@@ -1692,6 +1704,529 @@ export function createF6OptimizationV3(
     featureId: "F6",
     optimizationVersion: "f6-optimization-v3",
     sequentialPolicyId: "f6-sequential-optimization-policy-v1",
+    interactionLanguage: inputs.interactionLanguage,
+    runStatus: summary.clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED",
+    workbook: request.workbook,
+    worksheets,
+    summary,
+    provenance: {
+      f2Reference: artifactReference(request.f2Reference),
+      f3Reference: artifactReference(request.f3Reference),
+      f4Reference: artifactReference(request.f4Reference),
+      f5Reference: artifactReference(request.f5Reference),
+      multimodalReference: artifactReference(inputs.multimodalReference),
+      reportScope: structuredClone(request.reportScope),
+    },
+  }));
+}
+
+type V4Worksheet = F6OptimizationResultV4["worksheets"][number];
+type V4Snapshot = V4Worksheet["baselineResult"];
+type V4Step1 = V4Worksheet["steps"][0];
+type V4Step2 = V4Worksheet["steps"][1];
+type V4Step3 = V4Worksheet["steps"][2];
+type V4Sensitivity = V4Worksheet["sensitivityScenarios"][number];
+
+function snapshotV4(
+  request: F6OptimizationRequest,
+  baseline: CalculationCompletedResult,
+  calculation: CalculationCompletedResult,
+  scenarioId: string,
+  sourceStep: V4Snapshot["sourceStep"],
+  inputScenarioId: string | null,
+  factorOverrides: V4Snapshot["factorOverrides"],
+  systemSpecificationOverride?: V4Snapshot["systemSpecificationOverride"],
+): V4Snapshot {
+  return {
+    scenarioId,
+    sourceStep,
+    inputScenarioId,
+    calculationVersion: "excel-ta-v1",
+    calculationReference: artifactReference(request.f4Reference),
+    baselineIdentity: inputBaselineIdentity(baseline),
+    system: {
+      designNominal: calculation.system.designNominal,
+      mean: calculation.system.mean,
+      additionalMeanShift: calculation.system.additionalMeanShift,
+      rssSigma: calculation.system.rssSigma,
+      worstCaseLower: calculation.system.worstCaseLower,
+      worstCaseUpper: calculation.system.worstCaseUpper,
+    },
+    capability: {
+      lowerSpecLimit: calculation.capability.lowerSpecLimit,
+      upperSpecLimit: calculation.capability.upperSpecLimit,
+      targetCpk: calculation.capability.targetCpk,
+      lowerCpk: calculation.capability.lowerCpk,
+      upperCpk: calculation.capability.upperCpk,
+      cpk: calculation.capability.cpk,
+      yield: calculation.capability.yield,
+      totalDpm: calculation.capability.totalDpm,
+      status: calculation.capability.status,
+    },
+    factors: calculation.factors.map((factor) => ({
+      factor: factorIdentity(factor),
+      nominalValue: factor.input.nominalValue,
+      lowerTolerance: factor.input.lowerTolerance,
+      upperTolerance: factor.input.upperTolerance,
+      mean: factor.mean,
+      sigma: factor.sigma,
+      contribution: factor.contribution,
+    })),
+    factorOverrides,
+    ...(systemSpecificationOverride === undefined ? {} : { systemSpecificationOverride }),
+    formulaReferences: calculation.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
+  };
+}
+
+function factorSnapshotKey(factor: { readonly factor: F6FactorIdentity }): string {
+  return `${factor.factor.worksheetName}\u0000${factor.factor.tableId}\u0000${factor.factor.sourceRow}`;
+}
+
+function requestFromSnapshot(
+  baselineRequest: CalculationRequest,
+  snapshot: V4Snapshot,
+): CalculationRequest {
+  const request = structuredClone(baselineRequest);
+  request.scenarioOverrides = [];
+  request.systemSpecification.designNominal = snapshot.system.designNominal;
+  request.systemSpecification.lowerSpecLimit = snapshot.capability.lowerSpecLimit;
+  request.systemSpecification.upperSpecLimit = snapshot.capability.upperSpecLimit;
+  request.systemSpecification.targetCpk = snapshot.capability.targetCpk;
+  request.systemSpecification.additionalMeanShift = snapshot.system.additionalMeanShift;
+
+  const factorBySource = new Map(snapshot.factors.map((factor) => [factorSnapshotKey(factor), factor]));
+  request.worksheetAnalysisAssets.worksheets.forEach((worksheet) => {
+    worksheet.factorTables.forEach((table) => {
+      table.rows.forEach((row) => {
+        const factor = factorBySource.get(`${worksheet.worksheetName}\u0000${table.tableId}\u0000${row.sourceRow}`);
+        if (factor === undefined) {
+          return;
+        }
+        row.fields.nominalValue.numericValue = factor.nominalValue;
+        row.fields.nominalValue.rawText = String(factor.nominalValue);
+        row.fields.lowerTolerance.numericValue = factor.lowerTolerance;
+        row.fields.lowerTolerance.rawText = String(factor.lowerTolerance);
+        row.fields.upperTolerance.numericValue = factor.upperTolerance;
+        row.fields.upperTolerance.rawText = String(factor.upperTolerance);
+      });
+    });
+  });
+  return request;
+}
+
+function verifyV4OptimizationTargets(
+  request: F6OptimizationRequest,
+  inputs: F6OptimizationV4Inputs,
+): ReadonlyMap<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]> {
+  const decision = inputs.optimizationTargetsDecision ?? { outcome: "NOT_PROVIDED" };
+  if ((inputs.optimizationTargets !== undefined) !== authorizedDecision(decision)) {
+    throw new Error("Optimization Targets decision does not match the provided artifact.");
+  }
+  if (inputs.optimizationTargets === undefined) {
+    return new Map<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]>();
+  }
+  const targets = f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
+  if (targets.workbookContentHash !== request.workbook.contentHash) {
+    throw new Error("Optimization Targets workbook identity does not match the F6 request.");
+  }
+  const worksheetMap = new Map<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]>();
+  targets.worksheets.forEach((targetWorksheet) => {
+    const worksheet = request.worksheets.find((candidate) => candidate.worksheetName === targetWorksheet.worksheetName
+      && candidate.baselineCalculation.worksheetSelection.tableId === targetWorksheet.tableId);
+    if (worksheet === undefined || !equivalent(targetWorksheet.baselineIdentity, inputBaselineIdentity(worksheet.baselineCalculation))) {
+      throw new Error("Optimization Targets baseline identity does not match the governed F4 baseline.");
+    }
+    worksheetMap.set(`${targetWorksheet.worksheetName}\u0000${targetWorksheet.tableId}`, targetWorksheet.targets);
+  });
+  return worksheetMap;
+}
+
+function completedScenarioCalculation(
+  calculation: CalculationCompletedResult,
+  scenarioId: string,
+): CalculationCompletedResult {
+  const scenario = calculation.scenarios.find((entry) => entry.scenarioId === scenarioId);
+  if (scenario === undefined) {
+    throw new Error("controlled scenario result missing");
+  }
+  return scenario.calculation;
+}
+
+function buildV4SensitivityScenarios(
+  request: F6OptimizationRequest,
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
+  calculateScenario: typeof calculateF6Scenario,
+): V4Worksheet["sensitivityScenarios"] {
+  const baseline = worksheet.baselineCalculation;
+  const selectedFactors = selectTopContributors(baseline.factors, Math.min(3, baseline.factors.length));
+  const failedSides = [
+    ...(baseline.capability.lowerCpk < baseline.capability.targetCpk ? ["lowerCpk" as const] : []),
+    ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upperCpk" as const] : []),
+  ];
+  const baselineMetrics = metricsV2(baseline);
+
+  const scenarios = BUILT_IN_TOP3_OPTIONS.map(({ optionCode, ratios }) => {
+    const reductions = selectedFactors.map((factor, index) => ({
+      factor: factorIdentity(factor),
+      rank: index + 1,
+      reductionRatio: ratios[index]!,
+      scale: 1 - ratios[index]!,
+      baselineLowerTolerance: factor.input.lowerTolerance,
+      baselineUpperTolerance: factor.input.upperTolerance,
+    }));
+    const reductionRatios = reductions.map(({ reductionRatio }) => reductionRatio);
+    const optionScenarioId = `${worksheet.worksheetName}:v4-sensitivity:${optionCode}`;
+    try {
+      const overrides = selectedFactors.map((factor, index) => scaledOverride(factor, 1 - ratios[index]!));
+      const calculation = calculateScenario({
+        baselineRequest,
+        scenario: { scenarioId: optionScenarioId, optionKind: "requirement_change", factorOverrides: overrides },
+      });
+      const scenarioResult = completedScenarioCalculation(calculation, optionScenarioId);
+      const factorOverrides = overrides.map((override, index) => ({
+        factor: factorIdentity(selectedFactors[index]!),
+        lowerTolerance: override.lowerTolerance,
+        upperTolerance: override.upperTolerance,
+      }));
+      const completed: V4Sensitivity = {
+        optionCode,
+        status: "completed",
+        reductionRatios,
+        reductions,
+        baselineMetrics,
+        resultMetrics: metricsV2(scenarioResult),
+        scenarioEvidence: {
+          targetId: `f6-top3-tolerance-policy-v1:${optionCode}`,
+          baselineIdentity: inputBaselineIdentity(baseline),
+          factorOverrides,
+          calculationReference: artifactReference(request.f4Reference),
+          formulaReferences: scenarioResult.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
+        },
+      };
+      return completed;
+    } catch {
+      const failed: V4Sensitivity = {
+        optionCode,
+        status: "calculation_failed",
+        reductionRatios,
+        reductions,
+        reasonCode: "built_in_calculation_failed",
+        baselineMetrics,
+        calculationReference: artifactReference(request.f4Reference),
+      };
+      return failed;
+    }
+  }) as [V4Sensitivity, V4Sensitivity, V4Sensitivity];
+
+  if (failedSides.length === 0 && scenarios.length !== 3) {
+    throw new Error("V4 sensitivity scenarios must contain OP1, OP2, and OP3.");
+  }
+  return scenarios;
+}
+
+export function createF6OptimizationV4(
+  input: unknown,
+  inputs: F6OptimizationV4Inputs,
+  dependencies: OptimizationDependencies = {},
+): F6OptimizationResultV4 {
+  const request = f6OptimizationRequestSchema.parse(input);
+  verifiedMultimodalWorksheets(request, inputs.multimodalInterpretation);
+  const targetsByWorksheet = verifyV4OptimizationTargets(request, inputs);
+  const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
+  const baselineRequests = request.worksheets.map((worksheet) =>
+    verifiedBaselineRequest(worksheet.baselineCalculationRequest, worksheet.baselineCalculation));
+
+  const worksheets: V4Worksheet[] = request.worksheets.map((worksheet, index) => {
+    const baseline = worksheet.baselineCalculation;
+    const baselineRequest = baselineRequests[index]!;
+    const baselineSnapshot = snapshotV4(
+      request,
+      baseline,
+      baseline,
+      `${worksheet.worksheetName}:baseline`,
+      "baseline",
+      null,
+      [],
+    );
+    const trigger = {
+      lowerCpk: baseline.capability.lowerCpk,
+      upperCpk: baseline.capability.upperCpk,
+      targetCpk: baseline.capability.targetCpk,
+      failedSides: [
+        ...(baseline.capability.lowerCpk < baseline.capability.targetCpk ? ["lowerCpk" as const] : []),
+        ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upperCpk" as const] : []),
+      ],
+    };
+
+    let step1: V4Step1;
+    let step2: V4Step2;
+    let step3: V4Step3;
+    let selectedResult: V4Worksheet["selectedResult"];
+    let lastValidSnapshot: V4Snapshot = baselineSnapshot;
+
+    const worksheetTargets = targetsByWorksheet.get(`${worksheet.worksheetName}\u0000${worksheet.baselineCalculation.worksheetSelection.tableId}`) ?? [];
+
+    if (baseline.capability.status === "PASS") {
+      step1 = { step: "meanResponseCentering", status: "NOT_NEEDED" };
+      step2 = { step: "toleranceReverseSolve", status: "NOT_NEEDED" };
+      step3 = { step: "specificationRelaxation", status: "NOT_NEEDED" };
+      selectedResult = { status: "baseline_meets_target", snapshot: baselineSnapshot };
+    } else {
+      const systemMeanShiftTarget = worksheetTargets
+        .filter((target) => target.targetType === "system_mean_shift")
+        .sort((left, right) => left.targetId.localeCompare(right.targetId))[0];
+      const hasFactorNominalTarget = worksheetTargets.some((target) => target.targetType === "factor_nominal");
+      if (systemMeanShiftTarget !== undefined) {
+        try {
+          const additionalMeanShift = "targetMean" in systemMeanShiftTarget.target
+            ? baseline.system.additionalMeanShift + systemMeanShiftTarget.target.targetMean - baseline.system.mean
+            : systemMeanShiftTarget.target.resultingAdditionalMeanShift;
+          const scenarioId = `${worksheet.worksheetName}:step1:system_mean_shift_centering`;
+          const calculation = calculateScenario({
+            baselineRequest,
+            scenario: {
+              scenarioId,
+              optionKind: "mean_shift_centering",
+              factorOverrides: [],
+              systemSpecification: { additionalMeanShift },
+            },
+          });
+          const scenarioCalculation = completedScenarioCalculation(calculation, scenarioId);
+          const snapshot = snapshotV4(
+            request,
+            baseline,
+            scenarioCalculation,
+            scenarioId,
+            "meanResponseCentering",
+            baselineSnapshot.scenarioId,
+            [],
+            { additionalMeanShift },
+          );
+          step1 = {
+            step: "meanResponseCentering",
+            status: snapshot.capability.status === "PASS" ? "COMPLETED_TARGET_MET" : "COMPLETED_TARGET_NOT_MET",
+            result: snapshot,
+          };
+          lastValidSnapshot = snapshot;
+        } catch {
+          step1 = {
+            step: "meanResponseCentering",
+            status: "CALCULATION_FAILED",
+            reasonCode: "f4_centering_verification_failed",
+          };
+        }
+      } else if (hasFactorNominalTarget) {
+        step1 = {
+          step: "meanResponseCentering",
+          status: "ENGINEERING_CONFIRMATION_REQUIRED",
+          reasonCode: "signed_direction_evidence_required_for_factor_nominal_centering",
+        };
+      } else {
+        step1 = { step: "meanResponseCentering", status: "NOT_NEEDED" };
+      }
+
+      if (step1.status === "COMPLETED_TARGET_MET") {
+        step2 = { step: "toleranceReverseSolve", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" };
+        step3 = { step: "specificationRelaxation", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" };
+        selectedResult = { status: "step1_centered", snapshot: step1.result };
+      } else {
+        let step2Snapshot: V4Snapshot | undefined;
+        try {
+          const step2BaseRequest = requestFromSnapshot(baselineRequest, lastValidSnapshot);
+          const step2Base = createCalculation(step2BaseRequest);
+          if (step2Base.status !== "completed") {
+            throw new Error("step2_base_unavailable");
+          }
+          const topFactors = selectTopContributors(step2Base.factors, Math.min(3, step2Base.factors.length));
+          const guardedTargetRssSigma = solveGuardedTargetRssSigma({
+            mean: step2Base.system.mean,
+            lowerSpecLimit: step2Base.capability.lowerSpecLimit,
+            upperSpecLimit: step2Base.capability.upperSpecLimit,
+            targetCpk: step2Base.capability.targetCpk,
+          });
+          const toleranceChanges = solveTopNCombinedTolerance({
+            factors: step2Base.factors,
+            selectedSources: topFactors.map(({ source }) => source),
+            targetRssSigma: guardedTargetRssSigma,
+            allocation: "proportional-to-contribution",
+          });
+          const scenarioId = `${worksheet.worksheetName}:step2:tolerance_reverse_solve`;
+          const calculation = calculateScenario({
+            baselineRequest: step2BaseRequest,
+            scenario: {
+              scenarioId,
+              optionKind: "reverse_solve_top_3",
+              factorOverrides: toleranceChanges.map((change) => ({
+                worksheetName: change.worksheetName,
+                tableId: change.tableId,
+                sourceRow: change.sourceRow,
+                lowerTolerance: change.resultingLowerTolerance,
+                upperTolerance: change.resultingUpperTolerance,
+              })),
+            },
+          });
+          const scenarioCalculation = completedScenarioCalculation(calculation, scenarioId);
+          const factorOverrides = toleranceChanges.map((change) => {
+            const factor = step2Base.factors.find((candidate) =>
+              candidate.source.worksheetName === change.worksheetName
+              && candidate.source.tableId === change.tableId
+              && candidate.source.sourceRow === change.sourceRow);
+            if (factor === undefined) {
+              throw new Error("step2_factor_identity_mismatch");
+            }
+            return {
+              factor: factorIdentity(factor),
+              lowerTolerance: change.resultingLowerTolerance,
+              upperTolerance: change.resultingUpperTolerance,
+            };
+          });
+          step2Snapshot = snapshotV4(
+            request,
+            baseline,
+            scenarioCalculation,
+            scenarioId,
+            "toleranceReverseSolve",
+            lastValidSnapshot.scenarioId,
+            factorOverrides,
+          );
+          step2 = {
+            step: "toleranceReverseSolve",
+            status: step2Snapshot.capability.status === "PASS" ? "COMPLETED_TARGET_MET" : "COMPLETED_TARGET_NOT_MET",
+            result: step2Snapshot,
+          };
+          lastValidSnapshot = step2Snapshot;
+        } catch (error) {
+          const reasonCode = error instanceof F6SolverError
+            ? error.code
+            : "f4_tolerance_verification_failed";
+          step2 = {
+            step: "toleranceReverseSolve",
+            status: error instanceof F6SolverError ? "NOT_FEASIBLE" : "CALCULATION_FAILED",
+            reasonCode,
+          };
+        }
+
+        if (step2.status === "COMPLETED_TARGET_MET") {
+          step3 = { step: "specificationRelaxation", status: "NOT_RUN_EARLIER_STEP_MET_TARGET" };
+          selectedResult = { status: "step2_tolerance_optimized", snapshot: step2.result };
+        } else {
+          try {
+            const step3BaseRequest = requestFromSnapshot(baselineRequest, lastValidSnapshot);
+            const step3Base = createCalculation(step3BaseRequest);
+            if (step3Base.status !== "completed") {
+              throw new Error("step3_base_unavailable");
+            }
+            const failedSides = [
+              ...(step3Base.capability.lowerCpk < step3Base.capability.targetCpk ? ["lower" as const] : []),
+              ...(step3Base.capability.upperCpk < step3Base.capability.targetCpk ? ["upper" as const] : []),
+            ];
+            if (failedSides.length === 0) {
+              step3 = { step: "specificationRelaxation", status: "NOT_FEASIBLE", reasonCode: "no_failed_sides" };
+              selectedResult = { status: "no_validated_optimized_result", snapshot: lastValidSnapshot };
+            } else {
+              const solved = solveOneSidedSpecificationLimits({
+                mean: step3Base.system.mean,
+                rssSigma: step3Base.system.rssSigma,
+                targetCpk: step3Base.capability.targetCpk,
+                lowerSpecLimit: step3Base.capability.lowerSpecLimit,
+                upperSpecLimit: step3Base.capability.upperSpecLimit,
+                failedSides,
+              });
+              if (solved.status === "clarification_required") {
+                step3 = { step: "specificationRelaxation", status: "NOT_FEASIBLE", reasonCode: solved.reasonCode };
+                selectedResult = { status: "no_validated_optimized_result", snapshot: lastValidSnapshot };
+              } else {
+                const scenarioId = `${worksheet.worksheetName}:step3:specification_relaxation`;
+                const systemSpecification = {
+                  ...(failedSides.includes("lower") ? { lowerSpecLimit: solved.lowerSpecLimit } : {}),
+                  ...(failedSides.includes("upper") ? { upperSpecLimit: solved.upperSpecLimit } : {}),
+                };
+                const calculation = calculateScenario({
+                  baselineRequest: step3BaseRequest,
+                  scenario: {
+                    scenarioId,
+                    optionKind: "requirement_change",
+                    factorOverrides: [],
+                    systemSpecification,
+                  },
+                });
+                const scenarioCalculation = completedScenarioCalculation(calculation, scenarioId);
+                const snapshot = snapshotV4(
+                  request,
+                  baseline,
+                  scenarioCalculation,
+                  scenarioId,
+                  "specificationRelaxation",
+                  lastValidSnapshot.scenarioId,
+                  [],
+                  systemSpecification,
+                );
+                step3 = {
+                  step: "specificationRelaxation",
+                  status: snapshot.capability.status === "PASS" ? "COMPLETED_TARGET_MET" : "COMPLETED_TARGET_NOT_MET",
+                  changeClass: "requirement_change",
+                  approvalRequired: true,
+                  capabilityImprovementClaim: false,
+                  result: snapshot,
+                };
+                lastValidSnapshot = snapshot;
+                selectedResult = {
+                  status: "step3_specification_relaxed_pending_approval",
+                  snapshot,
+                };
+              }
+            }
+          } catch {
+            step3 = {
+              step: "specificationRelaxation",
+              status: "CALCULATION_FAILED",
+              reasonCode: "f4_specification_verification_failed",
+            };
+            selectedResult = { status: "no_validated_optimized_result", snapshot: lastValidSnapshot };
+          }
+        }
+      }
+    }
+
+    const runStatus = [step1.status, step2.status, step3.status].some((status) =>
+      status === "ENGINEERING_CONFIRMATION_REQUIRED"
+      || status === "ENGINEERING_REVIEW_REQUIRED"
+      || status === "CALCULATION_FAILED")
+      ? "CLARIFICATION_REQUIRED"
+      : "COMPLETED";
+
+    return {
+      worksheetName: worksheet.worksheetName,
+      tableId: baseline.worksheetSelection.tableId,
+      baselineIdentity: inputBaselineIdentity(baseline),
+      baselineResult: baselineSnapshot,
+      trigger,
+      steps: [step1, step2, step3],
+      selectedResult,
+      sensitivityScenarios: buildV4SensitivityScenarios(request, worksheet, baselineRequest, calculateScenario),
+      runStatus,
+    };
+  });
+
+  const selectedStatuses = worksheets.map((worksheet) => worksheet.selectedResult.status);
+  const summary = {
+    worksheetCount: worksheets.length,
+    baselineMeetsTargetWorksheetCount: selectedStatuses.filter((status) => status === "baseline_meets_target").length,
+    optimizedWorksheetCount: selectedStatuses.filter((status) =>
+      status === "step1_centered"
+      || status === "step2_tolerance_optimized"
+      || status === "step3_specification_relaxed_pending_approval").length,
+    noValidatedResultWorksheetCount: selectedStatuses.filter((status) => status === "no_validated_optimized_result").length,
+    clarificationRequiredWorksheetCount: worksheets.filter(({ runStatus }) => runStatus === "CLARIFICATION_REQUIRED").length,
+  };
+
+  return immutable(f6OptimizationResultV4Schema.parse({
+    contractVersion: request.contractVersion,
+    outputClassification: "confidential",
+    featureId: "F6",
+    optimizationVersion: "f6-optimization-v4",
+    sequentialPolicyId: "f6-sequential-optimization-policy-v2",
     interactionLanguage: inputs.interactionLanguage,
     runStatus: summary.clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED",
     workbook: request.workbook,
