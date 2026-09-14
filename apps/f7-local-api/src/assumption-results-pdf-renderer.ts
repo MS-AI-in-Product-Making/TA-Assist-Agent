@@ -1,17 +1,13 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { chromium } from "playwright-core";
 import {
   assumptionResultsPdfRouteRequestSchema,
   type AssumptionResultsPdfRouteRequest,
 } from "./assumption-results-pdf-contract.js";
 
-const PDF_BROWSER_SPAWN_OPTIONS = {
-  stdio: "ignore",
-  windowsHide: true,
-} as const;
 const PDF_BROWSER_DEFAULT_TIMEOUT_MS = 15_000;
 const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
   recursive: true,
@@ -279,87 +275,142 @@ async function findInstalledBrowsers(): Promise<readonly string[]> {
   return installed;
 }
 
-type PdfBrowserSpawn = (
-  executable: string,
-  args: readonly string[],
-  options: typeof PDF_BROWSER_SPAWN_OPTIONS,
-) => ChildProcess;
+interface PdfBrowserPage {
+  goto(url: string, options: { readonly waitUntil: "load"; readonly timeout: number }): Promise<unknown>;
+  pdf(options: {
+    readonly path: string;
+    readonly preferCSSPageSize: true;
+    readonly printBackground: true;
+  }): Promise<unknown>;
+}
+
+interface PdfBrowser {
+  newPage(): Promise<PdfBrowserPage>;
+  close(): Promise<void>;
+}
+
+interface PdfBrowserLaunchOptions {
+  readonly executablePath: string;
+  readonly headless: true;
+  readonly args: readonly string[];
+  readonly timeout: number;
+}
+
+type PdfBrowserLauncher = (options: PdfBrowserLaunchOptions) => Promise<PdfBrowser>;
+
+const launchPdfBrowser: PdfBrowserLauncher = async (options) => chromium.launch({
+  ...options,
+  args: [...options.args],
+});
+
+async function withinPdfBrowserDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  configuredTimeoutMs: number = timeoutMs,
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`PDF browser timed out after ${configuredTimeoutMs} ms.`));
+        }, Math.max(0, timeoutMs));
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+async function closePdfBrowserWithin(
+  browser: PdfBrowser,
+  timeoutMs: number,
+): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      browser.close(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, Math.max(0, timeoutMs));
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
 
 export async function executePdfBrowser(
   executable: string,
   args: readonly string[],
-  spawnProcess: PdfBrowserSpawn = spawn,
+  launchBrowser: PdfBrowserLauncher = launchPdfBrowser,
   timeoutMs: number = PDF_BROWSER_DEFAULT_TIMEOUT_MS,
 ): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let timer: NodeJS.Timeout | undefined;
-    let child: ChildProcess | undefined;
-    let timeoutError: Error | undefined;
-
-    const settle = (error?: Error): void => {
-      if (settled) return;
-      settled = true;
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      if (child !== undefined) {
-        child.removeListener("error", onError);
-        child.removeListener("close", onClose);
-      }
-      if (error === undefined) {
-        resolve();
-        return;
-      }
-      reject(error);
-    };
-
-    const onError = (error: Error): void => {
-      if (timeoutError !== undefined) return;
-      settle(new Error(`Failed to launch PDF browser: ${error.message}`));
-    };
-
-    const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
-      if (timeoutError !== undefined) {
-        settle(timeoutError);
-        return;
-      }
-      if (code === 0) {
-        settle();
-        return;
-      }
-      if (code !== null) {
-        settle(new Error(`PDF browser exited with code ${code}.`));
-        return;
-      }
-      if (signal !== null) {
-        settle(new Error(`PDF browser exited from signal ${signal}.`));
-        return;
-      }
-      settle(new Error("PDF browser exited before completion."));
-    };
-
-    try {
-      child = spawnProcess(executable, [...args], PDF_BROWSER_SPAWN_OPTIONS);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      settle(new Error(`Failed to launch PDF browser: ${message}`));
-      return;
-    }
-
-    child.once("error", onError);
-    child.once("close", onClose);
-    timer = setTimeout(() => {
-      timeoutError = new Error(`PDF browser timed out after ${timeoutMs} ms. Check for stale browser/crashpad processes and retry.`);
-      try {
-        if (child?.kill("SIGKILL")) return;
-      } catch {
-        // Reject below when the termination request cannot be made.
-      }
-      settle(timeoutError);
-    }, timeoutMs);
+  const pdfOutputPath = args
+    .find((argument) => argument.startsWith("--print-to-pdf="))
+    ?.slice("--print-to-pdf=".length);
+  const sourceUrl = args.at(-1);
+  let parsedSourceUrl: URL | undefined;
+  try {
+    if (sourceUrl !== undefined) parsedSourceUrl = new URL(sourceUrl);
+  } catch {
+    parsedSourceUrl = undefined;
+  }
+  if (
+    pdfOutputPath === undefined
+    || parsedSourceUrl?.protocol !== "file:"
+    || parsedSourceUrl.hostname !== ""
+    || parsedSourceUrl.pathname.startsWith("//")
+  ) {
+    throw new Error("PDF browser requires controlled output and local source paths.");
+  }
+  const browserArgs = args.filter((argument) => (
+    argument.startsWith("--")
+    && argument !== "--headless=new"
+    && argument !== "--disable-gpu"
+    && argument !== "--no-pdf-header-footer"
+    && !argument.startsWith("--user-data-dir=")
+    && !argument.startsWith("--print-to-pdf=")
+  ));
+  const deadline = Date.now() + timeoutMs;
+  const launchOperation = launchBrowser({
+    executablePath: executable,
+    headless: true,
+    args: browserArgs,
+    timeout: timeoutMs,
   });
+  let browser: PdfBrowser;
+  try {
+    browser = await withinPdfBrowserDeadline(launchOperation, timeoutMs);
+  } catch (error) {
+    void launchOperation.then(
+      async (lateBrowser) => closePdfBrowserWithin(lateBrowser, 0),
+      () => undefined,
+    ).catch(() => undefined);
+    throw error;
+  }
+  let renderError: unknown;
+  try {
+    await withinPdfBrowserDeadline((async () => {
+      const page = await browser.newPage();
+      const remainingMs = Math.max(0, deadline - Date.now());
+      await page.goto(parsedSourceUrl.href, { waitUntil: "load", timeout: remainingMs });
+      await page.pdf({
+        path: pdfOutputPath,
+        preferCSSPageSize: true,
+        printBackground: true,
+      });
+    })(), Math.max(0, deadline - Date.now()), timeoutMs);
+  } catch (error) {
+    renderError = error;
+  }
+
+  try {
+    await closePdfBrowserWithin(browser, Math.max(0, deadline - Date.now()));
+  } catch (closeError) {
+    if (renderError === undefined) throw closeError;
+  }
+  if (renderError !== undefined) throw renderError;
 }
 
 export function createAssumptionResultsPdfRenderer(
@@ -399,7 +450,6 @@ export function createAssumptionResultsPdfRenderer(
         const temporaryDirectory = await mkdtemp(join(tmpdir(), "f7-assumption-results-"));
         const htmlPath = join(temporaryDirectory, "report.html");
         const pdfPath = join(temporaryDirectory, "report.pdf");
-        const browserProfilePath = join(temporaryDirectory, "browser-profile");
         let hasPrimaryError = false;
         let primaryError: unknown;
         let renderedBytes: Buffer | undefined;
@@ -414,7 +464,6 @@ export function createAssumptionResultsPdfRenderer(
           await writeFile(htmlPath, renderAssumptionResultsPdfHtml(request), "utf8");
           await executeFile(browser, [
             "--headless=new",
-            "--disable-gpu",
             "--disable-background-networking",
             "--disable-breakpad",
             "--disable-crash-reporter",
@@ -425,7 +474,6 @@ export function createAssumptionResultsPdfRenderer(
             "--no-first-run",
             "--no-pings",
             "--no-pdf-header-footer",
-            `--user-data-dir=${browserProfilePath}`,
             `--print-to-pdf=${pdfPath}`,
             pathToFileURL(htmlPath).href,
           ]);

@@ -1,6 +1,4 @@
 import { access, readFile, rm, writeFile } from "node:fs/promises";
-import type { ChildProcess } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -431,96 +429,172 @@ describe("renderAssumptionResultsPdfHtml", () => {
 });
 
 describe("createAssumptionResultsPdfRenderer", () => {
-  it("spawns with ignored stdio and resolves only after close code 0", async () => {
-    const child = new EventEmitter() as ChildProcess;
-    child.kill = vi.fn(() => true) as ChildProcess["kill"];
-    const spawnProcess = vi.fn(() => child);
+  it("prints through an isolated Playwright browser and closes it", async () => {
+    const page = {
+      goto: vi.fn(async () => undefined),
+      pdf: vi.fn(async () => undefined),
+    };
+    const browser = {
+      newPage: vi.fn(async () => page),
+      close: vi.fn(async () => undefined),
+    };
+    const launchBrowser = vi.fn(async () => browser);
 
-    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
+    await executePdfBrowser(
+      "browser.exe",
+      ["--disable-extensions", "--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      launchBrowser as never,
+      5_000,
+    );
 
-    expect(spawnProcess).toHaveBeenCalledWith("browser.exe", ["--headless=new"], {
-      stdio: "ignore",
-      windowsHide: true,
+    expect(launchBrowser).toHaveBeenCalledWith({
+      executablePath: "browser.exe",
+      headless: true,
+      args: ["--disable-extensions"],
+      timeout: 5_000,
     });
-
-    child.emit("close", 0, null);
-    await expect(promise).resolves.toBeUndefined();
+    expect(page.goto).toHaveBeenCalledWith("file:///C:/temp/report.html", {
+      waitUntil: "load",
+      timeout: expect.any(Number),
+    });
+    const gotoTimeout = page.goto.mock.calls[0]?.[1].timeout ?? 0;
+    expect(gotoTimeout).toBeGreaterThan(0);
+    expect(gotoTimeout).toBeLessThanOrEqual(5_000);
+    expect(page.pdf).toHaveBeenCalledWith({
+      path: "C:\\temp\\report.pdf",
+      preferCSSPageSize: true,
+      printBackground: true,
+    });
+    expect(browser.close).toHaveBeenCalledOnce();
   });
 
-  it("rejects when browser launch emits error", async () => {
-    const child = new EventEmitter() as ChildProcess;
-    child.kill = vi.fn(() => true) as ChildProcess["kill"];
-    const spawnProcess = vi.fn(() => child);
+  it("propagates a Playwright browser launch failure", async () => {
+    const launchBrowser = vi.fn(async () => { throw new Error("launch failed"); });
 
-    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
-
-    child.emit("error", new Error("spawn failed"));
-    await expect(promise).rejects.toThrow("Failed to launch PDF browser: spawn failed");
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      launchBrowser,
+    )).rejects.toThrow("launch failed");
   });
 
-  it("rejects when browser exits with nonzero code", async () => {
-    const child = new EventEmitter() as ChildProcess;
-    child.kill = vi.fn(() => true) as ChildProcess["kill"];
-    const spawnProcess = vi.fn(() => child);
+  it("times out a stalled Playwright browser launch", async () => {
+    const launchBrowser = vi.fn(async () => await new Promise<never>(() => undefined));
 
-    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
-
-    child.emit("close", 3, null);
-    await expect(promise).rejects.toThrow("PDF browser exited with code 3");
-  });
-
-  it("waits for browser close after a successful timeout kill before rejecting", async () => {
-    vi.useFakeTimers();
-    try {
-      const child = new EventEmitter() as ChildProcess;
-      child.kill = vi.fn(() => true) as ChildProcess["kill"];
-      const spawnProcess = vi.fn(() => child);
-
-      const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 25);
-      let outcome = "pending";
-      void promise.then(
-        () => { outcome = "resolved"; },
-        () => { outcome = "rejected"; },
-      );
-
-      await vi.advanceTimersByTimeAsync(25);
-
-      expect(child.kill).toHaveBeenCalledWith("SIGKILL");
-      expect(outcome).toBe("pending");
-
-      child.emit("close", null, "SIGKILL");
-      await expect(promise).rejects.toThrow(
-        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
-      );
-      expect(child.listenerCount("error")).toBe(0);
-      expect(child.listenerCount("close")).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      launchBrowser,
+      10,
+    )).rejects.toThrow("PDF browser timed out after 10 ms.");
   });
 
   it.each([
-    ["returns false", vi.fn(() => false)],
-    ["throws", vi.fn(() => { throw new Error("kill failed"); })],
-  ])("rejects without waiting for close when the timeout kill %s", async (_case, kill) => {
-    vi.useFakeTimers();
-    try {
-      const child = new EventEmitter() as ChildProcess;
-      child.kill = kill as ChildProcess["kill"];
-      const spawnProcess = vi.fn(() => child);
-      const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 25);
+    "file://server/share/report.html",
+    "file:////server/share/report.html",
+  ])("rejects a remote file URL: %s", async (remoteUrl) => {
+    const launchBrowser = vi.fn();
 
-      const rejection = expect(promise).rejects.toThrow(
-        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
-      );
-      await vi.advanceTimersByTimeAsync(25);
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", remoteUrl],
+      launchBrowser,
+    )).rejects.toThrow("PDF browser requires controlled output and local source paths.");
+    expect(launchBrowser).not.toHaveBeenCalled();
+  });
 
-      await rejection;
-      expect(child.listenerCount("error")).toBe(0);
-      expect(child.listenerCount("close")).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("handles a close failure from a browser that resolves after launch timeout", async () => {
+    let resolveLaunch: ((browser: PdfBrowserFixture) => void) | undefined;
+    type PdfBrowserFixture = {
+      newPage(): Promise<never>;
+      close(): Promise<void>;
+    };
+    const launchBrowser = vi.fn(async () => await new Promise<PdfBrowserFixture>((resolve) => {
+      resolveLaunch = resolve;
+    }));
+    const browser = {
+      newPage: vi.fn(async () => await new Promise<never>(() => undefined)),
+      close: vi.fn(async () => { throw new Error("late close failed"); }),
+    };
+
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      launchBrowser,
+      10,
+    )).rejects.toThrow("PDF browser timed out after 10 ms.");
+    resolveLaunch?.(browser);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes the Playwright browser when PDF generation fails", async () => {
+    const browser = {
+      newPage: vi.fn(async () => ({
+        goto: vi.fn(async () => undefined),
+        pdf: vi.fn(async () => { throw new Error("pdf failed"); }),
+      })),
+      close: vi.fn(async () => undefined),
+    };
+
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      vi.fn(async () => browser),
+    )).rejects.toThrow("pdf failed");
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("times out a stalled Playwright PDF operation and closes the browser", async () => {
+    const browser = {
+      newPage: vi.fn(async () => ({
+        goto: vi.fn(async () => undefined),
+        pdf: vi.fn(async () => await new Promise<never>(() => undefined)),
+      })),
+      close: vi.fn(async () => undefined),
+    };
+
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      vi.fn(async () => browser),
+      10,
+    )).rejects.toThrow("PDF browser timed out after 10 ms.");
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not wait indefinitely for Playwright browser close", async () => {
+    const browser = {
+      newPage: vi.fn(async () => ({
+        goto: vi.fn(async () => undefined),
+        pdf: vi.fn(async () => undefined),
+      })),
+      close: vi.fn(async () => await new Promise<never>(() => undefined)),
+    };
+
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      vi.fn(async () => browser),
+      10,
+    )).resolves.toBeUndefined();
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the PDF error when browser close also fails", async () => {
+    const browser = {
+      newPage: vi.fn(async () => ({
+        goto: vi.fn(async () => undefined),
+        pdf: vi.fn(async () => { throw new Error("pdf failed"); }),
+      })),
+      close: vi.fn(async () => { throw new Error("close failed"); }),
+    };
+
+    await expect(executePdfBrowser(
+      "browser.exe",
+      ["--print-to-pdf=C:\\temp\\report.pdf", "file:///C:/temp/report.html"],
+      vi.fn(async () => browser),
+    )).rejects.toThrow("pdf failed");
   });
 
   it("retries removal of the temporary directory", async () => {
@@ -550,18 +624,15 @@ describe("createAssumptionResultsPdfRenderer", () => {
   it("runs one render at a time, queues three in order, and rejects excess work", async () => {
     const releaseRender: Array<() => Promise<void>> = [];
     const temporaryDirectories: string[] = [];
-    const profileDirectories: string[] = [];
     const executionOrder: string[] = [];
     const renderer = createAssumptionResultsPdfRenderer({
       installedBrowsers: () => ["browser.exe"],
       executeFile: async (_executable, args) => {
         const htmlPath = fileURLToPath(args.at(-1) ?? "");
         const temporaryDirectory = dirname(htmlPath);
-        const profileFlag = args.find((arg) => arg.startsWith("--user-data-dir="));
         const html = await readFile(htmlPath, "utf8");
         executionOrder.push(/Workbook (\d)\.xlsx/u.exec(html)?.[1] ?? "unknown");
         temporaryDirectories.push(temporaryDirectory);
-        profileDirectories.push(profileFlag?.slice("--user-data-dir=".length) ?? "");
         await new Promise<void>((resolve) => {
           releaseRender.push(async () => {
             await writeFile(outputPathFrom(args), Buffer.from("%PDF-1.7\nfixture"));
@@ -594,9 +665,6 @@ describe("createAssumptionResultsPdfRenderer", () => {
 
     expect(new Set(temporaryDirectories).size).toBe(4);
     expect(executionOrder).toEqual(["1", "2", "3", "4"]);
-    expect(profileDirectories).toEqual(temporaryDirectories.map((directory) => (
-      join(directory, "browser-profile")
-    )));
     for (const directory of temporaryDirectories) await expectMissing(directory);
   });
 
