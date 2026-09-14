@@ -5700,7 +5700,12 @@ describe("F5.1 objective interpretation contracts", () => {
         scenarioId: string,
         sourceStep: "baseline" | "meanResponseCentering" | "toleranceReverseSolve" | "specificationRelaxation",
         inputScenarioId: string | null,
-      ) => ({
+      ) => {
+        const lowerSpecLimit = -0.3;
+        const upperSpecLimit = 0.3;
+        const mean = 0;
+        const specificationMidpoint = lowerSpecLimit / 2 + upperSpecLimit / 2;
+        return {
         scenarioId,
         sourceStep,
         inputScenarioId,
@@ -5709,15 +5714,17 @@ describe("F5.1 objective interpretation contracts", () => {
         baselineIdentity,
         system: {
           designNominal: 0,
-          mean: 0,
+          mean,
+          specificationMidpoint,
+          meanOffset: mean - specificationMidpoint,
           additionalMeanShift: 0,
           rssSigma: 0.1,
           worstCaseLower: -0.3,
           worstCaseUpper: 0.3,
         },
         capability: {
-          lowerSpecLimit: -0.3,
-          upperSpecLimit: 0.3,
+          lowerSpecLimit,
+          upperSpecLimit,
           targetCpk: 1,
           lowerCpk: 1,
           upperCpk: 1,
@@ -5737,7 +5744,8 @@ describe("F5.1 objective interpretation contracts", () => {
         }],
         factorOverrides: [],
         formulaReferences: [],
-      });
+      };
+      };
 
       const baselineSnapshot = snapshotFor("baseline", "baseline", null);
       const step1Snapshot = snapshotFor("step1-centered", "meanResponseCentering", "baseline");
@@ -5928,6 +5936,16 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6ReadableOptimizationResultSchema.parse(resultV4)).toEqual(resultV4);
         expect(f6OptimizationResultV3Schema.safeParse(resultV4).success).toBe(false);
         expect(f6NewOptimizationResultSchema.safeParse(resultV3).success).toBe(false);
+      });
+
+      it("rejects V4 scenario snapshots missing required midpoint or mean-offset fields", () => {
+        const missingMidpoint = structuredClone(resultV4);
+        delete missingMidpoint.worksheets[0].baselineResult.system.specificationMidpoint;
+        expect(f6OptimizationResultV4Schema.safeParse(missingMidpoint).success).toBe(false);
+
+        const missingMeanOffset = structuredClone(resultV4);
+        delete missingMeanOffset.worksheets[0].selectedResult.snapshot.system.meanOffset;
+        expect(f6OptimizationResultV4Schema.safeParse(missingMeanOffset).success).toBe(false);
       });
 
       it("rejects invalid V4 sequence and tamper cases", () => {

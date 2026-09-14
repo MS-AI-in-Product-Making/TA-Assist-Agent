@@ -524,9 +524,21 @@ function addModelInterpretation(inputs, narrativeForWorksheet) {
 }
 
 function withCapability(snapshot, status) {
+  const withStoredMidpoint = (value) => {
+    const specificationMidpoint = value.capability.lowerSpecLimit / 2 + value.capability.upperSpecLimit / 2;
+    return {
+      ...value,
+      system: {
+        ...value.system,
+        specificationMidpoint,
+        meanOffset: value.system.mean - specificationMidpoint,
+      },
+    };
+  };
+
   const targetCpk = snapshot.capability.targetCpk;
   if (status === "PASS") {
-    return {
+    return withStoredMidpoint({
       ...snapshot,
       capability: {
         ...snapshot.capability,
@@ -537,9 +549,9 @@ function withCapability(snapshot, status) {
         totalDpm: 100,
         status: "PASS",
       },
-    };
+    });
   }
-  return {
+  return withStoredMidpoint({
     ...snapshot,
     capability: {
       ...snapshot.capability,
@@ -550,7 +562,7 @@ function withCapability(snapshot, status) {
       totalDpm: 50_000,
       status: "FAIL",
     },
-  };
+  });
 }
 
 function expandFactorRows(baseFactors, totalRows, changedRows) {
@@ -1732,6 +1744,16 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
 
     expect(report.markdown).not.toContain("## Optimization Comparison");
     expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
+  });
+
+  it("fails schema validation when a V4 snapshot misses midpoint or mean-offset fields", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "step2_tolerance_optimized");
+
+    delete inputs.f6Optimization.worksheets[0].baselineResult.system.specificationMidpoint;
+    delete inputs.f6Optimization.worksheets[0].selectedResult.snapshot.system.meanOffset;
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(/f6Optimization/i);
   });
 
   it.each([

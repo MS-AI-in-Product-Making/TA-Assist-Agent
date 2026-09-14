@@ -8959,8 +8959,8 @@ const f6ScenarioSnapshotV4Schema = z.object({
   system: z.object({
     designNominal: z.number().finite(),
     mean: z.number().finite(),
-    specificationMidpoint: z.number().finite().optional(),
-    meanOffset: z.number().finite().optional(),
+    specificationMidpoint: z.number().finite(),
+    meanOffset: z.number().finite(),
     additionalMeanShift: z.number().finite(),
     rssSigma: z.number().finite().positive(),
     worstCaseLower: z.number().finite(),
@@ -9000,17 +9000,15 @@ const f6ScenarioSnapshotV4Schema = z.object({
   formulaReferences: z.array(f6V2FormulaReferenceSchema),
 }).strict().superRefine((snapshot, context) => {
   const expectedMidpoint = snapshot.capability.lowerSpecLimit / 2 + snapshot.capability.upperSpecLimit / 2;
-  const midpoint = snapshot.system.specificationMidpoint ?? expectedMidpoint;
-  if (snapshot.system.specificationMidpoint !== undefined && !f6NearlyEqual(midpoint, expectedMidpoint)) {
+  if (!f6NearlyEqual(snapshot.system.specificationMidpoint, expectedMidpoint)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "specificationMidpoint must equal the capability midpoint",
       path: ["system", "specificationMidpoint"],
     });
   }
-  const expectedMeanOffset = snapshot.system.mean - midpoint;
-  const meanOffset = snapshot.system.meanOffset ?? expectedMeanOffset;
-  if (snapshot.system.meanOffset !== undefined && !f6NearlyEqual(meanOffset, expectedMeanOffset)) {
+  const expectedMeanOffset = snapshot.system.mean - snapshot.system.specificationMidpoint;
+  if (!f6NearlyEqual(snapshot.system.meanOffset, expectedMeanOffset)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "meanOffset must equal mean minus specificationMidpoint",

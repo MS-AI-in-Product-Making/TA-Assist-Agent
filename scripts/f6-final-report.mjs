@@ -605,16 +605,6 @@ function v4ComparisonUnit(baselineSnapshot, selectedSnapshot) {
   return baselineUnit;
 }
 
-function v4SpecificationMidpoint(snapshot) {
-  return snapshot.system.specificationMidpoint
-    ?? (snapshot.capability.lowerSpecLimit / 2 + snapshot.capability.upperSpecLimit / 2);
-}
-
-function v4MeanOffset(snapshot) {
-  return snapshot.system.meanOffset
-    ?? (snapshot.system.mean - v4SpecificationMidpoint(snapshot));
-}
-
 function v4ChangedFactorRows(baselineSnapshot, selectedSnapshot) {
   const baselineByKey = new Map(baselineSnapshot.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
   return selectedSnapshot.factors
@@ -691,7 +681,7 @@ function renderOptimizationComparison(worksheet) {
     "|---|---:|---:|",
     row(["Design Nominal", engineeringText(baseline.system.designNominal, unit), optimized === undefined ? NA : engineeringText(optimized.system.designNominal, unit)]),
     row(["Mean Response", engineeringText(baseline.system.mean, unit), optimized === undefined ? NA : engineeringText(optimized.system.mean, unit)]),
-    row(["Mean-to-Spec-Center Offset", engineeringText(v4MeanOffset(baseline), unit), optimized === undefined ? NA : engineeringText(v4MeanOffset(optimized), unit)]),
+    row(["Mean-to-Spec-Center Offset", engineeringText(baseline.system.meanOffset, unit), optimized === undefined ? NA : engineeringText(optimized.system.meanOffset, unit)]),
     row(["Mean Shift", engineeringText(baseline.system.additionalMeanShift, unit), optimized === undefined ? NA : engineeringText(optimized.system.additionalMeanShift, unit)]),
     row(["RSS One Sigma", engineeringText(baseline.system.rssSigma, unit), optimized === undefined ? NA : engineeringText(optimized.system.rssSigma, unit)]),
     row(["LSL", engineeringText(baseline.capability.lowerSpecLimit, unit), optimized === undefined ? NA : engineeringText(optimized.capability.lowerSpecLimit, unit)]),
@@ -942,38 +932,6 @@ function parseOrThrow(schema, value, label) {
     throw new Error(`Invalid F6 final report input: ${label}.`);
   }
   return parsed.data;
-}
-
-function v4FillDerivedSystemFields(snapshot) {
-  if (snapshot === undefined || snapshot === null || typeof snapshot !== "object") return;
-  const capability = snapshot.capability;
-  const system = snapshot.system;
-  if (capability === undefined || system === undefined || typeof capability !== "object" || typeof system !== "object") return;
-  if (!Number.isFinite(capability.lowerSpecLimit) || !Number.isFinite(capability.upperSpecLimit) || !Number.isFinite(system.mean)) return;
-  const specificationMidpoint = capability.lowerSpecLimit / 2 + capability.upperSpecLimit / 2;
-  system.specificationMidpoint = specificationMidpoint;
-  system.meanOffset = system.mean - specificationMidpoint;
-}
-
-function normalizeReadableF6OptimizationInput(value) {
-  if (value === undefined || value === null || typeof value !== "object") return value;
-  if (value.optimizationVersion !== "f6-optimization-v4" || !Array.isArray(value.worksheets)) return value;
-  for (const worksheet of value.worksheets) {
-    if (worksheet === undefined || worksheet === null || typeof worksheet !== "object") continue;
-    v4FillDerivedSystemFields(worksheet.baselineResult);
-    if (Array.isArray(worksheet.steps)) {
-      for (const step of worksheet.steps) {
-        if (step !== undefined && step !== null && typeof step === "object" && "result" in step) {
-          v4FillDerivedSystemFields(step.result);
-        }
-      }
-    }
-    if (worksheet.selectedResult !== undefined && worksheet.selectedResult !== null
-      && typeof worksheet.selectedResult === "object") {
-      v4FillDerivedSystemFields(worksheet.selectedResult.snapshot);
-    }
-  }
-  return value;
 }
 
 function failInvalid(label) {
@@ -2245,8 +2203,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
   const f4Report = parseOrThrow(f4WorkflowCalculationResultSchema, input.f4Report, "f4Report");
   const f5Report = parseOrThrow(f5DataInterpretationResultSchema, input.f5Report, "f5Report");
-  const f6OptimizationInput = normalizeReadableF6OptimizationInput(structuredClone(input.f6Optimization));
-  const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, f6OptimizationInput, "f6Optimization");
+  const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, input.f6Optimization, "f6Optimization");
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");
