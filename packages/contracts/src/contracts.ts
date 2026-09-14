@@ -9182,7 +9182,7 @@ const f6OptimizationWorksheetV4Schema = z.object({
   }
 
   const sensitivityIds = new Set(["f6-top3-tolerance-policy-v1:OP1", "f6-top3-tolerance-policy-v1:OP2", "f6-top3-tolerance-policy-v1:OP3"]);
-  if (selected.status !== "no_validated_optimized_result" && sensitivityIds.has(selected.snapshot.scenarioId)) {
+  if (sensitivityIds.has(selected.snapshot.scenarioId)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "sensitivity scenarios cannot become selected optimized results", path: ["selectedResult", "snapshot", "scenarioId"] });
   }
 

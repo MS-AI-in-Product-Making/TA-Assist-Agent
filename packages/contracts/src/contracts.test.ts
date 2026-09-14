@@ -6142,6 +6142,51 @@ describe("F5.1 objective interpretation contracts", () => {
             optimizedWorksheetCount: 1,
           },
         }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step2Snapshot,
+                  scenarioId: "f6-top3-tolerance-policy-v1:OP1",
+                },
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+            ],
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: {
+                ...step2Snapshot,
+                scenarioId: "f6-top3-tolerance-policy-v1:OP1",
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 0,
+            noValidatedResultWorksheetCount: 1,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
       });
     });
 
