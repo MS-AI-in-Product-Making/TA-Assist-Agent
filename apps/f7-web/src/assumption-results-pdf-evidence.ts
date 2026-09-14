@@ -1,5 +1,5 @@
 import type { DeepReadonly } from "vue";
-import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
+import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
 import type { F7SessionSnapshot, F7SetupDistribution } from "./api/f7-client";
 
@@ -161,6 +161,11 @@ export interface AssumptionResultsEngineeringEvidence {
   readonly responseSummary: AssumptionResultsEngineeringEvidenceResponseSummary;
 }
 
+export interface AssumptionResultsCurrentCalculationInput {
+  readonly additionalMeanShift: number;
+  readonly calculation: KernelCalculationResult;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -232,6 +237,7 @@ function finiteSystemSpecification(
 export function buildConfirmedEngineeringEvidence(
   session: DeepReadonly<F7SessionSnapshot>,
   chain: DimensionChainReportProjection,
+  currentCalculationInput?: AssumptionResultsCurrentCalculationInput,
 ): AssumptionResultsEngineeringEvidence | undefined {
   if (session.factors.length === 0) return undefined;
 
@@ -241,7 +247,11 @@ export function buildConfirmedEngineeringEvidence(
   const confirmedFactors = session.factors.map((factor) => {
     if (factor.setup?.confirmed !== true || factor.evidence === undefined) return undefined;
     if (factor.setup.factorCandidateId !== factor.factorCandidate.factorCandidateId) return undefined;
+    if (factor.evidence.factorCandidateId !== factor.factorCandidate.factorCandidateId) return undefined;
     if (factor.evidence.factorCandidateId !== factor.setup.factorCandidateId) return undefined;
+    if (factor.evidence.workbookContentHash !== session.workbook.workbookContentHash) return undefined;
+    if (factor.evidence.workbookContentHash !== factor.factorCandidate.workbookContentHash) return undefined;
+    if (factor.evidence.worksheetName !== factor.factorCandidate.worksheetName) return undefined;
     if (factor.evidence.tableId !== factor.factorCandidate.tableId) return undefined;
     if (factor.evidence.sourceRow !== factor.factorCandidate.sourceRow) return undefined;
     if (factor.evidence.factorName !== factor.factorCandidate.factorName) return undefined;
@@ -285,37 +295,72 @@ export function buildConfirmedEngineeringEvidence(
     readonly evidence: NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>;
   }[];
 
-  let calculation: ReturnType<typeof calculateToleranceAnalysis>;
-  try {
-    calculation = calculateToleranceAnalysis({
-      factors: factors.map(({ factor, setup, evidence }) => ({
-        source: {
-          worksheetName: evidence.worksheetName,
-          tableId: evidence.tableId,
-          sourceRow: evidence.sourceRow,
-        },
-        name: evidence.factorName,
-        unit: evidence.unit,
-        input: {
-          nominalValue: evidence.designNominal,
-          upperTolerance: evidence.upperTolerance,
-          lowerTolerance: evidence.lowerTolerance,
-          longTermSafetyFactor: evidence.longTermSafetyFactor,
-          sigmaLevel: evidence.sigmaLevel,
-          distribution: DISTRIBUTION_BY_LABEL[evidence.distribution],
-        },
-      })),
-      system: {
-        designNominal: factors.reduce((sum, { evidence }) => sum + evidence.designNominal, 0),
-        lowerSpecLimit: system.lowerSpecLimit,
-        upperSpecLimit: system.upperSpecLimit,
-        targetSigmaLevel: system.targetSigmaLevel,
-        targetCpk: system.targetSigmaLevel / 3,
-        shift: system.additionalMeanShift,
-      },
+  const designNominalTotal = factors.reduce((sum, { evidence }) => sum + evidence.designNominal, 0);
+
+  let calculation: KernelCalculationResult;
+  if (currentCalculationInput) {
+    const current = currentCalculationInput.calculation;
+    if (!isFiniteNumber(currentCalculationInput.additionalMeanShift)) return undefined;
+    if (!nearlyEqual(currentCalculationInput.additionalMeanShift, current.system.shift)) return undefined;
+    if (current.factorCount !== factors.length || current.factors.length !== factors.length) return undefined;
+    if (!nearlyEqual(current.system.designNominal, designNominalTotal)) return undefined;
+    if (!nearlyEqual(current.capability.lowerSpecLimit, system.lowerSpecLimit)) return undefined;
+    if (!nearlyEqual(current.capability.upperSpecLimit, system.upperSpecLimit)) return undefined;
+    if (!nearlyEqual(current.capability.targetSigmaLevel, system.targetSigmaLevel)) return undefined;
+    if (!nearlyEqual(current.capability.targetCpk, system.targetSigmaLevel / 3)) return undefined;
+
+    const kernelMatched = factors.map(({ evidence }) => {
+      const match = current.factors.find((entry) => (
+        entry.source.worksheetName === evidence.worksheetName
+        && entry.source.tableId === evidence.tableId
+        && entry.source.sourceRow === evidence.sourceRow
+        && entry.name === evidence.factorName
+      ));
+      if (!match) return undefined;
+      if (match.unit !== evidence.unit) return undefined;
+      if (!nearlyEqual(match.input.nominalValue, evidence.designNominal)) return undefined;
+      if (!nearlyEqual(match.input.upperTolerance, evidence.upperTolerance)) return undefined;
+      if (!nearlyEqual(match.input.lowerTolerance, evidence.lowerTolerance)) return undefined;
+      if (!nearlyEqual(match.input.longTermSafetyFactor, evidence.longTermSafetyFactor)) return undefined;
+      if (!nearlyEqual(match.input.sigmaLevel, evidence.sigmaLevel)) return undefined;
+      if (match.input.distribution !== DISTRIBUTION_BY_LABEL[evidence.distribution]) return undefined;
+      return true;
     });
-  } catch {
-    return undefined;
+    if (kernelMatched.some((entry) => entry === undefined)) return undefined;
+
+    calculation = current;
+  } else {
+    try {
+      calculation = calculateToleranceAnalysis({
+        factors: factors.map(({ evidence }) => ({
+          source: {
+            worksheetName: evidence.worksheetName,
+            tableId: evidence.tableId,
+            sourceRow: evidence.sourceRow,
+          },
+          name: evidence.factorName,
+          unit: evidence.unit,
+          input: {
+            nominalValue: evidence.designNominal,
+            upperTolerance: evidence.upperTolerance,
+            lowerTolerance: evidence.lowerTolerance,
+            longTermSafetyFactor: evidence.longTermSafetyFactor,
+            sigmaLevel: evidence.sigmaLevel,
+            distribution: DISTRIBUTION_BY_LABEL[evidence.distribution],
+          },
+        })),
+        system: {
+          designNominal: designNominalTotal,
+          lowerSpecLimit: system.lowerSpecLimit,
+          upperSpecLimit: system.upperSpecLimit,
+          targetSigmaLevel: system.targetSigmaLevel,
+          targetCpk: system.targetSigmaLevel / 3,
+          shift: system.additionalMeanShift,
+        },
+      });
+    } catch {
+      return undefined;
+    }
   }
 
   if (!allFinite([
@@ -350,13 +395,21 @@ export function buildConfirmedEngineeringEvidence(
   const totalContribution = calculation.factors.reduce((sum, factor) => sum + factor.contribution, 0) * 100;
   if (!isFiniteNumber(totalContribution)) return undefined;
 
-  const rows = factors.map(({ factor, setup, evidence }, index) => {
+  const rows = factors.map(({ evidence }, index) => {
     const kernelFactor = calculation.factors.find((entry) => (
-      entry.source.tableId === evidence.tableId
+      entry.source.worksheetName === evidence.worksheetName
+      && entry.source.tableId === evidence.tableId
       && entry.source.sourceRow === evidence.sourceRow
       && entry.name === evidence.factorName
     ));
+    const duplicateCount = calculation.factors.filter((entry) => (
+      entry.source.worksheetName === evidence.worksheetName
+      && entry.source.tableId === evidence.tableId
+      && entry.source.sourceRow === evidence.sourceRow
+      && entry.name === evidence.factorName
+    )).length;
     if (!kernelFactor) return undefined;
+    if (duplicateCount !== 1) return undefined;
     if (!allFinite([kernelFactor.mean, kernelFactor.halfTolerance, kernelFactor.sigma, kernelFactor.contribution])) {
       return undefined;
     }
@@ -431,7 +484,7 @@ export function buildConfirmedEngineeringEvidence(
         adjustedMean: calculation.system.mean,
         lowerSpecLimit: calculation.capability.lowerSpecLimit,
         upperSpecLimit: calculation.capability.upperSpecLimit,
-        targetSigmaLevel: system.targetSigmaLevel,
+        targetSigmaLevel: calculation.capability.targetSigmaLevel,
         targetCpk: calculation.capability.targetCpk,
       },
       sigmaLevelAndCapability: {
