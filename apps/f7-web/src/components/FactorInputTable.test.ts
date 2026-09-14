@@ -1,15 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { F7SessionSnapshot } from "../api/f7-client";
-import type { DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
+import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
 import FactorInputTable from "./FactorInputTable.vue";
 
 const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
+const HASH_D = "d".repeat(64);
 
 function createSession(overrides: Partial<F7SessionSnapshot>): F7SessionSnapshot {
   return {
@@ -117,6 +118,42 @@ function createSession(overrides: Partial<F7SessionSnapshot>): F7SessionSnapshot
   };
 }
 
+function createSessionWithFactorIds(
+  ids: {
+    readonly candidateId: string;
+    readonly factorId: string;
+  },
+  overrides: Partial<F7SessionSnapshot> = {},
+): F7SessionSnapshot {
+  const base = createSession(overrides);
+  const factor = base.factors[0]!;
+  return {
+    ...base,
+    factors: [
+      {
+        ...factor,
+        factorCandidate: {
+          ...factor.factorCandidate,
+          factorCandidateId: ids.candidateId,
+        },
+        setup: factor.setup
+          ? {
+              ...factor.setup,
+              factorCandidateId: ids.candidateId,
+            }
+          : factor.setup,
+        evidence: factor.evidence
+          ? {
+              ...factor.evidence,
+              factorCandidateId: ids.candidateId,
+              factorId: ids.factorId,
+            }
+          : factor.evidence,
+      },
+    ],
+  };
+}
+
 function projection(status: "generated" | "fallback", sourceSignature: string): DimensionChainReportProjection {
   if (status === "fallback") {
     return {
@@ -148,6 +185,19 @@ function projection(status: "generated" | "fallback", sourceSignature: string): 
     reversedFactorIds: [],
     closureDirection: "start-to-end",
   };
+}
+
+function latestEvidence(wrapper: ReturnType<typeof mount>): Record<string, unknown> | undefined {
+  return wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+}
+
+function latestDimensionChain(wrapper: ReturnType<typeof mount>): Record<string, unknown> | undefined {
+  const evidence = latestEvidence(wrapper);
+  return evidence?.dimensionChain as Record<string, unknown> | undefined;
+}
+
+function latestTypedEvidence(wrapper: ReturnType<typeof mount>): AssumptionResultsEngineeringEvidence | undefined {
+  return wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as AssumptionResultsEngineeringEvidence | undefined;
 }
 
 describe("FactorInputTable engineering evidence event", () => {
@@ -279,103 +329,135 @@ describe("FactorInputTable engineering evidence event", () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it("builds engineering evidence from fallback chain for initial, stale, and reset fallback states", async () => {
+  it("builds fallback evidence from real DimensionChainPanel reset and stale fallback transitions", async () => {
     const wrapper = mount(FactorInputTable, {
       props: {
         session: createSession({ status: "measurement_entry" }),
         busy: false,
-        editingSetup: false,
+        editingSetup: true,
       },
     });
 
     await wrapper.vm.$nextTick();
     const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
-
     const currentSourceSignature = chain.props("sourceSignature") as string;
-    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
-    await wrapper.vm.$nextTick();
-    const initialFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
-    expect(initialFallbackEvidence).toBeTruthy();
-    expect(initialFallbackEvidence?.dimensionChain).toEqual({
+
+    const initialProjection = chain.emitted("report-projection-change")?.at(-1)?.[0] as DimensionChainReportProjection | undefined;
+    expect(initialProjection).toEqual({
       status: "fallback",
       sourceSignature: currentSourceSignature,
     });
 
-    await chain.vm.$emit("report-projection-change", projection("generated", currentSourceSignature));
+    await chain.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.vm.$nextTick();
-    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
+    await wrapper.setProps({ editingSetup: false });
     await wrapper.vm.$nextTick();
-    const staleFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
-    expect(staleFallbackEvidence?.dimensionChain).toEqual({
-      status: "fallback",
+    expect(latestDimensionChain(wrapper)).toEqual(expect.objectContaining({
+      status: "generated",
       sourceSignature: currentSourceSignature,
-    });
+    }));
 
     await wrapper.setProps({
-      session: createSession({
-        status: "measurement_entry",
-        factors: [
-          {
-            ...createSession({}).factors[0]!,
-            setup: createSession({}).factors[0]!.setup,
-            evidence: createSession({}).factors[0]!.evidence,
-          },
-        ],
-      }),
+      session: createSessionWithFactorIds(
+        {
+          candidateId: HASH_D,
+          factorId: `${HASH_D.slice(0, 63)}e`,
+        },
+        { status: "measurement_entry" },
+      ),
     });
     await wrapper.vm.$nextTick();
+
+    const staleFallback = latestDimensionChain(wrapper);
+    expect(staleFallback).toEqual(expect.objectContaining({
+      status: "fallback",
+    }));
+    expect(staleFallback?.sourceSignature).not.toBe(currentSourceSignature);
+
+    await wrapper.setProps({ editingSetup: true });
+    await wrapper.vm.$nextTick();
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await wrapper.get("[data-factor-clear-all]").trigger("click");
+    await wrapper.vm.$nextTick();
+
+    await wrapper.setProps({ editingSetup: false });
+    await wrapper.vm.$nextTick();
+
     const resetChain = wrapper.getComponent({ name: "DimensionChainPanel" });
     const resetSourceSignature = resetChain.props("sourceSignature") as string;
-    await resetChain.vm.$emit("report-projection-change", projection("fallback", resetSourceSignature));
-    await wrapper.vm.$nextTick();
-    const resetFallbackEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
-    expect(resetFallbackEvidence).toBeTruthy();
-    expect(resetFallbackEvidence?.dimensionChain).toEqual({
-      status: "fallback",
-      sourceSignature: resetSourceSignature,
+    const emittedAfterReset = wrapper.emitted("engineering-evidence-change") ?? [];
+    const hasResetFallbackEvidence = emittedAfterReset.some((entry) => {
+      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      const chainProjection = evidence?.dimensionChain as Record<string, unknown> | undefined;
+      return chainProjection?.status === "fallback" && chainProjection?.sourceSignature === resetSourceSignature;
     });
+    expect(hasResetFallbackEvidence).toBe(true);
   });
 
-  it("clears on session replacement and only consumes chain projection that matches current session", async () => {
+  it("clears generated cache on session replacement, emits undefined first, then accepts only current-session fallback", async () => {
     const wrapper = mount(FactorInputTable, {
       props: {
         session: createSession({ status: "measurement_entry", sessionId: "session-a" }),
         busy: false,
-        editingSetup: false,
+        editingSetup: true,
       },
     });
 
     let chain = wrapper.getComponent({ name: "DimensionChainPanel" });
-    await chain.vm.$emit("report-projection-change", projection("generated", "signature-a"));
+    const sessionASourceSignature = chain.props("sourceSignature") as string;
+    await chain.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.vm.$nextTick();
-    const beforeReplacement = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    await wrapper.setProps({ editingSetup: false });
+    await wrapper.vm.$nextTick();
+    const beforeReplacement = latestEvidence(wrapper);
     expect(beforeReplacement).toBeTruthy();
+    expect(beforeReplacement?.dimensionChain).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature: sessionASourceSignature,
+    }));
+
+    const emissionCountBeforeReplacement = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
 
     await wrapper.setProps({
-      session: createSession({
-        status: "measurement_entry",
-        sessionId: "session-b",
-        workbook: {
-          fileName: "replacement.xlsx",
-          workbookContentHash: HASH_A,
+      session: createSessionWithFactorIds(
+        {
+          candidateId: HASH_D,
+          factorId: `${HASH_D.slice(0, 63)}f`,
         },
-      }),
+        {
+          status: "measurement_entry",
+          sessionId: "session-b",
+          workbook: {
+            fileName: "replacement.xlsx",
+            workbookContentHash: HASH_A,
+          },
+        },
+      ),
     });
     await wrapper.vm.$nextTick();
     chain = wrapper.getComponent({ name: "DimensionChainPanel" });
-
-    const afterReplacement = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];
-    expect(afterReplacement).toBeUndefined();
-
-    await chain.vm.$emit("report-projection-change", projection("generated", "signature-a"));
-    await wrapper.vm.$nextTick();
-    const oldProjectionEmission = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];
-    expect(oldProjectionEmission).toBeUndefined();
-
     const currentSourceSignature = chain.props("sourceSignature") as string;
-    await chain.vm.$emit("report-projection-change", projection("fallback", currentSourceSignature));
+
+    const emissionsAfterReplacement = (wrapper.emitted("engineering-evidence-change") ?? []).slice(emissionCountBeforeReplacement);
+    expect(emissionsAfterReplacement.length).toBeGreaterThan(0);
+    const undefinedIndex = emissionsAfterReplacement.findIndex((entry) => entry?.[0] === undefined);
+    expect(undefinedIndex).toBeGreaterThanOrEqual(0);
+    const fallbackIndex = emissionsAfterReplacement.findIndex((entry) => {
+      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      return evidence?.dimensionChain
+        && typeof evidence.dimensionChain === "object"
+        && (evidence.dimensionChain as { status?: string }).status === "fallback";
+    });
+    expect(fallbackIndex).toBeGreaterThan(undefinedIndex);
+
+    const oldProjectionEmissionCount = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    await chain.vm.$emit("report-projection-change", projection("generated", sessionASourceSignature));
     await wrapper.vm.$nextTick();
-    const currentProjectionEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const afterOldProjectionCount = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    expect(afterOldProjectionCount).toBe(oldProjectionEmissionCount);
+
+    const currentProjectionEvidence = latestEvidence(wrapper);
     expect(currentProjectionEvidence).toBeTruthy();
     expect(currentProjectionEvidence?.dimensionChain).toEqual({
       status: "fallback",
@@ -393,5 +475,82 @@ describe("FactorInputTable engineering evidence event", () => {
       status: "fallback",
       sourceSignature: currentSourceSignature,
     });
+  });
+
+  it("emits undefined when calculation input becomes unavailable even with a valid current-session projection", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry" }),
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const sourceSignature = chain.props("sourceSignature") as string;
+    await chain.vm.$emit("report-projection-change", projection("generated", sourceSignature));
+    await wrapper.vm.$nextTick();
+    expect(latestDimensionChain(wrapper)).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature,
+    }));
+
+    const invalidSystemSession = createSession({
+      status: "measurement_entry",
+      systemSpecification: {
+        status: "available",
+        designNominal: { status: "available", actualValue: 1, displayValue: "1", sourceLabel: "*Design Nominal ►", sourceCell: "Sheet!P53", valueOrigin: "numeric_literal" },
+        lowerSpecLimit: { status: "available", actualValue: 0.2, displayValue: "0.2", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Sheet!P54", valueOrigin: "numeric_literal" },
+        upperSpecLimit: { status: "available", actualValue: -0.2, displayValue: "-0.2", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Sheet!P55", valueOrigin: "numeric_literal" },
+        targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Sheet!P56", valueOrigin: "numeric_literal" },
+        additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+        volume: { status: "available", actualValue: 1000000, displayValue: "1000000", sourceLabel: "Volume ►", sourceCell: "Sheet!X56", valueOrigin: "numeric_literal" },
+      },
+    });
+
+    await wrapper.setProps({ session: invalidSystemSession });
+    await wrapper.vm.$nextTick();
+
+    const unavailableEmission = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];
+    expect(unavailableEmission).toBeUndefined();
+  });
+
+  it("re-emits valid generated evidence after additional mean shift recalculation while preserving current session/source binding", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry", sessionId: "stable-session" }),
+        busy: false,
+        editingSetup: true,
+      },
+    });
+
+    const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const sourceSignature = chain.props("sourceSignature") as string;
+  await chain.get("[data-generate-dimension-chain]").trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper.setProps({ editingSetup: false });
+    await wrapper.vm.$nextTick();
+
+    const beforeShiftEvidence = latestTypedEvidence(wrapper);
+    expect(beforeShiftEvidence?.dimensionChain).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature,
+    }));
+    const beforeShiftAdjustedMean = beforeShiftEvidence?.responseSummary?.responseAndSpecifications?.adjustedMean;
+
+    const beforeShiftCount = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    await wrapper.get("#additional-mean-shift").setValue("0.321");
+    await wrapper.vm.$nextTick();
+
+    const afterShiftCount = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    expect(afterShiftCount).toBeGreaterThan(beforeShiftCount);
+
+    const afterShiftEvidence = latestTypedEvidence(wrapper);
+    expect(afterShiftEvidence?.dimensionChain).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature,
+    }));
+    expect(afterShiftEvidence?.responseSummary?.responseAndSpecifications?.additionalMeanShift).toBe(0.321);
+    expect(afterShiftEvidence?.responseSummary?.responseAndSpecifications?.adjustedMean).not.toBe(beforeShiftAdjustedMean);
   });
 });

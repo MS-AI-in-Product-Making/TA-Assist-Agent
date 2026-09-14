@@ -445,6 +445,7 @@ function clearAllFactors(): void {
     upperSpecLimit: "",
     targetSigmaLevel: DEFAULT_TARGET_SIGMA_LEVEL,
   });
+  latestDimensionChainProjection.value = undefined;
   dimensionChainResetRevision.value += 1;
   addFactor();
 }
@@ -727,6 +728,7 @@ const currentSessionProjection = computed<DimensionChainReportProjection | undef
 watch(currentSessionKey, (nextKey, previousKey) => {
   if (previousKey === undefined || previousKey === nextKey) return;
   latestDimensionChainProjection.value = undefined;
+  Object.assign(systemSpecificationDraft, importedSystemSpecificationDraft());
 });
 
 const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {
