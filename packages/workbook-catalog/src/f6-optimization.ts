@@ -1737,6 +1737,7 @@ function snapshotV4(
   factorOverrides: V4Snapshot["factorOverrides"],
   systemSpecificationOverride?: V4Snapshot["systemSpecificationOverride"],
 ): V4Snapshot {
+  const specificationMidpoint = calculation.capability.lowerSpecLimit / 2 + calculation.capability.upperSpecLimit / 2;
   return {
     scenarioId,
     sourceStep,
@@ -1747,6 +1748,8 @@ function snapshotV4(
     system: {
       designNominal: calculation.system.designNominal,
       mean: calculation.system.mean,
+      specificationMidpoint,
+      meanOffset: calculation.system.mean - specificationMidpoint,
       additionalMeanShift: calculation.system.additionalMeanShift,
       rssSigma: calculation.system.rssSigma,
       worstCaseLower: calculation.system.worstCaseLower,

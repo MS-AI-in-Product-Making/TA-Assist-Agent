@@ -1387,6 +1387,27 @@ describe("createF6Optimization V4", () => {
     expect(f6OptimizationResultV4Schema.parse(result)).toEqual(result);
   });
 
+  it("stores specification midpoint and mean offset in every V4 snapshot system payload", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 2, targetSigmaLevel: 6 });
+    const result = createF6OptimizationV4(input, v4Inputs(input));
+    const worksheet = result.worksheets[0]!;
+    const snapshots = [
+      worksheet.baselineResult,
+      ...("result" in worksheet.steps[0] ? [worksheet.steps[0].result] : []),
+      ...("result" in worksheet.steps[1] ? [worksheet.steps[1].result] : []),
+      ...("result" in worksheet.steps[2] ? [worksheet.steps[2].result] : []),
+      worksheet.selectedResult.snapshot,
+    ];
+
+    for (const snapshot of snapshots) {
+      const system = snapshot.system as Record<string, number>;
+      const expectedMidpoint = snapshot.capability.lowerSpecLimit + (snapshot.capability.upperSpecLimit - snapshot.capability.lowerSpecLimit) / 2;
+      const expectedOffset = snapshot.system.mean - expectedMidpoint;
+      expect(system.specificationMidpoint).toBeCloseTo(expectedMidpoint, 12);
+      expect(system.meanOffset).toBeCloseTo(expectedOffset, 12);
+    }
+  });
+
   it("uses explicit system/process-shift classification for Step 1 centering and stops when F4 passes", () => {
     const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 1.33, targetSigmaLevel: 4 });
     const baselineRequest = input.worksheets[0]!.baselineCalculationRequest;

@@ -592,6 +592,29 @@ function v4FactorIdentityKey(factor) {
   ]);
 }
 
+function v4SnapshotUnit(snapshot) {
+  const units = [...new Set(snapshot.factors.map((factor) => factor.factor.unit).filter((unit) => typeof unit === "string" && unit.length > 0))];
+  if (units.length !== 1) failInvalid("v4 snapshot unit consistency");
+  return units[0];
+}
+
+function v4ComparisonUnit(baselineSnapshot, selectedSnapshot) {
+  const baselineUnit = v4SnapshotUnit(baselineSnapshot);
+  const selectedUnit = v4SnapshotUnit(selectedSnapshot);
+  if (baselineUnit !== selectedUnit) failInvalid("v4 snapshot unit consistency");
+  return baselineUnit;
+}
+
+function v4SpecificationMidpoint(snapshot) {
+  return snapshot.system.specificationMidpoint
+    ?? (snapshot.capability.lowerSpecLimit / 2 + snapshot.capability.upperSpecLimit / 2);
+}
+
+function v4MeanOffset(snapshot) {
+  return snapshot.system.meanOffset
+    ?? (snapshot.system.mean - v4SpecificationMidpoint(snapshot));
+}
+
 function v4ChangedFactorRows(baselineSnapshot, selectedSnapshot) {
   const baselineByKey = new Map(baselineSnapshot.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
   return selectedSnapshot.factors
@@ -646,6 +669,7 @@ function renderOptimizationComparison(worksheet) {
 
   const baseline = worksheet.f6Worksheet.baselineResult;
   const selectedSnapshot = worksheet.f6Worksheet.selectedResult.snapshot;
+  const unit = v4ComparisonUnit(baseline, selectedSnapshot);
   const hasValidatedOptimizedResult = selectedStatus !== "no_validated_optimized_result";
   const optimized = hasValidatedOptimizedResult ? selectedSnapshot : undefined;
   const changedFactors = v4ChangedFactorRows(baseline, selectedSnapshot);
@@ -665,15 +689,21 @@ function renderOptimizationComparison(worksheet) {
     "",
     "| Metric | Raw Data | Optimized Data |",
     "|---|---:|---:|",
-    row(["Design Nominal", engineeringText(baseline.system.designNominal, "mm"), optimized === undefined ? NA : engineeringText(optimized.system.designNominal, "mm")]),
-    row(["Mean Response", engineeringText(baseline.system.mean, "mm"), optimized === undefined ? NA : engineeringText(optimized.system.mean, "mm")]),
-    row(["Mean Shift", engineeringText(baseline.system.additionalMeanShift, "mm"), optimized === undefined ? NA : engineeringText(optimized.system.additionalMeanShift, "mm")]),
-    row(["RSS One Sigma", engineeringText(baseline.system.rssSigma, "mm"), optimized === undefined ? NA : engineeringText(optimized.system.rssSigma, "mm")]),
-    row(["LSL", engineeringText(baseline.capability.lowerSpecLimit, "mm"), optimized === undefined ? NA : engineeringText(optimized.capability.lowerSpecLimit, "mm")]),
-    row(["USL", engineeringText(baseline.capability.upperSpecLimit, "mm"), optimized === undefined ? NA : engineeringText(optimized.capability.upperSpecLimit, "mm")]),
+    row(["Design Nominal", engineeringText(baseline.system.designNominal, unit), optimized === undefined ? NA : engineeringText(optimized.system.designNominal, unit)]),
+    row(["Mean Response", engineeringText(baseline.system.mean, unit), optimized === undefined ? NA : engineeringText(optimized.system.mean, unit)]),
+    row(["Mean-to-Spec-Center Offset", engineeringText(v4MeanOffset(baseline), unit), optimized === undefined ? NA : engineeringText(v4MeanOffset(optimized), unit)]),
+    row(["Mean Shift", engineeringText(baseline.system.additionalMeanShift, unit), optimized === undefined ? NA : engineeringText(optimized.system.additionalMeanShift, unit)]),
+    row(["RSS One Sigma", engineeringText(baseline.system.rssSigma, unit), optimized === undefined ? NA : engineeringText(optimized.system.rssSigma, unit)]),
+    row(["LSL", engineeringText(baseline.capability.lowerSpecLimit, unit), optimized === undefined ? NA : engineeringText(optimized.capability.lowerSpecLimit, unit)]),
+    row(["USL", engineeringText(baseline.capability.upperSpecLimit, unit), optimized === undefined ? NA : engineeringText(optimized.capability.upperSpecLimit, unit)]),
     row(["Predictive Cpk", numberText(baseline.capability.cpk), optimized === undefined ? NA : numberText(optimized.capability.cpk)]),
+    row(["Predictive CpkL", numberText(baseline.capability.lowerCpk), optimized === undefined ? NA : numberText(optimized.capability.lowerCpk)]),
+    row(["Predictive CpkU", numberText(baseline.capability.upperCpk), optimized === undefined ? NA : numberText(optimized.capability.upperCpk)]),
     row(["Predicted Yield", percentText(baseline.capability.yield), optimized === undefined ? NA : percentText(optimized.capability.yield)]),
     row(["Predicted DPM", numberText(baseline.capability.totalDpm), optimized === undefined ? NA : numberText(optimized.capability.totalDpm)]),
+    row(["Worst-Case Lower", engineeringText(baseline.system.worstCaseLower, unit), optimized === undefined ? NA : engineeringText(optimized.system.worstCaseLower, unit)]),
+    row(["Worst-Case Upper", engineeringText(baseline.system.worstCaseUpper, unit), optimized === undefined ? NA : engineeringText(optimized.system.worstCaseUpper, unit)]),
+    row(["Capability Status", clean(baseline.capability.status, NA), optimized === undefined ? NA : clean(optimized.capability.status, NA)]),
     "",
     "| Step | Status | Action | Result |",
     "|---|---|---|---|",
@@ -912,6 +942,38 @@ function parseOrThrow(schema, value, label) {
     throw new Error(`Invalid F6 final report input: ${label}.`);
   }
   return parsed.data;
+}
+
+function v4FillDerivedSystemFields(snapshot) {
+  if (snapshot === undefined || snapshot === null || typeof snapshot !== "object") return;
+  const capability = snapshot.capability;
+  const system = snapshot.system;
+  if (capability === undefined || system === undefined || typeof capability !== "object" || typeof system !== "object") return;
+  if (!Number.isFinite(capability.lowerSpecLimit) || !Number.isFinite(capability.upperSpecLimit) || !Number.isFinite(system.mean)) return;
+  const specificationMidpoint = capability.lowerSpecLimit / 2 + capability.upperSpecLimit / 2;
+  system.specificationMidpoint = specificationMidpoint;
+  system.meanOffset = system.mean - specificationMidpoint;
+}
+
+function normalizeReadableF6OptimizationInput(value) {
+  if (value === undefined || value === null || typeof value !== "object") return value;
+  if (value.optimizationVersion !== "f6-optimization-v4" || !Array.isArray(value.worksheets)) return value;
+  for (const worksheet of value.worksheets) {
+    if (worksheet === undefined || worksheet === null || typeof worksheet !== "object") continue;
+    v4FillDerivedSystemFields(worksheet.baselineResult);
+    if (Array.isArray(worksheet.steps)) {
+      for (const step of worksheet.steps) {
+        if (step !== undefined && step !== null && typeof step === "object" && "result" in step) {
+          v4FillDerivedSystemFields(step.result);
+        }
+      }
+    }
+    if (worksheet.selectedResult !== undefined && worksheet.selectedResult !== null
+      && typeof worksheet.selectedResult === "object") {
+      v4FillDerivedSystemFields(worksheet.selectedResult.snapshot);
+    }
+  }
+  return value;
 }
 
 function failInvalid(label) {
@@ -2183,7 +2245,8 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
   const f4Report = parseOrThrow(f4WorkflowCalculationResultSchema, input.f4Report, "f4Report");
   const f5Report = parseOrThrow(f5DataInterpretationResultSchema, input.f5Report, "f5Report");
-  const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, input.f6Optimization, "f6Optimization");
+  const f6OptimizationInput = normalizeReadableF6OptimizationInput(structuredClone(input.f6Optimization));
+  const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, f6OptimizationInput, "f6Optimization");
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");

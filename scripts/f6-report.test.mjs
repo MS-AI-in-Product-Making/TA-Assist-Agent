@@ -13,6 +13,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function stableMidpoint(lower, upper) {
+  return lower + (upper - lower) / 2;
+}
+
 function result() {
   return f6OptimizationResultSchema.parse({
     contractVersion: "v1",
@@ -240,7 +244,7 @@ describe("renderF6Report", () => {
 });
 
 describe("renderF6Report V2", () => {
-  function resultV4(selectedStatus = "step2_tolerance_optimized") {
+  function resultV4(selectedStatus = "step2_tolerance_optimized", { unit = "mm" } = {}) {
     const reference = (artifact) => ({ artifact, contentHash: HASH });
     const workbook = { fileName: "Anonymous.xlsx", contentHash: HASH };
     const interactionLanguage = {
@@ -263,7 +267,7 @@ describe("renderF6Report V2", () => {
       tableId: "table-a",
       sourceRow: 14,
       factorName: "Factor A",
-      unit: "mm",
+      unit,
     };
     const trigger = selectedStatus === "baseline_meets_target"
       ? { lowerCpk: 1.4, upperCpk: 1.4, targetCpk: 1.33, failedSides: [] }
@@ -279,6 +283,8 @@ describe("renderF6Report V2", () => {
       system: {
         designNominal: 0,
         mean: factorDelta,
+        specificationMidpoint: stableMidpoint(-0.3, 0.3),
+        meanOffset: factorDelta - stableMidpoint(-0.3, 0.3),
         additionalMeanShift: factorDelta,
         rssSigma: 0.1,
         worstCaseLower: -0.3,
@@ -776,6 +782,12 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("<!-- f6-optimization-comparison -->");
     expect(markdown).toContain("## Optimization Comparison");
     expect(markdown).toContain("| Metric | Raw Data | Optimized Data |");
+    expect(markdown).toContain("| Mean-to-Spec-Center Offset |");
+    expect(markdown).toContain("| Predictive CpkL |");
+    expect(markdown).toContain("| Predictive CpkU |");
+    expect(markdown).toContain("| Worst-Case Lower |");
+    expect(markdown).toContain("| Worst-Case Upper |");
+    expect(markdown).toContain("| Capability Status |");
     expect(markdown).toContain("| Step | Status | Action | Result |");
     expect(markdown).toContain("| Factor | Table / Row | Nominal Before | Nominal After |");
     expect(markdown).toContain("Requirement change - engineering approval required");
@@ -788,11 +800,36 @@ describe("renderF6Report V2", () => {
     expect(step3).toBeGreaterThan(step2);
   });
 
-  it("renders no-result V4 comparison without optimized numeric cells", () => {
+  it("renders no-result V4 comparison with N/A in every optimized numeric and status cell", () => {
     const markdown = renderF6ReportV2(resultV4("no_validated_optimized_result"));
 
     expect(markdown).toContain("No validated optimized result");
     expect(markdown).toContain("| Predictive Cpk | 1.100000 | N/A |");
-    expect(markdown).not.toMatch(/\| Predictive Cpk \| 1\.100000 \| 1\./u);
+    expect(markdown).toContain("| Predicted Yield | 95.00% | N/A |");
+    expect(markdown).toContain("| Predicted DPM | 50000 | N/A |");
+    expect(markdown).toContain("| Predictive CpkL | 1.1 | N/A |");
+    expect(markdown).toContain("| Predictive CpkU | 1.35 | N/A |");
+    expect(markdown).toContain("| Worst-Case Lower | -0.3 mm | N/A |");
+    expect(markdown).toContain("| Worst-Case Upper | 0.3 mm | N/A |");
+    expect(markdown).toContain("| Capability Status | FAIL | N/A |");
+  });
+
+  it("uses governed V4 snapshot units instead of hardcoded mm", () => {
+    const markdown = renderF6ReportV2(resultV4("step2_tolerance_optimized", { unit: "um" }));
+
+    expect(markdown).toContain("| Design Nominal | 0 um |");
+    expect(markdown).toContain("| Mean Response | 0 um |");
+    expect(markdown).not.toContain("| Design Nominal | 0 mm |");
+  });
+
+  it("uses nearly-equal comparison for changed factors", () => {
+    const input = clone(resultV4("step2_tolerance_optimized"));
+    input.worksheets[0].selectedResult.snapshot.factors[0].nominalValue += Number.EPSILON;
+    input.worksheets[0].selectedResult.snapshot.factors[0].upperTolerance += Number.EPSILON;
+    input.worksheets[0].selectedResult.snapshot.factors[0].lowerTolerance -= Number.EPSILON;
+
+    const markdown = renderF6ReportV2(input);
+
+    expect(markdown).toContain("| None | N/A | N/A | N/A |");
   });
 });

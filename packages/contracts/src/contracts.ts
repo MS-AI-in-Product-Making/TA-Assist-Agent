@@ -8959,6 +8959,8 @@ const f6ScenarioSnapshotV4Schema = z.object({
   system: z.object({
     designNominal: z.number().finite(),
     mean: z.number().finite(),
+    specificationMidpoint: z.number().finite().optional(),
+    meanOffset: z.number().finite().optional(),
     additionalMeanShift: z.number().finite(),
     rssSigma: z.number().finite().positive(),
     worstCaseLower: z.number().finite(),
@@ -8996,7 +8998,26 @@ const f6ScenarioSnapshotV4Schema = z.object({
     additionalMeanShift: z.number().finite().optional(),
   }).strict().optional(),
   formulaReferences: z.array(f6V2FormulaReferenceSchema),
-}).strict();
+}).strict().superRefine((snapshot, context) => {
+  const expectedMidpoint = snapshot.capability.lowerSpecLimit / 2 + snapshot.capability.upperSpecLimit / 2;
+  const midpoint = snapshot.system.specificationMidpoint ?? expectedMidpoint;
+  if (snapshot.system.specificationMidpoint !== undefined && !f6NearlyEqual(midpoint, expectedMidpoint)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "specificationMidpoint must equal the capability midpoint",
+      path: ["system", "specificationMidpoint"],
+    });
+  }
+  const expectedMeanOffset = snapshot.system.mean - midpoint;
+  const meanOffset = snapshot.system.meanOffset ?? expectedMeanOffset;
+  if (snapshot.system.meanOffset !== undefined && !f6NearlyEqual(meanOffset, expectedMeanOffset)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "meanOffset must equal mean minus specificationMidpoint",
+      path: ["system", "meanOffset"],
+    });
+  }
+});
 
 const f6MeanResponseCenteringStepV4Schema = z.discriminatedUnion("status", [
   z.object({
