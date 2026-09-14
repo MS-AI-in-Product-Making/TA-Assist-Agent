@@ -394,6 +394,9 @@ export function runF6Optimization(
         ? completedF5MultimodalProjection(loaded.modelInterpretation)
         : loaded.modelInterpretation,
       multimodalReference: inputDecisions.modelInterpretation.artifactReference,
+      ...(loaded.sourceReferences.imageObservation === undefined
+        ? {}
+        : { imageObservationReference: loaded.sourceReferences.imageObservation }),
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
       optimizationTargetsDecision: inputDecisions.optimizationTargets,
     });

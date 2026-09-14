@@ -498,6 +498,11 @@ const PRINT_CSS = `
   .optimization-table td { padding:8px 10px; border:0; border-bottom:1px solid rgba(10,10,10,.22); color:var(--st-ink); font-size:14px; line-height:1.2; }
   .optimization-table--system { grid-column:1; grid-row:2/span 2; }
   .optimization-table--path { grid-column:2; grid-row:1/span 2; }
+  .optimization-table--path td { overflow-wrap:anywhere; word-break:break-word; }
+  .optimization-table--path th:nth-child(1),.optimization-table--path td:nth-child(1) { width:24%; }
+  .optimization-table--path th:nth-child(2),.optimization-table--path td:nth-child(2) { width:24%; }
+  .optimization-table--path th:nth-child(3),.optimization-table--path td:nth-child(3) { width:32%; }
+  .optimization-table--path th:nth-child(4),.optimization-table--path td:nth-child(4) { width:20%; }
   .optimization-table--factors { grid-column:1/span 2; grid-row:3; }
   .slide-optimization-continuation .optimization-table--factors { grid-row:2/span 2; }
   .slide-optimization-continuation .optimization-table--path { grid-row:1; }

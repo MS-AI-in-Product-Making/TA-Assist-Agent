@@ -77,6 +77,7 @@ export interface F6OptimizationV4Inputs {
   readonly interactionLanguage: InteractionLanguage;
   readonly multimodalInterpretation: F5MultimodalArtifactV3 | F5MultimodalArtifactV4;
   readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
+  readonly imageObservationReference?: { readonly artifact: string; readonly contentHash: string };
   readonly optimizationTargets?: F6OptimizationTargets;
   readonly optimizationTargetsDecision?: F6InputDecision;
 }
@@ -2254,6 +2255,9 @@ export function createF6OptimizationV4(
       f4Reference: artifactReference(request.f4Reference),
       f5Reference: artifactReference(request.f5Reference),
       multimodalReference: artifactReference(inputs.multimodalReference),
+      ...(inputs.imageObservationReference === undefined
+        ? {}
+        : { imageObservationReference: artifactReference(inputs.imageObservationReference) }),
       reportScope: structuredClone(request.reportScope),
     },
   }));

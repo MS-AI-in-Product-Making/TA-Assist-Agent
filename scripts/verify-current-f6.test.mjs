@@ -622,13 +622,13 @@ describe("validateExistingF6Artifact", () => {
     });
   });
 
-  it("rejects an unproven extra imageObservation source on current v4 run summaries", () => {
+  it("accepts a governed current imageObservation source on current v4 run summaries", () => {
     const { runRoot, bundle } = createVerifiedRun({ currentObservation: true });
     const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
 
     expect(summary.sources.imageObservation).toBeDefined();
     const result = validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot });
-    expect(result).toMatchObject({ status: "rejected", reasonCode: "run_summary_invalid" });
+    expect(result).toMatchObject({ status: "accepted" });
   });
 
   it("accepts a current v3 report with a governed blocked FAIL worksheet", () => {

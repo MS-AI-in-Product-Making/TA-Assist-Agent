@@ -9278,6 +9278,32 @@ const f6OptimizationSummaryV4Schema = z.object({
   clarificationRequiredWorksheetCount: z.number().int().nonnegative(),
 }).strict();
 
+const f6ProvenanceV4Schema = z.object({
+  f2Reference: f6ArtifactReferenceSchema,
+  f3Reference: f6ArtifactReferenceSchema,
+  f4Reference: f6ArtifactReferenceSchema,
+  f5Reference: f6ArtifactReferenceSchema,
+  multimodalReference: f6ArtifactReferenceSchema,
+  imageObservationReference: f6ArtifactReferenceSchema.optional(),
+  reportScope: z.object({
+    worksheetNames: z.array(z.string().min(1)).min(1),
+    blockedWorksheetNames: z.array(z.string().min(1)),
+  }).strict(),
+}).strict().superRefine((provenance, context) => {
+  const scopeNames = provenance.reportScope.worksheetNames;
+  const blockedScopeNames = provenance.reportScope.blockedWorksheetNames;
+  if (new Set(scopeNames).size !== scopeNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "report scope worksheet names must be unique", path: ["reportScope", "worksheetNames"] });
+  }
+  if (new Set(blockedScopeNames).size !== blockedScopeNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked report scope worksheet names must be unique", path: ["reportScope", "blockedWorksheetNames"] });
+  }
+  const scopeNameSet = new Set(scopeNames);
+  if (blockedScopeNames.some((name) => !scopeNameSet.has(name))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked report scope names must be a subset of worksheet names", path: ["reportScope", "blockedWorksheetNames"] });
+  }
+});
+
 export const f6OptimizationResultV4Schema = z.object({
   contractVersion: contractVersionSchema,
   outputClassification: z.literal("confidential"),
@@ -9289,7 +9315,7 @@ export const f6OptimizationResultV4Schema = z.object({
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   worksheets: z.array(f6OptimizationWorksheetV4Schema).min(1),
   summary: f6OptimizationSummaryV4Schema,
-  provenance: f6ProvenanceV3Schema,
+  provenance: f6ProvenanceV4Schema,
 }).strict().superRefine((result, context) => {
   const worksheetNames = result.worksheets.map(({ worksheetName }) => worksheetName);
   if (new Set(worksheetNames).size !== worksheetNames.length) {

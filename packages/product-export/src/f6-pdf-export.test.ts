@@ -197,6 +197,8 @@ describe("renderF6PdfSync", () => {
     expect((html.match(/class="[^"]*slide-optimization/g) ?? [])).toHaveLength(1);
     expect(html).toContain("width:1920px");
     expect(html).toContain("height:1080px");
+    expect(html).toContain(".optimization-table--path td { overflow-wrap:anywhere; word-break:break-word; }");
+    expect(html).toContain(".optimization-table--path th:nth-child(3),.optimization-table--path td:nth-child(3) { width:32%; }");
   });
 
   it("keeps worksheet flow unchanged when optimization heading has no marker", () => {
