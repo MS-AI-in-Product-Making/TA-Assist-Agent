@@ -261,12 +261,12 @@ class F6PdfRenderer extends Renderer {
       this.pendingOptimizationSection = undefined;
       return `${closePrevious}<section class="worksheet-section slide slide-worksheet" id="worksheet-${worksheetMatch[1]}"><div class="worksheet-fit"><h1>${content}</h1>\n`;
     }
+    const optimizationSection = this.pendingOptimizationSection;
     const optimizationHeading = token.depth === 2
       && /^Optimization Comparison(?: \(Continued\))?$/u.test(token.text.trim())
-      && this.pendingOptimizationSection !== undefined;
+      && optimizationSection !== undefined;
     if (optimizationHeading) {
       const closePrevious = this.closeCurrentSection();
-      const optimizationSection = this.pendingOptimizationSection;
       this.pendingOptimizationSection = undefined;
       this.section = optimizationSection;
       const classes = optimizationSection === "optimization-continuation"

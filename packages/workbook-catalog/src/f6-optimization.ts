@@ -1730,7 +1730,7 @@ type V4Sensitivity = V4Worksheet["sensitivityScenarios"][number];
 function snapshotV4(
   request: F6OptimizationRequest,
   baseline: CalculationCompletedResult,
-  calculation: CalculationCompletedResult,
+  calculation: Pick<CalculationCompletedResult, "system" | "capability" | "factors" | "traceRecords">,
   scenarioId: string,
   sourceStep: V4Snapshot["sourceStep"],
   inputScenarioId: string | null,
@@ -1805,12 +1805,20 @@ function requestFromSnapshot(
         if (factor === undefined) {
           return;
         }
-        row.fields.nominalValue.numericValue = factor.nominalValue;
-        row.fields.nominalValue.rawText = String(factor.nominalValue);
-        row.fields.lowerTolerance.numericValue = factor.lowerTolerance;
-        row.fields.lowerTolerance.rawText = String(factor.lowerTolerance);
-        row.fields.upperTolerance.numericValue = factor.upperTolerance;
-        row.fields.upperTolerance.rawText = String(factor.upperTolerance);
+        const nominalValue = row.fields.nominalValue;
+        const lowerTolerance = row.fields.lowerTolerance;
+        const upperTolerance = row.fields.upperTolerance;
+        if (nominalValue?.status !== "available"
+          || lowerTolerance?.status !== "available"
+          || upperTolerance?.status !== "available") {
+          throw new Error("V4 scenario replay requires available Factor nominal and tolerance fields.");
+        }
+        nominalValue.numericValue = factor.nominalValue;
+        nominalValue.rawText = String(factor.nominalValue);
+        lowerTolerance.numericValue = factor.lowerTolerance;
+        lowerTolerance.rawText = String(factor.lowerTolerance);
+        upperTolerance.numericValue = factor.upperTolerance;
+        upperTolerance.rawText = String(factor.upperTolerance);
       });
     });
   });
@@ -1820,19 +1828,19 @@ function requestFromSnapshot(
 function verifyV4OptimizationTargets(
   request: F6OptimizationRequest,
   inputs: F6OptimizationV4Inputs,
-): ReadonlyMap<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]> {
+): ReadonlyMap<string, F6OptimizationTargets["worksheets"][number]["targets"]> {
   const decision = inputs.optimizationTargetsDecision ?? { outcome: "NOT_PROVIDED" };
   if ((inputs.optimizationTargets !== undefined) !== authorizedDecision(decision)) {
     throw new Error("Optimization Targets decision does not match the provided artifact.");
   }
   if (inputs.optimizationTargets === undefined) {
-    return new Map<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]>();
+    return new Map<string, F6OptimizationTargets["worksheets"][number]["targets"]>();
   }
   const targets = f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
   if (targets.workbookContentHash !== request.workbook.contentHash) {
     throw new Error("Optimization Targets workbook identity does not match the F6 request.");
   }
-  const worksheetMap = new Map<string, readonly F6OptimizationTargets["worksheets"][number]["targets"]>();
+  const worksheetMap = new Map<string, F6OptimizationTargets["worksheets"][number]["targets"]>();
   targets.worksheets.forEach((targetWorksheet) => {
     const worksheet = request.worksheets.find((candidate) => candidate.worksheetName === targetWorksheet.worksheetName
       && candidate.baselineCalculation.worksheetSelection.tableId === targetWorksheet.tableId);
@@ -1847,7 +1855,7 @@ function verifyV4OptimizationTargets(
 function completedScenarioCalculation(
   calculation: CalculationCompletedResult,
   scenarioId: string,
-): CalculationCompletedResult {
+): CalculationCompletedResult["scenarios"][number]["calculation"] {
   const scenario = calculation.scenarios.find((entry) => entry.scenarioId === scenarioId);
   if (scenario === undefined) {
     throw new Error("controlled scenario result missing");
