@@ -1,21 +1,18 @@
-import { execFile } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import {
   assumptionResultsPdfRouteRequestSchema,
   type AssumptionResultsPdfRouteRequest,
 } from "./assumption-results-pdf-contract.js";
 
-const execFileAsync = promisify(execFile);
-const PDF_BROWSER_EXEC_OPTIONS = {
-  timeout: 60_000,
-  killSignal: "SIGKILL",
+const PDF_BROWSER_SPAWN_OPTIONS = {
+  stdio: "ignore",
   windowsHide: true,
-  maxBuffer: 4 * 1024 * 1024,
 } as const;
+const PDF_BROWSER_DEFAULT_TIMEOUT_MS = 15_000;
 const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
   recursive: true,
   force: true,
@@ -260,18 +257,80 @@ async function findInstalledBrowsers(): Promise<readonly string[]> {
   return installed;
 }
 
-type PdfBrowserExecFile = (
+type PdfBrowserSpawn = (
   executable: string,
   args: readonly string[],
-  options: typeof PDF_BROWSER_EXEC_OPTIONS,
-) => Promise<unknown>;
+  options: typeof PDF_BROWSER_SPAWN_OPTIONS,
+) => ChildProcess;
 
 export async function executePdfBrowser(
   executable: string,
   args: readonly string[],
-  executeFile: PdfBrowserExecFile = execFileAsync as unknown as PdfBrowserExecFile,
+  spawnProcess: PdfBrowserSpawn = spawn,
+  timeoutMs: number = PDF_BROWSER_DEFAULT_TIMEOUT_MS,
 ): Promise<void> {
-  await executeFile(executable, [...args], PDF_BROWSER_EXEC_OPTIONS);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    let child: ChildProcess | undefined;
+
+    const settle = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (child !== undefined) {
+        child.removeListener("error", onError);
+        child.removeListener("close", onClose);
+      }
+      if (error === undefined) {
+        resolve();
+        return;
+      }
+      reject(error);
+    };
+
+    const onError = (error: Error): void => {
+      settle(new Error(`Failed to launch PDF browser: ${error.message}`));
+    };
+
+    const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (code === 0) {
+        settle();
+        return;
+      }
+      if (code !== null) {
+        settle(new Error(`PDF browser exited with code ${code}.`));
+        return;
+      }
+      if (signal !== null) {
+        settle(new Error(`PDF browser exited from signal ${signal}.`));
+        return;
+      }
+      settle(new Error("PDF browser exited before completion."));
+    };
+
+    try {
+      child = spawnProcess(executable, [...args], PDF_BROWSER_SPAWN_OPTIONS);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      settle(new Error(`Failed to launch PDF browser: ${message}`));
+      return;
+    }
+
+    child.once("error", onError);
+    child.once("close", onClose);
+    timer = setTimeout(() => {
+      try {
+        child?.kill("SIGKILL");
+      } catch {
+        // Ignore kill exceptions and reject with a bounded timeout message.
+      }
+      settle(new Error(`PDF browser timed out after ${timeoutMs} ms. Check for stale browser/crashpad processes and retry.`));
+    }, timeoutMs);
+  });
 }
 
 export function createAssumptionResultsPdfRenderer(
@@ -328,6 +387,8 @@ export function createAssumptionResultsPdfRenderer(
             "--headless=new",
             "--disable-gpu",
             "--disable-background-networking",
+            "--disable-breakpad",
+            "--disable-crash-reporter",
             "--disable-component-update",
             "--disable-sync",
             "--no-first-run",

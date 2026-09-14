@@ -1,4 +1,6 @@
 import { access, readFile, rm, writeFile } from "node:fs/promises";
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -314,17 +316,64 @@ describe("renderAssumptionResultsPdfHtml", () => {
 });
 
 describe("createAssumptionResultsPdfRenderer", () => {
-  it("uses bounded process options in the default execFile adapter", async () => {
-    const executeFile = vi.fn(async (..._args: unknown[]) => undefined);
+  it("spawns with ignored stdio and resolves only after close code 0", async () => {
+    const child = new EventEmitter() as ChildProcess;
+    child.kill = vi.fn(() => true) as ChildProcess["kill"];
+    const spawnProcess = vi.fn(() => child);
 
-    await executePdfBrowser("browser.exe", ["--headless"], executeFile);
+    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
 
-    expect(executeFile).toHaveBeenCalledWith("browser.exe", ["--headless"], {
-      timeout: 60_000,
-      killSignal: "SIGKILL",
+    expect(spawnProcess).toHaveBeenCalledWith("browser.exe", ["--headless=new"], {
+      stdio: "ignore",
       windowsHide: true,
-      maxBuffer: 4 * 1024 * 1024,
     });
+
+    child.emit("close", 0, null);
+    await expect(promise).resolves.toBeUndefined();
+  });
+
+  it("rejects when browser launch emits error", async () => {
+    const child = new EventEmitter() as ChildProcess;
+    child.kill = vi.fn(() => true) as ChildProcess["kill"];
+    const spawnProcess = vi.fn(() => child);
+
+    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
+
+    child.emit("error", new Error("spawn failed"));
+    await expect(promise).rejects.toThrow("Failed to launch PDF browser: spawn failed");
+  });
+
+  it("rejects when browser exits with nonzero code", async () => {
+    const child = new EventEmitter() as ChildProcess;
+    child.kill = vi.fn(() => true) as ChildProcess["kill"];
+    const spawnProcess = vi.fn(() => child);
+
+    const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 15_000);
+
+    child.emit("close", 3, null);
+    await expect(promise).rejects.toThrow("PDF browser exited with code 3");
+  });
+
+  it("times out, kills the process with SIGKILL, and rejects with an actionable error", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = new EventEmitter() as ChildProcess;
+      child.kill = vi.fn(() => true) as ChildProcess["kill"];
+      const spawnProcess = vi.fn(() => child);
+
+      const promise = executePdfBrowser("browser.exe", ["--headless=new"], spawnProcess, 25);
+
+      const rejection = expect(promise).rejects.toThrow(
+        "PDF browser timed out after 25 ms. Check for stale browser/crashpad processes and retry.",
+      );
+
+      await vi.advanceTimersByTimeAsync(25);
+
+      expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("retries removal of the temporary directory", async () => {
