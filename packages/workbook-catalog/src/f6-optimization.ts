@@ -2171,10 +2171,15 @@ export function createF6OptimizationV4(
                   result: snapshot,
                 };
                 lastValidSnapshot = snapshot;
-                selectedResult = {
-                  status: "step3_specification_relaxed_pending_approval",
-                  snapshot,
-                };
+                selectedResult = snapshot.capability.status === "PASS"
+                  ? {
+                    status: "step3_specification_relaxed_pending_approval",
+                    snapshot,
+                  }
+                  : {
+                    status: "no_validated_optimized_result",
+                    snapshot,
+                  };
               }
             }
           } catch {

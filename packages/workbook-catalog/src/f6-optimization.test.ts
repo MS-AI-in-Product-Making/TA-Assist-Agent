@@ -1327,6 +1327,54 @@ describe("createF6Optimization V4", () => {
     };
   }
 
+  function assertRequestReplayFromSnapshot(
+    replayedRequest: CalculationRequest,
+    snapshot: {
+      readonly system: {
+        readonly designNominal: number;
+        readonly additionalMeanShift: number;
+      };
+      readonly capability: {
+        readonly lowerSpecLimit: number;
+        readonly upperSpecLimit: number;
+        readonly targetCpk: number;
+      };
+      readonly factors: ReadonlyArray<{
+        readonly factor: { readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number };
+        readonly nominalValue: number;
+        readonly lowerTolerance: number;
+        readonly upperTolerance: number;
+      }>;
+    },
+  ) {
+    expect(replayedRequest.scenarioOverrides).toEqual([]);
+    expect(replayedRequest.systemSpecification.designNominal).toBeCloseTo(snapshot.system.designNominal, 12);
+    expect(replayedRequest.systemSpecification.additionalMeanShift).toBeCloseTo(snapshot.system.additionalMeanShift, 12);
+    expect(replayedRequest.systemSpecification.lowerSpecLimit).toBeCloseTo(snapshot.capability.lowerSpecLimit, 12);
+    expect(replayedRequest.systemSpecification.upperSpecLimit).toBeCloseTo(snapshot.capability.upperSpecLimit, 12);
+    expect(replayedRequest.systemSpecification.targetCpk).toBeCloseTo(snapshot.capability.targetCpk, 12);
+
+    const rowByIdentity = new Map<string, CalculationRequest["worksheetAnalysisAssets"]["worksheets"][number]["factorTables"][number]["rows"][number]>();
+    for (const worksheet of replayedRequest.worksheetAnalysisAssets.worksheets) {
+      for (const table of worksheet.factorTables) {
+        for (const row of table.rows) {
+          rowByIdentity.set(`${worksheet.worksheetName}\u0000${table.tableId}\u0000${row.sourceRow}`, row);
+        }
+      }
+    }
+
+    expect(snapshot.factors).toHaveLength(rowByIdentity.size);
+    for (const factor of snapshot.factors) {
+      const key = `${factor.factor.worksheetName}\u0000${factor.factor.tableId}\u0000${factor.factor.sourceRow}`;
+      const row = rowByIdentity.get(key);
+      expect(row, `missing factor row for ${key}`).toBeDefined();
+      expect(row!.sourceRow).toBe(factor.factor.sourceRow);
+      expect(row!.fields.nominalValue.numericValue).toBeCloseTo(factor.nominalValue, 12);
+      expect(row!.fields.lowerTolerance.numericValue).toBeCloseTo(factor.lowerTolerance, 12);
+      expect(row!.fields.upperTolerance.numericValue).toBeCloseTo(factor.upperTolerance, 12);
+    }
+  }
+
   it("keeps baseline PASS worksheets at baseline with no optimization steps", () => {
     const input = request("Analysis-A", { lowerSpecLimit: -20, upperSpecLimit: 20, targetCpk: 1.33, targetSigmaLevel: 4 });
 
@@ -1458,11 +1506,7 @@ describe("createF6Optimization V4", () => {
     expect(worksheet.steps[1].result.inputScenarioId).toBe(worksheet.steps[0].result.scenarioId);
     const step2BaseRequest = requestsByScenario.get(worksheet.steps[1].result.scenarioId);
     expect(step2BaseRequest).toBeDefined();
-    expect(step2BaseRequest!.scenarioOverrides).toEqual([]);
-    expect(step2BaseRequest!.systemSpecification.additionalMeanShift).toBeCloseTo(
-      worksheet.steps[0].result.system.additionalMeanShift,
-      12,
-    );
+    assertRequestReplayFromSnapshot(step2BaseRequest!, worksheet.steps[0].result);
   });
 
   it("uses Top 3 reverse solve in Step 2 and stops on F4 PASS", () => {
@@ -1484,6 +1528,65 @@ describe("createF6Optimization V4", () => {
   it("runs Step 3 from the last valid Step 2 snapshot and marks requirement-change approval", () => {
     const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 2, targetSigmaLevel: 6 });
 
+    const requestsByScenario = new Map<string, CalculationRequest>();
+    const result = createF6OptimizationV4(input, v4Inputs(input), {
+      calculateScenario: (scenarioInput) => {
+        requestsByScenario.set(scenarioInput.scenario.scenarioId, structuredClone(scenarioInput.baselineRequest));
+        if (scenarioInput.scenario.scenarioId.includes(":step2:")) {
+          const loosenedOverrides = scenarioInput.scenario.factorOverrides.map((override) => ({
+            ...override,
+            lowerTolerance: override.lowerTolerance * 1.2,
+            upperTolerance: override.upperTolerance * 1.2,
+          }));
+          return calculateF6Scenario({
+            baselineRequest: scenarioInput.baselineRequest,
+            scenario: {
+              ...scenarioInput.scenario,
+              factorOverrides: loosenedOverrides,
+            },
+          });
+        }
+        if (scenarioInput.scenario.scenarioId.includes(":step3:")) {
+          const override = scenarioInput.scenario.systemSpecification;
+          return calculateF6Scenario({
+            baselineRequest: scenarioInput.baselineRequest,
+            scenario: {
+              ...scenarioInput.scenario,
+              systemSpecification: {
+                ...(override?.lowerSpecLimit === undefined ? {} : { lowerSpecLimit: override.lowerSpecLimit - 0.5 }),
+                ...(override?.upperSpecLimit === undefined ? {} : { upperSpecLimit: override.upperSpecLimit + 0.5 }),
+              },
+            },
+          });
+        }
+        return calculateF6Scenario(scenarioInput);
+      },
+    });
+    const worksheet = result.worksheets[0]!;
+    if (!("result" in worksheet.steps[1]) || !("result" in worksheet.steps[2])) throw new Error("expected step2 and step3 snapshots");
+
+    expect(worksheet.steps[1].status).toBe("COMPLETED_TARGET_NOT_MET");
+    expect(worksheet.steps[2].result.inputScenarioId).toBe(worksheet.steps[1].result.scenarioId);
+    const step3BaseRequest = requestsByScenario.get(worksheet.steps[2].result.scenarioId);
+    expect(step3BaseRequest).toBeDefined();
+    assertRequestReplayFromSnapshot(step3BaseRequest!, worksheet.steps[1].result);
+    expect(worksheet.steps[2]).toMatchObject({
+      status: "COMPLETED_TARGET_MET",
+      changeClass: "requirement_change",
+      approvalRequired: true,
+      capabilityImprovementClaim: false,
+    });
+    expect(worksheet.selectedResult.status).toBe("step3_specification_relaxed_pending_approval");
+    expect(result.summary).toMatchObject({
+      optimizedWorksheetCount: 1,
+      noValidatedResultWorksheetCount: 0,
+    });
+  });
+
+  it("does not select pending approval when Step 3 verification is COMPLETED_TARGET_NOT_MET", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 2, targetSigmaLevel: 6 });
+    const baselineSystemSpecification = structuredClone(input.worksheets[0]!.baselineCalculationRequest.systemSpecification);
+
     const result = createF6OptimizationV4(input, v4Inputs(input), {
       calculateScenario: (scenarioInput) => {
         if (scenarioInput.scenario.scenarioId.includes(":step2:")) {
@@ -1500,21 +1603,37 @@ describe("createF6Optimization V4", () => {
             },
           });
         }
+        if (scenarioInput.scenario.scenarioId.includes(":step3:")) {
+          return calculateF6Scenario({
+            baselineRequest: scenarioInput.baselineRequest,
+            scenario: {
+              ...scenarioInput.scenario,
+              systemSpecification: {
+                lowerSpecLimit: baselineSystemSpecification.lowerSpecLimit,
+                upperSpecLimit: baselineSystemSpecification.upperSpecLimit,
+              },
+            },
+          });
+        }
         return calculateF6Scenario(scenarioInput);
       },
     });
     const worksheet = result.worksheets[0]!;
-    if (!("result" in worksheet.steps[1]) || !("result" in worksheet.steps[2])) throw new Error("expected step2 and step3 snapshots");
+    if (!("result" in worksheet.steps[2])) throw new Error("expected Step 3 snapshot");
 
-    expect(worksheet.steps[1].status).toBe("COMPLETED_TARGET_NOT_MET");
-    expect(worksheet.steps[2].result.inputScenarioId).toBe(worksheet.steps[1].result.scenarioId);
     expect(worksheet.steps[2]).toMatchObject({
-      status: expect.stringMatching(/^COMPLETED_TARGET_/),
+      step: "specificationRelaxation",
+      status: "COMPLETED_TARGET_NOT_MET",
       changeClass: "requirement_change",
       approvalRequired: true,
       capabilityImprovementClaim: false,
     });
-    expect(worksheet.selectedResult.status).toBe("step3_specification_relaxed_pending_approval");
+    expect(worksheet.selectedResult.status).toBe("no_validated_optimized_result");
+    expect(worksheet.selectedResult.snapshot.scenarioId).toBe(worksheet.steps[2].result.scenarioId);
+    expect(result.summary).toMatchObject({
+      optimizedWorksheetCount: 0,
+      noValidatedResultWorksheetCount: 1,
+    });
   });
 
   it("returns no_validated_optimized_result when Step 3 cannot be validated", () => {
