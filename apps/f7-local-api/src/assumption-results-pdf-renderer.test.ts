@@ -113,6 +113,64 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
   };
 }
 
+function representativeCurrentUiRequest(): AssumptionResultsPdfRouteRequest {
+  const request = validRequest();
+  return {
+    ...request,
+    summaryRows: Array.from({ length: 6 }, (_, index) => ({
+      ...request.summaryRows[0],
+      metric: `Summary metric ${index + 1}`,
+    })),
+    rootCauseItems: [
+      request.rootCauseItems[0],
+      {
+        ...request.rootCauseItems[0],
+        title: "Mean shift hypothesis",
+        quantitativeEvidence: [
+          { label: "Mean offset", value: "+0.03" },
+          { label: "Cp-Cpk gap", value: "0.42" },
+        ],
+      },
+    ],
+    actionItems: [
+      request.actionItems[0],
+      {
+        optionId: "improvement-reduce-variation",
+        title: "Reduce total variation",
+        narrative: "Reduce total variation after representative evidence confirms the modeled shortfall.",
+      },
+      {
+        optionId: "improvement-reduce-contributor",
+        title: "Reduce the dominant contributor",
+        narrative: "Prioritize the leading contributor after validating its measured distribution.",
+      },
+      request.actionItems[1],
+    ],
+    contributors: Array.from({ length: 7 }, (_, index) => ({
+      factorName: `Factor ${index + 1}`,
+      reference: `G${index + 10}`,
+      designNominal: Number((1 + index / 10).toFixed(2)),
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      contributionPercent: Number((100 / 7).toFixed(2)),
+      cumulativePercent: index === 6 ? 100 : Number(((index + 1) * 100 / 7).toFixed(2)),
+    })),
+    processGuidance: [
+      request.processGuidance[0],
+      {
+        state: "guidance",
+        title: "Confirm measurement readiness",
+        message: "Collect representative measured samples before replacing assumption-based distributions.",
+      },
+      {
+        state: "guidance",
+        title: "Record the release decision",
+        message: "Document the approved response and evidence in the governed engineering record.",
+      },
+    ],
+  };
+}
+
 function outputPathFrom(args: readonly string[]): string {
   const flag = args.find((arg) => arg.startsWith("--print-to-pdf="));
   if (flag === undefined) throw new Error("Missing print-to-pdf flag.");
@@ -258,6 +316,24 @@ describe("assumption results PDF contract", () => {
 });
 
 describe("renderAssumptionResultsPdfHtml", () => {
+  it("uses compact page-two grids for a representative current UI payload", () => {
+    const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+
+    expect(html.match(/<tr>/g)).toHaveLength(20);
+    expect(html.match(/data-pareto-bar/g)).toHaveLength(7);
+    expect(html).toMatch(/<div class="report-page report-page--decision">/);
+    expect(html).toMatch(/<div class="report-page report-page--action">/);
+    expect(html).toMatch(/<ol class="narrative-list action-grid">[\s\S]*?<\/ol>/);
+    expect(html).toMatch(/<div class="priority-grid">[\s\S]*?data-pareto-chart[\s\S]*?<table class="priority-table">/);
+    expect(html).toMatch(/<ol class="narrative-list guidance-grid">[\s\S]*?<\/ol>/);
+    expect(html).toMatch(/\.action-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,/);
+    expect(html).toMatch(/\.priority-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, \.78fr\) minmax\(0, 1\.22fr\);/);
+    expect(html).toMatch(/\.guidance-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3,/);
+    expect(html).toMatch(/\.priority-table\s*{[^}]*font-size:\s*8pt;/);
+    expect(html).toMatch(/html\s*{[^}]*font-size:\s*8pt;/);
+    expect(html).not.toMatch(/overflow:\s*hidden;/);
+  });
+
   it("renders an escaped, self-contained A4 landscape report with all required sections", () => {
     const html = renderAssumptionResultsPdfHtml(validRequest());
 
@@ -265,7 +341,7 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(reportPageGroups).toEqual(["decision", "action"]);
     expect(reportPageGroups).toHaveLength(2);
 
-    const decisionPageMatch = html.match(/<section class="report-page report-page--decision">([\s\S]*?)<\/section>\s*<section class="report-page report-page--action">/);
+    const decisionPageMatch = html.match(/<div class="report-page report-page--decision">([\s\S]*?)<\/div>\s*<div class="report-page report-page--action">/);
     expect(decisionPageMatch).not.toBeNull();
     const decisionPage = decisionPageMatch?.[1] ?? "";
     const decisionOrder = [
@@ -282,7 +358,7 @@ describe("renderAssumptionResultsPdfHtml", () => {
       lastDecisionIndex = markerIndex;
     }
 
-    const actionPageMatch = html.match(/<section class="report-page report-page--action">([\s\S]*?)<\/section>\s*<\/main>/);
+    const actionPageMatch = html.match(/<div class="report-page report-page--action">([\s\S]*?)<\/div>\s*<\/main>/);
     expect(actionPageMatch).not.toBeNull();
     const actionPage = actionPageMatch?.[1] ?? "";
     const actionOrder = [

@@ -93,7 +93,7 @@ function renderAdjustmentTable(
 
 function renderActionItems(items: AssumptionResultsPdfRouteRequest["actionItems"]): string {
   if (items.length === 0) return "<p class=\"empty\">No controlled items available.</p>";
-  return `<ol class="narrative-list">${items.map((item) => {
+  return `<ol class="narrative-list action-grid">${items.map((item) => {
     let adjustment = "";
     if (item.optionId === "improvement-center-mean") {
       adjustment = renderAdjustmentTable("Required mean change", "Parameter", [{
@@ -126,7 +126,7 @@ function renderContributors(contributors: AssumptionResultsPdfRouteRequest["cont
   const cumulativePoints = contributors
     .map((contributor, index) => `${formatCoordinate(xFor(index))},${formatCoordinate(yFor(contributor.cumulativePercent))}`)
     .join(" ");
-  return `
+  return `<div class="priority-grid">
         <figure class="pareto-chart" aria-label="Contributor Pareto chart">
           <svg data-pareto-chart viewBox="0 0 760 220" role="img" aria-labelledby="pareto-title pareto-description">
             <title id="pareto-title">Contributor priority Pareto chart</title>
@@ -143,7 +143,7 @@ function renderContributors(contributors: AssumptionResultsPdfRouteRequest["cont
             <line x1="620" x2="638" y1="12" y2="12" class="pareto-line"/><text x="644" y="16" class="pareto-legend">Cumulative %</text>
           </svg>
         </figure>
-        <table>
+        <table class="priority-table">
           <thead><tr><th>Priority</th><th>Factor</th><th>Reference</th><th>Nominal</th><th>Lower Tol.</th><th>Upper Tol.</th><th>Contribution</th><th>Cumulative</th></tr></thead>
           <tbody>${contributors.map((contributor, index) => `<tr>
             <td>${index + 1}</td>
@@ -155,12 +155,12 @@ function renderContributors(contributors: AssumptionResultsPdfRouteRequest["cont
             <td>${contributor.contributionPercent.toFixed(2)}%</td>
             <td>${contributor.cumulativePercent.toFixed(2)}%</td>
           </tr>`).join("")}</tbody>
-        </table>`;
+        </table></div>`;
 }
 
 function renderGuidance(items: AssumptionResultsPdfRouteRequest["processGuidance"]): string {
   if (items.length === 0) return "<p class=\"empty\">No process guidance available.</p>";
-  return `<ol class="narrative-list">${items.map((item) => `
+  return `<ol class="narrative-list guidance-grid">${items.map((item) => `
           <li class="guidance guidance--${escapeHtml(item.state)}"><strong>${escapeHtml(item.state === "warning" ? "Warning" : "Guidance")}: ${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p></li>`).join("")}
         </ol>`;
 }
@@ -177,7 +177,6 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     * { box-sizing: border-box; }
     html { color: #1f2933; font-family: "Segoe UI", sans-serif; font-size: 8pt; line-height: 1.3; overflow-wrap: anywhere; }
     body { margin: 0; }
-    .report-page { break-inside: avoid-page; }
     .report-page--action { break-before: page; }
     header { border-bottom: 2px solid #176b75; margin-bottom: 4mm; padding-bottom: 2.5mm; }
     h1 { color: #123c47; font-size: 19pt; margin: 0 0 2mm; }
@@ -220,11 +219,28 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .pareto-point { fill: #fff; stroke: #a3342d; stroke-width: 2; }
     .guidance { border-left: 2px solid #6a7b83; padding-left: 3mm; }
     .guidance--warning { border-color: #b45309; }
+    .report-page--action h2 { margin: 2.5mm 0 1.2mm; }
+    .report-page--action p { margin-top: .6mm; }
+    .action-grid { display: grid; gap: 1.5mm 5mm; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .action-grid > li { border-top: 1px solid #d4dde0; margin-bottom: 0; padding-top: 1.2mm; }
+    .action-grid table { margin-top: .8mm; table-layout: fixed; }
+    .action-grid caption { padding-bottom: .6mm; }
+    .action-grid th, .action-grid td { padding: 1mm; }
+    .action-grid .outcome { padding: 1mm 2mm; }
+    .priority-grid { align-items: start; display: grid; gap: 4mm; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); }
+    .priority-grid .pareto-chart, .priority-grid .priority-table { margin-top: 0; }
+    .priority-table { font-size: 8pt; line-height: 1.15; table-layout: fixed; }
+    .priority-table th, .priority-table td { padding: 1mm; }
+    .priority-table th:nth-child(1) { width: 9%; }
+    .priority-table th:nth-child(2) { width: 17%; }
+    .priority-table th:nth-child(3) { width: 16%; }
+    .guidance-grid { display: grid; gap: 2mm 4mm; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .guidance-grid > li { margin-bottom: 0; }
   </style>
 </head>
 <body>
   <main>
-    <section class="report-page report-page--decision">
+    <div class="report-page report-page--decision">
       <header>
         <h1>TA Results Interpretation (based on Assumptions)</h1>
         <div class="source"><span><strong>Workbook:</strong> ${escapeHtml(request.workbookName)}</span><span><strong>Worksheet:</strong> ${escapeHtml(request.worksheetName)}</span></div>
@@ -239,12 +255,12 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
       </section>
       <section class="assessment"><h2>Overall Assessment</h2><p>${escapeHtml(request.overallAssessment)}</p></section>
       <section><h2>Root Cause Analysis</h2>${renderRootCauseItems(request.rootCauseItems)}</section>
-    </section>
-    <section class="report-page report-page--action">
+    </div>
+    <div class="report-page report-page--action">
       <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
       <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
       <section><h2>TA Process and Requirements</h2><p>${escapeHtml(request.processGuidanceContext)}</p>${renderGuidance(request.processGuidance)}</section>
-    </section>
+    </div>
   </main>
 </body>
 </html>`;
