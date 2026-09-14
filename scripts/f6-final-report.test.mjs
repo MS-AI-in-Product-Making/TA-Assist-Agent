@@ -1772,7 +1772,8 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(markdown).toContain("<!-- f6-optimization-comparison -->");
     expect(markdown).toContain("| Metric | Raw Data | Optimized Data |");
     expect(markdown).toContain("| Step | Status | Action | Result |");
-    expect(markdown).toContain("| Factor | Table / Row | Nominal Before | Nominal After |");
+    expect(markdown).toContain("| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |");
+    expect(markdown).toContain("toleranceReverseSolve");
 
     const step1Index = markdown.indexOf("| meanResponseCentering |");
     const step2Index = markdown.indexOf("| toleranceReverseSolve |");

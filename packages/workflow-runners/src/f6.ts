@@ -397,6 +397,21 @@ export function runF6Optimization(
       ...(loaded.sourceReferences.imageObservation === undefined
         ? {}
         : { imageObservationReference: loaded.sourceReferences.imageObservation }),
+      ...(loaded.sourceReferences.supplierCapability === undefined
+        ? {}
+        : { supplierCapabilityReference: loaded.sourceReferences.supplierCapability }),
+      ...(loaded.sourceReferences.datumStrategy === undefined
+        ? {}
+        : { datumStrategyReference: loaded.sourceReferences.datumStrategy }),
+      ...(loaded.sourceReferences.cost === undefined
+        ? {}
+        : { costReference: loaded.sourceReferences.cost }),
+      ...(loaded.sourceReferences.analysisContext === undefined
+        ? {}
+        : { analysisContextReference: loaded.sourceReferences.analysisContext }),
+      ...(loaded.sourceReferences.optimizationTargets === undefined
+        ? {}
+        : { optimizationTargetsReference: loaded.sourceReferences.optimizationTargets }),
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
       optimizationTargetsDecision: inputDecisions.optimizationTargets,
     });

@@ -621,9 +621,16 @@ function v4ChangedFactorRows(baselineSnapshot, selectedSnapshot) {
       || left.factor.factorName.localeCompare(right.factor.factorName));
 }
 
-function v4FactorCellText(factor) {
-  const unit = factor.factor.unit;
-  return `${engineeringText(factor.nominalValue, unit)} (+${engineeringText(factor.upperTolerance, unit)} / ${engineeringText(factor.lowerTolerance, unit)})`;
+function v4FactorChangeCells(before, after, changedBy) {
+  const unit = after.factor.unit;
+  const beforeValue = before === undefined ? NA : before;
+  return [
+    before === undefined ? NA : `${engineeringText(beforeValue.nominalValue, unit)} -> ${engineeringText(after.nominalValue, unit)}`,
+    before === undefined ? NA : `${engineeringText(beforeValue.lowerTolerance, unit)} / ${engineeringText(beforeValue.upperTolerance, unit)} -> ${engineeringText(after.lowerTolerance, unit)} / ${engineeringText(after.upperTolerance, unit)}`,
+    before === undefined ? NA : `${engineeringText(beforeValue.sigma, unit)} -> ${engineeringText(after.sigma, unit)}`,
+    before === undefined ? NA : `${percentText(beforeValue.contribution)} -> ${percentText(after.contribution)}`,
+    clean(changedBy),
+  ];
 }
 
 function v4SelectedStatusText(status) {
@@ -707,8 +714,8 @@ function renderOptimizationComparison(worksheet) {
     `- Stopping reason: ${v4SelectedStatusText(selectedStatus)}`,
     `- Unchanged factors: ${Math.max(0, baseline.factors.length - changedFactors.length)}`,
     "",
-    "| Factor | Table / Row | Nominal Before | Nominal After |",
-    "|---|---|---:|---:|",
+    "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
+    "|---|---|---|---|---|---|---|",
   );
 
   const firstChunk = changedFactors.slice(0, F6_V4_CHANGED_FACTOR_CAPACITY);
@@ -717,12 +724,11 @@ function renderOptimizationComparison(worksheet) {
     lines.push(row([
       clean(factor.factor.factorName),
       `${clean(factor.factor.tableId)} / ${clean(factor.factor.sourceRow)}`,
-      before === undefined ? NA : v4FactorCellText(before),
-      v4FactorCellText(factor),
+      ...v4FactorChangeCells(before, factor, selectedSnapshot.sourceStep),
     ]));
   }
   if (firstChunk.length === 0) {
-    lines.push(row(["None", "N/A", "N/A", "N/A"]));
+    lines.push(row(["None", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"]));
   }
 
   for (let offset = F6_V4_CHANGED_FACTOR_CAPACITY; offset < changedFactors.length; offset += F6_V4_CHANGED_FACTOR_CAPACITY) {
@@ -732,16 +738,15 @@ function renderOptimizationComparison(worksheet) {
       F6_V4_COMPARISON_CONTINUATION_MARKER,
       "## Optimization Comparison (Continued)",
       "",
-      "| Factor | Table / Row | Nominal Before | Nominal After |",
-      "|---|---|---:|---:|",
+      "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
+      "|---|---|---|---|---|---|---|",
     );
     for (const factor of chunk) {
       const before = baselineByKey.get(v4FactorIdentityKey(factor));
       lines.push(row([
         clean(factor.factor.factorName),
         `${clean(factor.factor.tableId)} / ${clean(factor.factor.sourceRow)}`,
-        before === undefined ? NA : v4FactorCellText(before),
-        v4FactorCellText(factor),
+        ...v4FactorChangeCells(before, factor, selectedSnapshot.sourceStep),
       ]));
     }
   }

@@ -9236,6 +9236,13 @@ const f6OptimizationWorksheetV4Schema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, message: "selected Step 3 result must match stopping Step 3 snapshot", path: ["selectedResult"] });
     }
   }
+  if (selected.status === "no_validated_optimized_result") {
+    const validSnapshots = [worksheet.baselineResult, step1Snapshot, step2Snapshot, step3Snapshot]
+      .filter((snapshot) => snapshot !== undefined);
+    if (!validSnapshots.some((snapshot) => JSON.stringify(snapshot) === JSON.stringify(selected.snapshot))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected no-result snapshot must match a validated sequential snapshot", path: ["selectedResult", "snapshot"] });
+    }
+  }
 
   const sensitivityIds = new Set(["f6-top3-tolerance-policy-v1:OP1", "f6-top3-tolerance-policy-v1:OP2", "f6-top3-tolerance-policy-v1:OP3"]);
   if (sensitivityIds.has(selected.snapshot.scenarioId)) {
@@ -9285,6 +9292,11 @@ const f6ProvenanceV4Schema = z.object({
   f5Reference: f6ArtifactReferenceSchema,
   multimodalReference: f6ArtifactReferenceSchema,
   imageObservationReference: f6ArtifactReferenceSchema.optional(),
+  supplierCapabilityReference: f6ArtifactReferenceSchema.optional(),
+  datumStrategyReference: f6ArtifactReferenceSchema.optional(),
+  costReference: f6ArtifactReferenceSchema.optional(),
+  analysisContextReference: f6ArtifactReferenceSchema.optional(),
+  optimizationTargetsReference: f6ArtifactReferenceSchema.optional(),
   reportScope: z.object({
     worksheetNames: z.array(z.string().min(1)).min(1),
     blockedWorksheetNames: z.array(z.string().min(1)),

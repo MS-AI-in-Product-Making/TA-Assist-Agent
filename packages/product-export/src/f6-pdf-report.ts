@@ -350,7 +350,7 @@ class F6PdfRenderer extends Renderer {
       if (headers.length === 4 && headers[0] === "Step" && headers[1] === "Status" && headers[2] === "Action" && headers[3] === "Result") {
         return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--path">');
       }
-      if (headers.length === 4 && headers[0] === "Factor" && headers[1] === "Table / Row" && headers[2] === "Nominal Before" && headers[3] === "Nominal After") {
+      if (headers.length === 7 && headers[0] === "Factor" && headers[1] === "Table / Row" && headers[6] === "Changed By") {
         return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--factors">');
       }
       return super.table(token).replace("<table>", '<table class="optimization-table">');
@@ -504,6 +504,14 @@ const PRINT_CSS = `
   .optimization-table--path th:nth-child(3),.optimization-table--path td:nth-child(3) { width:32%; }
   .optimization-table--path th:nth-child(4),.optimization-table--path td:nth-child(4) { width:20%; }
   .optimization-table--factors { grid-column:1/span 2; grid-row:3; }
+  .optimization-table--factors th,.optimization-table--factors td { padding:6px 7px; font-size:11px; overflow-wrap:anywhere; }
+  .optimization-table--factors th:nth-child(1),.optimization-table--factors td:nth-child(1) { width:13%; }
+  .optimization-table--factors th:nth-child(2),.optimization-table--factors td:nth-child(2) { width:9%; }
+  .optimization-table--factors th:nth-child(3),.optimization-table--factors td:nth-child(3) { width:16%; }
+  .optimization-table--factors th:nth-child(4),.optimization-table--factors td:nth-child(4) { width:25%; }
+  .optimization-table--factors th:nth-child(5),.optimization-table--factors td:nth-child(5) { width:13%; }
+  .optimization-table--factors th:nth-child(6),.optimization-table--factors td:nth-child(6) { width:15%; }
+  .optimization-table--factors th:nth-child(7),.optimization-table--factors td:nth-child(7) { width:9%; }
   .slide-optimization-continuation .optimization-table--factors { grid-row:2/span 2; }
   .slide-optimization-continuation .optimization-table--path { grid-row:1; }
   .slide-optimization-continuation .optimization-table--system { grid-row:1; }

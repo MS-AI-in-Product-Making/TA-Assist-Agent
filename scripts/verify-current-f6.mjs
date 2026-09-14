@@ -208,9 +208,14 @@ function expectedSources(optimization) {
       const optional = Object.entries(SOURCE_PROVENANCE_FIELDS)
         .map(([sourceKey, provenanceKey]) => [sourceKey, safeArtifactReference(optimization.provenance?.[provenanceKey])])
         .filter(([, reference]) => reference !== undefined);
+      const governedInputs = [
+        ["analysisContext", safeArtifactReference(optimization.provenance?.analysisContextReference)],
+        ["optimizationTargets", safeArtifactReference(optimization.provenance?.optimizationTargetsReference)],
+      ].filter(([, reference]) => reference !== undefined);
       return Object.fromEntries([
         ...Object.entries(base).filter(([, reference]) => reference !== undefined),
         ...optional,
+        ...governedInputs,
       ]);
     }
     case "f6-optimization-v3":

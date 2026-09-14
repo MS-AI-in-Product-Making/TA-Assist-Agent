@@ -328,8 +328,16 @@ function v4ChangedFactors(baseline, selected) {
   });
 }
 
-function v4FactorCell(factor) {
-  return `${formatEngineering(factor.nominalValue, factor.factor.unit, 6)} (+${formatEngineering(factor.upperTolerance, factor.factor.unit, 6)} / ${formatEngineering(factor.lowerTolerance, factor.factor.unit, 6)})`;
+function v4FactorChangeCells(raw, optimized, changedBy) {
+  const unit = optimized.factor.unit;
+  if (raw === undefined) return ["N/A", "N/A", "N/A", "N/A", changedBy];
+  return [
+    `${v4EngineeringText(raw.nominalValue, unit)} -> ${v4EngineeringText(optimized.nominalValue, unit)}`,
+    `${v4EngineeringText(raw.lowerTolerance, unit)} / ${v4EngineeringText(raw.upperTolerance, unit)} -> ${v4EngineeringText(optimized.lowerTolerance, unit)} / ${v4EngineeringText(optimized.upperTolerance, unit)}`,
+    `${v4EngineeringText(raw.sigma, unit)} -> ${v4EngineeringText(optimized.sigma, unit)}`,
+    `${formatPercent(raw.contribution * 100, 2)} -> ${formatPercent(optimized.contribution * 100, 2)}`,
+    changedBy,
+  ];
 }
 
 export function renderF6Report(result, options = {}) {
@@ -407,15 +415,15 @@ export function renderF6Report(result, options = {}) {
       }
       lines.push(
         "",
-        "| Factor | Table / Row | Nominal Before | Nominal After |",
-        "|---|---|---:|---:|",
+        "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
+        "|---|---|---|---|---|---|---|",
       );
       if (changed.length === 0) {
-        lines.push("| None | N/A | N/A | N/A |");
+        lines.push("| None | N/A | N/A | N/A | N/A | N/A | N/A |");
       } else {
         for (const factor of changed) {
           const raw = baselineByKey.get(v4FactorIdentityKey(factor));
-          lines.push(`| ${cell(factor.factor.factorName)} | ${cell(`${factor.factor.tableId} / ${factor.factor.sourceRow}`)} | ${cell(raw === undefined ? "N/A" : v4FactorCell(raw))} | ${cell(v4FactorCell(factor))} |`);
+          lines.push(`| ${cell(factor.factor.factorName)} | ${cell(`${factor.factor.tableId} / ${factor.factor.sourceRow}`)} | ${v4FactorChangeCells(raw, factor, worksheet.selectedResult.snapshot.sourceStep).map(cell).join(" | ")} |`);
         }
       }
     }

@@ -788,7 +788,8 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("| Worst-Case Upper |");
     expect(markdown).toContain("| Capability Status |");
     expect(markdown).toContain("| Step | Status | Action | Result |");
-    expect(markdown).toContain("| Factor | Table / Row | Nominal Before | Nominal After |");
+    expect(markdown).toContain("| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |");
+    expect(markdown).toContain("toleranceReverseSolve");
     expect(markdown).toContain("Requirement change - engineering approval required");
 
     const step1 = markdown.indexOf("| meanResponseCentering |");

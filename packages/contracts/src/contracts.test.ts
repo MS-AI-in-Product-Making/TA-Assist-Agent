@@ -5966,6 +5966,20 @@ describe("F5.1 objective interpretation contracts", () => {
           ...resultV4,
           worksheets: [{
             ...v4Worksheet,
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: {
+                ...baselineSnapshot,
+                capability: { ...baselineSnapshot.capability, cpk: baselineSnapshot.capability.cpk + 0.1 },
+              },
+            },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
             baselineResult: {
               ...baselineSnapshot,
               capability: { ...baselineSnapshot.capability, status: "FAIL" },

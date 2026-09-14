@@ -435,6 +435,8 @@ describe("runF6FullValidation", () => {
         interactionLanguage,
         multimodalInterpretation: modelInterpretation,
         multimodalReference: inputDecisions.modelInterpretation.artifactReference,
+        analysisContextReference: inputDecisions.analysisContext.artifactReference,
+        optimizationTargetsReference: inputDecisions.optimizationTargets.artifactReference,
         optimizationTargets,
         optimizationTargetsDecision: inputDecisions.optimizationTargets,
       },

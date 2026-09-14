@@ -78,6 +78,11 @@ export interface F6OptimizationV4Inputs {
   readonly multimodalInterpretation: F5MultimodalArtifactV3 | F5MultimodalArtifactV4;
   readonly multimodalReference: { readonly artifact: string; readonly contentHash: string };
   readonly imageObservationReference?: { readonly artifact: string; readonly contentHash: string };
+  readonly supplierCapabilityReference?: { readonly artifact: string; readonly contentHash: string };
+  readonly datumStrategyReference?: { readonly artifact: string; readonly contentHash: string };
+  readonly costReference?: { readonly artifact: string; readonly contentHash: string };
+  readonly analysisContextReference?: { readonly artifact: string; readonly contentHash: string };
+  readonly optimizationTargetsReference?: { readonly artifact: string; readonly contentHash: string };
   readonly optimizationTargets?: F6OptimizationTargets;
   readonly optimizationTargetsDecision?: F6InputDecision;
 }
@@ -2258,6 +2263,21 @@ export function createF6OptimizationV4(
       ...(inputs.imageObservationReference === undefined
         ? {}
         : { imageObservationReference: artifactReference(inputs.imageObservationReference) }),
+      ...(inputs.supplierCapabilityReference === undefined
+        ? {}
+        : { supplierCapabilityReference: artifactReference(inputs.supplierCapabilityReference) }),
+      ...(inputs.datumStrategyReference === undefined
+        ? {}
+        : { datumStrategyReference: artifactReference(inputs.datumStrategyReference) }),
+      ...(inputs.costReference === undefined
+        ? {}
+        : { costReference: artifactReference(inputs.costReference) }),
+      ...(inputs.analysisContextReference === undefined
+        ? {}
+        : { analysisContextReference: artifactReference(inputs.analysisContextReference) }),
+      ...(inputs.optimizationTargetsReference === undefined
+        ? {}
+        : { optimizationTargetsReference: artifactReference(inputs.optimizationTargetsReference) }),
       reportScope: structuredClone(request.reportScope),
     },
   }));
