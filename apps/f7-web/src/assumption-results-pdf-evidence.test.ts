@@ -810,20 +810,49 @@ describe("buildConfirmedEngineeringEvidence", () => {
 
   it("rejects duplicate, missing, extra, or mispaired factor identity between session and current calculation", () => {
     const duplicateSession = confirmedSnapshot();
+    const duplicatedIdentity = duplicateSession.factors[0]!;
     duplicateSession.factors = [
-      duplicateSession.factors[0]!,
+      duplicatedIdentity,
       {
         ...duplicateSession.factors[1]!,
+        factorCandidate: {
+          ...duplicateSession.factors[1]!.factorCandidate,
+          worksheetName: duplicatedIdentity.factorCandidate.worksheetName,
+          tableId: duplicatedIdentity.factorCandidate.tableId,
+          sourceRow: duplicatedIdentity.factorCandidate.sourceRow,
+          factorName: duplicatedIdentity.factorCandidate.factorName,
+        },
+        setup: {
+          ...duplicateSession.factors[1]!.setup!,
+          factorCandidateId: duplicateSession.factors[1]!.factorCandidate.factorCandidateId,
+        },
         evidence: {
           ...duplicateSession.factors[1]!.evidence!,
-          worksheetName: duplicateSession.factors[0]!.evidence!.worksheetName,
-          tableId: duplicateSession.factors[0]!.evidence!.tableId,
-          sourceRow: duplicateSession.factors[0]!.evidence!.sourceRow,
-          factorName: duplicateSession.factors[0]!.evidence!.factorName,
+          factorCandidateId: duplicateSession.factors[1]!.factorCandidate.factorCandidateId,
+          worksheetName: duplicatedIdentity.evidence!.worksheetName,
+          tableId: duplicatedIdentity.evidence!.tableId,
+          sourceRow: duplicatedIdentity.evidence!.sourceRow,
+          factorName: duplicatedIdentity.evidence!.factorName,
         },
       },
     ] as F7SessionSnapshot["factors"];
-    expect(buildConfirmedEngineeringEvidence(duplicateSession, generatedChain(), currentInput(duplicateSession, 0))).toBeUndefined();
+    const duplicateSessionBaseline = buildCurrentCalculation(duplicateSession, 0);
+    const duplicateSessionCalculation = {
+      ...duplicateSessionBaseline,
+      factors: duplicateSessionBaseline.factors.map((factor, index) => (index === 0
+        ? factor
+        : {
+            ...factor,
+            source: {
+              ...duplicateSessionBaseline.factors[0]!.source,
+            },
+            name: duplicateSessionBaseline.factors[0]!.name,
+          })),
+    } satisfies KernelCalculationResult;
+    expect(buildConfirmedEngineeringEvidence(duplicateSession, generatedChain(), {
+      additionalMeanShift: 0,
+      calculation: duplicateSessionCalculation,
+    })).toBeUndefined();
 
     const session = confirmedSnapshot();
     const baseline = buildCurrentCalculation(session, 0);
@@ -878,7 +907,7 @@ describe("buildConfirmedEngineeringEvidence", () => {
     })).toBeUndefined();
   });
 
-  it("accepts negligible relative drift at large scale but rejects meaningful tiny-scale drift", () => {
+  it("accepts negligible relative drift at large scale but rejects beyond-threshold and tiny-scale drift", () => {
     const largeScale = confirmedSnapshot();
     withFirstFactor(largeScale, (factor) => ({
       ...factor,
@@ -897,6 +926,26 @@ describe("buildConfirmedEngineeringEvidence", () => {
       currentInput(largeScale, 0),
     );
     expect(largeScaleResult).toBeDefined();
+
+    const largeScaleBeyondRelativeTolerance = confirmedSnapshot();
+    withFirstFactor(largeScaleBeyondRelativeTolerance, (factor) => ({
+      ...factor,
+      setup: {
+        ...factor.setup!,
+        designNominal: 1_000_000_001.2,
+      },
+      evidence: {
+        ...factor.evidence!,
+        designNominal: 1_000_000_000,
+      },
+    }));
+    expect(
+      buildConfirmedEngineeringEvidence(
+        largeScaleBeyondRelativeTolerance,
+        generatedChain(),
+        currentInput(largeScaleBeyondRelativeTolerance, 0),
+      ),
+    ).toBeUndefined();
 
     const tinyScale = confirmedSnapshot();
     withFirstFactor(tinyScale, (factor) => ({
