@@ -171,11 +171,11 @@ describe("renderF6PdfSync", () => {
       "",
       "## 2. Workbook Summary",
       "",
-      "| Worksheet | Tolerance Loop Description | Key Finding | Comment |",
+      "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| [Analysis-A](#worksheet-1) | Loop A | Meets target. | Pass |",
-      "| [Analysis-B](#worksheet-2) | Loop B | Review required. | Need Review |",
-      "| [Analysis-C](#worksheet-3) | Loop C | Does not meet target. | Fail |",
+      "| Pass | [Analysis-A](#worksheet-1) | Loop A | Meets target. |",
+      "| Need Review | [Analysis-B](#worksheet-2) | Loop B | Review required. |",
+      "| Fail | [Analysis-C](#worksheet-3) | Loop C | Does not meet target. |",
       "",
       '<a id="worksheet-1"></a>',
       "# 3-1 Worksheet: Analysis-A",
@@ -209,7 +209,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("--st-bone:#e2dcc9");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
-    expect(html).toContain("grid-template-columns:1.15fr .85fr .72fr");
+    expect(html).toContain("grid-template-columns:.72fr 1.15fr .95fr");
     expect(html).toContain("grid-template-rows:1fr 220px");
   });
 
@@ -228,7 +228,102 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(6);
   });
 
-  it("renders worksheet -> optimization -> next worksheet in dedicated slide order", () => {
+  it("renders the issue 121 bounded worksheet layout", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "## 1. Document Overview",
+      "",
+      "| Field | Value |",
+      "|---|---|",
+      "| Source Workbook | sample.xlsx |",
+      "",
+      "## 2. Workbook Summary",
+      "",
+      "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
+      "|---|---|---|---|",
+      "| Fail | [Analysis-A](#worksheet-1) | Loop A | Drawing Numbers, drawing dimension definition is missing. |",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | DRAW-1 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Within guidance |",
+      "",
+      "## Process and Requirements",
+      "",
+      "- A: Factor A; Recommended tolerance band: 0.20 mm",
+      "- Result: WARNING - engineering review required.",
+      "",
+      "## Tolerance Path Image",
+      "",
+      "Image reviewed.",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | -0.100 mm | 0.040 mm | 0.010 mm | PASS |",
+      "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
+      "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- Design Nominal: 0.000 mm",
+      "- Adjusted Mean: -0.050 mm",
+      "- Offset: -0.050 mm",
+      "",
+      "## Contributor Priorities",
+      "",
+      "| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |",
+      "|---:|---|---:|---:|---|---|",
+      "| 1 | Factor A | 0.025 mm | 100.0% | High | Tighten tolerance |",
+      "",
+      "## Specification Changes",
+      "",
+      "| Side | Current Limit | Proposed Limit | Target Cpk | Approval |",
+      "|---|---:|---:|---:|---|",
+      "| lower | -0.150 | -0.180 | 1.333 | Engineering approval required |",
+      "",
+      "<!-- f6-optimization-comparison -->",
+      "## Optimization Comparison",
+      "",
+      "| Metric | Raw Data | Optimized Data |",
+      "|---|---:|---:|",
+      "| Predictive Cpk | 0.740 | 1.333 |",
+    ].join("\n");
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("grid-template-columns:.72fr 1.28fr");
+    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word;");
+    expect(html).toContain('class="comment comment--fail">Fail</span>');
+    expect(html).toContain('analysis-panel--process');
+    expect(html).toContain('class="range-bound range-bound--lower"');
+    expect(html).toContain('class="range-bound range-bound--upper"');
+    expect(html).toContain('data-worst-case-result="FAIL"');
+    expect(html).toContain('class="mean-marker mean-marker--nominal"');
+    expect(html).toContain('class="mean-marker mean-marker--adjusted"');
+    expect(html).toContain('class="spec-marker spec-marker--current"');
+    expect(html).toContain('class="spec-marker spec-marker--proposed"');
+    expect(html).toContain("--signal-red:#c43135");
+    expect(html).toContain("--signal-green:#198754");
+    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
+    expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
+    expect(html).not.toMatch(/class="[^"]*slide-optimization/u);
+  });
+
+  it("keeps optimization comparison inline between worksheet slides", () => {
     const markdown = [
       "# TA Engineering Analysis Report",
       "",
@@ -254,8 +349,9 @@ describe("renderF6PdfSync", () => {
 
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(html).toMatch(/slide-worksheet[\s\S]*slide-optimization[\s\S]*slide-worksheet/u);
-    expect((html.match(/class="[^"]*slide-optimization/g) ?? [])).toHaveLength(1);
+    expect(html).toMatch(/slide-worksheet[\s\S]*optimization-inline--optimization[\s\S]*slide-worksheet/u);
+    expect(html.match(/class="[^"]*slide-optimization/g)).toBeNull();
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
     expect(html).toContain("width:1920px");
     expect(html).toContain("height:1080px");
     expect(html).toContain(".optimization-table--path td { overflow-wrap:anywhere; word-break:break-word; }");
@@ -286,7 +382,7 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
   });
 
-  it("renders continuation marker as a continuation optimization slide and preserves balanced closure", () => {
+  it("renders continuation marker inline and preserves balanced closure", () => {
     const markdown = [
       "# TA Engineering Analysis Report",
       "",
@@ -306,12 +402,12 @@ describe("renderF6PdfSync", () => {
 
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect((html.match(/class="[^"]*slide-optimization-continuation/g) ?? [])).toHaveLength(1);
+    expect((html.match(/class="optimization-inline optimization-inline--optimization-continuation/g) ?? [])).toHaveLength(1);
     expect(html).toContain('class="optimization-table optimization-table--factors"');
-    expect(html).toMatch(/slide-optimization-continuation"[^>]*>[\s\S]*<\/section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">/u);
+    expect(html).toMatch(/optimization-inline--optimization-continuation"[^>]*>[\s\S]*<\/section><\/div><\/section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">/u);
     expect(html.match(/class="report-content slide slide-summary"/gu)).toHaveLength(1);
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
-    expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(4);
+    expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(3);
   });
 
   it("closes optimization slide wrappers in exact order before continuation and next worksheet", () => {
@@ -341,7 +437,7 @@ describe("renderF6PdfSync", () => {
 
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(html).toContain('</section></div></section><section class="optimization-section slide slide-optimization slide-optimization-continuation">');
+    expect(html).toContain('</section><section class="optimization-inline optimization-inline--optimization-continuation">');
     expect(html).toContain('</section></div></section><section class="worksheet-section slide slide-worksheet" id="worksheet-2">');
   });
 
@@ -351,10 +447,10 @@ describe("renderF6PdfSync", () => {
       "",
       "## Complete Factor Table",
       "",
-      "| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
-      "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
-      "| Factor A <span class=\"f6-inline-marker\" data-f6-marker=\"required-missing\" data-source-row=\"14\" hidden aria-hidden=\"true\"></span> | Part A | CNC | MISSING | DIM-14 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | N/A | N/A | N/A | Capability: f0_information_insufficient; Knowledge: missing_process_context |",
-      "| Factor B | Part B | PCBA | DWG-2 | DIM-15 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.35 mm; Knowledge: internal-v9 · dynamic-rule |",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A <span class=\"f6-inline-marker\" data-f6-marker=\"required-missing\" data-source-row=\"14\" hidden aria-hidden=\"true\"></span> | Part A | CNC | MISSING | DIM-14 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | N/A | N/A | N/A | Capability: f0_information_insufficient; Knowledge: missing_process_context |",
+      "| B | Factor B | Part B | PCBA | DWG-2 | DIM-15 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= 0.35 mm; Knowledge: internal-v9 · dynamic-rule |",
       "",
       "## Requirements and Statistical Results",
       "",
@@ -383,7 +479,7 @@ describe("renderF6PdfSync", () => {
       "",
       "- Status: offset",
       "- Adjusted Mean: -0.050 mm",
-      "- Specification Center: -0.050 mm",
+      "- Design Nominal: -0.050 mm",
       "- Offset: 0.010 mm",
       "",
       "## Contributor Priorities",
@@ -405,7 +501,7 @@ describe("renderF6PdfSync", () => {
 
     expect(html).toContain('<table class="factor-table factor-table--complete" data-factor-count="2">');
     expect(html).toContain('<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden="" aria-hidden="true"></span>');
-    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Factor A <span class="f6-inline-marker"/u);
+    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>A<\/td>\s*<td>Factor A <span class="f6-inline-marker"/u);
     expect(html).toContain("Factor A");
     expect(html).toContain("MISSING");
     expect(html).toContain("<th>Guidance</th>");
@@ -436,15 +532,15 @@ describe("renderF6PdfSync", () => {
 
   it("fails closed when a worksheet exceeds the fixed slide Factor capacity", () => {
     const rows = Array.from({ length: 11 }, (_value, index) => (
-      `| Factor ${index + 1} | Part | CNC | DWG-${index + 1} | DIM-${index + 1} | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: non_f0_process_category |`
+      `| ${index + 1} | Factor ${index + 1} | Part | CNC | DWG-${index + 1} | DIM-${index + 1} | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | Capability: non_f0_process_category |`
     ));
     const markdown = [
       "# 3-1 Worksheet: Analysis-A",
       "",
       "## Complete Factor Table",
       "",
-      "| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
-      "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
       ...rows,
     ].join("\n");
 
@@ -458,9 +554,9 @@ describe("renderF6PdfSync", () => {
       "",
       "## 2. Workbook Summary",
       "",
-      "| Worksheet | Tolerance Loop Description | Key Finding | Comment |",
+      "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| [Analysis-A](#worksheet-1) | Loop A | CpkL 0.7396 and CpkU 0.7396 do not meet Target Cpk 1. | Fail |",
+      "| Fail | [Analysis-A](#worksheet-1) | Loop A | CpkL 0.7396 and CpkU 0.7396 do not meet Target Cpk 1. |",
       "",
       "# 3-1 Worksheet: Analysis-A",
       "",
@@ -480,7 +576,7 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain("0.045069 mm");
   });
 
-  it("keeps optimization comparison values verbatim while preserving global formatting elsewhere", () => {
+  it("formats inline optimization comparison values consistently with the worksheet", () => {
     const markdown = [
       "# TA Engineering Analysis Report",
       "",
@@ -499,10 +595,10 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("-0.0500&nbsp;mm");
-    expect(html).toContain("1.234567 mm");
-    expect(html).toContain("0.999999 mm");
-    expect(html).not.toContain("1.23&nbsp;mm");
-    expect(html).not.toContain("1.00&nbsp;mm");
+    expect(html).toContain("1.23&nbsp;mm");
+    expect(html).toContain("1.00&nbsp;mm");
+    expect(html).not.toContain("1.234567 mm");
+    expect(html).not.toContain("0.999999 mm");
   });
 
   it("fails graph values closed instead of treating unsafe or unavailable evidence as zero", () => {
@@ -530,7 +626,7 @@ describe("renderF6PdfSync", () => {
       "## Adjusted Mean to Spec Center Shift",
       "",
       "- Adjusted Mean: N/A",
-      "- Specification Center: N/A",
+      "- Design Nominal: N/A",
       "- Offset: N/A",
       "",
       "## Specification Changes",

@@ -696,7 +696,7 @@ describe("F6 real artifact full flow", () => {
     });
     const reportMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
     if (mixed) {
-      expect(reportMarkdown).toContain("| [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_incomplete): Incomplete image assessment. | Fail |");
+      expect(reportMarkdown).toContain("| Fail | [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_incomplete): Incomplete image assessment. |");
       expect(reportMarkdown).toContain("| Fail |");
     }
     expect(readFileSync(modelPath)).toEqual(original);

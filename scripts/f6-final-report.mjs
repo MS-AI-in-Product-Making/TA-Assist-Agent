@@ -188,6 +188,7 @@ function factorSourceKey(tableId, sourceRow) {
 }
 
 const COMPLETE_FACTOR_TABLE_HEADERS = [
+  "Ordinal",
   "Factor Description",
   "Part Name",
   "Part Category",
@@ -256,6 +257,7 @@ function readyFactorTableRows(factors) {
     const actual = f2Row.actualFields;
     return {
       cells: [
+        clean(f2Row.factorOrdinal?.value),
         f2Row.missingIdentifiers?.length > 0
           ? blockedFactorDescription(clean(modelRow.factorName), f2Row.sourceRow)
           : clean(modelRow.factorName),
@@ -279,6 +281,7 @@ function blockedFactorTableRows(worksheet) {
       || (Array.isArray(f2Row.missingIdentifiers) && f2Row.missingIdentifiers.length > 0);
     return {
       cells: [
+        clean(f2Row.factorOrdinal?.value),
         hasBlockedMarker
           ? blockedFactorDescription(blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName), f2Row.sourceRow)
           : (blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName)),
@@ -392,15 +395,51 @@ function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, 
 function renderF6V3WorkbookSummary(worksheets, catalog) {
   const lines = [
     `## 2. ${catalog.workbook}`, "",
-    "| Worksheet | Tolerance Loop Description | Key Finding | Comment |", "|---|---|---|---|",
+    "| Result | Worksheet | Tolerance Loop Description | Key Finding |", "|---|---|---|---|",
   ];
   worksheets.forEach((worksheet, index) => lines.push(row([
+    dispositionComment(worksheet.disposition),
     `[${clean(worksheet.worksheetName)}](#worksheet-${index + 1})`,
     clean(worksheet.f2Worksheet.toleranceLoopDescription),
     worksheet.f2Worksheet.status === "ready" ? v3PrimaryFinding(worksheet) : blockedWorksheetFinding(worksheet, "en"),
-    dispositionComment(worksheet.disposition),
   ])));
   return lines;
+}
+
+function renderProcessAndRequirements(factors) {
+  const warnings = factors.filter(({ f2Row }) => f2Row.capabilityStatus !== "internal_within_guidance");
+  return [
+    "## Process and Requirements",
+    "",
+    ...factors.map(({ f2Row, modelRow, f0 }) => `- ${clean(f2Row.factorOrdinal?.value)}: ${clean(modelRow.factorName)}; ${f0GuidanceText(f2Row, f0)}`),
+    `- Result: ${warnings.length === 0 ? "PASS" : `WARNING - ${warnings.length} Factor${warnings.length === 1 ? "" : "s"} require engineering review.`}`,
+  ];
+}
+
+function statisticalRangeRows(projection, calculation, unit) {
+  const lowerSpec = calculation.capability.lowerSpecLimit;
+  const upperSpec = calculation.capability.upperSpecLimit;
+  const rows = [3, 4, 6].map((sigmaLevel) => {
+    const range = projection.statisticalRanges.find((item) => item.sigmaLevel === sigmaLevel)?.range;
+    if (range === undefined) failInvalid(`${sigmaLevel}-sigma report range`);
+    const minimumMargin = Math.min(range.lower - lowerSpec, upperSpec - range.upper);
+    return row([
+      `${sigmaLevel}-Sigma Range`,
+      engineeringText(range.lower, unit),
+      engineeringText(range.upper, unit),
+      engineeringText(minimumMargin, unit),
+      minimumMargin >= 0 ? "PASS" : "FAIL",
+    ]);
+  });
+  const worstCase = projection.margins.worstCase;
+  rows.push(row([
+    "Worst-Case Range",
+    engineeringText(worstCase.lowerBound, unit),
+    engineeringText(worstCase.upperBound, unit),
+    engineeringText(worstCase.minimumMargin, unit),
+    worstCase.minimumMargin >= 0 ? "PASS" : "FAIL",
+  ]));
+  return rows;
 }
 
 function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
@@ -416,8 +455,6 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
-  const statistical = projection.margins.statistical;
-  const worstCase = projection.margins.worstCase;
   const interpretationText = paragraph(interpretation.imageTableInterpretation)
     .replace(MODEL_RISK_DISCLOSURE, "")
     .trim() || NA;
@@ -428,6 +465,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     ...renderCompleteFactorTable(readyFactorTableRows(factors)),
   ];
   lines.push(
+    "", ...renderProcessAndRequirements(factors),
     "", `## ${catalog.image}`, "", imageLink, "", interpretationText, "", `*${MODEL_RISK_DISCLOSURE}*`,
     "", `## ${catalog.results}`, "",
     "| Requirement | Value |", "|---|---:|",
@@ -437,8 +475,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
     row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
     "", "| Metric | Lower | Upper | Minimum Margin | Result |", "|---|---:|---:|---:|---|",
-    row(["Statistical Range", engineeringText(statistical.lowerBound, unit), engineeringText(statistical.upperBound, unit), engineeringText(statistical.minimumMargin, unit), statistical.minimumMargin >= 0 ? "PASS" : "FAIL"]),
-    row(["Worst-Case Range", engineeringText(worstCase.lowerBound, unit), engineeringText(worstCase.upperBound, unit), engineeringText(worstCase.minimumMargin, unit), worstCase.minimumMargin >= 0 ? "PASS" : "FAIL"]),
+    ...statisticalRangeRows(projection, calculation, unit),
     "", "| Capability Metric | Value | Result |", "|---|---:|---|",
     row(["Predictive Cp", numberText(calculation.capability.cp), clean(calculation.capability.cpStatus)]),
     row(["Predictive CpkL", numberText(calculation.capability.lowerCpk), clean(calculation.capability.lowerCpkStatus)]),
@@ -452,8 +489,8 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   );
   lines.push("", `## ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
   if (center.status !== "clarification_required") {
-    lines.push(`- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
-      `- Specification Center: ${fixedEngineering(center.specificationMidpoint, unit)}`,
+    lines.push(`- Design Nominal: ${fixedEngineering(calculation.system.designNominal, unit)}`,
+      `- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
       `- Offset: ${fixedEngineering(center.offset, unit)}`);
   }
   if (center.status === "offset") lines.push(`- ${catalog.nominalReminder}`, `- ${clean(center.interpretation)}`);
@@ -468,18 +505,15 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
       v3PriorityLabel(item.rank, contributorPriorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
   }
   lines.push("", catalog.topThree);
-  if (worksheet.disposition !== "PASS") {
-    const specificationProposals = Array.isArray(specifications?.proposals) ? specifications.proposals : [];
-    const specificationClarifications = Array.isArray(specifications?.clarifications) ? specifications.clarifications : [];
+  const specificationProposals = (Array.isArray(specifications?.proposals) ? specifications.proposals : [])
+    .filter(({ currentLimit, proposedLimit }) => !nearlyEqual(currentLimit, proposedLimit));
+  if ((calculation.capability.lowerCpkStatus === "FAIL" || calculation.capability.upperCpkStatus === "FAIL")
+    && specificationProposals.length > 0) {
     lines.push("", `## ${catalog.specifications}`, "");
-    if (specificationProposals.length === 0) lines.push(catalog.noProposal);
-    else {
-      lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
-      for (const proposal of specificationProposals) {
-        lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
-      }
+    lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
+    for (const proposal of specificationProposals) {
+      lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
     }
-    for (const item of specificationClarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
   }
   return lines;
 }
@@ -578,61 +612,6 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   return { markdown: reportMarkdown, reportSummary, projection };
 }
 
-const F6_V4_COMPARISON_MARKER = "<!-- f6-optimization-comparison -->";
-const F6_V4_COMPARISON_CONTINUATION_MARKER = "<!-- f6-optimization-comparison continuation=\"1\" -->";
-const F6_V4_CHANGED_FACTOR_CAPACITY = 10;
-
-function v4FactorIdentityKey(factor) {
-  return JSON.stringify([
-    factor.factor.worksheetName,
-    factor.factor.tableId,
-    factor.factor.sourceRow,
-    factor.factor.factorName,
-    factor.factor.unit,
-  ]);
-}
-
-function v4SnapshotUnit(snapshot) {
-  const units = [...new Set(snapshot.factors.map((factor) => factor.factor.unit).filter((unit) => typeof unit === "string" && unit.length > 0))];
-  if (units.length !== 1) failInvalid("v4 snapshot unit consistency");
-  return units[0];
-}
-
-function v4ComparisonUnit(baselineSnapshot, selectedSnapshot) {
-  const baselineUnit = v4SnapshotUnit(baselineSnapshot);
-  const selectedUnit = v4SnapshotUnit(selectedSnapshot);
-  if (baselineUnit !== selectedUnit) failInvalid("v4 snapshot unit consistency");
-  return baselineUnit;
-}
-
-function v4ChangedFactorRows(baselineSnapshot, selectedSnapshot) {
-  const baselineByKey = new Map(baselineSnapshot.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
-  return selectedSnapshot.factors
-    .filter((factor) => {
-      const baseline = baselineByKey.get(v4FactorIdentityKey(factor));
-      if (baseline === undefined) return true;
-      return !nearlyEqual(baseline.nominalValue, factor.nominalValue)
-        || !nearlyEqual(baseline.lowerTolerance, factor.lowerTolerance)
-        || !nearlyEqual(baseline.upperTolerance, factor.upperTolerance);
-    })
-    .sort((left, right) =>
-      left.factor.tableId.localeCompare(right.factor.tableId)
-      || left.factor.sourceRow - right.factor.sourceRow
-      || left.factor.factorName.localeCompare(right.factor.factorName));
-}
-
-function v4FactorChangeCells(before, after, changedBy) {
-  const unit = after.factor.unit;
-  const beforeValue = before === undefined ? NA : before;
-  return [
-    before === undefined ? NA : `${engineeringText(beforeValue.nominalValue, unit)} -> ${engineeringText(after.nominalValue, unit)}`,
-    before === undefined ? NA : `${engineeringText(beforeValue.lowerTolerance, unit)} / ${engineeringText(beforeValue.upperTolerance, unit)} -> ${engineeringText(after.lowerTolerance, unit)} / ${engineeringText(after.upperTolerance, unit)}`,
-    before === undefined ? NA : `${engineeringText(beforeValue.sigma, unit)} -> ${engineeringText(after.sigma, unit)}`,
-    before === undefined ? NA : `${percentText(beforeValue.contribution)} -> ${percentText(after.contribution)}`,
-    clean(changedBy),
-  ];
-}
-
 function v4SelectedStatusText(status) {
   if (status === "baseline_meets_target") return "Baseline meets target";
   if (status === "step1_centered") return "Step 1 centered";
@@ -641,116 +620,60 @@ function v4SelectedStatusText(status) {
   return "No validated optimized result";
 }
 
-function v4ActionText(step) {
-  if (step.step === "meanResponseCentering") return "Center mean response around specification midpoint";
-  if (step.step === "toleranceReverseSolve") return "Reverse-solve Top 3 contributors with proportional allocation";
-  return "Relax failed specification side(s) with governed requirement-change controls";
-}
-
-function v4ResultText(step) {
-  if ("result" in step) {
-    if (step.step === "specificationRelaxation") {
-      return `Scenario ${step.result.scenarioId}; Requirement change - engineering approval required`;
-    }
-    return `Scenario ${step.result.scenarioId}`;
-  }
-  if (step.status === "NOT_RUN_EARLIER_STEP_MET_TARGET") return "Skipped: earlier step met target";
-  if ("reasonCode" in step) return step.reasonCode;
-  return "N/A";
-}
-
-function renderOptimizationComparison(worksheet) {
-  const lines = [];
-  const selectedStatus = worksheet.f6Worksheet.selectedResult.status;
-  if (selectedStatus === "baseline_meets_target") return lines;
-
+function renderV4OptimizationModules(worksheet, unit, catalog) {
   const baseline = worksheet.f6Worksheet.baselineResult;
-  const selectedSnapshot = worksheet.f6Worksheet.selectedResult.snapshot;
-  const unit = v4ComparisonUnit(baseline, selectedSnapshot);
-  const hasValidatedOptimizedResult = selectedStatus !== "no_validated_optimized_result";
-  const optimized = hasValidatedOptimizedResult ? selectedSnapshot : undefined;
-  const changedFactors = v4ChangedFactorRows(baseline, selectedSnapshot);
-  const baselineByKey = new Map(baseline.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
+  const selected = worksheet.f6Worksheet.selectedResult.snapshot;
+  const contributors = [...selected.factors].sort((left, right) => right.contribution - left.contribution);
+  const lines = [
+    "",
+    `## ${catalog.center}`,
+    "",
+    `- Design Nominal: ${fixedEngineering(baseline.system.designNominal, unit)}`,
+    `- Adjusted Mean: ${fixedEngineering(selected.system.mean, unit)}`,
+    `- Offset: ${fixedEngineering(selected.system.meanOffset, unit)}`,
+    `- Selected Result: ${v4SelectedStatusText(worksheet.f6Worksheet.selectedResult.status)}`,
+    "",
+    `## ${catalog.contributors}`,
+    "",
+    `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`,
+    "|---:|---|---:|---:|---|---|",
+  ];
+  contributors.forEach((item, index) => lines.push(row([
+    index + 1,
+    clean(item.factor.factorName),
+    engineeringText(item.sigma, item.factor.unit),
+    percentText(item.contribution),
+    v3PriorityLabel(index + 1, contributors.length, catalog),
+    index < 3 ? "Review tolerance range" : NA,
+  ])));
+  lines.push("", catalog.topThree);
 
-  lines.push(
-    "",
-    F6_V4_COMPARISON_MARKER,
-    "## Optimization Comparison",
-    "",
-    `- Selected result: ${v4SelectedStatusText(selectedStatus)}`,
-  );
-  if (!hasValidatedOptimizedResult) {
-    lines.push("- No validated optimized result");
-  }
-  lines.push(
-    "",
-    "| Metric | Raw Data | Optimized Data |",
-    "|---|---:|---:|",
-    row(["Design Nominal", engineeringText(baseline.system.designNominal, unit), optimized === undefined ? NA : engineeringText(optimized.system.designNominal, unit)]),
-    row(["Mean Response", engineeringText(baseline.system.mean, unit), optimized === undefined ? NA : engineeringText(optimized.system.mean, unit)]),
-    row(["Mean-to-Spec-Center Offset", engineeringText(baseline.system.meanOffset, unit), optimized === undefined ? NA : engineeringText(optimized.system.meanOffset, unit)]),
-    row(["Mean Shift", engineeringText(baseline.system.additionalMeanShift, unit), optimized === undefined ? NA : engineeringText(optimized.system.additionalMeanShift, unit)]),
-    row(["RSS One Sigma", engineeringText(baseline.system.rssSigma, unit), optimized === undefined ? NA : engineeringText(optimized.system.rssSigma, unit)]),
-    row(["LSL", engineeringText(baseline.capability.lowerSpecLimit, unit), optimized === undefined ? NA : engineeringText(optimized.capability.lowerSpecLimit, unit)]),
-    row(["USL", engineeringText(baseline.capability.upperSpecLimit, unit), optimized === undefined ? NA : engineeringText(optimized.capability.upperSpecLimit, unit)]),
-    row(["Predictive Cpk", numberText(baseline.capability.cpk), optimized === undefined ? NA : numberText(optimized.capability.cpk)]),
-    row(["Predictive CpkL", numberText(baseline.capability.lowerCpk), optimized === undefined ? NA : numberText(optimized.capability.lowerCpk)]),
-    row(["Predictive CpkU", numberText(baseline.capability.upperCpk), optimized === undefined ? NA : numberText(optimized.capability.upperCpk)]),
-    row(["Predicted Yield", percentText(baseline.capability.yield), optimized === undefined ? NA : percentText(optimized.capability.yield)]),
-    row(["Predicted DPM", numberText(baseline.capability.totalDpm), optimized === undefined ? NA : numberText(optimized.capability.totalDpm)]),
-    row(["Worst-Case Lower", engineeringText(baseline.system.worstCaseLower, unit), optimized === undefined ? NA : engineeringText(optimized.system.worstCaseLower, unit)]),
-    row(["Worst-Case Upper", engineeringText(baseline.system.worstCaseUpper, unit), optimized === undefined ? NA : engineeringText(optimized.system.worstCaseUpper, unit)]),
-    row(["Capability Status", clean(baseline.capability.status, NA), optimized === undefined ? NA : clean(optimized.capability.status, NA)]),
-    "",
-    "| Step | Status | Action | Result |",
-    "|---|---|---|---|",
-    ...worksheet.f6Worksheet.steps.map((step) => row([
-      step.step,
-      step.status,
-      v4ActionText(step),
-      v4ResultText(step),
-    ])),
-    "",
-    `- Stopping reason: ${v4SelectedStatusText(selectedStatus)}`,
-    `- Unchanged factors: ${Math.max(0, baseline.factors.length - changedFactors.length)}`,
-    "",
-    "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
-    "|---|---|---|---|---|---|---|",
-  );
-
-  const firstChunk = changedFactors.slice(0, F6_V4_CHANGED_FACTOR_CAPACITY);
-  for (const factor of firstChunk) {
-    const before = baselineByKey.get(v4FactorIdentityKey(factor));
-    lines.push(row([
-      clean(factor.factor.factorName),
-      `${clean(factor.factor.tableId)} / ${clean(factor.factor.sourceRow)}`,
-      ...v4FactorChangeCells(before, factor, selectedSnapshot.sourceStep),
-    ]));
-  }
-  if (firstChunk.length === 0) {
-    lines.push(row(["None", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"]));
-  }
-
-  for (let offset = F6_V4_CHANGED_FACTOR_CAPACITY; offset < changedFactors.length; offset += F6_V4_CHANGED_FACTOR_CAPACITY) {
-    const chunk = changedFactors.slice(offset, offset + F6_V4_CHANGED_FACTOR_CAPACITY);
+  const failedSides = [
+    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
+      && !nearlyEqual(baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit)
+      ? ["lower", baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit]
+      : undefined,
+    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
+      && !nearlyEqual(baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit)
+      ? ["upper", baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit]
+      : undefined,
+  ].filter(Boolean);
+  if (failedSides.length > 0) {
     lines.push(
       "",
-      F6_V4_COMPARISON_CONTINUATION_MARKER,
-      "## Optimization Comparison (Continued)",
+      `## ${catalog.specifications}`,
       "",
-      "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
-      "|---|---|---|---|---|---|---|",
+      `| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`,
+      "|---|---:|---:|---:|---|",
+      ...failedSides.map(([side, currentLimit, proposedLimit]) => row([
+        side,
+        numberText(currentLimit),
+        numberText(proposedLimit),
+        numberText(baseline.capability.targetCpk),
+        catalog.approvalRequired,
+      ])),
     );
-    for (const factor of chunk) {
-      const before = baselineByKey.get(v4FactorIdentityKey(factor));
-      lines.push(row([
-        clean(factor.factor.factorName),
-        `${clean(factor.factor.tableId)} / ${clean(factor.factor.sourceRow)}`,
-        ...v4FactorChangeCells(before, factor, selectedSnapshot.sourceStep),
-      ]));
-    }
   }
-
   return lines;
 }
 
@@ -759,8 +682,6 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
-  const statistical = projection.margins.statistical;
-  const worstCase = projection.margins.worstCase;
   const verifiedRelativePath = imageLinks?.get(worksheet.worksheetName);
   const relativePath = verifiedRelativePath ?? interpretation?.request?.image?.artifactPath;
   const imageLink = typeof relativePath === "string"
@@ -776,6 +697,8 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     `## ${catalog.factors}`,
     "",
     ...renderCompleteFactorTable(readyFactorTableRows(factors)),
+    "",
+    ...renderProcessAndRequirements(factors),
     "",
     `## ${catalog.image}`,
     "",
@@ -797,8 +720,7 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     "",
     "| Metric | Lower | Upper | Minimum Margin | Result |",
     "|---|---:|---:|---:|---|",
-    row(["Statistical Range", engineeringText(statistical.lowerBound, unit), engineeringText(statistical.upperBound, unit), engineeringText(statistical.minimumMargin, unit), statistical.minimumMargin >= 0 ? "PASS" : "FAIL"]),
-    row(["Worst-Case Range", engineeringText(worstCase.lowerBound, unit), engineeringText(worstCase.upperBound, unit), engineeringText(worstCase.minimumMargin, unit), worstCase.minimumMargin >= 0 ? "PASS" : "FAIL"]),
+    ...statisticalRangeRows(projection, calculation, unit),
     "",
     "| Capability Metric | Value | Result |",
     "|---|---:|---|",
@@ -810,7 +732,7 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     row(["Predicted DPM", numberText(calculation.capability.totalDpm), NA]),
   ];
 
-  lines.push(...renderOptimizationComparison(worksheet));
+  lines.push(...renderV4OptimizationModules(worksheet, unit, catalog));
   return lines;
 }
 
@@ -1290,11 +1212,7 @@ function v3PrimaryFinding(context) {
   const missingDimId = governanceRows.filter(({ dimId }) => dimId == null || dimId === "").length;
   const openDrawingDefinition = governanceRows.some(({ governanceStatus }) => governanceStatus !== "complete");
   if (context.disposition === "CONDITIONAL_PASS" || missingDrawing > 0 || missingDimId > 0 || openDrawingDefinition) {
-    const gaps = [];
-    if (missingDrawing > 0) gaps.push(`${missingDrawing} Drawing Number${missingDrawing === 1 ? "" : "s"}`);
-    if (missingDimId > 0) gaps.push(`${missingDimId} DIM ID${missingDimId === 1 ? "" : "s"}`);
-    if (openDrawingDefinition || gaps.length === 0) gaps.push("drawing dimension definition or engineering review");
-    return `Capability meets Target Cpk ${numberText(targetCpk)}, but ${gaps.join(", ")} remains incomplete; analysis closure is not complete.`;
+    return "Drawing Numbers, drawing dimension definition is missing.";
   }
 
   return `CpkL ${numberText(lowerCpk)} and CpkU ${numberText(upperCpk)} meet Target Cpk ${numberText(targetCpk)}; required inputs and reviews are complete.`;

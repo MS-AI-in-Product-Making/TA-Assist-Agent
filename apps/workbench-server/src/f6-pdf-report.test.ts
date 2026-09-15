@@ -13,18 +13,18 @@ const REPORT = `# Tolerance Analysis Engineering Report
 
 ## 2. Workbook Summary
 
-| Worksheet | Tolerance Loop Description | Key Finding | Comment |
+| Result | Worksheet | Tolerance Loop Description | Key Finding |
 |---|---|---|---|
-| Analysis-A | Display stack | Predictive Cpk 1.21 requires review. | Need Review |
+| Need Review | Analysis-A | Display stack | Predictive Cpk 1.21 requires review. |
 
 # 3-1 Worksheet: Analysis-A
 
 ## Complete Factor Table
 
-| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
-|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Frame Post Location <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> | Frame | Part | MISSING | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | N/A | N/A | N/A | Controlled guidance |
-| Top Enclosure Height | Enclosure | Part | DWG-2 | DIM-2 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |
+| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
+|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| A | Frame Post Location <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> | Frame | Part | MISSING | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | N/A | N/A | N/A | Controlled guidance |
+| B | Top Enclosure Height | Enclosure | Part | DWG-2 | DIM-2 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |
 
 ## Tolerance Path Image
 
@@ -52,8 +52,8 @@ const REPORT = `# Tolerance Analysis Engineering Report
 ## Adjusted Mean to Spec Center Shift
 
 - Status: offset
+- Design Nominal: 0.000 mm
 - Adjusted Mean: -0.050 mm
-- Specification Center: -0.050 mm
 - Offset: 0.010 mm
 
 ## Contributor Priorities
@@ -127,7 +127,7 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("class=\"worksheet-section slide slide-worksheet\"");
     expect(html).toContain("class=\"factor-table factor-table--complete\"");
     expect(html).toContain("data-f6-marker=\"required-missing\"");
-    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>Frame Post Location <span class="f6-inline-marker"/u);
+    expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>A<\/td>\s*<td>Frame Post Location <span class="f6-inline-marker"/u);
     expect(html).not.toContain("class=\"drawing-health\"");
     expect(html).toContain("class=\"analysis-grid\"");
     expect(html).toContain("analysis-panel--image");
@@ -183,9 +183,9 @@ describe("renderF6PdfHtml", () => {
 
 ## Complete Factor Table
 
-| Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
-|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Evil <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true" data-extra="1"></span> | Frame | Part | DWG-1 | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |`,
+| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
+|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| A | Evil <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true" data-extra="1"></span> | Frame | Part | DWG-1 | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |`,
       sourceHash: "d".repeat(64),
     });
 
