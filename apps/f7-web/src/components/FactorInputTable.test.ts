@@ -12,6 +12,27 @@ const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
 const HASH_D = "d".repeat(64);
 
+function createSystemSpecification(input?: {
+  readonly additionalMeanShift?: number;
+  readonly lowerSpecLimit?: number;
+  readonly upperSpecLimit?: number;
+  readonly targetSigmaLevel?: number;
+}): NonNullable<F7SessionSnapshot["systemSpecification"]> {
+  const additionalMeanShift = input?.additionalMeanShift ?? 0;
+  const lowerSpecLimit = input?.lowerSpecLimit ?? -0.2;
+  const upperSpecLimit = input?.upperSpecLimit ?? 0.2;
+  const targetSigmaLevel = input?.targetSigmaLevel ?? 3;
+  return {
+    status: "available",
+    designNominal: { status: "available", actualValue: 1, displayValue: "1", sourceLabel: "*Design Nominal ►", sourceCell: "Sheet!P53", valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", actualValue: lowerSpecLimit, displayValue: `${lowerSpecLimit}`, sourceLabel: "*Lower Spec Limit ►", sourceCell: "Sheet!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: upperSpecLimit, displayValue: `${upperSpecLimit}`, sourceLabel: "*Upper Spec Limit ►", sourceCell: "Sheet!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: targetSigmaLevel, displayValue: `${targetSigmaLevel}`, sourceLabel: "*Target σ Level ►", sourceCell: "Sheet!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: additionalMeanShift, displayValue: `${additionalMeanShift}`, sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+    volume: { status: "available", actualValue: 1000000, displayValue: "1000000", sourceLabel: "Volume ►", sourceCell: "Sheet!X56", valueOrigin: "numeric_literal" },
+  };
+}
+
 function createSession(overrides: Partial<F7SessionSnapshot>): F7SessionSnapshot {
   return {
     contractId: "f7-analysis-result-v1",
@@ -24,15 +45,7 @@ function createSession(overrides: Partial<F7SessionSnapshot>): F7SessionSnapshot
     },
     selectedWorksheetNames: ["Anonymous_TA"],
     worksheetOptions: [],
-    systemSpecification: {
-      status: "available",
-      designNominal: { status: "available", actualValue: 1, displayValue: "1", sourceLabel: "*Design Nominal ►", sourceCell: "Sheet!P53", valueOrigin: "numeric_literal" },
-      lowerSpecLimit: { status: "available", actualValue: -0.2, displayValue: "-0.2", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Sheet!P54", valueOrigin: "numeric_literal" },
-      upperSpecLimit: { status: "available", actualValue: 0.2, displayValue: "0.2", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Sheet!P55", valueOrigin: "numeric_literal" },
-      targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Sheet!P56", valueOrigin: "numeric_literal" },
-      additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
-      volume: { status: "available", actualValue: 1000000, displayValue: "1000000", sourceLabel: "Volume ►", sourceCell: "Sheet!X56", valueOrigin: "numeric_literal" },
-    },
+    systemSpecification: createSystemSpecification(),
     factors: [
       {
         factorCandidate: {
@@ -329,7 +342,7 @@ describe("FactorInputTable engineering evidence event", () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it("builds fallback evidence from real DimensionChainPanel reset and stale fallback transitions", async () => {
+  it("uses real Reset to imported factors to clear generated cache and re-emit fallback", async () => {
     const wrapper = mount(FactorInputTable, {
       props: {
         session: createSession({ status: "measurement_entry" }),
@@ -357,28 +370,17 @@ describe("FactorInputTable engineering evidence event", () => {
       sourceSignature: currentSourceSignature,
     }));
 
-    await wrapper.setProps({
-      session: createSessionWithFactorIds(
-        {
-          candidateId: HASH_D,
-          factorId: `${HASH_D.slice(0, 63)}e`,
-        },
-        { status: "measurement_entry" },
-      ),
-    });
-    await wrapper.vm.$nextTick();
-
-    const staleFallback = latestDimensionChain(wrapper);
-    expect(staleFallback).toEqual(expect.objectContaining({
-      status: "fallback",
-    }));
-    expect(staleFallback?.sourceSignature).not.toBe(currentSourceSignature);
-
     await wrapper.setProps({ editingSetup: true });
     await wrapper.vm.$nextTick();
 
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    await wrapper.get("[data-factor-clear-all]").trigger("click");
+    await wrapper.get("[data-factor-design-nominal]").setValue("2");
+    await wrapper.vm.$nextTick();
+    const editedChain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const editedSourceSignature = editedChain.props("sourceSignature") as string;
+    expect(editedSourceSignature).not.toBe(currentSourceSignature);
+
+    const emissionCountBeforeReset = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    await wrapper.get("[data-factor-reset]").trigger("click");
     await wrapper.vm.$nextTick();
 
     await wrapper.setProps({ editingSetup: false });
@@ -386,16 +388,23 @@ describe("FactorInputTable engineering evidence event", () => {
 
     const resetChain = wrapper.getComponent({ name: "DimensionChainPanel" });
     const resetSourceSignature = resetChain.props("sourceSignature") as string;
-    const emittedAfterReset = wrapper.emitted("engineering-evidence-change") ?? [];
+    const emittedAfterReset = (wrapper.emitted("engineering-evidence-change") ?? []).slice(emissionCountBeforeReset);
     const hasResetFallbackEvidence = emittedAfterReset.some((entry) => {
       const evidence = entry?.[0] as Record<string, unknown> | undefined;
       const chainProjection = evidence?.dimensionChain as Record<string, unknown> | undefined;
       return chainProjection?.status === "fallback" && chainProjection?.sourceSignature === resetSourceSignature;
     });
     expect(hasResetFallbackEvidence).toBe(true);
+
+    const hasResetGeneratedEvidence = emittedAfterReset.some((entry) => {
+      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      const chainProjection = evidence?.dimensionChain as Record<string, unknown> | undefined;
+      return chainProjection?.status === "generated" && chainProjection?.sourceSignature === resetSourceSignature;
+    });
+    expect(hasResetGeneratedEvidence).toBe(false);
   });
 
-  it("clears generated cache on session replacement, emits undefined first, then accepts only current-session fallback", async () => {
+  it("resets additional mean shift on session switch and keeps evidence session-bound", async () => {
     const wrapper = mount(FactorInputTable, {
       props: {
         session: createSession({ status: "measurement_entry", sessionId: "session-a" }),
@@ -417,6 +426,11 @@ describe("FactorInputTable engineering evidence event", () => {
       sourceSignature: sessionASourceSignature,
     }));
 
+    await wrapper.get("#additional-mean-shift").setValue("0.25");
+    await wrapper.vm.$nextTick();
+    const beforeReplacementShift = latestTypedEvidence(wrapper)?.responseSummary?.responseAndSpecifications?.additionalMeanShift;
+    expect(beforeReplacementShift).toBe(0.25);
+
     const emissionCountBeforeReplacement = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
 
     await wrapper.setProps({
@@ -428,6 +442,7 @@ describe("FactorInputTable engineering evidence event", () => {
         {
           status: "measurement_entry",
           sessionId: "session-b",
+          systemSpecification: createSystemSpecification({ additionalMeanShift: 0.4 }),
           workbook: {
             fileName: "replacement.xlsx",
             workbookContentHash: HASH_A,
@@ -463,52 +478,63 @@ describe("FactorInputTable engineering evidence event", () => {
       status: "fallback",
       sourceSignature: currentSourceSignature,
     });
+    const sessionBShift = latestTypedEvidence(wrapper)?.responseSummary?.responseAndSpecifications?.additionalMeanShift;
+    expect(sessionBShift).toBe(0.4);
+    expect(sessionBShift).not.toBe(0.25);
 
-    const beforeShiftChange = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
-    await wrapper.get("#additional-mean-shift").setValue("0.25");
-    await wrapper.vm.$nextTick();
-    const afterShiftChange = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
-    expect(afterShiftChange).toBeGreaterThan(beforeShiftChange);
-    const afterShiftEvidence = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
-    expect(afterShiftEvidence).toBeTruthy();
-    expect(afterShiftEvidence?.dimensionChain).toEqual({
-      status: "fallback",
-      sourceSignature: currentSourceSignature,
+    const emissionCountBeforeSecondSwitch = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
+    await wrapper.setProps({
+      session: createSessionWithFactorIds(
+        {
+          candidateId: `${HASH_D.slice(0, 63)}9`,
+          factorId: `${HASH_D.slice(0, 63)}8`,
+        },
+        {
+          status: "measurement_entry",
+          sessionId: "session-c",
+          workbook: {
+            fileName: "replacement-2.xlsx",
+            workbookContentHash: HASH_A,
+          },
+        },
+      ),
     });
+    await wrapper.vm.$nextTick();
+
+    const emissionsAfterSecondSwitch = (wrapper.emitted("engineering-evidence-change") ?? []).slice(emissionCountBeforeSecondSwitch);
+    expect(emissionsAfterSecondSwitch.some((entry) => entry?.[0] === undefined)).toBe(true);
+    expect(latestTypedEvidence(wrapper)?.responseSummary?.responseAndSpecifications?.additionalMeanShift).toBe(0);
   });
 
-  it("emits undefined when calculation input becomes unavailable even with a valid current-session projection", async () => {
+  it("emits undefined when f4Calculation itself becomes unavailable with a valid current-session projection", async () => {
     const wrapper = mount(FactorInputTable, {
       props: {
         session: createSession({ status: "measurement_entry" }),
         busy: false,
-        editingSetup: false,
+        editingSetup: true,
       },
     });
 
     const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
     const sourceSignature = chain.props("sourceSignature") as string;
-    await chain.vm.$emit("report-projection-change", projection("generated", sourceSignature));
+    await chain.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.vm.$nextTick();
-    expect(latestDimensionChain(wrapper)).toEqual(expect.objectContaining({
+
+    await wrapper.setProps({ editingSetup: false });
+    await wrapper.vm.$nextTick();
+
+    expect(latestTypedEvidence(wrapper)?.dimensionChain).toEqual(expect.objectContaining({
       status: "generated",
       sourceSignature,
     }));
 
-    const invalidSystemSession = createSession({
-      status: "measurement_entry",
-      systemSpecification: {
-        status: "available",
-        designNominal: { status: "available", actualValue: 1, displayValue: "1", sourceLabel: "*Design Nominal ►", sourceCell: "Sheet!P53", valueOrigin: "numeric_literal" },
-        lowerSpecLimit: { status: "available", actualValue: 0.2, displayValue: "0.2", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Sheet!P54", valueOrigin: "numeric_literal" },
-        upperSpecLimit: { status: "available", actualValue: -0.2, displayValue: "-0.2", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Sheet!P55", valueOrigin: "numeric_literal" },
-        targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Sheet!P56", valueOrigin: "numeric_literal" },
-        additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
-        volume: { status: "available", actualValue: 1000000, displayValue: "1000000", sourceLabel: "Volume ►", sourceCell: "Sheet!X56", valueOrigin: "numeric_literal" },
-      },
-    });
+    await wrapper.setProps({ editingSetup: true });
+    await wrapper.vm.$nextTick();
 
-    await wrapper.setProps({ session: invalidSystemSession });
+    await wrapper.get("[data-f4-target-sigma-input]").setValue("");
+    await wrapper.vm.$nextTick();
+
+    await wrapper.setProps({ editingSetup: false });
     await wrapper.vm.$nextTick();
 
     const unavailableEmission = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0];

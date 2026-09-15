@@ -428,6 +428,8 @@ function redoEdit(): void {
 
 function resetImportedFactors(): void {
   restoreEditSnapshot(importedSnapshot());
+  latestDimensionChainProjection.value = undefined;
+  dimensionChainResetRevision.value += 1;
 }
 
 function clearAllFactors(): void {
@@ -729,6 +731,11 @@ watch(currentSessionKey, (nextKey, previousKey) => {
   if (previousKey === undefined || previousKey === nextKey) return;
   latestDimensionChainProjection.value = undefined;
   Object.assign(systemSpecificationDraft, importedSystemSpecificationDraft());
+  const importedShift = props.session.systemSpecification?.status === "available"
+    && props.session.systemSpecification.additionalMeanShift.status === "available"
+    ? props.session.systemSpecification.additionalMeanShift.actualValue
+    : 0;
+  additionalMeanShift.value = Number.isFinite(importedShift) ? importedShift : 0;
 });
 
 const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {
