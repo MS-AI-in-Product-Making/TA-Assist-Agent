@@ -118,7 +118,7 @@ git commit -m "feat(f7): preserve factor import traceability"
 - Modify: `packages/contracts/src/f7-contracts.ts`
 - Modify: `packages/contracts/src/f7-contracts.test.ts`
 
-- [ ] **Step 1: Write failing strict-schema tests**
+- [x] **Step 1: Write failing strict-schema tests**
 
 Cover a valid 2-Factor manifest, ready and blocked previews, bounded diagnostics, exact aggregate counts, duplicate Factor rejection, 101 Factors, 501 observations, unknown fields, non-finite values, invalid structure/config combinations, mismatched replacement IDs, and `confirmed !== true`.
 
@@ -134,13 +134,13 @@ expect(() => f7MeasurementImportManifestSchema.parse({
 })).toThrow();
 ```
 
-- [ ] **Step 2: Run the contract test and verify RED**
+- [x] **Step 2: Run the contract test and verify RED**
 
 Run: `npx.cmd vitest run --project node packages/contracts/src/f7-contracts.test.ts`
 
 Expected: FAIL because the bulk-import schemas are not exported.
 
-- [ ] **Step 3: Add constants and strict schemas**
+- [x] **Step 3: Add constants and strict schemas**
 
 Define these public constants and schemas in `f7-contracts.ts`, next to existing measurement contracts:
 
@@ -160,13 +160,13 @@ export const f7MeasurementImportDiagnosticReasonSchema = z.enum([
 
 Add strict schemas/types for `F7MeasurementImportFactorManifest`, `F7MeasurementImportManifest`, `F7MeasurementImportAuthority`, `F7MeasurementImportDiagnostic`, `F7MeasurementImportFactorPreview`, `F7MeasurementImportPreviewRequest/Response`, stored batch projection, `F7MeasurementImportCommitRequest`, and route envelopes. Reuse `f7MeasurementDatasetSchema`, `f7DatasetValidationResultSchema`, and the existing 500-observation constant. Super-refine counts, unique ordered Factor IDs, ready/blocked consistency, and exact replacement sets.
 
-- [ ] **Step 4: Run the contract test and verify GREEN**
+- [x] **Step 4: Run the contract test and verify GREEN**
 
 Run: `npx.cmd vitest run --project node packages/contracts/src/f7-contracts.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add packages/contracts/src/f7-contracts.ts packages/contracts/src/f7-contracts.test.ts
