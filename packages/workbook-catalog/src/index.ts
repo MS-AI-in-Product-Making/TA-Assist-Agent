@@ -36,7 +36,14 @@ export { normalizeF7Factor } from "./f7-factor-normalization.js";
 export { createF7WorkbookImport, extractF7FactorCandidates, confirmF7FactorSetup } from "./f7-excel-adapter.js";
 export { parseF7MeasurementPaste } from "./f7-measurement-parser.js";
 export { applyF7MeasurementDisposition, validateF7MeasurementDataset } from "./f7-dataset-validation.js";
+export {
+	F7_MEASUREMENT_TEMPLATE_LAYOUT,
+	createF7MeasurementImportAuthority,
+	hashF7MeasurementFactorSet,
+	hashF7MeasurementSessionState,
+} from "./f7-measurement-template.js";
 export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
+export type { F7MeasurementImportAuthorityInput } from "./f7-measurement-template.js";
 export type {
 	F7WorkbookImportResult,
 	F7FactorCandidateExtractionResult,
