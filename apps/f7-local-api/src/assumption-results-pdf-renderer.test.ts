@@ -280,6 +280,63 @@ async function expectMissing(path: string): Promise<void> {
 }
 
 describe("assumption results PDF contract", () => {
+  it("accepts additionalMeanShift within ±1e9 and rejects out-of-bound finite values", () => {
+    const request = validRequest();
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          footer: {
+            ...request.engineeringEvidence.factorSetup.footer,
+            additionalMeanShift: 1_000_000_000,
+          },
+        },
+      },
+    }).success).toBe(true);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          responseAndSpecifications: {
+            ...request.engineeringEvidence.responseSummary.responseAndSpecifications,
+            additionalMeanShift: -1_000_000_000,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          footer: {
+            ...request.engineeringEvidence.factorSetup.footer,
+            additionalMeanShift: 1_000_000_000.000_001,
+          },
+        },
+      },
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          responseAndSpecifications: {
+            ...request.engineeringEvidence.responseSummary.responseAndSpecifications,
+            additionalMeanShift: -1_000_000_000.000_001,
+          },
+        },
+      },
+    }).success).toBe(false);
+  });
+
   it("accepts only bounded structured data with finite contributor numbers", () => {
     expect(assumptionResultsPdfRouteRequestSchema.safeParse(validRequest()).success).toBe(true);
     expect(assumptionResultsPdfRouteRequestSchema.safeParse({

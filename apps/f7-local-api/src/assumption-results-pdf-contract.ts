@@ -4,6 +4,7 @@ const shortText = z.string().min(1).max(300);
 const displayText = z.string().min(1).max(2_000);
 const narrativeText = z.string().min(1).max(4_000);
 const finiteNumber = z.number().finite();
+const boundedAdditionalMeanShift = finiteNumber.min(-1_000_000_000).max(1_000_000_000);
 const percentage = finiteNumber.min(0).max(100);
 const nonNegativeInteger = z.number().int().nonnegative();
 const boundedOffset = finiteNumber.min(-10_000).max(10_000);
@@ -159,7 +160,7 @@ const engineeringEvidenceFactorFooterSchema = z.object({
   rssTolerance: finiteNumber,
   rssSigma: finiteNumber,
   contributionTotalPercent: percentage,
-  additionalMeanShift: finiteNumber,
+  additionalMeanShift: boundedAdditionalMeanShift,
   adjustedMean: finiteNumber,
 }).strict();
 
@@ -234,7 +235,7 @@ const responseSummarySchema = z.object({
   responseAndSpecifications: z.object({
     designNominal: finiteNumber,
     meanResponse: finiteNumber,
-    additionalMeanShift: finiteNumber,
+    additionalMeanShift: boundedAdditionalMeanShift,
     adjustedMean: finiteNumber,
     lowerSpecLimit: finiteNumber,
     upperSpecLimit: finiteNumber,

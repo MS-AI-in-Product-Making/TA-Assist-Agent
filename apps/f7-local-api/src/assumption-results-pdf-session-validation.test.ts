@@ -315,6 +315,108 @@ function cloneRequest(request: AssumptionResultsPdfRouteRequest): AssumptionResu
 }
 
 describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
+  it("fails closed when request evidence contains Infinity/NaN even if counterpart is also non-finite", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+    expect(validateAssumptionResultsPdfRequestAgainstSession(baseline, ready)).toEqual({ ok: true });
+
+    const bothInfinity = cloneRequest(baseline);
+    bothInfinity.engineeringEvidence.responseSummary.sigmaLevelAndCapability.calculatedCpk.value = Number.POSITIVE_INFINITY;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(bothInfinity, ready)).toEqual({ ok: false });
+
+    const bothNaN = cloneRequest(baseline);
+    bothNaN.engineeringEvidence.responseSummary.sigmaLevelAndCapability.calculatedCpk.value = Number.NaN;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(bothNaN, ready)).toEqual({ ok: false });
+  });
+
+  it("fails closed when extreme but finite inputs produce non-finite kernel outputs", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+    expect(validateAssumptionResultsPdfRequestAgainstSession(baseline, ready)).toEqual({ ok: true });
+
+    const extremeRequest = cloneRequest(baseline);
+    extremeRequest.engineeringEvidence.factorSetup.rows[0]!.designNominal = Number.MAX_VALUE;
+    extremeRequest.engineeringEvidence.factorSetup.rows[0]!.upperTolerance = Number.MAX_VALUE;
+    extremeRequest.engineeringEvidence.factorSetup.rows[0]!.lowerTolerance = -Number.MAX_VALUE;
+
+    const extremeReady = {
+      ...ready,
+      factors: ready.factors.map((factorState) => {
+        if (!factorState.evidence) {
+          return factorState;
+        }
+        return {
+          ...factorState,
+          evidence: {
+            ...factorState.evidence,
+            designNominal: Number.MAX_VALUE,
+            calculatedMean: Number.MAX_VALUE,
+            upperTolerance: Number.MAX_VALUE,
+            lowerTolerance: -Number.MAX_VALUE,
+            tolerance: Number.MAX_VALUE,
+            oneSigma: Number.MAX_VALUE,
+            physicalMean: Number.MAX_VALUE,
+            signedContributionMean: Number.MAX_VALUE,
+            lowerSpecLimit: 0,
+            upperSpecLimit: Number.MAX_VALUE,
+            baselineSampler: {
+              samplerId: "NORMAL_LOCATION_SCALE_V1",
+              physicalMean: Number.MAX_VALUE,
+              standardDeviation: Number.MAX_VALUE,
+              support: "REAL",
+            },
+          },
+        };
+      }),
+      systemSpecification: {
+        status: "available" as const,
+        designNominal: {
+          status: "available" as const,
+          actualValue: Number.MAX_VALUE,
+          displayValue: String(Number.MAX_VALUE),
+          sourceLabel: "Design nominal",
+          valueOrigin: "numeric_literal" as const,
+        },
+        lowerSpecLimit: {
+          status: "available" as const,
+          actualValue: -Number.MAX_VALUE,
+          displayValue: String(-Number.MAX_VALUE),
+          sourceLabel: "Lower specification limit",
+          valueOrigin: "numeric_literal" as const,
+        },
+        upperSpecLimit: {
+          status: "available" as const,
+          actualValue: Number.MAX_VALUE,
+          displayValue: String(Number.MAX_VALUE),
+          sourceLabel: "Upper specification limit",
+          valueOrigin: "numeric_literal" as const,
+        },
+        targetSigmaLevel: {
+          status: "available" as const,
+          actualValue: 6,
+          displayValue: "6",
+          sourceLabel: "Target sigma level",
+          valueOrigin: "numeric_literal" as const,
+        },
+        additionalMeanShift: {
+          status: "available" as const,
+          actualValue: 1e9,
+          displayValue: "1000000000",
+          sourceLabel: "Additional mean shift",
+          valueOrigin: "numeric_literal" as const,
+        },
+        volume: {
+          status: "available" as const,
+          actualValue: 1000,
+          displayValue: "1000",
+          sourceLabel: "Volume",
+          valueOrigin: "numeric_literal" as const,
+        },
+      },
+    };
+    expect(validateAssumptionResultsPdfRequestAgainstSession(extremeRequest, extremeReady)).toEqual({ ok: false });
+  });
+
   it("accepts itemNumber by session order even when sourceRow is not 1..N", () => {
     const { ready } = createReadySession();
     const request = buildSessionBoundRequest(ready);

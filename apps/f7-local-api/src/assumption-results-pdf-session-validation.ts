@@ -27,6 +27,9 @@ const DISTRIBUTION_BY_LABEL = {
 } as const;
 
 function nearlyEqual(left: number, right: number): boolean {
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
   return Math.abs(left - right)
     <= Math.max(ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE * Math.max(Math.abs(left), Math.abs(right)));
 }
@@ -75,17 +78,22 @@ function validateDerivedEngineeringEvidence(
     },
   }));
 
-  const kernel = calculateToleranceAnalysis({
-    factors: kernelFactors,
-    system: {
-      designNominal: kernelFactors.reduce((sum, factor) => sum + factor.input.nominalValue, 0),
-      lowerSpecLimit: specification.lowerSpecLimit.actualValue,
-      upperSpecLimit: specification.upperSpecLimit.actualValue,
-      targetSigmaLevel: specification.targetSigmaLevel.actualValue,
-      targetCpk: specification.targetSigmaLevel.actualValue / 3,
-      shift: additionalMeanShift,
-    },
-  });
+  let kernel;
+  try {
+    kernel = calculateToleranceAnalysis({
+      factors: kernelFactors,
+      system: {
+        designNominal: kernelFactors.reduce((sum, factor) => sum + factor.input.nominalValue, 0),
+        lowerSpecLimit: specification.lowerSpecLimit.actualValue,
+        upperSpecLimit: specification.upperSpecLimit.actualValue,
+        targetSigmaLevel: specification.targetSigmaLevel.actualValue,
+        targetCpk: specification.targetSigmaLevel.actualValue / 3,
+        shift: additionalMeanShift,
+      },
+    });
+  } catch {
+    return false;
+  }
 
   const factorByKey = new Map(kernel.factors.map((factor) => [
     JSON.stringify([factor.source.worksheetName, factor.source.tableId, factor.source.sourceRow, factor.name]),
