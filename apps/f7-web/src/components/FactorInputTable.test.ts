@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mount } from "@vue/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { defineComponent, h, isReactive } from "vue";
+import { describe, expect, it } from "vitest";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
 import FactorInputTable from "./FactorInputTable.vue";
@@ -213,20 +214,52 @@ function latestTypedEvidence(wrapper: ReturnType<typeof mount>): AssumptionResul
   return wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as AssumptionResultsEngineeringEvidence | undefined;
 }
 
+const FastDimensionChainPanelStub = defineComponent({
+  name: "DimensionChainPanel",
+  props: {
+    sourceSignature: {
+      type: String,
+      required: false,
+      default: "",
+    },
+  },
+  setup(props) {
+    return () => h("div", {
+      "data-dimension-chain-panel-stub": "",
+      "data-source-signature": props.sourceSignature,
+    });
+  },
+});
+
+const FastResponseDistributionCurveStub = defineComponent({
+  name: "ResponseDistributionCurve",
+  setup() {
+    return () => h("div", { "data-response-distribution-curve-stub": "" });
+  },
+});
+
+function mountWithFastStubs(props: {
+  readonly session: F7SessionSnapshot;
+  readonly busy: boolean;
+  readonly editingSetup: boolean;
+}) {
+  return mount(FactorInputTable, {
+    props,
+    global: {
+      stubs: {
+        DimensionChainPanel: FastDimensionChainPanelStub,
+        ResponseDistributionCurve: FastResponseDistributionCurveStub,
+      },
+    },
+  });
+}
+
 describe("FactorInputTable engineering evidence event", () => {
   it("emits undefined while setup is editable", () => {
-    const wrapper = mount(FactorInputTable, {
-      props: {
-        session: createSession({ status: "factor_setup" }),
-        busy: false,
-        editingSetup: true,
-      },
-      attachTo: document.body,
-      global: {
-        stubs: {
-          teleport: true,
-        },
-      },
+    const wrapper = mountWithFastStubs({
+      session: createSession({ status: "factor_setup" }),
+      busy: false,
+      editingSetup: true,
     });
 
     expect(wrapper.find("#f7-test-style").exists()).toBe(false);
@@ -504,6 +537,132 @@ describe("FactorInputTable engineering evidence event", () => {
     const emissionsAfterSecondSwitch = (wrapper.emitted("engineering-evidence-change") ?? []).slice(emissionCountBeforeSecondSwitch);
     expect(emissionsAfterSecondSwitch.some((entry) => entry?.[0] === undefined)).toBe(true);
     expect(latestTypedEvidence(wrapper)?.responseSummary?.responseAndSpecifications?.additionalMeanShift).toBe(0);
+  });
+
+  it("increments dimensionChainResetRevision and resets child panel projection state when only sessionId changes", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry", sessionId: "session-a" }),
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    const firstChain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const firstSourceSignature = firstChain.props("sourceSignature") as string;
+    await firstChain.vm.$emit("report-projection-change", projection("generated", firstSourceSignature));
+    await wrapper.vm.$nextTick();
+
+    expect(latestDimensionChain(wrapper)).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature: firstSourceSignature,
+    }));
+
+    const beforeSwitchSetupState = (wrapper.vm.$ as unknown as {
+      setupState: {
+        dimensionChainResetRevision: number;
+      };
+    }).setupState;
+    const beforeSwitchRevision = beforeSwitchSetupState.dimensionChainResetRevision;
+
+    await wrapper.setProps({
+      session: createSession({
+        status: "measurement_entry",
+        sessionId: "session-b",
+      }),
+    });
+    await wrapper.vm.$nextTick();
+
+    const afterSwitchSetupState = (wrapper.vm.$ as unknown as {
+      setupState: {
+        dimensionChainResetRevision: number;
+      };
+    }).setupState;
+    expect(afterSwitchSetupState.dimensionChainResetRevision).toBe(beforeSwitchRevision + 1);
+
+    const nextChain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const nextSourceSignature = nextChain.props("sourceSignature") as string;
+
+    const emissionsAfterSwitch = wrapper.emitted("engineering-evidence-change") ?? [];
+    const latestAfterSwitch = emissionsAfterSwitch.at(-1)?.[0] as AssumptionResultsEngineeringEvidence | undefined;
+    expect(latestAfterSwitch?.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: nextSourceSignature,
+    });
+
+    const countBeforeOldReplay = emissionsAfterSwitch.length;
+    await firstChain.vm.$emit("report-projection-change", projection("generated", firstSourceSignature));
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.emitted("engineering-evidence-change") ?? []).length).toBe(countBeforeOldReplay);
+    expect(latestDimensionChain(wrapper)).toEqual({
+      status: "fallback",
+      sourceSignature: nextSourceSignature,
+    });
+
+    await nextChain.vm.$emit("report-projection-change", projection("generated", nextSourceSignature));
+    await wrapper.vm.$nextTick();
+    expect(latestDimensionChain(wrapper)).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature: nextSourceSignature,
+    }));
+  });
+
+  it("stores report projection as plain immutable DTO and emitted evidence stays stable when payload is mutated", async () => {
+    const wrapper = mountWithFastStubs({
+      session: createSession({ status: "measurement_entry", sessionId: "session-immutable" }),
+      busy: false,
+      editingSetup: false,
+    });
+
+    const rawSourceSignature = wrapper.get("[data-dimension-chain-panel-stub]").attributes("data-source-signature");
+    expect(rawSourceSignature).toBeTruthy();
+    const sourceSignature = rawSourceSignature ?? "";
+    const payload = projection("generated", sourceSignature);
+    const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+
+    await chain.vm.$emit("report-projection-change", payload);
+    await wrapper.vm.$nextTick();
+
+    const setupState = (wrapper.vm.$ as unknown as {
+      setupState: {
+        latestDimensionChainProjection: {
+          sessionKey: string;
+          projection: unknown;
+        } | undefined;
+      };
+    }).setupState;
+    expect(setupState.latestDimensionChainProjection).toBeTruthy();
+    expect(isReactive(setupState.latestDimensionChainProjection)).toBe(false);
+    expect(isReactive(setupState.latestDimensionChainProjection?.projection)).toBe(false);
+
+    const beforeMutationEvidence = latestTypedEvidence(wrapper);
+    expect(beforeMutationEvidence?.dimensionChain).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature,
+    }));
+
+    if (payload.status === "generated") {
+      const mutablePayload = payload as unknown as {
+        factors: Array<{ id: string; itemNumber: number; name: string; designNominal: number; upperTolerance: number; lowerTolerance: number; longTermSafetyFactor: number; sigmaLevel: number; distribution: string }>;
+        manualLayout: { boundaryOffsets: Record<string, number>; laneOffsets: Record<string, number> };
+        reversedFactorIds: string[];
+      };
+      mutablePayload.factors[0] = {
+        ...mutablePayload.factors[0]!,
+        name: "Mutated Factor Name",
+        designNominal: 999,
+      };
+      mutablePayload.manualLayout.boundaryOffsets = { hacked: 321 };
+      mutablePayload.reversedFactorIds = ["hijacked"];
+    }
+
+    const afterMutationEvidence = latestTypedEvidence(wrapper);
+    expect(afterMutationEvidence?.dimensionChain).toEqual(beforeMutationEvidence?.dimensionChain);
+    expect(afterMutationEvidence?.dimensionChain).toEqual(expect.objectContaining({
+      status: "generated",
+      sourceSignature,
+    }));
   });
 
   it("emits undefined when f4Calculation itself becomes unavailable with a valid current-session projection", async () => {

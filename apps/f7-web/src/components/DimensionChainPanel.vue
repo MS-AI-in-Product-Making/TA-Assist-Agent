@@ -157,9 +157,22 @@ const reportProjection = computed<DimensionChainReportProjection>(() => {
   };
 });
 
-watch(reportProjection, (projection) => {
+function isProjectionDeferredByInteraction(
+  activeInteraction: DimensionChainInteraction | undefined,
+): activeInteraction is Extract<DimensionChainInteraction, { kind: "guide" | "arrow" | "closure-guide" | "closure-arrow" }> {
+  return activeInteraction?.kind === "guide"
+    || activeInteraction?.kind === "arrow"
+    || activeInteraction?.kind === "closure-guide"
+    || activeInteraction?.kind === "closure-arrow";
+}
+
+let deferredProjection: DimensionChainReportProjection | undefined;
+let suppressProjectionEmission = false;
+let skipProjectionSignature: string | undefined;
+
+function flushProjection(projection: DimensionChainReportProjection): void {
   emit("report-projection-change", projection);
-}, { immediate: true });
+}
 
 const geometry = computed(() => generatedGeometry.value);
 const logicalDisplaySegments = computed(() => {
@@ -319,6 +332,23 @@ const selectionBox = computed(() => {
     height: Math.abs(selectionEnd.value.y - selectionStart.value.y),
   };
 });
+
+watch(reportProjection, (projection) => {
+  const signature = JSON.stringify(projection);
+  if (skipProjectionSignature === signature) {
+    skipProjectionSignature = undefined;
+    return;
+  }
+  if (suppressProjectionEmission) {
+    deferredProjection = projection;
+    return;
+  }
+  if (isProjectionDeferredByInteraction(interaction.value)) {
+    deferredProjection = projection;
+    return;
+  }
+  flushProjection(projection);
+}, { immediate: true, flush: "sync" });
 
 function clampZoom(value: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
@@ -857,6 +887,8 @@ function onPointerMove(event: PointerEvent): void {
 function finishInteraction(cancel = false, release = true): void {
   const activeInteraction = interaction.value;
   if (!activeInteraction) return;
+  const deferredInteraction = isProjectionDeferredByInteraction(activeInteraction);
+  if (deferredInteraction) suppressProjectionEmission = true;
   if (
     cancel
     && (
@@ -895,6 +927,13 @@ function finishInteraction(cancel = false, release = true): void {
   selectionEnd.value = undefined;
   if (activeInteraction.kind === "select") selectionMode.value = false;
   if (release) canvasElement.value?.releasePointerCapture?.(activeInteraction.pointerId);
+  if (deferredInteraction) {
+    suppressProjectionEmission = false;
+    const projection = deferredProjection ?? reportProjection.value;
+    deferredProjection = undefined;
+    skipProjectionSignature = JSON.stringify(projection);
+    flushProjection(projection);
+  }
 }
 
 function onPointerUp(event: PointerEvent): void {

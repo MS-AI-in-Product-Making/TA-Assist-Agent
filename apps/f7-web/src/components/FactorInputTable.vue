@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global PointerEvent, window */
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepReadonly } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
 import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
@@ -713,6 +713,25 @@ interface DimensionChainProjectionCacheEntry {
   readonly projection: DimensionChainReportProjection;
 }
 
+function clonePlain<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
+}
+
+function freezeProjectionCacheEntry(entry: DimensionChainProjectionCacheEntry): Readonly<DimensionChainProjectionCacheEntry> {
+  return deepFreeze(clonePlain(entry));
+}
+
 const currentSessionKey = computed(() => JSON.stringify({
   sessionId: props.session.sessionId,
   workbookContentHash: props.session.workbook.workbookContentHash,
@@ -720,7 +739,7 @@ const currentSessionKey = computed(() => JSON.stringify({
   worksheetNames: props.session.selectedWorksheetNames,
 }));
 
-const latestDimensionChainProjection = ref<DimensionChainProjectionCacheEntry | undefined>();
+const latestDimensionChainProjection = shallowRef<Readonly<DimensionChainProjectionCacheEntry> | undefined>();
 
 const currentSessionProjection = computed<DimensionChainReportProjection | undefined>(() => {
   const cached = latestDimensionChainProjection.value;
@@ -730,6 +749,7 @@ const currentSessionProjection = computed<DimensionChainReportProjection | undef
 watch(currentSessionKey, (nextKey, previousKey) => {
   if (previousKey === undefined || previousKey === nextKey) return;
   latestDimensionChainProjection.value = undefined;
+  dimensionChainResetRevision.value += 1;
   Object.assign(systemSpecificationDraft, importedSystemSpecificationDraft());
   const importedShift = props.session.systemSpecification?.status === "available"
     && props.session.systemSpecification.additionalMeanShift.status === "available"
@@ -762,10 +782,10 @@ watch(engineeringEvidence, (evidence) => {
 
 function onReportProjectionChange(projection: DimensionChainReportProjection): void {
   if (projection.sourceSignature !== dimensionChainSourceSignature.value) return;
-  latestDimensionChainProjection.value = {
+  latestDimensionChainProjection.value = freezeProjectionCacheEntry({
     sessionKey: currentSessionKey.value,
     projection,
-  };
+  });
 }
 
 function formatFixed(value: number | undefined, digits: number): string {

@@ -237,6 +237,89 @@ describe("DimensionChainPanel", () => {
     });
   });
 
+  it("defers projection emission during manual drag until pointerup or pointercancel", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    const guide = wrapper.get("[data-dimension-guide-handle='factor-1::factor-2']");
+    const beforeDragCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+
+    dispatchPointer(guide.element, "pointerdown", {
+      button: 0,
+      buttons: 1,
+      clientX: 244,
+      clientY: 77,
+      pointerId: 501,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0,
+      buttons: 1,
+      clientX: 254,
+      clientY: 77,
+      pointerId: 501,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0,
+      buttons: 1,
+      clientX: 264,
+      clientY: 77,
+      pointerId: 501,
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("report-projection-change")?.length ?? 0).toBe(beforeDragCount);
+
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0,
+      buttons: 0,
+      clientX: 264,
+      clientY: 77,
+      pointerId: 501,
+    });
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.emitted("report-projection-change")?.length ?? 0) - beforeDragCount).toBe(1);
+
+    const beforeCancelCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+    dispatchPointer(guide.element, "pointerdown", {
+      button: 0,
+      buttons: 1,
+      clientX: 264,
+      clientY: 77,
+      pointerId: 502,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0,
+      buttons: 1,
+      clientX: 274,
+      clientY: 77,
+      pointerId: 502,
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("report-projection-change")?.length ?? 0).toBe(beforeCancelCount);
+
+    dispatchPointer(canvas.element, "pointercancel", {
+      button: 0,
+      buttons: 0,
+      clientX: 274,
+      clientY: 77,
+      pointerId: 502,
+    });
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.emitted("report-projection-change")?.length ?? 0) - beforeCancelCount).toBe(1);
+  });
+
   it("resets to generated projection with exact report keys after stale fallback update", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
