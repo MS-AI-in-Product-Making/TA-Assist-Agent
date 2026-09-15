@@ -662,7 +662,7 @@ const f4Calculation = computed<KernelCalculationResult | undefined>(() => {
         sourceRow: factor.factorCandidate.sourceRow,
       },
       name: factorNameFor(factor),
-      unit: factor.factorCandidate.workbookUnitEvidence ?? "",
+      unit: factor.evidence?.unit ?? factor.factorCandidate.workbookUnitEvidence ?? "unspecified",
       input: {
         nominalValue: draft.designNominal,
         upperTolerance: draft.upperTolerance,

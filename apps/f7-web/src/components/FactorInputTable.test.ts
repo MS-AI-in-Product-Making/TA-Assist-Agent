@@ -321,6 +321,51 @@ describe("FactorInputTable engineering evidence event", () => {
       status: "fallback",
       sourceSignature,
     });
+    wrapper.unmount();
+  });
+
+  it("emits fallback engineering evidence when a missing workbook unit is normalized as unspecified", () => {
+    const session = createSession({ status: "measurement_entry" });
+    const factor = session.factors[0]!;
+    session.factors = [{
+      ...factor,
+      factorCandidate: {
+        ...factor.factorCandidate,
+        workbookUnitEvidence: undefined,
+      },
+      evidence: {
+        ...factor.evidence!,
+        unit: "unspecified",
+        unitSource: "unspecified",
+      },
+    }];
+
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session,
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    const envelope = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(envelope?.evidence).toBeTruthy();
+
+    wrapper.unmount();
+  });
+
+  it("updates engineering evidence after receiving generated chain projection", async () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry" }),
+        busy: false,
+        editingSetup: false,
+      },
+      attachTo: document.body,
+    });
+
+    const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
+    const sourceSignature = chain.props("sourceSignature") as string;
 
     await chain.vm.$emit("report-projection-change", {
       status: "generated",
