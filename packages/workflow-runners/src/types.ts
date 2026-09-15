@@ -194,6 +194,13 @@ export interface F6OptimizationResult {
   readonly featureId: "F6";
   readonly status: "completed" | "clarification_required" | "failed";
   readonly reasonCode?: string;
+  readonly failureDetail?: {
+    readonly code: "report_projection_failed" | "pdf_render_failed" | "pdf_artifact_invalid" | "pdf_render_unavailable";
+    readonly attempts?: readonly {
+      readonly browser: string;
+      readonly reason: "execution_failed" | "invalid_pdf";
+    }[];
+  };
   readonly outputDirectory: string;
   readonly optimizationJsonPath?: string;
   readonly finalReportMdPath?: string;

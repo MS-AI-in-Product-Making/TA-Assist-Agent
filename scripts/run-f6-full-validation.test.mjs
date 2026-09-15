@@ -121,13 +121,55 @@ describe("runF6FullValidation", () => {
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
       resolveLayout: () => layout,
-      createFinalReport: () => {
-        throw new Error("report rendering failed");
+      renderFinalReportPdf: () => {
+        throw Object.assign(new Error("confidential browser output"), {
+          code: "pdf_render_unavailable",
+          attempts: [
+            { browser: "msedge.exe", reason: "execution_failed" },
+            { browser: "chrome.exe", reason: "invalid_pdf" },
+          ],
+        });
       },
     });
 
-    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    const failureDetail = {
+      code: "pdf_render_unavailable",
+      attempts: [
+        { browser: "msedge.exe", reason: "execution_failed" },
+        { browser: "chrome.exe", reason: "invalid_pdf" },
+      ],
+    };
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed", failureDetail });
     const manifest = JSON.parse(readFileSync(path.join(layout.runRoot, "manifest.json"), "utf8"));
-    expect(manifest).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(manifest).toMatchObject({ status: "failed", reasonCode: "report_failed", failureDetail });
+    expect(JSON.stringify(result)).not.toContain("confidential browser output");
+    expect(JSON.stringify(manifest)).not.toContain("confidential browser output");
+  });
+
+  it("distinguishes report projection failures without exposing internal content", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const layout = layoutFor(bundle);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({
+        ...bundle,
+        interactionLanguage: INTERACTION_LANGUAGE,
+        modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
+      }),
+      resolveLayout: () => layout,
+      createFinalReport: () => {
+        throw new Error("confidential report content");
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      reasonCode: "report_failed",
+      failureDetail: { code: "report_projection_failed" },
+    });
+    const manifest = JSON.parse(readFileSync(path.join(layout.runRoot, "manifest.json"), "utf8"));
+    expect(manifest).toMatchObject({ failureDetail: { code: "report_projection_failed" } });
+    expect(JSON.stringify(result)).not.toContain("confidential report content");
   });
 });

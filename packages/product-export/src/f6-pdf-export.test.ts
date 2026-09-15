@@ -85,6 +85,67 @@ describe("renderF6PdfSync", () => {
     })).toThrow(expect.objectContaining({ code: "pdf_render_unavailable" }));
   });
 
+  it("isolates browser profiles when falling back after a render failure", () => {
+    const profilePaths: string[] = [];
+    const executeFile = vi.fn((browser: string, args: readonly string[]) => {
+      const profile = args.find((arg) => arg.startsWith("--user-data-dir="));
+      if (profile === undefined) throw new Error("missing browser profile");
+      profilePaths.push(profile);
+      if (browser === "edge.exe") throw new Error("render timed out");
+
+      const output = args.find((arg) => arg.startsWith("--print-to-pdf="))?.slice("--print-to-pdf=".length);
+      if (output === undefined) throw new Error("missing PDF output");
+      writeFileSync(output, Buffer.from("%PDF-1.7\nvalidated\n"));
+    });
+
+    const pdf = renderF6PdfSync({
+      markdown: MARKDOWN,
+      sourceHash: HASH,
+      reportPath: path.resolve("Feature6-Report.md"),
+      managedRoot: process.cwd(),
+    }, {
+      installedBrowsers: () => ["edge.exe", "chrome.exe"],
+      executeFile,
+    });
+
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(profilePaths).toHaveLength(2);
+    expect(new Set(profilePaths)).toHaveLength(2);
+  });
+
+  it("reports a safe failure category for every browser attempt", () => {
+    let attempt = 0;
+    let failure: unknown;
+    try {
+      renderF6PdfSync({
+        markdown: MARKDOWN,
+        sourceHash: HASH,
+        reportPath: path.resolve("Feature6-Report.md"),
+        managedRoot: process.cwd(),
+      }, {
+        installedBrowsers: () => ["edge.exe", "chrome.exe"],
+        executeFile: vi.fn((_browser, args) => {
+          attempt += 1;
+          if (attempt === 1) throw new Error("confidential browser output");
+          const output = args.find((arg) => arg.startsWith("--print-to-pdf="))?.slice("--print-to-pdf=".length);
+          if (output === undefined) throw new Error("missing PDF output");
+          writeFileSync(output, "not a PDF");
+        }),
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: "pdf_render_unavailable",
+      attempts: [
+        { browser: "edge.exe", reason: "execution_failed" },
+        { browser: "chrome.exe", reason: "invalid_pdf" },
+      ],
+    });
+    expect(String(failure)).not.toContain("confidential browser output");
+  });
+
   it("does not render unresolved local image links", () => {
     expect(() => renderF6PdfHtml({
       markdown: "[Open image](../outside.png)",

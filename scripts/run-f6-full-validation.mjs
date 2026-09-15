@@ -114,7 +114,11 @@ function isUnsafeFailureOutput(result) {
 
 function normalizeF6Result(result) {
   if (result?.status !== "failed" || !isUnsafeFailureOutput(result)) return result;
-  return { status: "failed", reasonCode: result.reasonCode };
+  return {
+    status: "failed",
+    reasonCode: result.reasonCode,
+    ...(result.failureDetail === undefined ? {} : { failureDetail: result.failureDetail }),
+  };
 }
 
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
@@ -216,7 +220,11 @@ export function runF6Cli(options = {}, dependencyOverrides = {}, io = {}) {
           : "invalid_arguments_or_output_root",
     };
   }
-  log(json(result.status === "failed" ? { status: result.status, reasonCode: result.reasonCode } : result).trimEnd());
+  log(json(result.status === "failed" ? {
+    status: result.status,
+    reasonCode: result.reasonCode,
+    ...(result.failureDetail === undefined ? {} : { failureDetail: result.failureDetail }),
+  } : result).trimEnd());
   return result.status === "failed" ? 1 : 0;
 }
 

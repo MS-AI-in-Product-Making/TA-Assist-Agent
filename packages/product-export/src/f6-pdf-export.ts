@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { f6PdfImageLinks, renderF6PdfHtml } from "./f6-pdf-report.js";
@@ -17,6 +17,11 @@ export interface F6PdfRenderInput {
 export interface F6PdfRenderDependencies {
   readonly installedBrowsers?: () => readonly string[];
   readonly executeFile?: (browser: string, args: readonly string[]) => void;
+}
+
+export interface F6PdfRenderAttemptFailure {
+  readonly browser: string;
+  readonly reason: "execution_failed" | "invalid_pdf";
 }
 
 function pdfError(code: "pdf_artifact_invalid" | "pdf_render_unavailable", message: string): Error & { readonly code: string } {
@@ -84,7 +89,6 @@ export function renderF6PdfSync(
 ): Buffer {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "ta-assist-f6-pdf-"));
   const htmlPath = join(temporaryRoot, "Feature6-Report.html");
-  const pdfPath = join(temporaryRoot, "Feature6-Report.pdf");
   const browsers = dependencies.installedBrowsers ?? installedBrowsers;
   const executeFile = dependencies.executeFile ?? ((browser: string, args: readonly string[]) => {
     execFileSync(browser, [...args], { windowsHide: true, timeout: 60_000, stdio: "ignore" });
@@ -94,25 +98,37 @@ export function renderF6PdfSync(
     if (sourceHash !== input.sourceHash) throw pdfError("pdf_artifact_invalid", "F6 PDF source hash does not match the Markdown content.");
     const baseHref = new URL(".", pathToFileURL(input.reportPath)).href;
     writeFileSync(htmlPath, renderF6PdfHtml({ markdown: input.markdown, sourceHash, baseHref, inlineImages: validatedF6InlineImages(input) }), "utf8");
-    for (const browser of browsers()) {
+    const attempts: F6PdfRenderAttemptFailure[] = [];
+    for (const [browserIndex, browser] of browsers().entries()) {
+      const profilePath = join(temporaryRoot, `profile-${browserIndex}`);
+      const pdfPath = join(temporaryRoot, `Feature6-Report-${browserIndex}.pdf`);
       try {
         executeFile(browser, [
           "--headless=new",
           "--disable-gpu",
           "--no-first-run",
           "--disable-extensions",
-          `--user-data-dir=${join(temporaryRoot, "profile")}`,
+          `--user-data-dir=${profilePath}`,
           "--no-pdf-header-footer",
           `--print-to-pdf=${pdfPath}`,
           pathToFileURL(htmlPath).href,
         ]);
+      } catch {
+        attempts.push({ browser: basename(browser), reason: "execution_failed" });
+        continue;
+      }
+      try {
         const pdf = readFileSync(pdfPath);
         if (pdf.length >= 8 && pdf.subarray(0, 5).toString("ascii") === "%PDF-") return pdf;
       } catch {
-        // Try the next controlled Chromium installation.
+        // The controlled browser returned without a readable output.
       }
+      attempts.push({ browser: basename(browser), reason: "invalid_pdf" });
     }
-    throw pdfError("pdf_render_unavailable", "Installed Chromium browsers did not produce a valid PDF report.");
+    throw Object.assign(
+      pdfError("pdf_render_unavailable", "Installed Chromium browsers did not produce a valid PDF report."),
+      { attempts },
+    );
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
   }
