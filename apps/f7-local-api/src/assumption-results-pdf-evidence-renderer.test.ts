@@ -1,0 +1,358 @@
+import { describe, expect, it } from "vitest";
+import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
+import { renderAssumptionResultsPdfEvidenceHtml } from "./assumption-results-pdf-evidence-renderer.js";
+
+type EngineeringEvidence = AssumptionResultsPdfRouteRequest["engineeringEvidence"];
+
+const HASH_A = "a".repeat(64);
+const HASH_B = "b".repeat(64);
+
+function buildEvidence(overrides: Partial<EngineeringEvidence> = {}): EngineeringEvidence {
+  const base: EngineeringEvidence = {
+    factorSetup: {
+      rows: [
+        {
+          itemNumber: 1,
+          factorName: "A-Factor",
+          designNominal: 10,
+          upperTolerance: 0.3,
+          lowerTolerance: -0.2,
+          longTermSafetyFactor: 1.2,
+          sigmaLevel: 4,
+          distribution: "Normal",
+          mean: 10.1,
+          tolerance: 0.3,
+          oneSigma: 0.075,
+          contributionPercent: 55,
+        },
+        {
+          itemNumber: 2,
+          factorName: "B-Factor",
+          designNominal: 12,
+          upperTolerance: 0.2,
+          lowerTolerance: -0.2,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Uniform",
+          mean: 12,
+          tolerance: 0.2,
+          oneSigma: 0.05,
+          contributionPercent: 45,
+        },
+      ],
+      footer: {
+        designNominalTotal: 22,
+        upperWorstCaseTolerance: 0.5,
+        lowerWorstCaseTolerance: -0.4,
+        meanResponse: 22.1,
+        rssTolerance: 0.36,
+        rssSigma: 0.09,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0.07,
+        adjustedMean: 22.17,
+      },
+    },
+    dimensionChain: {
+      status: "generated",
+      sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds: [HASH_A, HASH_B] }),
+      orientation: "horizontal",
+      factors: [
+        {
+          id: HASH_A,
+          itemNumber: 1,
+          name: "A-Factor",
+          designNominal: 10,
+          upperTolerance: 0.3,
+          lowerTolerance: -0.2,
+          longTermSafetyFactor: 1.2,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        },
+        {
+          id: HASH_B,
+          itemNumber: 2,
+          name: "B-Factor",
+          designNominal: 12,
+          upperTolerance: 0.2,
+          lowerTolerance: -0.2,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Uniform",
+        },
+      ],
+      manualLayout: {
+        boundaryOffsets: { [`${HASH_A}::${HASH_B}`]: 0 },
+        laneOffsets: { [HASH_A]: 0, [HASH_B]: 0 },
+        closureStartOffset: 0,
+        closureEndOffset: 0,
+        closureLaneOffset: 0,
+      },
+      reversedFactorIds: [],
+      closureDirection: "start-to-end",
+    },
+    responseDistribution: {
+      mean: 22.17,
+      standardDeviation: 0.09,
+      lowerSpecLimit: 21.9,
+      upperSpecLimit: 22.4,
+      target: 22,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [
+          { sigma: 1, tolerance: 0.09, upper: 22.26, lower: 22.08 },
+          { sigma: 3, tolerance: 0.27, upper: 22.44, lower: 21.9 },
+        ],
+        worstCase: { tolerance: 0.5, upper: 22.6, lower: 21.7 },
+      },
+      responseAndSpecifications: {
+        designNominal: 22,
+        meanResponse: 22.1,
+        additionalMeanShift: 0.07,
+        adjustedMean: 22.17,
+        lowerSpecLimit: 21.9,
+        upperSpecLimit: 22.4,
+        targetSigmaLevel: 4,
+        targetCpk: 1.33,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 3.5, status: "PASS" },
+        upperZ: { value: 2.6, status: "FAIL" },
+        calculatedSigmaLevel: { value: 2.6, status: "FAIL" },
+        cp: { value: 0.93, status: "FAIL" },
+        lowerCpk: { value: 1.2, status: "PASS" },
+        upperCpk: { value: 0.87, status: "FAIL" },
+        calculatedCpk: { value: 0.87, status: "FAIL" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 120,
+        upperDpm: 140,
+        totalDpm: 260,
+        outOfSpecPercent: 0.026,
+        yieldPercent: 99.974,
+        volume: 100000,
+        failuresOverVolume: 260,
+      },
+    },
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    factorSetup: {
+      ...base.factorSetup,
+      ...overrides.factorSetup,
+      rows: overrides.factorSetup?.rows ?? base.factorSetup.rows,
+      footer: {
+        ...base.factorSetup.footer,
+        ...overrides.factorSetup?.footer,
+      },
+    },
+    dimensionChain: overrides.dimensionChain ?? base.dimensionChain,
+    responseDistribution: {
+      ...base.responseDistribution,
+      ...overrides.responseDistribution,
+    },
+    responseSummary: {
+      ...base.responseSummary,
+      ...overrides.responseSummary,
+      rssAndWorstCase: {
+        ...base.responseSummary.rssAndWorstCase,
+        ...overrides.responseSummary?.rssAndWorstCase,
+        sigmaBands: overrides.responseSummary?.rssAndWorstCase?.sigmaBands
+          ?? base.responseSummary.rssAndWorstCase.sigmaBands,
+        worstCase: {
+          ...base.responseSummary.rssAndWorstCase.worstCase,
+          ...overrides.responseSummary?.rssAndWorstCase?.worstCase,
+        },
+      },
+      responseAndSpecifications: {
+        ...base.responseSummary.responseAndSpecifications,
+        ...overrides.responseSummary?.responseAndSpecifications,
+      },
+      sigmaLevelAndCapability: {
+        ...base.responseSummary.sigmaLevelAndCapability,
+        ...overrides.responseSummary?.sigmaLevelAndCapability,
+      },
+      defectsPerMillion: {
+        ...base.responseSummary.defectsPerMillion,
+        ...overrides.responseSummary?.defectsPerMillion,
+      },
+    },
+  };
+}
+
+function extractNumberAttribute(html: string, marker: string, name: string): number {
+  const pattern = new RegExp(`${marker}[^>]*\\s${name}="([^"]+)"`);
+  const match = html.match(pattern);
+  if (!match?.[1]) throw new Error(`Missing ${name} for ${marker}`);
+  return Number(match[1]);
+}
+
+describe("renderAssumptionResultsPdfEvidenceHtml", () => {
+  it("renders fallback dimension labels from factorSetup rows", () => {
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      dimensionChain: {
+        status: "fallback",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds: [] }),
+      },
+    }));
+
+    expect(html).toContain("Fallback from factorSetup rows");
+    expect(html).toContain("A-Factor");
+    expect(html).toContain("B-Factor");
+  });
+
+  it("uses generated orientation/manual/reversed/closure to change chain coordinates and directions", () => {
+    const horizontalHtml = renderAssumptionResultsPdfEvidenceHtml(buildEvidence());
+    const verticalReversedHtml = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds: [HASH_A, HASH_B] }),
+        orientation: "vertical",
+        factors: [
+          {
+            id: HASH_A,
+            itemNumber: 1,
+            name: "A-Factor",
+            designNominal: 10,
+            upperTolerance: 0.3,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1.2,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+          {
+            id: HASH_B,
+            itemNumber: 2,
+            name: "B-Factor",
+            designNominal: 12,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Uniform",
+          },
+        ],
+        manualLayout: {
+          boundaryOffsets: { [`${HASH_A}::${HASH_B}`]: 16 },
+          laneOffsets: { [HASH_A]: 12, [HASH_B]: -8 },
+          closureStartOffset: -6,
+          closureEndOffset: 10,
+          closureLaneOffset: 18,
+        },
+        reversedFactorIds: [HASH_A],
+        closureDirection: "end-to-start",
+      },
+    }));
+
+    const horizontalFactorX = extractNumberAttribute(horizontalHtml, "data-factor-id=\"aaaaaaaa\"", "x");
+    const verticalFactorX = extractNumberAttribute(verticalReversedHtml, "data-factor-id=\"aaaaaaaa\"", "x");
+    expect(verticalFactorX).not.toBe(horizontalFactorX);
+
+    const horizontalArrowX2 = extractNumberAttribute(horizontalHtml, "data-chain-axis", "x2");
+    const verticalArrowX2 = extractNumberAttribute(verticalReversedHtml, "data-chain-axis", "x2");
+    expect(verticalArrowX2).not.toBe(horizontalArrowX2);
+  });
+
+  it("does not emit bare points strings and renders finite polyline coordinates", () => {
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence());
+    expect(html).not.toMatch(/>\s*-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?(?:\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?)+\s*</);
+
+    const polylineMatch = html.match(/data-normal-curve-line[^>]*points="([^"]+)"/);
+    expect(polylineMatch?.[1]).toBeDefined();
+    const points = (polylineMatch?.[1] ?? "").trim().split(/\s+/);
+    expect(points.length).toBeGreaterThan(10);
+    for (const point of points) {
+      const [x, y] = point.split(",");
+      expect(Number.isFinite(Number(x))).toBe(true);
+      expect(Number.isFinite(Number(y))).toBe(true);
+    }
+  });
+
+  it("maps LSL/USL/Target/Mean/±3sigma markers from numeric domain", () => {
+    const base = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      responseDistribution: {
+        mean: 100,
+        standardDeviation: 2,
+        lowerSpecLimit: 96,
+        upperSpecLimit: 104,
+        target: 100,
+      },
+    }));
+    const shifted = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      responseDistribution: {
+        mean: 500,
+        standardDeviation: 1,
+        lowerSpecLimit: 497.8,
+        upperSpecLimit: 501,
+        target: 499.5,
+      },
+    }));
+
+    const baseLsl = extractNumberAttribute(base, "data-curve-lsl", "x1");
+    const shiftedLsl = extractNumberAttribute(shifted, "data-curve-lsl", "x1");
+    const baseTarget = extractNumberAttribute(base, "data-curve-target", "x1");
+    const shiftedTarget = extractNumberAttribute(shifted, "data-curve-target", "x1");
+
+    expect(baseLsl).not.toBe(shiftedLsl);
+    expect(baseTarget).not.toBe(shiftedTarget);
+    expect(base).toContain("\u00b13\u03c3");
+  });
+
+  it("renders complete factor footer and all four response summary groups with status emphasis", () => {
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence());
+
+    expect(html).toContain("Additional Mean Shift");
+    expect(html).toContain("Adjusted Mean");
+    expect(html).toContain("RSS and Worst Case");
+    expect(html).toContain("Response and Specifications");
+    expect(html).toContain("Sigma Level and Capability");
+    expect(html).toContain("Defects Per Million");
+    expect(html).toContain("summary-value--pass");
+    expect(html).toContain("summary-value--fail");
+  });
+
+  it("escapes malicious factor/source text and does not render script/img/http payloads", () => {
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      factorSetup: {
+        rows: [
+          {
+            itemNumber: 1,
+            factorName: "bad <script>alert(1)</script> <img src=x> http://evil.invalid",
+            designNominal: 1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 1,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 100,
+          },
+        ],
+        footer: {
+          designNominalTotal: 1,
+          upperWorstCaseTolerance: 0.1,
+          lowerWorstCaseTolerance: -0.1,
+          meanResponse: 1,
+          rssTolerance: 0.1,
+          rssSigma: 0.025,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: 1,
+        },
+      },
+      dimensionChain: {
+        status: "fallback",
+        sourceSignature: "{\"note\":\"<img src=x> http://evil.invalid <script>alert(1)</script>\"}",
+      },
+    }));
+
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("&lt;img src=x&gt;");
+    expect(html).not.toMatch(/<script|<img/i);
+    expect(html).not.toMatch(/http:\/\//i);
+  });
+});

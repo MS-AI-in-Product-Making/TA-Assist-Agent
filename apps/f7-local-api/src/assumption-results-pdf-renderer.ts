@@ -7,6 +7,7 @@ import {
   assumptionResultsPdfRouteRequestSchema,
   type AssumptionResultsPdfRouteRequest,
 } from "./assumption-results-pdf-contract.js";
+import { renderAssumptionResultsPdfEvidenceHtml } from "./assumption-results-pdf-evidence-renderer.js";
 
 const PDF_BROWSER_DEFAULT_TIMEOUT_MS = 15_000;
 const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
@@ -215,6 +216,18 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .pareto-point { fill: #fff; stroke: #a3342d; stroke-width: 2; }
     .guidance { border-left: 2px solid #6a7b83; padding-left: 3mm; }
     .guidance--warning { border-color: #b45309; }
+    .report-page--evidence { break-after: page; }
+    .report-page--evidence h1 { margin-bottom: 1mm; }
+    .report-page--evidence .factor-setup-panel table { table-layout: fixed; }
+    .report-page--evidence .evidence-lower-grid { display: grid; gap: 3mm; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); margin-top: 3mm; }
+    .report-page--evidence .evidence-panel { break-inside: avoid; border: 1px solid #b8c4c8; padding: 2mm; }
+    .report-page--evidence .evidence-panel svg { display: block; height: auto; max-width: 100%; width: 100%; }
+    .report-page--evidence .evidence-right-stack { display: grid; gap: 3mm; }
+    .report-page--evidence .dimension-note, .report-page--evidence .curve-note { color: #52616b; margin: 0 0 1.5mm; }
+    .report-page--evidence .response-summary-table { margin-top: 1.5mm; table-layout: fixed; }
+    .report-page--evidence .summary-value--pass { color: #176b3a; font-weight: 700; }
+    .report-page--evidence .summary-value--warning { color: #b45309; font-weight: 700; }
+    .report-page--evidence .summary-value--fail { color: #a3342d; font-weight: 700; }
     .report-page--action h2 { margin: 2.5mm 0 1.2mm; }
     .report-page--action p { margin-top: .6mm; }
     .action-grid { display: grid; gap: 1.5mm 5mm; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -236,6 +249,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
 </head>
 <body>
   <main>
+${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence)}
     <div class="report-page report-page--decision">
       <header>
         <h1>TA Results Interpretation (based on Assumptions)</h1>

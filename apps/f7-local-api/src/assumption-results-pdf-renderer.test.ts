@@ -726,10 +726,29 @@ describe("assumption results PDF contract", () => {
 });
 
 describe("renderAssumptionResultsPdfHtml", () => {
+  it("renders exactly three pages in strict evidence/decision/action order with explicit page breaks", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    const pages = [...html.matchAll(/class="report-page report-page--([a-z-]+)"/g)].map((match) => match[1]);
+    expect(pages).toEqual(["evidence", "decision", "action"]);
+    expect(pages).toHaveLength(3);
+
+    const evidenceStart = html.indexOf('class="report-page report-page--evidence"');
+    const decisionStart = html.indexOf('class="report-page report-page--decision"');
+    const actionStart = html.indexOf('class="report-page report-page--action"');
+    expect(evidenceStart).toBeGreaterThan(-1);
+    expect(decisionStart).toBeGreaterThan(evidenceStart);
+    expect(actionStart).toBeGreaterThan(decisionStart);
+
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*break-after:\s*page;/);
+    expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
+  });
+
   it("uses compact page-two grids for a representative current UI payload", () => {
     const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+    const nonEvidenceHtml = html.replace(/<div class="report-page report-page--evidence">[\s\S]*?<div class="report-page report-page--decision">/, "<div class=\"report-page report-page--decision\">");
 
-    expect(html.match(/<tr>/g)).toHaveLength(20);
+    expect(nonEvidenceHtml.match(/<tr>/g)).toHaveLength(20);
     expect(html.match(/data-pareto-bar/g)).toHaveLength(7);
     expect(html).toMatch(/<div class="report-page report-page--decision">/);
     expect(html).toMatch(/<div class="report-page report-page--action">/);
