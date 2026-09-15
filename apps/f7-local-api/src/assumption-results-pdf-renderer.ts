@@ -220,33 +220,38 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .report-page--evidence {
       height: 180mm;
       box-sizing: border-box;
-      display: grid;
-      grid-template-rows: 76mm minmax(0,1fr);
-      gap: 2mm;
+      position: relative;
       break-after: page;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
     }
     .report-page--evidence h1 { margin-bottom: 1mm; }
-    .report-page--evidence .evidence-top { min-height: 0; }
+    .report-page--evidence .evidence-top { height: 76mm; left: 0; min-height: 0; position: absolute; right: 0; top: 0; }
     .report-page--evidence .factor-setup-panel { min-height: 0; }
     .report-page--evidence .factor-setup-panel table { table-layout: fixed; font-size: 7.4pt; }
     .report-page--evidence .factor-setup-panel th,
     .report-page--evidence .factor-setup-panel td { padding: 0.75mm 1.1mm; line-height: 1.15; }
     .report-page--evidence .evidence-lower-grid {
-      display: grid;
-      gap: 3mm;
-      grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+      bottom: 0;
+      left: 0;
       min-height: 0;
+      position: absolute;
+      right: 0;
+      top: 78mm;
     }
-    .report-page--evidence .evidence-panel { break-inside: avoid; border: 1px solid #b8c4c8; padding: 2mm; min-height: 0; }
+    .report-page--evidence .evidence-panel { border: 1px solid #b8c4c8; min-height: 0; padding: 2mm; position: absolute; }
     .report-page--evidence .evidence-panel svg { display: block; height: auto; max-width: 100%; width: 100%; }
-    .report-page--evidence .evidence-right-stack { display: grid; gap: 3mm; min-height: 0; grid-template-rows: minmax(0, .95fr) minmax(0, 1.05fr); }
-    .report-page--evidence .evidence-panel--curve { display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+    .report-page--evidence .evidence-panel--chain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; left: 0; top: 0; width: calc(48% - 1.5mm); }
+    .report-page--evidence .evidence-panel--chain svg { height: 100%; max-height: 100%; min-height: 0; }
+    .report-page--evidence .evidence-panel--chain svg text { font-size: 8px; }
+    .report-page--evidence .evidence-panel--curve { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; right: 0; top: 0; width: calc(52% - 1.5mm); }
     .report-page--evidence .evidence-panel--curve svg { height: 100%; max-height: 100%; min-height: 0; }
+    .report-page--evidence .evidence-panel--summary { bottom: 0; left: 0; right: 0; top: 58mm; }
     .report-page--evidence .dimension-note, .report-page--evidence .curve-note { color: #52616b; margin: 0 0 1.5mm; }
     .report-page--evidence .response-summary-grid {
       display: grid;
       gap: 1.4mm;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .report-page--evidence .response-summary-grid > .response-summary-table { margin-top: 0; }
     .report-page--evidence .response-summary-table {
@@ -255,10 +260,17 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
       table-layout: fixed;
     }
     .report-page--evidence .response-summary-table th,
-    .report-page--evidence .response-summary-table td { padding: 0.9mm 1.2mm; line-height: 1.2; }
+    .report-page--evidence .response-summary-table td { padding: 0.35mm 1mm; line-height: 1.05; }
     .report-page--evidence .summary-value--pass { color: #176b3a; font-weight: 700; }
     .report-page--evidence .summary-value--warning { color: #b45309; font-weight: 700; }
     .report-page--evidence .summary-value--fail { color: #a3342d; font-weight: 700; }
+    .report-page--evidence.report-page--evidence-flow { break-inside: auto; height: auto; min-height: 180mm; page-break-inside: auto; position: static; }
+    .report-page--evidence-flow .evidence-top { height: auto; position: static; }
+    .report-page--evidence-flow .evidence-lower-grid { display: grid; gap: 3mm; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 3mm; position: static; }
+    .report-page--evidence-flow .evidence-panel { height: auto; position: static; width: auto; }
+    .report-page--evidence-flow .evidence-panel--summary { grid-column: 1 / -1; }
+    .report-page--evidence-flow .response-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .report-page--evidence-flow .evidence-panel svg { height: auto; }
     .report-page--action h2 { margin: 2.5mm 0 1.2mm; }
     .report-page--action p { margin-top: .6mm; }
     .action-grid { display: grid; gap: 1.5mm 5mm; grid-template-columns: repeat(2, minmax(0, 1fr)); }

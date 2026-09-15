@@ -766,16 +766,19 @@ describe("renderAssumptionResultsPdfHtml", () => {
   it("defines page-one evidence printable box and compact readable 2x2 response summary structure", () => {
     const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
 
-    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*76mm\s+minmax\(0,\s*1fr\);[^}]*gap:\s*2mm;[^}]*break-after:\s*page;/);
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*position:\s*relative;[^}]*break-after:\s*page;[^}]*break-inside:\s*avoid-page;[^}]*page-break-inside:\s*avoid;/);
     expect(html).not.toMatch(/\.report-page--evidence\s*{[^}]*overflow:\s*visible;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*min-height:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*min-height:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-right-stack\s*{[^}]*display:\s*grid;[^}]*min-height:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel\s*{[^}]*padding:\s*2mm;[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*height:\s*76mm;[^}]*position:\s*absolute;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*bottom:\s*0;[^}]*min-height:\s*0;[^}]*position:\s*absolute;[^}]*top:\s*78mm;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--chain\s*{[^}]*height:\s*55mm;[^}]*left:\s*0;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--curve\s*{[^}]*height:\s*55mm;[^}]*right:\s*0;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--summary\s*{[^}]*bottom:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*top:\s*58mm;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel\s*{[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel\s*{[^}]*padding:\s*2mm;/);
     expect(html).toMatch(/\.report-page--evidence\s+\.factor-setup-panel\s+table\s*{[^}]*table-layout:\s*fixed;[^}]*font-size:\s*7\.4pt;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
     expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*>\s*\.response-summary-table\s*{[^}]*margin-top:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s+th,\s*\.report-page--evidence\s+\.response-summary-table\s+td\s*{[^}]*padding:\s*0\.9mm\s+1\.2mm;[^}]*line-height:\s*1\.2;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s+th,\s*\.report-page--evidence\s+\.response-summary-table\s+td\s*{[^}]*padding:\s*0\.35mm\s+1mm;[^}]*line-height:\s*1\.05;/);
     expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
     expect(html).toMatch(/<div class="response-summary-grid">[\s\S]*?<table class="response-summary-table">[\s\S]*?RSS and Worst Case[\s\S]*?<table class="response-summary-table">[\s\S]*?Response and Specifications[\s\S]*?<table class="response-summary-table">[\s\S]*?Sigma Level and Capability[\s\S]*?<table class="response-summary-table">[\s\S]*?Defects Per Million[\s\S]*?<\/div>/);
   });
@@ -880,10 +883,10 @@ describe("renderAssumptionResultsPdfHtml", () => {
 
     expect(html).toMatch(/\.report-page--decision\s*{[^}]*break-before:\s*page;/);
     expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
-    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*76mm\s+minmax\(0,\s*1fr\);[^}]*gap:\s*2mm;[^}]*break-after:\s*page;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*min-height:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*display:\s*grid;[^}]*min-height:\s*0;/);
-    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*position:\s*relative;[^}]*break-after:\s*page;[^}]*break-inside:\s*avoid-page;[^}]*page-break-inside:\s*avoid;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*height:\s*76mm;[^}]*position:\s*absolute;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*min-height:\s*0;[^}]*position:\s*absolute;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
     expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
   });
 
@@ -932,6 +935,29 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(evidencePage).toContain("data-footer-field=\"rss-sigma\"");
     expect(evidencePage).toContain("data-footer-field=\"additional-mean-shift\"");
     expect(evidencePage).toContain("data-footer-field=\"adjusted-mean\"");
+    expect(evidencePage).not.toContain("report-page--evidence-flow");
+  });
+
+  it("uses a paginated flow layout when bounded evidence exceeds representative page-one capacity", () => {
+    const request = representativeCurrentUiRequest();
+    const eightRows = Array.from({ length: 8 }, (_, index) => ({
+      ...request.engineeringEvidence.factorSetup.rows[0],
+      itemNumber: index + 1,
+      factorName: `Factor ${index + 1}`,
+    }));
+    const html = renderAssumptionResultsPdfHtml({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: { ...request.engineeringEvidence.factorSetup, rows: eightRows },
+      },
+    });
+
+    expect(html).toContain('class="report-page report-page--evidence report-page--evidence-flow"');
+    expect(html).toMatch(/\.report-page--evidence\.report-page--evidence-flow\s*{[^}]*break-inside:\s*auto;[^}]*height:\s*auto;[^}]*min-height:\s*180mm;[^}]*page-break-inside:\s*auto;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-top\s*{[^}]*height:\s*auto;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-lower-grid\s*{[^}]*display:\s*grid;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-panel\s*{[^}]*height:\s*auto;[^}]*position:\s*static;[^}]*width:\s*auto;/);
   });
 });
 

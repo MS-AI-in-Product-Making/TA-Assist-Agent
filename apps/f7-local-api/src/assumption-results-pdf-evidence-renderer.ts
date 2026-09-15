@@ -90,6 +90,17 @@ function formatPoint(value: { x: number; y: number }): string {
   return `${value.x.toFixed(3)},${value.y.toFixed(3)}`;
 }
 
+function chainSourceSummary(sourceSignature: string): string {
+  try {
+    const source = JSON.parse(sourceSignature) as { workbookName?: unknown; worksheetName?: unknown };
+    const workbookName = typeof source.workbookName === "string" ? safeText(source.workbookName) : "unknown workbook";
+    const worksheetName = typeof source.worksheetName === "string" ? safeText(source.worksheetName) : "unknown worksheet";
+    return `${workbookName} / ${worksheetName}`;
+  } catch {
+    return "validated factor setup";
+  }
+}
+
 function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): string {
   const chain = input.dimensionChain;
   const isFallback = chain.status === "fallback";
@@ -158,8 +169,18 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
     const laneOffset = chainNumber(laneOffsets[factor.id]);
     const midpointX = (physicalStart.x + physicalEnd.x) / 2;
     const midpointY = (physicalStart.y + physicalEnd.y) / 2;
-    const labelX = clamp(orientation === "vertical" ? midpointX + 9 + laneOffset : midpointX, 24, 596);
-    const labelY = clamp(orientation === "vertical" ? midpointY : midpointY - 8 + laneOffset, 24, 133);
+    const evenlySpacedAxisPosition = axisStart + ((index + 0.5) / Math.max(1, factors.length)) * axisRange;
+    const automaticLaneOffset = (index % 4) * 18 - 27;
+    const labelX = clamp(
+      orientation === "vertical" ? midpointX + 9 + automaticLaneOffset + laneOffset : evenlySpacedAxisPosition,
+      24,
+      596,
+    );
+    const labelY = clamp(
+      orientation === "vertical" ? evenlySpacedAxisPosition : midpointY - 16 + automaticLaneOffset + laneOffset,
+      16,
+      133,
+    );
     const isPositive = chainNumber(factor.designNominal) >= 0;
     const strokeColor = isPositive ? "#176b3a" : "#a3342d";
     const markerId = isPositive ? "chain-arrow-green" : "chain-arrow-red";
@@ -192,7 +213,7 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
   const closureLabelX = clamp((closureStartGuide.x + closureEndGuide.x) / 2, 24, 596);
   const closureLabelY = clamp((closureStartGuide.y + closureEndGuide.y) / 2 - 4, 24, 144);
 
-  return `<section class="evidence-panel">
+  return `<section class="evidence-panel evidence-panel--chain">
     <h3>Dimension Chain</h3>
     <p class="dimension-note">${isFallback ? "fallback to standard horizontal chain from factorSetup rows" : "generated chain preserved for report"}; orientation: ${safeText(orientation)}; ${chain.status === "generated" ? "manual layout" : "automatic layout"}; ${reversed.size > 0 ? "reversed factor segments" : "forward factor segments"}; closure: ${safeText(closure)}.</p>
     <svg data-dimension-chain viewBox="0 0 620 184" role="img" aria-label="Dimension Chain">
@@ -210,7 +231,7 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
       <polyline data-chain-closure points="${closureDisplayPoints.map(formatPoint).join(" ")}" data-physical-start="${formatPoint(finalVertex)}" data-physical-end="${formatPoint(originVertex)}" data-start-offset="${closureStartOffset}" data-end-offset="${closureEndOffset}" data-lane-offset="${closureLaneOffset}" fill="none" stroke="#176b3a" stroke-width="1.8" marker-end="url(#chain-arrow-green)"/>
       <text data-chain-closure-label x="${closureLabelX.toFixed(3)}" y="${closureLabelY.toFixed(3)}">Closure</text>
       <text x="24" y="156">${safeText(isFallback ? "Fallback from factorSetup rows" : "Generated from validated factor setup")}</text>
-      <text x="24" y="170">${safeText(chain.sourceSignature)}</text>
+      <text x="24" y="170">Source: ${chainSourceSummary(chain.sourceSignature)}</text>
     </svg>
   </section>`;
 }
@@ -270,7 +291,7 @@ function summaryStatusClass(status: "PASS" | "FAIL"): string {
 }
 
 function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["responseSummary"]): string {
-  return `<section class="evidence-panel">
+  return `<section class="evidence-panel evidence-panel--summary">
     <h3>Response Summary</h3>
     <div class="response-summary-grid">
     <table class="response-summary-table"><caption>RSS and Worst Case</caption><tbody>
@@ -310,8 +331,10 @@ function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["res
 }
 
 export function renderAssumptionResultsPdfEvidenceHtml(input: AssumptionResultsPdfEvidenceRequest): string {
+  const requiresFlowLayout = input.factorSetup.rows.length > 7
+    || input.responseSummary.rssAndWorstCase.sigmaBands.length > 2;
   return `
-    <div class="report-page report-page--evidence">
+    <div class="report-page report-page--evidence${requiresFlowLayout ? " report-page--evidence-flow" : ""}">
       <div class="evidence-top">
         <header>
           <h1>Engineering Evidence</h1>
@@ -342,10 +365,8 @@ export function renderAssumptionResultsPdfEvidenceHtml(input: AssumptionResultsP
       </div>
       <div class="evidence-lower-grid">
         ${renderDimensionChain(input)}
-        <div class="evidence-right-stack">
-          ${renderNormalCurve(input.responseDistribution)}
-          ${renderResponseSummary(input.responseSummary)}
-        </div>
+        ${renderNormalCurve(input.responseDistribution)}
+        ${renderResponseSummary(input.responseSummary)}
       </div>
     </div>`;
 }
