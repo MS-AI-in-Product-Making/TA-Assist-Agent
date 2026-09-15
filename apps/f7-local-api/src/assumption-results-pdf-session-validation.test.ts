@@ -522,6 +522,80 @@ describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
     }
   });
 
+  it("returns ok false for known calculation kernel invalid-input errors", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+
+    const result = validateAssumptionResultsPdfRequestAgainstSession(baseline, ready, {
+      calculateToleranceAnalysis: () => {
+        throw {
+          code: "calculation_not_possible",
+          summary: "known-kernel-invalid",
+        };
+      },
+    });
+
+    expect(result).toEqual({ ok: false });
+  });
+
+  it("rethrows unknown errors from derived evidence calculation", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+    const unknown = new Error("unknown-kernel-failure");
+
+    expect(() => validateAssumptionResultsPdfRequestAgainstSession(baseline, ready, {
+      calculateToleranceAnalysis: () => {
+        throw unknown;
+      },
+    })).toThrow(unknown);
+  });
+
+  it("rejects large absolute drift for huge derived values and accepts tiny floating drift", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+
+    const hugeDrift = cloneRequest(baseline);
+    hugeDrift.engineeringEvidence.responseSummary.defectsPerMillion.totalDpm = 1_000_000_000;
+    hugeDrift.engineeringEvidence.responseSummary.defectsPerMillion.lowerDpm = 500_000_000;
+    hugeDrift.engineeringEvidence.responseSummary.defectsPerMillion.upperDpm = 500_000_000;
+    hugeDrift.engineeringEvidence.responseSummary.defectsPerMillion.outOfSpecPercent = 100_000;
+    hugeDrift.engineeringEvidence.responseSummary.defectsPerMillion.yieldPercent = -99_900;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(hugeDrift, ready)).toEqual({ ok: false });
+
+    const tinyDrift = cloneRequest(baseline);
+    tinyDrift.engineeringEvidence.responseSummary.sigmaLevelAndCapability.calculatedCpk.value += 1e-12;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tinyDrift, ready)).toEqual({ ok: true });
+  });
+
+  it("rejects derived comparison when value is 1e9 and request differs by 1", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+
+    const strictAbsoluteCap = cloneRequest(baseline);
+    strictAbsoluteCap.engineeringEvidence.responseSummary.defectsPerMillion.totalDpm = 1_000_000_001;
+    strictAbsoluteCap.engineeringEvidence.responseSummary.defectsPerMillion.lowerDpm = 400_000_000;
+    strictAbsoluteCap.engineeringEvidence.responseSummary.defectsPerMillion.upperDpm = 600_000_000;
+    strictAbsoluteCap.engineeringEvidence.responseSummary.defectsPerMillion.outOfSpecPercent = 25;
+    strictAbsoluteCap.engineeringEvidence.responseSummary.defectsPerMillion.yieldPercent = 75;
+
+    expect(validateAssumptionResultsPdfRequestAgainstSession(strictAbsoluteCap, ready, {
+      calculateToleranceAnalysis: (input) => {
+        const kernel = calculateToleranceAnalysis(input);
+        return {
+          ...kernel,
+          capability: {
+            ...kernel.capability,
+            lowerDpm: 400_000_000,
+            upperDpm: 600_000_000,
+            totalDpm: 1_000_000_000,
+            outOfSpecRatio: 0.25,
+            yield: 0.75,
+          },
+        };
+      },
+    })).toEqual({ ok: false });
+  });
+
   it("rejects workbook/worksheet mismatch and cross-session factor evidence", () => {
     const { ready: readyA } = createReadySession("Session-A.xlsx");
     const { ready: readyB } = createReadySession("Session-B.xlsx", "Fabric thickness B");

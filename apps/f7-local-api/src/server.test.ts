@@ -1799,6 +1799,68 @@ describe("f7 local server", () => {
     expect(assumptionResultsPdfRenderer.render).toHaveBeenCalledTimes(1);
   });
 
+  it("returns controlled 500 when assumption-results validator throws unknown error", async () => {
+    const service = createRealService();
+    const imported = service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const worksheet = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+    });
+
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const unknown = new Error("validator-unknown");
+    const server = createF7LocalServer({
+      service,
+      assumptionResultsPdfRenderer,
+      validateAssumptionResultsPdfRequestAgainstSession: () => {
+        throw unknown;
+      },
+      onEvent: (event) => events.push({ ...event }),
+    });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: toSessionBoundPdfRequest(service.getSession("session-fixed")),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.rawBody).not.toContain("validator-unknown");
+    expect(response.json).toEqual({
+      code: "internal_error",
+      summary: "F7 local API request failed.",
+      suggestedAction: "Retry the request. If the problem persists, restart the local API.",
+      affectedInputReferences: ["f7-local-api"],
+    });
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+    expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 500 }]);
+  });
+
   it("uses controlled session error mapping and does not render a missing session", async () => {
     const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
       render: vi.fn(async () => Buffer.from("%PDF-invalid")),

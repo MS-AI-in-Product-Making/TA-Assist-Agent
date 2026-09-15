@@ -385,6 +385,7 @@ async function handleRequest(
   response: ServerResponse,
   service: F7SessionService,
   assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer,
+  validateAssumptionResultsPdfRequest: typeof validateAssumptionResultsPdfRequestAgainstSession,
 ): Promise<{ kind: string; status: number } | undefined> {
   const method = request.method ?? "";
   const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -563,7 +564,7 @@ async function handleRequest(
       throw error;
     }
 
-    const validation = validateAssumptionResultsPdfRequestAgainstSession(routeRequest.data, sessionSnapshot);
+    const validation = validateAssumptionResultsPdfRequest(routeRequest.data, sessionSnapshot);
     if (!validation.ok) rejectBadRequest();
 
     const pdfBytes = await assumptionResultsPdfRenderer.render(routeRequest.data);
@@ -612,8 +613,12 @@ async function handleRequest(
 export function createF7LocalServer(options: {
   readonly service: F7SessionService;
   readonly assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer;
+  readonly validateAssumptionResultsPdfRequestAgainstSession?: typeof validateAssumptionResultsPdfRequestAgainstSession;
   readonly onEvent?: (event: { readonly kind: string; readonly status: number }) => void;
 }): Server {
+  const validateAssumptionResultsPdfRequest = options.validateAssumptionResultsPdfRequestAgainstSession
+    ?? validateAssumptionResultsPdfRequestAgainstSession;
+
   const server = createServer(async (request, response) => {
     response.on("error", () => {});
 
@@ -631,6 +636,7 @@ export function createF7LocalServer(options: {
         response,
         options.service,
         options.assumptionResultsPdfRenderer,
+        validateAssumptionResultsPdfRequest,
       );
       if (handled) {
         eventKind = handled.kind;

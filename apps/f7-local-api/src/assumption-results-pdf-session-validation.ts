@@ -1,5 +1,8 @@
 import type { F7SessionSnapshot } from "@ai-assist/contracts";
-import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
+import {
+  calculateToleranceAnalysis,
+  isCalculationKernelError,
+} from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
 
 function hasUniqueValues(values: readonly string[]): boolean {
@@ -14,8 +17,10 @@ function parseBoundaryKey(key: string): { readonly left: string; readonly right:
   return { left, right };
 }
 
-const ABSOLUTE_TOLERANCE = 1e-12;
-const RELATIVE_TOLERANCE = 1e-9;
+const IDENTITY_ABSOLUTE_TOLERANCE = 1e-12;
+const DERIVED_ABSOLUTE_TOLERANCE = 1e-12;
+const DERIVED_RELATIVE_TOLERANCE = 1e-9;
+const DERIVED_MAX_ALLOWED_ABSOLUTE_DIFF = 1e-7;
 
 const DISTRIBUTION_BY_LABEL = {
   Normal: "normal",
@@ -30,8 +35,21 @@ function nearlyEqual(left: number, right: number): boolean {
   if (!Number.isFinite(left) || !Number.isFinite(right)) {
     return false;
   }
-  return Math.abs(left - right)
-    <= Math.max(ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE * Math.max(Math.abs(left), Math.abs(right)));
+  const absoluteDifference = Math.abs(left - right);
+  if (absoluteDifference > DERIVED_MAX_ALLOWED_ABSOLUTE_DIFF) {
+    return false;
+  }
+  return absoluteDifference <= Math.max(
+    DERIVED_ABSOLUTE_TOLERANCE,
+    DERIVED_RELATIVE_TOLERANCE * Math.max(Math.abs(left), Math.abs(right)),
+  );
+}
+
+function sameSessionIdentityNumber(left: number, right: number): boolean {
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
+  return Object.is(left, right) || Math.abs(left - right) <= IDENTITY_ABSOLUTE_TOLERANCE;
 }
 
 function finiteNumber(value: unknown): value is number {
@@ -46,6 +64,7 @@ function validateDerivedEngineeringEvidence(
   request: AssumptionResultsPdfRouteRequest,
   sessionEvidenceRows: readonly NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>[],
   session: F7SessionSnapshot,
+  calculate: typeof calculateToleranceAnalysis,
 ): boolean {
   const specification = session.systemSpecification;
   if (
@@ -80,7 +99,7 @@ function validateDerivedEngineeringEvidence(
 
   let kernel;
   try {
-    kernel = calculateToleranceAnalysis({
+    kernel = calculate({
       factors: kernelFactors,
       system: {
         designNominal: kernelFactors.reduce((sum, factor) => sum + factor.input.nominalValue, 0),
@@ -91,8 +110,11 @@ function validateDerivedEngineeringEvidence(
         shift: additionalMeanShift,
       },
     });
-  } catch {
-    return false;
+  } catch (error) {
+    if (isCalculationKernelError(error)) {
+      return false;
+    }
+    throw error;
   }
 
   const factorByKey = new Map(kernel.factors.map((factor) => [
@@ -202,7 +224,12 @@ function validateDerivedEngineeringEvidence(
 export function validateAssumptionResultsPdfRequestAgainstSession(
   request: AssumptionResultsPdfRouteRequest,
   session: F7SessionSnapshot,
+  dependencies: {
+    readonly calculateToleranceAnalysis?: typeof calculateToleranceAnalysis;
+  } = {},
 ): { ok: true } | { ok: false } {
+  const calculate = dependencies.calculateToleranceAnalysis ?? calculateToleranceAnalysis;
+
   if (request.workbookName !== session.workbook.fileName) {
     return { ok: false };
   }
@@ -235,15 +262,15 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
     }
     if (row.itemNumber !== index + 1) return { ok: false };
     if (row.factorName !== evidence.factorName) return { ok: false };
-    if (row.designNominal !== evidence.designNominal) return { ok: false };
-    if (row.upperTolerance !== evidence.upperTolerance) return { ok: false };
-    if (row.lowerTolerance !== evidence.lowerTolerance) return { ok: false };
-    if (row.longTermSafetyFactor !== evidence.longTermSafetyFactor) return { ok: false };
-    if (row.sigmaLevel !== evidence.sigmaLevel) return { ok: false };
+    if (!sameSessionIdentityNumber(row.designNominal, evidence.designNominal)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.upperTolerance, evidence.upperTolerance)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.lowerTolerance, evidence.lowerTolerance)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.longTermSafetyFactor, evidence.longTermSafetyFactor)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.sigmaLevel, evidence.sigmaLevel)) return { ok: false };
     if (row.distribution !== evidence.distribution) return { ok: false };
-    if (row.mean !== evidence.calculatedMean) return { ok: false };
-    if (row.tolerance !== evidence.tolerance) return { ok: false };
-    if (row.oneSigma !== evidence.oneSigma) return { ok: false };
+    if (!sameSessionIdentityNumber(row.mean, evidence.calculatedMean)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.tolerance, evidence.tolerance)) return { ok: false };
+    if (!sameSessionIdentityNumber(row.oneSigma, evidence.oneSigma)) return { ok: false };
   }
 
   const sessionFactorMap = new Map(sessionEvidenceRows.map((evidence) => [evidence.factorId, evidence]));
@@ -274,11 +301,11 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
       if (factor.itemNumber !== index + 1) return { ok: false };
       if (evidence.factorId !== sessionFactorIds[index]) return { ok: false };
       if (factor.name !== evidence.factorName) return { ok: false };
-      if (factor.designNominal !== evidence.designNominal) return { ok: false };
-      if (factor.upperTolerance !== evidence.upperTolerance) return { ok: false };
-      if (factor.lowerTolerance !== evidence.lowerTolerance) return { ok: false };
-      if (factor.longTermSafetyFactor !== evidence.longTermSafetyFactor) return { ok: false };
-      if (factor.sigmaLevel !== evidence.sigmaLevel) return { ok: false };
+      if (!sameSessionIdentityNumber(factor.designNominal, evidence.designNominal)) return { ok: false };
+      if (!sameSessionIdentityNumber(factor.upperTolerance, evidence.upperTolerance)) return { ok: false };
+      if (!sameSessionIdentityNumber(factor.lowerTolerance, evidence.lowerTolerance)) return { ok: false };
+      if (!sameSessionIdentityNumber(factor.longTermSafetyFactor, evidence.longTermSafetyFactor)) return { ok: false };
+      if (!sameSessionIdentityNumber(factor.sigmaLevel, evidence.sigmaLevel)) return { ok: false };
       if (factor.distribution !== evidence.distribution) return { ok: false };
     }
 
@@ -313,7 +340,7 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
     }
   }
 
-  if (!validateDerivedEngineeringEvidence(request, sessionEvidenceRows, session)) {
+  if (!validateDerivedEngineeringEvidence(request, sessionEvidenceRows, session, calculate)) {
     return { ok: false };
   }
 
