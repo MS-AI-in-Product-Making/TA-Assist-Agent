@@ -46,6 +46,7 @@ import {
   f7WorkbookImportRouteRequestSchema,
   f7WorksheetConfirmRouteRequestSchema,
 } from "./index.js";
+import { f7MeasurementImportFactorCoordinatesSchema } from "./index.js";
 
 const SHA256 = "a".repeat(64);
 const SHA256_2 = "b".repeat(64);
@@ -318,6 +319,56 @@ describe("F7 report contracts", () => {
     }).success).toBe(false);
   });
 
+
+describe("F7 measurement import factor coordinates", () => {
+  it("rejects missing mandatory coordinate cells and accepts the complete coordinate map", () => {
+    expect(f7MeasurementImportFactorCoordinatesSchema.safeParse({
+      factorNameCell: "Measurements!B2",
+      unitCell: "Measurements!B3",
+      designNominalCell: "Measurements!B4",
+      upperToleranceCell: "Measurements!B5",
+      lowerToleranceCell: "Measurements!B6",
+      lowerSpecLimitCell: "Measurements!B7",
+      upperSpecLimitCell: "Measurements!B8",
+      measurementColumn: "B",
+      firstMeasurementCell: "Measurements!B15",
+    }).success).toBe(false);
+
+    expect(f7MeasurementImportFactorCoordinatesSchema.parse({
+      factorNameCell: "Measurements!B2",
+      partNumberCell: "Measurements!B3",
+      dimIdCell: "Measurements!B4",
+      designNominalCell: "Measurements!B5",
+      upperToleranceCell: "Measurements!B6",
+      lowerToleranceCell: "Measurements!B7",
+      lowerSpecLimitCell: "Measurements!B8",
+      upperSpecLimitCell: "Measurements!B9",
+      specificationSourceCell: "Measurements!B10",
+      limitStatusCell: "Measurements!B11",
+      measurementStructureCell: "Measurements!B12",
+      subgroupSizeCell: "Measurements!B13",
+      estimatorCell: "Measurements!B14",
+      measurementColumn: "B",
+      firstMeasurementCell: "Measurements!B15",
+    })).toEqual({
+      factorNameCell: "Measurements!B2",
+      partNumberCell: "Measurements!B3",
+      dimIdCell: "Measurements!B4",
+      designNominalCell: "Measurements!B5",
+      upperToleranceCell: "Measurements!B6",
+      lowerToleranceCell: "Measurements!B7",
+      lowerSpecLimitCell: "Measurements!B8",
+      upperSpecLimitCell: "Measurements!B9",
+      specificationSourceCell: "Measurements!B10",
+      limitStatusCell: "Measurements!B11",
+      measurementStructureCell: "Measurements!B12",
+      subgroupSizeCell: "Measurements!B13",
+      estimatorCell: "Measurements!B14",
+      measurementColumn: "B",
+      firstMeasurementCell: "Measurements!B15",
+    });
+  });
+});
   it("rejects available analysis when narrative judgment cpk and target drift from simulation capability", () => {
     const report = createReportFixture("BELOW_TARGET");
     report.analysis = {
@@ -2994,12 +3045,18 @@ function createMeasurementImportManifestFactor(overrides: Record<string, unknown
     limitStatus: "VALID",
     coordinates: {
       factorNameCell: "Analysis-A!B12",
-      unitCell: "Analysis-A!C12",
-      designNominalCell: "Analysis-A!D12",
-      upperToleranceCell: "Analysis-A!E12",
-      lowerToleranceCell: "Analysis-A!F12",
-      lowerSpecLimitCell: "Analysis-A!G12",
-      upperSpecLimitCell: "Analysis-A!H12",
+      partNumberCell: "Analysis-A!C12",
+      dimIdCell: "Analysis-A!D12",
+      designNominalCell: "Analysis-A!E12",
+      upperToleranceCell: "Analysis-A!F12",
+      lowerToleranceCell: "Analysis-A!G12",
+      lowerSpecLimitCell: "Analysis-A!H12",
+      upperSpecLimitCell: "Analysis-A!I12",
+      specificationSourceCell: "Analysis-A!J12",
+      limitStatusCell: "Analysis-A!K12",
+      measurementStructureCell: "Analysis-A!L12",
+      subgroupSizeCell: "Analysis-A!M12",
+      estimatorCell: "Analysis-A!N12",
       measurementColumn: "J",
       firstMeasurementCell: "Analysis-A!J20",
     },
@@ -3026,12 +3083,18 @@ function createMeasurementImportManifest(overrides: Record<string, unknown> = {}
     limitStatus: "CROSSES_ZERO",
     coordinates: {
       factorNameCell: "Analysis-A!B13",
-      unitCell: "Analysis-A!C13",
-      designNominalCell: "Analysis-A!D13",
-      upperToleranceCell: "Analysis-A!E13",
-      lowerToleranceCell: "Analysis-A!F13",
-      lowerSpecLimitCell: "Analysis-A!G13",
-      upperSpecLimitCell: "Analysis-A!H13",
+      partNumberCell: "Analysis-A!C13",
+      dimIdCell: "Analysis-A!D13",
+      designNominalCell: "Analysis-A!E13",
+      upperToleranceCell: "Analysis-A!F13",
+      lowerToleranceCell: "Analysis-A!G13",
+      lowerSpecLimitCell: "Analysis-A!H13",
+      upperSpecLimitCell: "Analysis-A!I13",
+      specificationSourceCell: "Analysis-A!J13",
+      limitStatusCell: "Analysis-A!K13",
+      measurementStructureCell: "Analysis-A!L13",
+      subgroupSizeCell: "Analysis-A!M13",
+      estimatorCell: "Analysis-A!N13",
       measurementColumn: "K",
       firstMeasurementCell: "Analysis-A!K20",
     },

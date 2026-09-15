@@ -159,16 +159,22 @@ describe("F7 measurement template authority", () => {
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn).toBe(2);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(500);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBe(10);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(509);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBe(15);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(514);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows).toEqual({
       factorName: 2,
-      unit: 3,
-      designNominal: 4,
-      upperTolerance: 5,
-      lowerTolerance: 6,
-      lowerSpecLimit: 7,
-      upperSpecLimit: 8,
+      partNumber: 3,
+      dimId: 4,
+      designNominal: 5,
+      upperTolerance: 6,
+      lowerTolerance: 7,
+      lowerSpecLimit: 8,
+      upperSpecLimit: 9,
+      specificationSource: 10,
+      limitStatus: 11,
+      measurementStructure: 12,
+      subgroupSize: 13,
+      estimator: 14,
     });
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest).toEqual({
       contractIdCell: "_F7_MANIFEST!B2",
@@ -238,12 +244,18 @@ describe("F7 measurement template authority", () => {
 
     const [firstFactor, secondFactor] = authority.manifest.factors;
     expect(firstFactor?.coordinates.factorNameCell).toBe("Measurements!B2");
-    expect(firstFactor?.coordinates.unitCell).toBe("Measurements!B3");
-    expect(firstFactor?.coordinates.designNominalCell).toBe("Measurements!B4");
-    expect(firstFactor?.coordinates.upperToleranceCell).toBe("Measurements!B5");
-    expect(firstFactor?.coordinates.lowerToleranceCell).toBe("Measurements!B6");
-    expect(firstFactor?.coordinates.lowerSpecLimitCell).toBe("Measurements!B7");
-    expect(firstFactor?.coordinates.upperSpecLimitCell).toBe("Measurements!B8");
+    expect(firstFactor?.coordinates.partNumberCell).toBe("Measurements!B3");
+    expect(firstFactor?.coordinates.dimIdCell).toBe("Measurements!B4");
+    expect(firstFactor?.coordinates.designNominalCell).toBe("Measurements!B5");
+    expect(firstFactor?.coordinates.upperToleranceCell).toBe("Measurements!B6");
+    expect(firstFactor?.coordinates.lowerToleranceCell).toBe("Measurements!B7");
+    expect(firstFactor?.coordinates.lowerSpecLimitCell).toBe("Measurements!B8");
+    expect(firstFactor?.coordinates.upperSpecLimitCell).toBe("Measurements!B9");
+    expect(firstFactor?.coordinates.specificationSourceCell).toBe("Measurements!B10");
+    expect(firstFactor?.coordinates.limitStatusCell).toBe("Measurements!B11");
+    expect(firstFactor?.coordinates.measurementStructureCell).toBe("Measurements!B12");
+    expect(firstFactor?.coordinates.subgroupSizeCell).toBe("Measurements!B13");
+    expect(firstFactor?.coordinates.estimatorCell).toBe("Measurements!B14");
     expect(firstFactor?.coordinates.measurementColumn).toBe("B");
     expect(firstFactor?.coordinates.firstMeasurementCell).toBe(`Measurements!B${F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow}`);
     expect(secondFactor?.coordinates.measurementColumn).toBe("C");

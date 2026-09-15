@@ -755,15 +755,21 @@ function requireValidationIssueFactorIdsMatch(
   }
 }
 
-const f7MeasurementImportFactorCoordinatesSchema = z
+export const f7MeasurementImportFactorCoordinatesSchema = z
   .object({
     factorNameCell: controlledCellReferenceSchema,
-    unitCell: controlledCellReferenceSchema,
+    partNumberCell: controlledCellReferenceSchema,
+    dimIdCell: controlledCellReferenceSchema,
     designNominalCell: controlledCellReferenceSchema,
     upperToleranceCell: controlledCellReferenceSchema,
     lowerToleranceCell: controlledCellReferenceSchema,
     lowerSpecLimitCell: controlledCellReferenceSchema,
     upperSpecLimitCell: controlledCellReferenceSchema,
+    specificationSourceCell: controlledCellReferenceSchema,
+    limitStatusCell: controlledCellReferenceSchema,
+    measurementStructureCell: controlledCellReferenceSchema,
+    subgroupSizeCell: controlledCellReferenceSchema,
+    estimatorCell: controlledCellReferenceSchema,
     measurementColumn: worksheetColumnSchema,
     firstMeasurementCell: controlledCellReferenceSchema,
   })

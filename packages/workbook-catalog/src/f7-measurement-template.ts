@@ -25,12 +25,18 @@ const LOCKED_COORDINATES_DOMAIN = "f7-measurement-locked-coordinates-v1";
 
 const FACTOR_ROW_MAP = Object.freeze({
   factorName: 2,
-  unit: 3,
-  designNominal: 4,
-  upperTolerance: 5,
-  lowerTolerance: 6,
-  lowerSpecLimit: 7,
-  upperSpecLimit: 8,
+  partNumber: 3,
+  dimId: 4,
+  designNominal: 5,
+  upperTolerance: 6,
+  lowerTolerance: 7,
+  lowerSpecLimit: 8,
+  upperSpecLimit: 9,
+  specificationSource: 10,
+  limitStatus: 11,
+  measurementStructure: 12,
+  subgroupSize: 13,
+  estimator: 14,
 });
 
 const MANIFEST_COORDINATES = Object.freeze({
@@ -53,9 +59,9 @@ export const F7_MEASUREMENT_TEMPLATE_LAYOUT = Object.freeze({
   visibleSheetName: "Measurements",
   manifestSheetName: "_F7_MANIFEST",
   firstFactorColumn: 2,
-  firstMeasurementRow: 10,
+  firstMeasurementRow: 15,
   measurementCapacity: F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS,
-  lastMeasurementRow: 10 + F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS - 1,
+  lastMeasurementRow: 15 + F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS - 1,
   factorRows: FACTOR_ROW_MAP,
   manifest: MANIFEST_COORDINATES,
 });
@@ -70,12 +76,18 @@ type ParsedFactorEvidence = F7FactorEvidence & {
 
 type F7MeasurementImportFactorCoordinates = {
   readonly factorNameCell: string;
-  readonly unitCell: string;
+  readonly partNumberCell: string;
+  readonly dimIdCell: string;
   readonly designNominalCell: string;
   readonly upperToleranceCell: string;
   readonly lowerToleranceCell: string;
   readonly lowerSpecLimitCell: string;
   readonly upperSpecLimitCell: string;
+  readonly specificationSourceCell: string;
+  readonly limitStatusCell: string;
+  readonly measurementStructureCell: string;
+  readonly subgroupSizeCell: string;
+  readonly estimatorCell: string;
   readonly measurementColumn: string;
   readonly firstMeasurementCell: string;
 };
@@ -236,12 +248,18 @@ function validateFactorAlignment(
 function buildFactorCoordinates(column: string): F7MeasurementImportFactorCoordinates {
   return {
     factorNameCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.factorName}`,
-    unitCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.unit}`,
+    partNumberCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.partNumber}`,
+    dimIdCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.dimId}`,
     designNominalCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.designNominal}`,
     upperToleranceCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.upperTolerance}`,
     lowerToleranceCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.lowerTolerance}`,
     lowerSpecLimitCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.lowerSpecLimit}`,
     upperSpecLimitCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.upperSpecLimit}`,
+    specificationSourceCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.specificationSource}`,
+    limitStatusCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.limitStatus}`,
+    measurementStructureCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.measurementStructure}`,
+    subgroupSizeCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.subgroupSize}`,
+    estimatorCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.estimator}`,
     measurementColumn: column,
     firstMeasurementCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow}`,
   };
@@ -269,12 +287,18 @@ function hashProjectedFactorCoordinates(factor: Omit<F7MeasurementImportFactorMa
   return hashLengthPrefixed(FACTOR_COORDINATE_DOMAIN, [
     factor.factorId,
     coordinates.factorNameCell,
-    coordinates.unitCell,
+    coordinates.partNumberCell,
+    coordinates.dimIdCell,
     coordinates.designNominalCell,
     coordinates.upperToleranceCell,
     coordinates.lowerToleranceCell,
     coordinates.lowerSpecLimitCell,
     coordinates.upperSpecLimitCell,
+    coordinates.specificationSourceCell,
+    coordinates.limitStatusCell,
+    coordinates.measurementStructureCell,
+    coordinates.subgroupSizeCell,
+    coordinates.estimatorCell,
     coordinates.measurementColumn,
     coordinates.firstMeasurementCell,
   ]);
