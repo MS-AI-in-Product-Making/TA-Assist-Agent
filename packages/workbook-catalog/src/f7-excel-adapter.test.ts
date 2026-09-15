@@ -434,6 +434,8 @@ describe("F7 interim excel adapter", () => {
       sourceCells: {
         partNumber: "Anonymous_TA!H14",
         dimId: "Anonymous_TA!I14",
+        factorLowerSpecLimit: "Anonymous_TA!J14",
+        factorUpperSpecLimit: "Anonymous_TA!K14",
         lowerSpecLimit: "Anonymous_TA!J14",
         upperSpecLimit: "Anonymous_TA!K14",
       },
@@ -448,7 +450,31 @@ describe("F7 interim excel adapter", () => {
       specificationSource: "Worksheet",
       lowerSpecLimit: 0.5,
       upperSpecLimit: 0.8,
+      sourceCells: {
+        factorLowerSpecLimit: "Anonymous_TA!J14",
+        factorUpperSpecLimit: "Anonymous_TA!K14",
+      },
     });
+
+    for (const malformedCandidate of [
+      { ...firstCandidate, lowerSpecLimit: -0.1 },
+      {
+        ...firstCandidate,
+        sourceCells: Object.fromEntries(
+          Object.entries(firstCandidate.sourceCells)
+            .filter(([fieldName]) => fieldName !== "factorLowerSpecLimit"),
+        ),
+      },
+    ]) {
+      expect(() => confirmF7FactorSetup({
+        extractionResult: {
+          ...extracted,
+          candidates: [malformedCandidate, ...extracted.candidates.slice(1)],
+        },
+        confirmations: confirmCandidates(extracted),
+      })).toThrow("F7 factor setup confirmation is invalid.");
+    }
+
     const withoutImportedMetadata = confirmF7FactorSetup({
       extractionResult: {
         ...extracted,

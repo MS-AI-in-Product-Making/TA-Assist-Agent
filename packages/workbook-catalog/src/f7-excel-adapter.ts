@@ -552,19 +552,35 @@ export function extractF7FactorCandidates(request: {
       throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "invalid_factor_specification" });
     }
 
-    const absoluteNominalValue = nominalValue === undefined ? undefined : Math.abs(nominalValue);
-    const factorLowerSpec = absoluteNominalValue !== undefined && lowerTolerance !== undefined
-      ? absoluteNominalValue + lowerTolerance
-      : undefined;
-    const factorUpperSpec = absoluteNominalValue !== undefined && upperTolerance !== undefined
-      ? absoluteNominalValue + upperTolerance
-      : undefined;
-    const hasFactorSpecification = factorLowerSpec !== undefined
-      && factorUpperSpec !== undefined
-      && factorLowerSpec < factorUpperSpec;
-    const designNominal = hasFactorSpecification ? nominalValue : excelSignedMean;
-    const normalizedLowerTolerance = hasFactorSpecification ? lowerTolerance : selectedSpec.lower.value;
-    const normalizedUpperTolerance = hasFactorSpecification ? upperTolerance : selectedSpec.upper.value;
+    let designNominal = excelSignedMean;
+    let normalizedLowerTolerance = selectedSpec.lower.value;
+    let normalizedUpperTolerance = selectedSpec.upper.value;
+    let specificationSourceCells: Record<string, string> = {
+      lowerSpecLimit: selectedSpec.lower.reference,
+      upperSpecLimit: selectedSpec.upper.reference,
+    };
+    if (nominalValue !== undefined
+      && nominalValueCell !== undefined
+      && lowerTolerance !== undefined
+      && lowerToleranceCell !== undefined
+      && upperTolerance !== undefined
+      && upperToleranceCell !== undefined) {
+      const absoluteNominalValue = Math.abs(nominalValue);
+      const factorLowerSpec = absoluteNominalValue + lowerTolerance;
+      const factorUpperSpec = absoluteNominalValue + upperTolerance;
+      if (factorLowerSpec < factorUpperSpec) {
+        designNominal = nominalValue;
+        normalizedLowerTolerance = lowerTolerance;
+        normalizedUpperTolerance = upperTolerance;
+        specificationSourceCells = {
+          nominalValue: `${worksheetName}!${nominalValueCell.reference}`,
+          upperTolerance: `${worksheetName}!${upperToleranceCell.reference}`,
+          lowerTolerance: `${worksheetName}!${lowerToleranceCell.reference}`,
+          lowerSpecLimit: `${worksheetName}!${nominalValueCell.reference}`,
+          upperSpecLimit: `${worksheetName}!${nominalValueCell.reference}`,
+        };
+      }
+    }
     const derivedLimits = normalizedPhysicalSpecificationLimits(
       designNominal,
       normalizedLowerTolerance,
@@ -575,18 +591,6 @@ export function extractF7FactorCandidates(request: {
       && explicitFactorUpperSpec !== undefined;
     const lowerSpecLimit = hasWorksheetSpecification ? explicitFactorLowerSpec : derivedLimits.lower;
     const upperSpecLimit = hasWorksheetSpecification ? explicitFactorUpperSpec : derivedLimits.upper;
-    const specificationSourceCells = hasFactorSpecification
-      ? {
-          nominalValue: `${worksheetName}!${nominalValueCell!.reference}`,
-          upperTolerance: `${worksheetName}!${upperToleranceCell!.reference}`,
-          lowerTolerance: `${worksheetName}!${lowerToleranceCell!.reference}`,
-          lowerSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
-          upperSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
-        }
-      : {
-          lowerSpecLimit: selectedSpec.lower.reference,
-          upperSpecLimit: selectedSpec.upper.reference,
-        };
 
     const candidate = {
       workbookContentHash,
@@ -602,6 +606,8 @@ export function extractF7FactorCandidates(request: {
         ...(dimId.length === 0 ? {} : { dimId: `${worksheetName}!${dimIdCell!.reference}` }),
         ...specificationSourceCells,
         ...(hasWorksheetSpecification ? {
+          factorLowerSpecLimit: `${worksheetName}!${factorLowerSpecCell!.reference}`,
+          factorUpperSpecLimit: `${worksheetName}!${factorUpperSpecCell!.reference}`,
           lowerSpecLimit: `${worksheetName}!${factorLowerSpecCell!.reference}`,
           upperSpecLimit: `${worksheetName}!${factorUpperSpecCell!.reference}`,
         } : {}),
@@ -739,11 +745,7 @@ export function confirmF7FactorSetup(request: {
       confirmation.lowerTolerance,
       confirmation.upperTolerance,
     );
-    const preserveWorksheetSpecification = candidate.specificationSource === "Worksheet"
-      && candidate.lowerSpecLimit >= 0
-      && candidate.lowerSpecLimit < candidate.upperSpecLimit
-      && candidate.sourceCells.lowerSpecLimit !== undefined
-      && candidate.sourceCells.upperSpecLimit !== undefined;
+    const preserveWorksheetSpecification = candidate.specificationSource === "Worksheet";
     const lowerSpecLimit = preserveWorksheetSpecification ? candidate.lowerSpecLimit : derivedLimits.lower;
     const upperSpecLimit = preserveWorksheetSpecification ? candidate.upperSpecLimit : derivedLimits.upper;
 

@@ -95,6 +95,33 @@ const requireLowerSpecLessThanUpperSpec = (
   }
 };
 
+function requireValidWorksheetFactorSpecification(
+  value: {
+    readonly specificationSource?: "Worksheet" | "Derived" | undefined;
+    readonly lowerSpecLimit: number;
+    readonly sourceCells: Readonly<Record<string, string>>;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (value.specificationSource !== "Worksheet") return;
+  if (value.lowerSpecLimit < 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Worksheet lowerSpecLimit must be nonnegative",
+      path: ["lowerSpecLimit"],
+    });
+  }
+  for (const fieldName of ["factorLowerSpecLimit", "factorUpperSpecLimit"] as const) {
+    if (value.sourceCells[fieldName] === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Worksheet specification limits require controlled ${fieldName} source cells`,
+        path: ["sourceCells", fieldName],
+      });
+    }
+  }
+}
+
 export const f7LoopCoefficientSchema = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
 
 export const f7FactorSourceModeSchema = z.enum([
@@ -257,6 +284,7 @@ export const f7FactorCandidateSchema = z
     requireGovernedFactorSource(candidate, context);
     requireLowerSpecLessThanUpperSpec(candidate, context);
     requireValidEditableFactorSpecification(candidate, context);
+    requireValidWorksheetFactorSpecification(candidate, context);
   });
 
 export const f7FactorSetupConfirmationSchema = z

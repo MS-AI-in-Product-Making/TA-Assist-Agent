@@ -1063,6 +1063,8 @@ describe("F7 phase 1 factor contracts", () => {
         factorName: "Analysis-A!A2",
         partNumber: "Analysis-A!B2",
         dimId: "Analysis-A!C2",
+        factorLowerSpecLimit: "Analysis-A!D2",
+        factorUpperSpecLimit: "Analysis-A!E2",
         lowerSpecLimit: "Analysis-A!D2",
         upperSpecLimit: "Analysis-A!E2",
       },
@@ -1081,6 +1083,31 @@ describe("F7 phase 1 factor contracts", () => {
       upperSpecLimit: 0.5,
     } as const;
     expect(f7FactorCandidateSchema.parse(candidate)).toEqual(candidate);
+    expect(f7FactorCandidateSchema.safeParse({
+      ...candidate,
+      lowerSpecLimit: -0.01,
+    }).success).toBe(false);
+    const worksheetCandidateWithoutLowerSource = structuredClone(candidate);
+    delete (worksheetCandidateWithoutLowerSource.sourceCells as { factorLowerSpecLimit?: string }).factorLowerSpecLimit;
+    expect(f7FactorCandidateSchema.safeParse(worksheetCandidateWithoutLowerSource).success).toBe(false);
+
+    const legacyCandidate = {
+      ...candidate,
+      specificationSource: undefined,
+      sourceCells: {
+        factorName: candidate.sourceCells.factorName,
+        lowerSpecLimit: candidate.sourceCells.lowerSpecLimit,
+        upperSpecLimit: candidate.sourceCells.upperSpecLimit,
+      },
+      lowerSpecLimit: 0.1,
+      upperSpecLimit: 0.3,
+    };
+    delete (legacyCandidate as { specificationSource?: string }).specificationSource;
+    expect(f7FactorCandidateSchema.safeParse(legacyCandidate).success).toBe(true);
+    expect(f7FactorCandidateSchema.safeParse({
+      ...legacyCandidate,
+      specificationSource: "Derived",
+    }).success).toBe(true);
 
     const { excelSignedMean: _excelSignedMean, standardDeviation: _standardDeviation, ...candidateEvidenceFields } = candidate;
     const worksheetEvidence = {
