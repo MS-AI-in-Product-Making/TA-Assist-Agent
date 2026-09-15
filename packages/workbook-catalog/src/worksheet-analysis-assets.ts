@@ -197,7 +197,12 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     for (const cell of rowCells) {
       const location = address(cell.reference)!;
       const semanticField = (Object.keys(HEADER_ALIASES) as (keyof typeof HEADER_ALIASES)[]).find((name) => HEADER_ALIASES[name].includes(normalize(cell.value) as never));
-      if (semanticField) mapped.set(semanticField, [...(mapped.get(semanticField) ?? []), { semanticField, sourceColumn: location.column, headerText: cell.value }]);
+      if (semanticField) {
+        const candidates = mapped.get(semanticField) ?? [];
+        if (!candidates.some((candidate) => candidate.sourceColumn === location.column)) {
+          mapped.set(semanticField, [...candidates, { semanticField, sourceColumn: location.column, headerText: cell.value }]);
+        }
+      }
     }
     const columns = [...mapped.values()].flatMap((candidates) => candidates.length === 1 ? candidates : []);
     const inputColumns = columns.filter((column) => USER_INPUT_FIELDS.has(column.semanticField));

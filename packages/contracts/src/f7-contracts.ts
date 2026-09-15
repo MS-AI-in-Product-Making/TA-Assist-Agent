@@ -343,6 +343,7 @@ export const f7FactorEvidenceSchema = z
     requireGovernedFactorSource(evidence, context);
     requireLowerSpecLessThanUpperSpec(evidence, context);
     requireValidEditableFactorSpecification(evidence, context);
+    requireValidWorksheetFactorSpecification(evidence, context);
 
     const expectedLoopCoefficient = Math.sign(evidence.designNominal);
     if (evidence.loopCoefficient !== expectedLoopCoefficient) {
@@ -379,17 +380,7 @@ export const f7FactorEvidenceSchema = z
       });
     }
 
-    if (evidence.specificationSource === "Worksheet") {
-      if (evidence.lowerSpecLimit < 0
-        || evidence.sourceCells.lowerSpecLimit === undefined
-        || evidence.sourceCells.upperSpecLimit === undefined) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Worksheet specification limits require nonnegative limits and controlled Factor limit source cells",
-          path: ["lowerSpecLimit"],
-        });
-      }
-    } else {
+    if (evidence.specificationSource !== "Worksheet") {
       const expectedLimits = normalizedPhysicalSpecificationLimits(
         evidence.designNominal,
         evidence.lowerTolerance,

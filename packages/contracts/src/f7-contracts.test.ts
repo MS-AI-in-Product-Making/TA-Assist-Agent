@@ -1132,10 +1132,12 @@ describe("F7 phase 1 factor contracts", () => {
       },
     } as const;
     expect(f7FactorEvidenceSchema.parse(worksheetEvidence)).toEqual(worksheetEvidence);
-    expect(f7FactorEvidenceSchema.safeParse({
-      ...worksheetEvidence,
-      sourceCells: { factorName: "Analysis-A!A2" },
-    }).success).toBe(false);
+    const worksheetEvidenceWithoutLowerSource = structuredClone(worksheetEvidence);
+    delete (worksheetEvidenceWithoutLowerSource.sourceCells as { factorLowerSpecLimit?: string }).factorLowerSpecLimit;
+    expect(f7FactorEvidenceSchema.safeParse(worksheetEvidenceWithoutLowerSource).success).toBe(false);
+    const worksheetEvidenceWithoutUpperSource = structuredClone(worksheetEvidence);
+    delete (worksheetEvidenceWithoutUpperSource.sourceCells as { factorUpperSpecLimit?: string }).factorUpperSpecLimit;
+    expect(f7FactorEvidenceSchema.safeParse(worksheetEvidenceWithoutUpperSource).success).toBe(false);
 
     const legacyDerived = {
       ...worksheetEvidence,
