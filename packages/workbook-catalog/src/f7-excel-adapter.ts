@@ -343,12 +343,17 @@ function parseConfirmations(value: unknown): readonly F7FactorSetupConfirmation[
   return parsed.data;
 }
 
-function buildCandidateId(workbookContentHash: string, worksheetName: string, tableId: string, sourceRow: number): string {
+export function buildF7FactorCandidateId(identity: {
+  readonly workbookContentHash: string;
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly sourceRow: number;
+}): string {
   return sha256LengthPrefixed([
-    workbookContentHash,
-    worksheetName,
-    tableId,
-    String(sourceRow),
+    identity.workbookContentHash,
+    identity.worksheetName,
+    identity.tableId,
+    String(identity.sourceRow),
   ]);
 }
 
@@ -475,6 +480,8 @@ export function extractF7FactorCandidates(request: {
   if ((factorLowerSpecColumn === undefined) !== (factorUpperSpecColumn === undefined)) {
     throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "incomplete_factor_specification_columns" });
   }
+  const hasFactorSpecificationColumns = factorLowerSpecColumn !== undefined
+    && factorUpperSpecColumn !== undefined;
 
   const cellsByCoordinate = worksheetCellByCoordinate(worksheet);
   const factorRows: number[] = [];
@@ -534,10 +541,9 @@ export function extractF7FactorCandidates(request: {
     const dimId = dimIdCell ? cellText(dimIdCell).trim() : "";
     const factorLowerSpecText = factorLowerSpecCell ? cellText(factorLowerSpecCell).trim() : "";
     const factorUpperSpecText = factorUpperSpecCell ? cellText(factorUpperSpecCell).trim() : "";
-    const hasExplicitFactorSpecCell = factorLowerSpecText.length > 0 || factorUpperSpecText.length > 0;
     const explicitFactorLowerSpec = finiteNumberFromCell(factorLowerSpecCell);
     const explicitFactorUpperSpec = finiteNumberFromCell(factorUpperSpecCell);
-    if (hasExplicitFactorSpecCell && (factorLowerSpecText.length === 0
+    if (hasFactorSpecificationColumns && (factorLowerSpecText.length === 0
       || factorUpperSpecText.length === 0
       || explicitFactorLowerSpec === undefined
       || explicitFactorUpperSpec === undefined
@@ -564,7 +570,7 @@ export function extractF7FactorCandidates(request: {
       normalizedLowerTolerance,
       normalizedUpperTolerance,
     );
-    const hasWorksheetSpecification = hasExplicitFactorSpecCell
+    const hasWorksheetSpecification = hasFactorSpecificationColumns
       && explicitFactorLowerSpec !== undefined
       && explicitFactorUpperSpec !== undefined;
     const lowerSpecLimit = hasWorksheetSpecification ? explicitFactorLowerSpec : derivedLimits.lower;
@@ -600,7 +606,7 @@ export function extractF7FactorCandidates(request: {
           upperSpecLimit: `${worksheetName}!${factorUpperSpecCell!.reference}`,
         } : {}),
       },
-      factorCandidateId: buildCandidateId(workbookContentHash, worksheetName, tableId, row),
+      factorCandidateId: buildF7FactorCandidateId({ workbookContentHash, worksheetName, tableId, sourceRow: row }),
       factorName,
       ...(partNumber.length === 0 ? {} : { partNumber }),
       ...(dimId.length === 0 ? {} : { dimId }),

@@ -4,6 +4,7 @@ import { typedErrorSchema } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "./test-support.js";
 import { readOoxmlWorkbook } from "./ooxml-reader.js";
 import {
+  buildF7FactorCandidateId,
   confirmF7FactorSetup,
   createF7WorkbookImport,
   extractF7FactorCandidates,
@@ -41,7 +42,7 @@ function formulaCell(reference: string, formula: string, cachedValue: string): s
   return `<c r="${reference}" t="n"><f>${formula}</f><v>${cachedValue}</v></c>`;
 }
 
-function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
+function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly firstFactorLowerLimit?: string; readonly firstFactorUpperLimit?: string; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
   const headerRow = options.headerRow ?? 13;
   const start = options.startRow ?? headerRow + 1;
   const factors = [
@@ -74,7 +75,7 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
     const upperTolerance = options.factorSpecifications ? (index === 1 || index === 3 ? "0.1" : "0.05") : "0";
     const lowerTolerance = options.factorSpecifications ? `-${upperTolerance}` : "0";
     const factorImportCells = options.factorImportColumns
-      ? `${cell(`H${row}`, `PN-${index + 1}`)}${cell(`I${row}`, `DIM-${index + 1}`)}${cell(`J${row}`, index === 0 ? "0.5" : "0.1")}${index === 0 && options.omitFirstFactorUpperLimit ? "" : cell(`K${row}`, index === 0 ? "0.8" : "2.5")}`
+      ? `${cell(`H${row}`, `PN-${index + 1}`)}${cell(`I${row}`, `DIM-${index + 1}`)}${cell(`J${row}`, index === 0 ? options.firstFactorLowerLimit ?? "0.5" : "0.1")}${index === 0 && options.omitFirstFactorUpperLimit ? "" : cell(`K${row}`, index === 0 ? options.firstFactorUpperLimit ?? "0.8" : "2.5")}`
       : "";
     return `<row r="${row}">${cell(`G${row}`, index === 0 && options.markerInCell ? options.markerInCell : factor[0])}${factorImportCells}${cell(`L${row}`, nominal)}${cell(`M${row}`, upperTolerance)}${cell(`N${row}`, lowerTolerance)}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, distribution)}${meanCell}${cell(`S${row}`, factor[4])}${sigmaCell}</row>`;
   }).join("");
@@ -88,7 +89,7 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
   return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row>${header}${dataRows}${specRows}${secondHeader}${options.tailRowsXml ?? ""}`;
 }
 
-function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
+function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly firstFactorLowerLimit?: string; readonly firstFactorUpperLimit?: string; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
   const workbookXml = options.includeSecondWorksheet
     ? `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/><sheet name="Anonymous_TA_2" sheetId="4" r:id="rId4"/></sheets></workbook>`
     : `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
@@ -468,6 +469,51 @@ describe("F7 interim excel adapter", () => {
     expect(withoutImportedMetadata.factors[0]?.factorId).toBe(firstFactor.factorId);
   });
 
+  it("keeps candidate and confirmed factor identity independent of part number and DIM ID display values", () => {
+    const identityContext = {
+      workbookContentHash: "a".repeat(64),
+      worksheetName: "Anonymous_TA",
+      tableId: "factor-table-G13",
+      sourceRow: 14,
+    };
+    const originalCandidateId = buildF7FactorCandidateId({
+      ...identityContext,
+      partNumber: "PN-ORIGINAL",
+      dimId: "DIM-ORIGINAL",
+    });
+    const renamedCandidateId = buildF7FactorCandidateId({
+      ...identityContext,
+      partNumber: "PN-DISPLAY-RENAMED",
+      dimId: "DIM-DISPLAY-RENAMED",
+    });
+    expect(renamedCandidateId).toBe(originalCandidateId);
+
+    const workbookBytes = buildWorkbook({ factorSpecifications: true, factorImportColumns: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const renamedExtraction = {
+      ...extracted,
+      candidates: extracted.candidates.map((candidate, index) => index === 0
+        ? { ...candidate, partNumber: "PN-DISPLAY-RENAMED", dimId: "DIM-DISPLAY-RENAMED" }
+        : candidate),
+    };
+    const originalFactor = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmCandidates(extracted),
+    }).factors[0]!;
+    const renamedFactor = confirmF7FactorSetup({
+      extractionResult: renamedExtraction,
+      confirmations: confirmCandidates(extracted),
+    }).factors[0]!;
+
+    expect(renamedFactor.factorCandidateId).toBe(originalFactor.factorCandidateId);
+    expect(renamedFactor.factorId).toBe(originalFactor.factorId);
+  });
+
   it("marks normalized limits as Derived and omits traceability when columns are absent", () => {
     const workbookBytes = buildWorkbook({ factorSpecifications: true });
     const imported = importWorkbook(workbookBytes);
@@ -686,6 +732,40 @@ describe("F7 interim excel adapter", () => {
         importResult: imported,
         confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
       })).toThrow("F7 factor extraction request is invalid.");
+    }
+  });
+
+  it.each([
+    ["blank LSL and USL", "", ""],
+    ["blank LSL", "", "0.8"],
+    ["blank USL", "0.5", ""],
+    ["non-finite LSL", "NaN", "0.8"],
+    ["non-finite USL", "0.5", "Infinity"],
+    ["negative LSL", "-0.1", "0.8"],
+    ["LSL equal to USL", "0.8", "0.8"],
+    ["LSL greater than USL", "0.9", "0.8"],
+  ])("rejects present paired Factor limit columns with %s", (_caseName, lowerLimit, upperLimit) => {
+    const workbookBytes = buildWorkbook({
+      factorSpecifications: true,
+      factorImportColumns: true,
+      firstFactorLowerLimit: lowerLimit,
+      firstFactorUpperLimit: upperLimit,
+    });
+    const imported = importWorkbook(workbookBytes);
+
+    try {
+      extractF7FactorCandidates({
+        workbookBytes,
+        importResult: imported,
+        confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect(typedErrorSchema.safeParse(error).success).toBe(true);
+      expect(error).toMatchObject({
+        summary: "F7 factor extraction request is invalid.",
+        reasonCode: "invalid_factor_specification",
+      });
     }
   });
 
