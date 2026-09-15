@@ -600,6 +600,411 @@ export const f7DatasetValidationResultSchema = z
   })
   .strict();
 
+export const F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID = "f7-measurement-import-template-v1";
+export const F7_MEASUREMENT_IMPORT_MAX_FACTORS = 100;
+export const F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS = 2_000;
+
+const base64CanonicalSchema = z
+  .string()
+  .min(1)
+  .max(22_369_624)
+  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+
+const workbookXlsxFileNameSchema = z.string().min(1).max(255).regex(/\.xlsx$/i);
+const worksheetColumnSchema = z.string().regex(/^[A-Z]+$/);
+const boundedOpaqueIdSchema = z.string().trim().min(1).max(300);
+const boundedDisplayMessageSchema = z.string().trim().min(1).max(500);
+
+function requireUniqueFactorIds(
+  factors: ReadonlyArray<{ readonly factorId: string }>,
+  context: z.RefinementCtx,
+  path: readonly (string | number)[],
+  message: string,
+): void {
+  const factorIds = factors.map((factor) => factor.factorId);
+  if (new Set(factorIds).size !== factorIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message,
+      path: [...path],
+    });
+  }
+}
+
+function requireMatchingRationalSubgroupConfiguration(
+  value: { readonly structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE"; readonly rationalSubgroupConfig?: unknown },
+  context: z.RefinementCtx,
+  path: readonly (string | number)[] = ["rationalSubgroupConfig"],
+): void {
+  if ((value.structure === "RATIONAL_SUBGROUP") === (value.rationalSubgroupConfig === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "rationalSubgroupConfig must be provided only for RATIONAL_SUBGROUP",
+      path: [...path],
+    });
+  }
+}
+
+function requireExactReplacementFactorIds(
+  replacementFactorIds: readonly string[],
+  factors: ReadonlyArray<{ readonly factorId: string; readonly replacesExistingFactor: boolean }>,
+  context: z.RefinementCtx,
+  path: readonly (string | number)[] = ["replacementFactorIds"],
+): void {
+  const expectedReplacementFactorIds = factors
+    .filter((factor) => factor.replacesExistingFactor)
+    .map((factor) => factor.factorId);
+  if (replacementFactorIds.length !== expectedReplacementFactorIds.length
+    || replacementFactorIds.some((factorId, index) => factorId !== expectedReplacementFactorIds[index])) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "replacementFactorIds must equal the exact ordered replacement factor set",
+      path: [...path],
+    });
+  }
+}
+
+const f7MeasurementImportFactorCoordinatesSchema = z
+  .object({
+    factorNameCell: controlledCellReferenceSchema,
+    unitCell: controlledCellReferenceSchema,
+    designNominalCell: controlledCellReferenceSchema,
+    upperToleranceCell: controlledCellReferenceSchema,
+    lowerToleranceCell: controlledCellReferenceSchema,
+    lowerSpecLimitCell: controlledCellReferenceSchema,
+    upperSpecLimitCell: controlledCellReferenceSchema,
+    measurementColumn: worksheetColumnSchema,
+    firstMeasurementCell: controlledCellReferenceSchema,
+  })
+  .strict();
+
+export const f7MeasurementImportFactorLimitStatusSchema = z.enum(["VALID", "CROSSES_ZERO"]);
+
+export const f7MeasurementImportFactorManifestSchema = z
+  .object({
+    factorId: sha256LowerSchema,
+    factorName: z.string().trim().min(1).max(300),
+    partNumber: z.string().trim().min(1).max(300).optional(),
+    dimId: z.string().trim().min(1).max(300).optional(),
+    unit: z.string().trim().min(1).max(50),
+    designNominal: finiteNumberSchema,
+    upperTolerance: z.number().finite().nonnegative(),
+    lowerTolerance: z.number().finite().nonpositive(),
+    lowerSpecLimit: finiteNumberSchema,
+    upperSpecLimit: finiteNumberSchema,
+    specificationSource: f7SpecificationSourceSchema,
+    limitStatus: f7MeasurementImportFactorLimitStatusSchema,
+    coordinates: f7MeasurementImportFactorCoordinatesSchema,
+    immutableValueDigest: sha256LowerSchema,
+    immutableCoordinateDigest: sha256LowerSchema,
+  })
+  .strict()
+  .superRefine((factor, context) => {
+    requireLowerSpecLessThanUpperSpec(factor, context);
+    requireValidEditableFactorSpecification(factor, context);
+  });
+
+export const f7MeasurementImportManifestSchema = z
+  .object({
+    contractId: z.literal(F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID),
+    contractVersion: z.literal(1),
+    templateId: boundedOpaqueIdSchema,
+    workbookContentHash: sha256LowerSchema,
+    worksheetName: z.string().trim().min(1).max(300),
+    worksheetStableId: boundedOpaqueIdSchema,
+    factorSetDigest: sha256LowerSchema,
+    factorsDigest: sha256LowerSchema,
+    lockedValueDigest: sha256LowerSchema,
+    lockedCoordinateDigest: sha256LowerSchema,
+    factors: z.array(f7MeasurementImportFactorManifestSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    requireUniqueFactorIds(manifest.factors, context, ["factors"], "factor manifest factorIds must be unique");
+  });
+
+export const f7MeasurementImportAuthoritySchema = z
+  .object({
+    sessionId: z.string().min(1),
+    sessionStateDigest: sha256LowerSchema,
+    authorityDigest: sha256LowerSchema,
+    manifest: f7MeasurementImportManifestSchema,
+  })
+  .strict();
+
+export const f7MeasurementImportDiagnosticReasonSchema = z.enum([
+  "invalid_template_identity",
+  "stale_template",
+  "changed_locked_cell",
+  "missing_factor",
+  "extra_factor",
+  "duplicate_factor",
+  "invalid_enum",
+  "missing_structure_configuration",
+  "incomplete_subgroup",
+  "non_finite_measurement",
+  "negative_physical_measurement",
+  "sample_validation_failure",
+  "unsupported_workbook_content",
+]);
+
+export const f7MeasurementImportDiagnosticSchema = z
+  .object({
+    reason: f7MeasurementImportDiagnosticReasonSchema,
+    factorId: sha256LowerSchema.optional(),
+    factorName: z.string().trim().min(1).max(300).optional(),
+    sheetCell: controlledCellReferenceSchema.optional(),
+    rowNumber: z.number().int().positive().optional(),
+    value: finiteNumberSchema.optional(),
+    requiredMinimum: z.number().int().positive().optional(),
+    displayMessage: boundedDisplayMessageSchema,
+  })
+  .strict();
+
+export const f7MeasurementImportFactorPreviewSchema = z
+  .object({
+    factorId: sha256LowerSchema,
+    factorName: z.string().trim().min(1).max(300),
+    unit: z.string().trim().min(1).max(50),
+    structure: f7MeasurementStructureSchema,
+    rationalSubgroupConfig: f7RationalSubgroupConfigSchema.optional(),
+    sampleCount: z.number().int().min(0).max(F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS),
+    status: z.enum(["ready", "blocked"]),
+    replacesExistingFactor: z.boolean(),
+    diagnostics: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+    warnings: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+    dataset: f7MeasurementDatasetSchema.optional(),
+    validation: f7DatasetValidationResultSchema,
+  })
+  .strict()
+  .superRefine((preview, context) => {
+    requireMatchingRationalSubgroupConfiguration(preview, context);
+
+    if (preview.status !== preview.validation.status) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "status must match validation.status",
+        path: ["status"],
+      });
+    }
+
+    if (preview.status === "ready" && preview.dataset === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "ready previews require dataset",
+        path: ["dataset"],
+      });
+    }
+
+    if (preview.dataset) {
+      if (preview.dataset.factorId !== preview.factorId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "dataset.factorId must match factorId",
+          path: ["dataset", "factorId"],
+        });
+      }
+      if (preview.dataset.unit !== preview.unit) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "dataset.unit must match unit",
+          path: ["dataset", "unit"],
+        });
+      }
+      if (preview.dataset.structure !== preview.structure) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "dataset.structure must match structure",
+          path: ["dataset", "structure"],
+        });
+      }
+      const datasetConfig = preview.dataset.rationalSubgroupConfig;
+      const previewConfig = preview.rationalSubgroupConfig;
+      if (JSON.stringify(datasetConfig) !== JSON.stringify(previewConfig)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "dataset.rationalSubgroupConfig must match rationalSubgroupConfig",
+          path: ["dataset", "rationalSubgroupConfig"],
+        });
+      }
+      if (preview.sampleCount !== preview.dataset.observations.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "sampleCount must equal dataset observation count",
+          path: ["sampleCount"],
+        });
+      }
+    }
+  });
+
+export const f7MeasurementImportPreviewRequestSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    fileName: workbookXlsxFileNameSchema,
+    workbookBase64: base64CanonicalSchema,
+  })
+  .strict();
+
+export const f7MeasurementImportPreviewResponseSchema = z
+  .object({
+    previewId: boundedOpaqueIdSchema,
+    expiresAt: isoDateTimeSchema,
+    sessionStateDigest: sha256LowerSchema,
+    factorSetDigest: sha256LowerSchema,
+    status: z.enum(["ready", "blocked"]),
+    factorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    factors: z.array(f7MeasurementImportFactorPreviewSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    diagnostics: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+    readyFactorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    blockedFactorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    replacementCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    totalSampleCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS * F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS),
+    diagnosticCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+  })
+  .strict()
+  .superRefine((response, context) => {
+    requireUniqueFactorIds(response.factors, context, ["factors"], "preview factorIds must be unique");
+    requireExactReplacementFactorIds(response.replacementFactorIds, response.factors, context);
+
+    const readyFactorCount = response.factors.filter((factor) => factor.status === "ready").length;
+    const blockedFactorCount = response.factors.length - readyFactorCount;
+    const replacementCount = response.factors.filter((factor) => factor.replacesExistingFactor).length;
+    const totalSampleCount = response.factors.reduce((sum, factor) => sum + factor.sampleCount, 0);
+    const expectedStatus = blockedFactorCount > 0 ? "blocked" : "ready";
+
+    if (response.factorCount !== response.factors.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "factorCount must equal factor preview count",
+        path: ["factorCount"],
+      });
+    }
+    if (response.readyFactorCount !== readyFactorCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "readyFactorCount must equal ready factor preview count",
+        path: ["readyFactorCount"],
+      });
+    }
+    if (response.blockedFactorCount !== blockedFactorCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "blockedFactorCount must equal blocked factor preview count",
+        path: ["blockedFactorCount"],
+      });
+    }
+    if (response.replacementCount !== replacementCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "replacementCount must equal replacement factor preview count",
+        path: ["replacementCount"],
+      });
+    }
+    if (response.totalSampleCount !== totalSampleCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "totalSampleCount must equal summed factor sampleCount",
+        path: ["totalSampleCount"],
+      });
+    }
+    if (response.diagnosticCount !== response.diagnostics.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "diagnosticCount must equal diagnostics length",
+        path: ["diagnosticCount"],
+      });
+    }
+    if (response.status !== expectedStatus) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "status must equal the derived preview readiness",
+        path: ["status"],
+      });
+    }
+  });
+
+const f7MeasurementImportStoredBatchFactorSchema = z
+  .object({
+    factorId: sha256LowerSchema,
+    factorName: z.string().trim().min(1).max(300),
+    unit: z.string().trim().min(1).max(50),
+    replacesExistingFactor: z.boolean(),
+    dataset: f7MeasurementDatasetSchema,
+    validation: f7DatasetValidationResultSchema,
+  })
+  .strict()
+  .superRefine((factor, context) => {
+    if (factor.dataset.factorId !== factor.factorId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "dataset.factorId must match factorId",
+        path: ["dataset", "factorId"],
+      });
+    }
+    if (factor.dataset.unit !== factor.unit) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "dataset.unit must match unit",
+        path: ["dataset", "unit"],
+      });
+    }
+    if (factor.validation.status !== "ready") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stored batch factors must contain ready validation results",
+        path: ["validation", "status"],
+      });
+    }
+  });
+
+export const f7MeasurementImportStoredBatchSchema = z
+  .object({
+    previewId: boundedOpaqueIdSchema,
+    sessionId: z.string().min(1),
+    expiresAt: isoDateTimeSchema,
+    sessionStateDigest: sha256LowerSchema,
+    factorSetDigest: sha256LowerSchema,
+    authority: f7MeasurementImportAuthoritySchema,
+    replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    factors: z.array(f7MeasurementImportStoredBatchFactorSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+  })
+  .strict()
+  .superRefine((batch, context) => {
+    requireUniqueFactorIds(batch.factors, context, ["factors"], "stored batch factorIds must be unique");
+    requireExactReplacementFactorIds(batch.replacementFactorIds, batch.factors, context);
+    if (batch.authority.sessionId !== batch.sessionId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.sessionId must match sessionId",
+        path: ["authority", "sessionId"],
+      });
+    }
+    if (batch.authority.sessionStateDigest !== batch.sessionStateDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.sessionStateDigest must match sessionStateDigest",
+        path: ["authority", "sessionStateDigest"],
+      });
+    }
+    if (batch.authority.manifest.factorSetDigest !== batch.factorSetDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.manifest.factorSetDigest must match factorSetDigest",
+        path: ["authority", "manifest", "factorSetDigest"],
+      });
+    }
+  });
+
+export const f7MeasurementImportCommitRequestSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    previewId: boundedOpaqueIdSchema,
+    replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    confirmed: z.literal(true),
+  })
+  .strict();
+
 export const F7_DISTRIBUTION_CANDIDATE_ORDER = [
   "normal",
   "lognormal",
@@ -2314,6 +2719,12 @@ export const f7WorkbookImportRouteRequestSchema = z
   })
   .strict();
 
+export const f7MeasurementImportPreviewRouteRequestSchema = z
+  .object({
+    body: f7MeasurementImportPreviewRequestSchema,
+  })
+  .strict();
+
 export const f7WorksheetConfirmRouteRequestSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -2396,6 +2807,12 @@ export const f7MeasurementDispositionRouteRequestSchema = z
   })
   .strict();
 
+export const f7MeasurementImportCommitRouteRequestSchema = z
+  .object({
+    body: f7MeasurementImportCommitRequestSchema,
+  })
+  .strict();
+
 export const f7DistributionFitRouteRequestSchema = z
   .object({
     params: z.object({ factorId: sha256LowerSchema }).strict(),
@@ -2457,6 +2874,17 @@ export type F7MeasurementDataset = z.infer<typeof f7MeasurementDatasetSchema>;
 export type F7DatasetValidationIssue = z.infer<typeof f7DatasetValidationIssueSchema>;
 export type F7MeasurementPasteResult = z.infer<typeof f7MeasurementPasteResultSchema>;
 export type F7DatasetValidationResult = z.infer<typeof f7DatasetValidationResultSchema>;
+export type F7MeasurementImportFactorLimitStatus = z.infer<typeof f7MeasurementImportFactorLimitStatusSchema>;
+export type F7MeasurementImportFactorManifest = z.infer<typeof f7MeasurementImportFactorManifestSchema>;
+export type F7MeasurementImportManifest = z.infer<typeof f7MeasurementImportManifestSchema>;
+export type F7MeasurementImportAuthority = z.infer<typeof f7MeasurementImportAuthoritySchema>;
+export type F7MeasurementImportDiagnosticReason = z.infer<typeof f7MeasurementImportDiagnosticReasonSchema>;
+export type F7MeasurementImportDiagnostic = z.infer<typeof f7MeasurementImportDiagnosticSchema>;
+export type F7MeasurementImportFactorPreview = z.infer<typeof f7MeasurementImportFactorPreviewSchema>;
+export type F7MeasurementImportPreviewRequest = z.infer<typeof f7MeasurementImportPreviewRequestSchema>;
+export type F7MeasurementImportPreviewResponse = z.infer<typeof f7MeasurementImportPreviewResponseSchema>;
+export type F7MeasurementImportStoredBatch = z.infer<typeof f7MeasurementImportStoredBatchSchema>;
+export type F7MeasurementImportCommitRequest = z.infer<typeof f7MeasurementImportCommitRequestSchema>;
 export type F7DistributionCandidateFamily = z.infer<typeof f7DistributionCandidateFamilySchema>;
 export type F7DistributionFitStatus = z.infer<typeof f7DistributionFitStatusSchema>;
 export type F7DistributionFitCandidate = z.infer<typeof f7DistributionFitCandidateSchema>;
@@ -2487,11 +2915,13 @@ export type F7MeasurementDispositionRequest = z.infer<typeof f7MeasurementDispos
 export type F7SessionSnapshot = z.infer<typeof f7SessionSnapshotSchema>;
 export type F7WorksheetOption = z.infer<typeof f7WorksheetOptionSchema>;
 export type F7WorkbookImportRouteRequest = z.infer<typeof f7WorkbookImportRouteRequestSchema>;
+export type F7MeasurementImportPreviewRouteRequest = z.infer<typeof f7MeasurementImportPreviewRouteRequestSchema>;
 export type F7WorksheetConfirmRouteRequest = z.infer<typeof f7WorksheetConfirmRouteRequestSchema>;
 export type F7FactorConfirmRouteRequest = z.infer<typeof f7FactorConfirmRouteRequestSchema>;
 export type F7FactorModeRouteRequest = z.infer<typeof f7FactorModeRouteRequestSchema>;
 export type F7MeasurementPasteRouteRequest = z.infer<typeof f7MeasurementPasteRouteRequestSchema>;
 export type F7MeasurementDispositionRouteRequest = z.infer<typeof f7MeasurementDispositionRouteRequestSchema>;
+export type F7MeasurementImportCommitRouteRequest = z.infer<typeof f7MeasurementImportCommitRouteRequestSchema>;
 export type F7DistributionFitRouteRequest = z.infer<typeof f7DistributionFitRouteRequestSchema>;
 export type F7DistributionApprovalRouteRequest = z.infer<typeof f7DistributionApprovalRouteRequestSchema>;
 export type F7MonteCarloRunRouteRequest = z.infer<typeof f7MonteCarloRunRouteRequestSchema>;
