@@ -6,6 +6,9 @@ type ChainFactor = {
   readonly id: string;
   readonly itemNumber: number;
   readonly name: string;
+  readonly designNominal: number;
+  readonly upperTolerance: number;
+  readonly lowerTolerance: number;
 };
 
 function escapeHtml(value: string): string {
@@ -28,6 +31,13 @@ function safeText(value: string): string {
 
 function finite(value: number): string {
   return Number.isFinite(value) ? String(Number(value.toFixed(3))) : "—";
+}
+
+function signedFinite(value: number): string {
+  const rendered = finite(value);
+  if (rendered === "—") return rendered;
+  if (rendered.startsWith("-")) return rendered;
+  return `+${rendered}`;
 }
 
 function chainNumber(value: number | undefined): number {
@@ -57,12 +67,18 @@ function chainFactors(input: AssumptionResultsPdfEvidenceRequest): readonly Chai
       id: factor.id,
       itemNumber: factor.itemNumber,
       name: factor.name,
+      designNominal: factor.designNominal,
+      upperTolerance: factor.upperTolerance,
+      lowerTolerance: factor.lowerTolerance,
     }));
   }
   return input.factorSetup.rows.map((row) => ({
     id: `fallback-${row.itemNumber}`,
     itemNumber: row.itemNumber,
     name: row.factorName,
+    designNominal: row.designNominal,
+    upperTolerance: row.upperTolerance,
+    lowerTolerance: row.lowerTolerance,
   }));
 }
 
@@ -84,6 +100,14 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
   const x1 = orientation === "vertical" ? 132 : 564;
   const y1 = orientation === "vertical" ? 162 : 156;
   const span = Math.max(1, factors.length - 1);
+  const maxNominalMagnitude = factors.reduce((maximum, factor) => {
+    const magnitude = Math.abs(chainNumber(factor.designNominal));
+    return Math.max(maximum, magnitude);
+  }, 0);
+  const normalizedMagnitude = (value: number): number => {
+    const denominator = Math.max(1e-9, maxNominalMagnitude);
+    return Math.min(1, Math.max(0, Math.abs(value) / denominator));
+  };
 
   const points = factors.map((factor, index) => {
     let offset = chainNumber(laneOffsets[factor.id]);
@@ -120,6 +144,29 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
   const closureFrom = closure === "end-to-start" ? closureEnd : closureStart;
   const closureTo = closure === "end-to-start" ? closureStart : closureEnd;
 
+  const segmentMinLength = orientation === "vertical" ? 24 : 36;
+  const segmentMaxLength = orientation === "vertical" ? 60 : 112;
+
+  const factorSegments = factors.map((factor, index) => {
+    const anchor = points[index];
+    if (!anchor) return "";
+    const rawDirection = chainNumber(factor.designNominal) < 0 ? -1 : 1;
+    const reverseDirection = reversed.has(factor.id) ? -1 : 1;
+    const direction = rawDirection * reverseDirection;
+    const scale = normalizedMagnitude(chainNumber(factor.designNominal));
+    const length = segmentMinLength + (segmentMaxLength - segmentMinLength) * scale;
+    const to = orientation === "vertical"
+      ? { x: anchor.x, y: anchor.y + direction * length }
+      : { x: anchor.x + direction * length, y: anchor.y };
+    const labelX = orientation === "vertical" ? anchor.x + 8 : (anchor.x + to.x) / 2;
+    const labelY = orientation === "vertical" ? (anchor.y + to.y) / 2 : anchor.y - 8;
+    const segmentId = factor.id.startsWith("fallback-") ? factor.id : factor.id.slice(0, 8);
+    return `<g>
+      <line data-factor-segment="${safeText(segmentId)}" x1="${anchor.x.toFixed(2)}" y1="${anchor.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" stroke="#2a8992" stroke-width="2" marker-end="url(#chain-arrow)"/>
+        <text x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="middle">Item ${factor.itemNumber} ${safeText(factor.name)} DN ${signedFinite(factor.designNominal)} Tol ${signedFinite(factor.upperTolerance)} / ${finite(factor.lowerTolerance)}</text>
+      </g>`;
+  }).join("");
+
   return `<section class="evidence-panel">
     <h3>Dimension Chain</h3>
     <p class="dimension-note">${isFallback ? "fallback to standard horizontal chain from factorSetup rows" : "generated chain preserved for report"}; orientation: ${safeText(orientation)}; ${chain.status === "generated" ? "manual layout" : "automatic layout"}; ${reversed.size > 0 ? "reversed factor segments" : "forward factor segments"}; closure: ${safeText(closure)}.</p>
@@ -148,13 +195,7 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
         <text x="${point.x.toFixed(2)}" y="${(point.y + 10).toFixed(2)}" text-anchor="middle">${safeText(factor.id.slice(0, 8))}</text>
       </g>`;
   }).join("")}
-      ${factors.map((factor, index) => {
-    const from = points[index];
-    const to = points[index + 1];
-    if (!from || !to) return "";
-    const reverse = reversed.has(factor.id);
-    return `<line data-factor-segment="${safeText(factor.id.slice(0, 8))}" x1="${(reverse ? to.x : from.x).toFixed(2)}" y1="${(reverse ? to.y : from.y).toFixed(2)}" x2="${(reverse ? from.x : to.x).toFixed(2)}" y2="${(reverse ? from.y : to.y).toFixed(2)}" stroke="#2a8992" stroke-width="2" marker-end="url(#chain-arrow)"/>`;
-  }).join("")}
+      ${factorSegments}
       <line data-chain-closure x1="${closureFrom.x.toFixed(2)}" y1="${closureFrom.y.toFixed(2)}" x2="${closureTo.x.toFixed(2)}" y2="${closureTo.y.toFixed(2)}" stroke="#a3342d" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#chain-arrow-red)"/>
       <text x="24" y="156">${safeText(isFallback ? "Fallback from factorSetup rows" : "Generated from validated factor setup")}</text>
       <text x="24" y="170">${safeText(chain.sourceSignature)}</text>
@@ -219,6 +260,7 @@ function summaryStatusClass(status: "PASS" | "FAIL"): string {
 function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["responseSummary"]): string {
   return `<section class="evidence-panel">
     <h3>Response Summary</h3>
+    <div class="response-summary-grid">
     <table class="response-summary-table"><caption>RSS and Worst Case</caption><tbody>
       ${summary.rssAndWorstCase.sigmaBands.map((band) => `<tr><th scope="row">${band.sigma}σ</th><td>${finite(band.tolerance)}</td><td>${finite(band.upper)}</td><td>${finite(band.lower)}</td></tr>`).join("")}
       <tr><th scope="row">Worst Case</th><td>${finite(summary.rssAndWorstCase.worstCase.tolerance)}</td><td>${finite(summary.rssAndWorstCase.worstCase.upper)}</td><td>${finite(summary.rssAndWorstCase.worstCase.lower)}</td></tr>
@@ -251,6 +293,7 @@ function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["res
       ${summary.defectsPerMillion.volume === undefined ? "" : `<tr><th scope="row">Volume</th><td>${summary.defectsPerMillion.volume}</td></tr>`}
       ${summary.defectsPerMillion.failuresOverVolume === undefined ? "" : `<tr><th scope="row">Failures / Volume</th><td>${finite(summary.defectsPerMillion.failuresOverVolume)}</td></tr>`}
     </tbody></table>
+    </div>
   </section>`;
 }
 

@@ -174,6 +174,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     * { box-sizing: border-box; }
     html { color: #1f2933; font-family: "Segoe UI", sans-serif; font-size: 8pt; line-height: 1.3; overflow-wrap: anywhere; }
     body { margin: 0; }
+    .report-page--decision { break-before: page; }
     .report-page--action { break-before: page; }
     header { border-bottom: 2px solid #176b75; margin-bottom: 4mm; padding-bottom: 2.5mm; }
     h1 { color: #123c47; font-size: 19pt; margin: 0 0 2mm; }
@@ -216,15 +217,40 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .pareto-point { fill: #fff; stroke: #a3342d; stroke-width: 2; }
     .guidance { border-left: 2px solid #6a7b83; padding-left: 3mm; }
     .guidance--warning { border-color: #b45309; }
-    .report-page--evidence { break-after: page; }
+    .report-page--evidence {
+      break-after: page;
+      display: grid;
+      grid-template-rows: 43% 1fr;
+      height: 100%;
+      overflow: visible;
+    }
     .report-page--evidence h1 { margin-bottom: 1mm; }
+    .report-page--evidence .factor-setup-panel { min-height: 0; }
     .report-page--evidence .factor-setup-panel table { table-layout: fixed; }
-    .report-page--evidence .evidence-lower-grid { display: grid; gap: 3mm; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); margin-top: 3mm; }
+    .report-page--evidence .evidence-lower-grid {
+      display: grid;
+      gap: 3mm;
+      grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+      margin-top: 3mm;
+      min-height: 0;
+    }
     .report-page--evidence .evidence-panel { break-inside: avoid; border: 1px solid #b8c4c8; padding: 2mm; }
     .report-page--evidence .evidence-panel svg { display: block; height: auto; max-width: 100%; width: 100%; }
     .report-page--evidence .evidence-right-stack { display: grid; gap: 3mm; }
     .report-page--evidence .dimension-note, .report-page--evidence .curve-note { color: #52616b; margin: 0 0 1.5mm; }
-    .report-page--evidence .response-summary-table { margin-top: 1.5mm; table-layout: fixed; }
+    .report-page--evidence .response-summary-grid {
+      display: grid;
+      gap: 1.4mm;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .report-page--evidence .response-summary-grid > .response-summary-table { margin-top: 0; }
+    .report-page--evidence .response-summary-table {
+      font-size: 7.6pt;
+      margin-top: 1.5mm;
+      table-layout: fixed;
+    }
+    .report-page--evidence .response-summary-table th,
+    .report-page--evidence .response-summary-table td { padding: 0.9mm 1.2mm; line-height: 1.2; }
     .report-page--evidence .summary-value--pass { color: #176b3a; font-weight: 700; }
     .report-page--evidence .summary-value--warning { color: #b45309; font-weight: 700; }
     .report-page--evidence .summary-value--fail { color: #a3342d; font-weight: 700; }

@@ -189,6 +189,10 @@ function extractNumberAttribute(html: string, marker: string, name: string): num
   return Number(match[1]);
 }
 
+function countMatches(html: string, pattern: RegExp): number {
+  return [...html.matchAll(pattern)].length;
+}
+
 describe("renderAssumptionResultsPdfEvidenceHtml", () => {
   it("renders fallback dimension labels from factorSetup rows", () => {
     const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
@@ -354,5 +358,251 @@ describe("renderAssumptionResultsPdfEvidenceHtml", () => {
     expect(html).toContain("&lt;img src=x&gt;");
     expect(html).not.toMatch(/<script|<img/i);
     expect(html).not.toMatch(/http:\/\//i);
+  });
+
+  it("renders one factor-segment arrow per factor with direction from signed design nominal", () => {
+    const factorIds = ["c".repeat(64), "d".repeat(64), "e".repeat(64)];
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      factorSetup: {
+        rows: [
+          {
+            itemNumber: 1,
+            factorName: "Positive",
+            designNominal: 10,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 10,
+            tolerance: 0.2,
+            oneSigma: 0.05,
+            contributionPercent: 60,
+          },
+          {
+            itemNumber: 2,
+            factorName: "Negative",
+            designNominal: -8,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: -8,
+            tolerance: 0.2,
+            oneSigma: 0.05,
+            contributionPercent: 30,
+          },
+          {
+            itemNumber: 3,
+            factorName: "Small",
+            designNominal: 1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 1,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 10,
+          },
+        ],
+        footer: {
+          designNominalTotal: 3,
+          upperWorstCaseTolerance: 0.5,
+          lowerWorstCaseTolerance: -0.5,
+          meanResponse: 3,
+          rssTolerance: 0.25,
+          rssSigma: 0.06,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: 3,
+        },
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds }),
+        orientation: "horizontal",
+        factors: [
+          {
+            id: factorIds[0]!,
+            itemNumber: 1,
+            name: "Positive",
+            designNominal: 10,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+          {
+            id: factorIds[1]!,
+            itemNumber: 2,
+            name: "Negative",
+            designNominal: -8,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+          {
+            id: factorIds[2]!,
+            itemNumber: 3,
+            name: "Small",
+            designNominal: 1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+        ],
+        manualLayout: {
+          boundaryOffsets: {},
+          laneOffsets: {},
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [],
+        closureDirection: "start-to-end",
+      },
+    }));
+
+    const segments = [...html.matchAll(/<line[^>]*data-factor-segment="([^"]+)"[^>]*x1="([^"]+)"[^>]*x2="([^"]+)"/g)];
+    expect(segments).toHaveLength(3);
+
+    const positive = segments.find((segment) => segment[1] === factorIds[0]!.slice(0, 8));
+    const negative = segments.find((segment) => segment[1] === factorIds[1]!.slice(0, 8));
+    const small = segments.find((segment) => segment[1] === factorIds[2]!.slice(0, 8));
+    expect(positive).toBeDefined();
+    expect(negative).toBeDefined();
+    expect(small).toBeDefined();
+
+    const positiveX1 = Number(positive?.[2]);
+    const positiveX2 = Number(positive?.[3]);
+    const negativeX1 = Number(negative?.[2]);
+    const negativeX2 = Number(negative?.[3]);
+    const smallX1 = Number(small?.[2]);
+    const smallX2 = Number(small?.[3]);
+
+    expect(positiveX2).toBeGreaterThan(positiveX1);
+    expect(negativeX2).toBeLessThan(negativeX1);
+    expect(Math.abs(positiveX2 - positiveX1)).toBeGreaterThan(Math.abs(smallX2 - smallX1));
+    expect(html).toContain("Item 1");
+    expect(html).toContain("DN +10");
+    expect(html).toContain("Tol +0.2 / -0.2");
+  });
+
+  it("builds fallback chain segments from factorSetup rows for N and single-factor cases", () => {
+    const fallbackThree = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      factorSetup: {
+        rows: [
+          {
+            itemNumber: 1,
+            factorName: "F1",
+            designNominal: 2,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 2,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 34,
+          },
+          {
+            itemNumber: 2,
+            factorName: "F2",
+            designNominal: -1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: -1,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 33,
+          },
+          {
+            itemNumber: 3,
+            factorName: "F3",
+            designNominal: 0.5,
+            upperTolerance: 0.05,
+            lowerTolerance: -0.05,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 0.5,
+            tolerance: 0.05,
+            oneSigma: 0.0125,
+            contributionPercent: 33,
+          },
+        ],
+        footer: {
+          designNominalTotal: 1.5,
+          upperWorstCaseTolerance: 0.25,
+          lowerWorstCaseTolerance: -0.25,
+          meanResponse: 1.5,
+          rssTolerance: 0.15,
+          rssSigma: 0.04,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: 1.5,
+        },
+      },
+      dimensionChain: {
+        status: "fallback",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds: [] }),
+      },
+    }));
+
+    expect(countMatches(fallbackThree, /data-factor-segment="/g)).toBe(3);
+    expect(fallbackThree).toContain('data-factor-segment="fallback-1"');
+    expect(fallbackThree).toContain('data-factor-segment="fallback-2"');
+    expect(fallbackThree).toContain('data-factor-segment="fallback-3"');
+
+    const fallbackSingle = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      factorSetup: {
+        rows: [
+          {
+            itemNumber: 1,
+            factorName: "Only",
+            designNominal: -3,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: -3,
+            tolerance: 0.2,
+            oneSigma: 0.05,
+            contributionPercent: 100,
+          },
+        ],
+        footer: {
+          designNominalTotal: -3,
+          upperWorstCaseTolerance: 0.2,
+          lowerWorstCaseTolerance: -0.2,
+          meanResponse: -3,
+          rssTolerance: 0.2,
+          rssSigma: 0.05,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: -3,
+        },
+      },
+      dimensionChain: {
+        status: "fallback",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds: [] }),
+      },
+    }));
+
+    expect(countMatches(fallbackSingle, /data-factor-segment="/g)).toBe(1);
+    expect(fallbackSingle).toContain('data-factor-segment="fallback-1"');
   });
 });

@@ -763,6 +763,20 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).not.toMatch(/overflow:\s*hidden;/);
   });
 
+  it("defines page-one evidence printable box and compact readable 2x2 response summary structure", () => {
+    const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*43%\s+1fr;[^}]*height:\s*100%;[^}]*overflow:\s*visible;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.factor-setup-panel\s*{[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-right-stack\s*{[^}]*display:\s*grid;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*>\s*\.response-summary-table\s*{[^}]*margin-top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s+th,\s*\.report-page--evidence\s+\.response-summary-table\s+td\s*{[^}]*padding:\s*0\.9mm\s+1\.2mm;[^}]*line-height:\s*1\.2;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
+    expect(html).toMatch(/<div class="response-summary-grid">[\s\S]*?<table class="response-summary-table">[\s\S]*?RSS and Worst Case[\s\S]*?<table class="response-summary-table">[\s\S]*?Response and Specifications[\s\S]*?<table class="response-summary-table">[\s\S]*?Sigma Level and Capability[\s\S]*?<table class="response-summary-table">[\s\S]*?Defects Per Million[\s\S]*?<\/div>/);
+  });
+
   it("renders an escaped, self-contained A4 landscape report with all required sections", () => {
     const html = renderAssumptionResultsPdfHtml(validRequest());
 
@@ -856,6 +870,13 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).toMatch(/\.source\s*>\s*span\s*{[^}]*min-width:\s*0;/);
     expect(html).toMatch(/th, td\s*{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/);
     expect(html).toMatch(/\.pareto-chart\s+svg\s*{[^}]*max-width:\s*100%;/);
+  });
+
+  it("sets explicit decision page break-before while preserving action page break-before", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    expect(html).toMatch(/\.report-page--decision\s*{[^}]*break-before:\s*page;/);
+    expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
   });
 });
 
