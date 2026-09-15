@@ -1,12 +1,16 @@
 import type { F7SessionSnapshot } from "@ai-assist/contracts";
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
 
-function parseSourceSignature(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
+function hasUniqueValues(values: readonly string[]): boolean {
+  return new Set(values).size === values.length;
+}
+
+function parseBoundaryKey(key: string): { readonly left: string; readonly right: string } | undefined {
+  const parts = key.split("::");
+  if (parts.length !== 2) return undefined;
+  const [left, right] = parts;
+  if (!left || !right) return undefined;
+  return { left, right };
 }
 
 export function validateAssumptionResultsPdfRequestAgainstSession(
@@ -33,18 +37,17 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
     return { ok: false };
   }
 
-  const rowMap = new Map(
-    request.engineeringEvidence.factorSetup.rows.map((row) => [row.itemNumber, row]),
-  );
-  if (rowMap.size !== sessionEvidenceRows.length) {
+  const setupRows = request.engineeringEvidence.factorSetup.rows;
+  if (setupRows.length !== sessionEvidenceRows.length) {
     return { ok: false };
   }
 
-  for (const evidence of sessionEvidenceRows) {
-    const row = rowMap.get(evidence.sourceRow);
+  for (const [index, evidence] of sessionEvidenceRows.entries()) {
+    const row = setupRows[index];
     if (row === undefined) {
       return { ok: false };
     }
+    if (row.itemNumber !== index + 1) return { ok: false };
     if (row.factorName !== evidence.factorName) return { ok: false };
     if (row.designNominal !== evidence.designNominal) return { ok: false };
     if (row.upperTolerance !== evidence.upperTolerance) return { ok: false };
@@ -59,15 +62,31 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
 
   const sessionFactorMap = new Map(sessionEvidenceRows.map((evidence) => [evidence.factorId, evidence]));
   if (request.engineeringEvidence.dimensionChain.status === "generated") {
-    if (request.engineeringEvidence.dimensionChain.factors.length !== sessionEvidenceRows.length) {
+    const generatedChain = request.engineeringEvidence.dimensionChain;
+    if (generatedChain.factors.length !== sessionEvidenceRows.length) {
       return { ok: false };
     }
-    for (const factor of request.engineeringEvidence.dimensionChain.factors) {
+
+    const sessionFactorIds = sessionEvidenceRows.map((evidence) => evidence.factorId);
+    const generatedFactorIds = generatedChain.factors.map((factor) => factor.id);
+    if (!hasUniqueValues(sessionFactorIds) || !hasUniqueValues(generatedFactorIds)) {
+      return { ok: false };
+    }
+    if (generatedFactorIds.length !== sessionFactorIds.length) return { ok: false };
+    const sessionIdSet = new Set(sessionFactorIds);
+    const generatedIdSet = new Set(generatedFactorIds);
+    if (sessionIdSet.size !== generatedIdSet.size) return { ok: false };
+    for (const factorId of sessionIdSet) {
+      if (!generatedIdSet.has(factorId)) return { ok: false };
+    }
+
+    for (const [index, factor] of generatedChain.factors.entries()) {
       const evidence = sessionFactorMap.get(factor.id);
       if (evidence === undefined) {
         return { ok: false };
       }
-      if (factor.itemNumber !== evidence.sourceRow) return { ok: false };
+      if (factor.itemNumber !== index + 1) return { ok: false };
+      if (evidence.factorId !== sessionFactorIds[index]) return { ok: false };
       if (factor.name !== evidence.factorName) return { ok: false };
       if (factor.designNominal !== evidence.designNominal) return { ok: false };
       if (factor.upperTolerance !== evidence.upperTolerance) return { ok: false };
@@ -77,31 +96,33 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
       if (factor.distribution !== evidence.distribution) return { ok: false };
     }
 
-    const sourceSignature = parseSourceSignature(request.engineeringEvidence.dimensionChain.sourceSignature);
-    if (sourceSignature && typeof sourceSignature === "object") {
-      const signatureRecord = sourceSignature as Record<string, unknown>;
-      if (
-        typeof signatureRecord.workbookName === "string"
-        && signatureRecord.workbookName !== session.workbook.fileName
-      ) {
+    if (!hasUniqueValues(generatedChain.reversedFactorIds)) {
+      return { ok: false };
+    }
+    for (const reversedFactorId of generatedChain.reversedFactorIds) {
+      if (!generatedIdSet.has(reversedFactorId)) {
         return { ok: false };
       }
-      if (
-        typeof signatureRecord.worksheetName === "string"
-        && signatureRecord.worksheetName !== sessionWorksheetName
-      ) {
+    }
+
+    const validBoundaryKeys = new Set(generatedChain.factors.slice(1).map((factor, index) => (
+      `${generatedChain.factors[index]!.id}::${factor.id}`
+    )));
+    for (const key of Object.keys(generatedChain.manualLayout.boundaryOffsets)) {
+      const parsed = parseBoundaryKey(key);
+      if (parsed === undefined) {
         return { ok: false };
       }
-      if (Array.isArray(signatureRecord.factorIds)) {
-        const signatureIds = new Set(signatureRecord.factorIds.filter(
-          (entry): entry is string => typeof entry === "string",
-        ));
-        if (signatureIds.size !== sessionFactorMap.size) {
-          return { ok: false };
-        }
-        for (const factorId of sessionFactorMap.keys()) {
-          if (!signatureIds.has(factorId)) return { ok: false };
-        }
+      if (!generatedIdSet.has(parsed.left) || !generatedIdSet.has(parsed.right)) {
+        return { ok: false };
+      }
+      if (!validBoundaryKeys.has(key)) {
+        return { ok: false };
+      }
+    }
+    for (const key of Object.keys(generatedChain.manualLayout.laneOffsets)) {
+      if (!generatedIdSet.has(key)) {
+        return { ok: false };
       }
     }
   }

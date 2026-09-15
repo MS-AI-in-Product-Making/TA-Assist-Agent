@@ -157,7 +157,7 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
           distribution: "Normal",
         }],
         manualLayout: {
-          boundaryOffsets: { [HASH_B]: 0 },
+          boundaryOffsets: { [`${HASH_B}::${HASH_B}`]: 0 },
           laneOffsets: { [HASH_B]: 0 },
           closureStartOffset: 0,
           closureEndOffset: 0,
@@ -337,7 +337,7 @@ describe("assumption results PDF contract", () => {
           ...validRequest().engineeringEvidence.responseSummary,
           defectsPerMillion: {
             ...validRequest().engineeringEvidence.responseSummary.defectsPerMillion,
-            failuresOverVolume: 1.01,
+            failuresOverVolume: -0.01,
           },
         },
       },
@@ -491,7 +491,7 @@ describe("assumption results PDF contract", () => {
             ...(request.engineeringEvidence.dimensionChain.status === "generated"
               ? request.engineeringEvidence.dimensionChain.manualLayout
               : { boundaryOffsets: {}, laneOffsets: {} }),
-            boundaryOffsets: { [HASH_B]: 10001 },
+            boundaryOffsets: { [`${HASH_B}::${HASH_B}`]: 10001 },
           },
         },
       },
@@ -544,6 +544,48 @@ describe("assumption results PDF contract", () => {
           defectsPerMillion: {
             ...request.engineeringEvidence.responseSummary.defectsPerMillion,
             failuresOverVolume: 12.75,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: 250000,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: Number.NaN,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: Number.POSITIVE_INFINITY,
           },
         },
       },

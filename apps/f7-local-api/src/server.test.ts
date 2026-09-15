@@ -192,7 +192,7 @@ function validAssumptionResultsPdfRequest(): AssumptionResultsPdfRouteRequest {
           distribution: "Normal",
         }],
         manualLayout: {
-          boundaryOffsets: { [HASH_B]: 0 },
+          boundaryOffsets: { [`${HASH_B}::${HASH_B}`]: 0 },
           laneOffsets: { [HASH_B]: 0 },
           closureStartOffset: 0,
           closureEndOffset: 0,
@@ -265,7 +265,7 @@ function toSessionBoundPdfRequest(snapshot: ReturnType<F7SessionService["getSess
       factorSetup: {
         ...validAssumptionResultsPdfRequest().engineeringEvidence.factorSetup,
         rows: confirmedFactors.map((evidence, index) => ({
-          itemNumber: evidence.sourceRow,
+          itemNumber: index + 1,
           factorName: evidence.factorName,
           designNominal: evidence.designNominal,
           upperTolerance: evidence.upperTolerance,
@@ -281,14 +281,21 @@ function toSessionBoundPdfRequest(snapshot: ReturnType<F7SessionService["getSess
       },
       dimensionChain: {
         status: "generated",
-        sourceSignature: JSON.stringify({
-          worksheetName: firstFactor.worksheetName,
-          factors: confirmedFactors.map((evidence) => evidence.factorId),
-        }),
+        sourceSignature: JSON.stringify(confirmedFactors.map((evidence, index) => ({
+          id: evidence.factorId,
+          itemNumber: index + 1,
+          name: evidence.factorName,
+          designNominal: evidence.designNominal,
+          upperTolerance: evidence.upperTolerance,
+          lowerTolerance: evidence.lowerTolerance,
+          longTermSafetyFactor: evidence.longTermSafetyFactor,
+          sigmaLevel: evidence.sigmaLevel,
+          distribution: evidence.distribution,
+        }))),
         orientation: "horizontal",
         factors: confirmedFactors.map((evidence) => ({
           id: evidence.factorId,
-          itemNumber: evidence.sourceRow,
+          itemNumber: confirmedFactors.findIndex((current) => current.factorId === evidence.factorId) + 1,
           name: evidence.factorName,
           designNominal: evidence.designNominal,
           upperTolerance: evidence.upperTolerance,
@@ -298,7 +305,10 @@ function toSessionBoundPdfRequest(snapshot: ReturnType<F7SessionService["getSess
           distribution: evidence.distribution,
         })),
         manualLayout: {
-          boundaryOffsets: Object.fromEntries(confirmedFactors.map((evidence) => [evidence.factorId, 0])),
+          boundaryOffsets: Object.fromEntries(confirmedFactors.slice(1).map((evidence, index) => ([
+            `${confirmedFactors[index]!.factorId}::${evidence.factorId}`,
+            0,
+          ]))),
           laneOffsets: Object.fromEntries(confirmedFactors.map((evidence) => [evidence.factorId, 0])),
           closureStartOffset: 0,
           closureEndOffset: 0,

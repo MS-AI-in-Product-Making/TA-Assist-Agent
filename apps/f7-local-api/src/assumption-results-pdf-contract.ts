@@ -8,8 +8,9 @@ const percentage = finiteNumber.min(0).max(100);
 const nonNegativeInteger = z.number().int().nonnegative();
 const boundedOffset = finiteNumber.min(-10_000).max(10_000);
 const boundedId = z.string().regex(/^[a-f0-9]{64}$/);
+const boundedBoundaryKey = z.string().regex(/^[a-f0-9]{64}::[a-f0-9]{64}$/);
 const boundedText = z.string().min(1).max(20_000);
-const boundedFraction = finiteNumber.min(0).max(1);
+const boundedNonNegativeFinite = finiteNumber.min(0);
 const sigmaBand = z.union([
   z.literal(1),
   z.literal(3),
@@ -180,7 +181,7 @@ const dimensionChainFactorSchema = z.object({
 }).strict();
 
 const dimensionChainManualLayoutSchema = z.object({
-  boundaryOffsets: z.record(boundedId, boundedOffset),
+  boundaryOffsets: z.record(boundedBoundaryKey, boundedOffset),
   laneOffsets: z.record(boundedId, boundedOffset),
   closureStartOffset: boundedOffset.optional(),
   closureEndOffset: boundedOffset.optional(),
@@ -256,7 +257,7 @@ const responseSummarySchema = z.object({
     outOfSpecPercent: finiteNumber,
     yieldPercent: finiteNumber,
     volume: nonNegativeInteger.optional(),
-          failuresOverVolume: boundedFraction.optional(),
+    failuresOverVolume: boundedNonNegativeFinite.optional(),
   }).strict(),
 }).strict();
 
