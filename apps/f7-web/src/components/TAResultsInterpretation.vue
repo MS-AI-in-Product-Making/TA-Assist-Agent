@@ -22,6 +22,7 @@ import { computed, onBeforeUnmount, ref, watch, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
+import { snapshotPlainDto } from "../assumption-results-pdf-evidence";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
 import { buildSpecificationFallbackDisplay } from "../specification-fallback-display";
 import ContributorParetoChart from "./ContributorParetoChart.vue";
@@ -111,6 +112,7 @@ function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
   const engineeringEvidence = props.engineeringEvidence;
   if (!engineeringEvidence) return undefined;
   const fallbackDisplay = specificationFallbackDisplay.value;
+  const evidenceSnapshot = snapshotPlainDto(engineeringEvidence);
 
   return {
     sessionId: props.session.sessionId,
@@ -199,7 +201,7 @@ function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
     processGuidance: current.processGuidance.status === "available"
       ? current.processGuidance.entries.map(({ state, title, message }) => ({ state, title, message }))
       : [],
-    engineeringEvidence,
+    engineeringEvidence: evidenceSnapshot,
   };
 }
 

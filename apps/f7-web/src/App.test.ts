@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
+import { isReactive } from "vue";
 import { f7ReportProjectionSchema } from "@ai-assist/contracts";
 import App from "./App.vue";
 import DimensionChainPanel from "./components/DimensionChainPanel.vue";
@@ -893,6 +894,28 @@ function engineeringEvidenceFixture(seed: string): AssumptionResultsEngineeringE
         yieldPercent: 99.993666,
       },
     },
+  };
+}
+
+function engineeringEvidenceEnvelope(seed: string): {
+  sessionId: string;
+  workbookIdentity: {
+    workbookContentHash: string;
+    workbookFileName: string;
+    worksheetName: string;
+  };
+  evidence: AssumptionResultsEngineeringEvidence;
+} {
+  const sessionId = seed;
+  const isSessionTwo = sessionId === "session-02";
+  return {
+    sessionId,
+    workbookIdentity: {
+      workbookContentHash: isSessionTwo ? HASH_B : HASH_A,
+      workbookFileName: isSessionTwo ? "next.xlsx" : "demo.xlsx",
+      worksheetName: "Anonymous_TA",
+    },
+    evidence: engineeringEvidenceFixture(seed),
   };
 }
 
@@ -3639,7 +3662,7 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
 
     await uploadWorkbook(wrapper);
-    wrapper.getComponent({ name: "FactorInputTable" }).vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    wrapper.getComponent({ name: "FactorInputTable" }).vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
     await wrapper.vm.$nextTick();
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
 
@@ -3664,7 +3687,7 @@ describe("F7 workbench shell", () => {
     });
 
     const factorTable = wrapper.getComponent({ name: "FactorInputTable" });
-    factorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    factorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
     await wrapper.vm.$nextTick();
 
     await vi.waitFor(() => {
@@ -3695,7 +3718,7 @@ describe("F7 workbench shell", () => {
 
     await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], "demo.xlsx"));
     const firstFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
-    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
     await wrapper.vm.$nextTick();
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
     expect(generateAssumptionResultsPdf).toHaveBeenCalledTimes(1);
@@ -3714,11 +3737,11 @@ describe("F7 workbench shell", () => {
     });
 
     const currentFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
-    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
     await wrapper.vm.$nextTick();
     expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
 
-    currentFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-02"));
+    currentFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-02"));
     await wrapper.vm.$nextTick();
     await vi.waitFor(() => {
       expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeUndefined();
@@ -3733,5 +3756,40 @@ describe("F7 workbench shell", () => {
 
     click.mockRestore();
     vi.unstubAllGlobals();
+  });
+
+  it("rejects late envelope events from a previous session and keeps cache non-reactive", async () => {
+    const replacementSession = createSnapshot({
+      ...measurementEntrySnapshot(),
+      sessionId: "session-02",
+      workbook: {
+        fileName: "next.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    const client = createMockClient(measurementEntrySnapshot());
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(measurementEntrySnapshot())
+      .mockResolvedValueOnce(replacementSession);
+
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], "demo.xlsx"));
+    const firstFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    const staleEnvelope = engineeringEvidenceEnvelope("session-01");
+    firstFactorTable.vm.$emit("engineering-evidence-change", staleEnvelope);
+    await wrapper.vm.$nextTick();
+
+    const cachedBeforeSwitch = (wrapper.vm as unknown as { cachedEngineeringEvidence?: unknown }).cachedEngineeringEvidence;
+    expect(isReactive(cachedBeforeSwitch)).toBe(false);
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "next.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+    });
+
+    firstFactorTable.vm.$emit("engineering-evidence-change", staleEnvelope);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
   });
 });

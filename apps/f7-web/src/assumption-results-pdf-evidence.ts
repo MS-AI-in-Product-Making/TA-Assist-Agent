@@ -161,9 +161,44 @@ export interface AssumptionResultsEngineeringEvidence {
   readonly responseSummary: AssumptionResultsEngineeringEvidenceResponseSummary;
 }
 
+export interface EngineeringEvidenceWorkbookIdentity {
+  readonly workbookContentHash: string;
+  readonly workbookFileName: string;
+  readonly worksheetName: string;
+}
+
+export interface EngineeringEvidenceEnvelope {
+  readonly sessionId: string;
+  readonly workbookIdentity: EngineeringEvidenceWorkbookIdentity;
+  readonly evidence: AssumptionResultsEngineeringEvidence;
+}
+
 export interface AssumptionResultsCurrentCalculationInput {
   readonly additionalMeanShift: number;
   readonly calculation: KernelCalculationResult;
+}
+
+export function clonePlainDto<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Vue proxies and some host objects are not structured-cloneable.
+    }
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function deepFreezeDto<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreezeDto(nested);
+  }
+  return Object.freeze(value);
+}
+
+export function snapshotPlainDto<T>(value: T): Readonly<T> {
+  return deepFreezeDto(clonePlainDto(value));
 }
 
 function isFiniteNumber(value: unknown): value is number {

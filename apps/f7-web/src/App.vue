@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle } from "lucide-vue-next";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, markRaw, nextTick, ref, shallowRef, watch } from "vue";
 import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
@@ -8,7 +8,12 @@ import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
 import MonteCarloPanel from "./components/MonteCarloPanel.vue";
 import ReportPanel from "./components/ReportPanel.vue";
 import TAResultsInterpretation from "./components/TAResultsInterpretation.vue";
-import type { AssumptionResultsEngineeringEvidence } from "./assumption-results-pdf-evidence";
+import {
+  type AssumptionResultsEngineeringEvidence,
+  type EngineeringEvidenceEnvelope,
+  type EngineeringEvidenceWorkbookIdentity,
+  snapshotPlainDto,
+} from "./assumption-results-pdf-evidence";
 import { createF7SessionStore } from "./state/f7-session";
 
 const props = defineProps<{
@@ -34,30 +39,19 @@ let restartConfirmationPending = false;
 let workbookReplacementAuthorized = false;
 let reportRequestToken = 0;
 
-interface WorkbookIdentity {
-  readonly workbookContentHash: string;
-  readonly workbookFileName: string;
-  readonly worksheetName: string;
-}
-
 interface SessionEngineeringEvidence {
   readonly sessionId: string;
-  readonly workbookIdentity: WorkbookIdentity;
+  readonly workbookIdentity: EngineeringEvidenceWorkbookIdentity;
   readonly evidence: AssumptionResultsEngineeringEvidence;
 }
 
-const cachedEngineeringEvidence = ref<SessionEngineeringEvidence>();
+const cachedEngineeringEvidence = shallowRef<Readonly<SessionEngineeringEvidence> | undefined>();
 
 function generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<globalThis.Blob> {
   return client.generateAssumptionResultsPdf(request);
 }
 
-function clonePlain<T>(value: T): T {
-  if (typeof structuredClone === "function") return structuredClone(value);
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function workbookIdentityForSession(session: { readonly workbook: { readonly workbookContentHash: string; readonly fileName: string }; readonly selectedWorksheetNames: readonly string[] }): WorkbookIdentity {
+function workbookIdentityForSession(session: { readonly workbook: { readonly workbookContentHash: string; readonly fileName: string }; readonly selectedWorksheetNames: readonly string[] }): EngineeringEvidenceWorkbookIdentity {
   return {
     workbookContentHash: session.workbook.workbookContentHash,
     workbookFileName: session.workbook.fileName,
@@ -65,7 +59,7 @@ function workbookIdentityForSession(session: { readonly workbook: { readonly wor
   };
 }
 
-function sameWorkbookIdentity(left: WorkbookIdentity, right: WorkbookIdentity): boolean {
+function sameWorkbookIdentity(left: EngineeringEvidenceWorkbookIdentity, right: EngineeringEvidenceWorkbookIdentity): boolean {
   return left.workbookContentHash === right.workbookContentHash
     && left.workbookFileName === right.workbookFileName
     && left.worksheetName === right.worksheetName;
@@ -75,17 +69,24 @@ function clearCachedEngineeringEvidence(): void {
   cachedEngineeringEvidence.value = undefined;
 }
 
-function onEngineeringEvidenceChange(evidence: AssumptionResultsEngineeringEvidence | undefined): void {
+function onEngineeringEvidenceChange(envelope: EngineeringEvidenceEnvelope | undefined): void {
   const session = store.session.value;
-  if (!session || evidence === undefined) {
+  if (!session || envelope === undefined) {
     clearCachedEngineeringEvidence();
     return;
   }
-  cachedEngineeringEvidence.value = clonePlain({
-    sessionId: session.sessionId,
-    workbookIdentity: workbookIdentityForSession(session),
-    evidence,
-  });
+  const currentIdentity = workbookIdentityForSession(session);
+  if (envelope.sessionId !== session.sessionId) return;
+  if (!sameWorkbookIdentity(envelope.workbookIdentity, currentIdentity)) return;
+  if (envelope.evidence === undefined) {
+    clearCachedEngineeringEvidence();
+    return;
+  }
+  cachedEngineeringEvidence.value = markRaw(snapshotPlainDto({
+    sessionId: envelope.sessionId,
+    workbookIdentity: envelope.workbookIdentity,
+    evidence: envelope.evidence,
+  }));
 }
 
 const currentEngineeringEvidence = computed<AssumptionResultsEngineeringEvidence | undefined>(() => {
@@ -602,7 +603,7 @@ async function openReport(): Promise<void> {
           v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :generate-pdf="generateAssumptionResultsPdf"
-          :engineering-evidence="currentEngineeringEvidence"
+          v-bind="currentEngineeringEvidence === undefined ? {} : { engineeringEvidence: currentEngineeringEvidence }"
         />
 
         <section

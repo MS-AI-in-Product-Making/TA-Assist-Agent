@@ -456,6 +456,48 @@ describe("TAResultsInterpretation", () => {
     });
   });
 
+  it("snapshots engineering evidence when building PDF request so later prop mutations do not alter sent payload", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:assumption-results-snapshot"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    const evidence = engineeringEvidenceFixture();
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf,
+        engineeringEvidence: evidence,
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generatePdf).toHaveBeenCalledOnce();
+
+    const mutableEvidence = evidence as unknown as {
+      factorSetup: { rows: Array<{ factorName: string }> };
+      dimensionChain: { status: "fallback"; sourceSignature: string };
+    };
+    mutableEvidence.factorSetup.rows[0]!.factorName = "Mutated after build";
+    mutableEvidence.dimensionChain = {
+      status: "fallback",
+      sourceSignature: "mutated-signature",
+    };
+
+    const sentRequest = generatePdf.mock.calls[0]?.[0] as AssumptionResultsPdfRequest | undefined;
+    expect(sentRequest).toBeTruthy();
+    expect(sentRequest?.engineeringEvidence.factorSetup.rows[0]?.factorName).toBe("Factor 01");
+    expect(sentRequest?.engineeringEvidence.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: "fixture-signature",
+    });
+  });
+
   it("disables the action and exposes busy state while PDF generation is pending", async () => {
     buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
     let resolvePdf: ((blob: Blob) => void) | undefined;

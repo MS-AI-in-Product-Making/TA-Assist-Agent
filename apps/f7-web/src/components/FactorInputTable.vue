@@ -10,6 +10,9 @@ import {
   type AssumptionResultsEngineeringEvidence,
   type AssumptionResultsCurrentCalculationInput,
   type DimensionChainReportProjection,
+  type EngineeringEvidenceEnvelope,
+  type EngineeringEvidenceWorkbookIdentity,
+  snapshotPlainDto,
 } from "../assumption-results-pdf-evidence";
 import DimensionChainPanel from "./DimensionChainPanel.vue";
 import ResponseDistributionCurve from "./ResponseDistributionCurve.vue";
@@ -57,7 +60,7 @@ const emit = defineEmits<{
   editSetup: [];
   setMode: [factorId: string, mode: F7SourceMode];
   openMeasurement: [factorId: string];
-  "engineering-evidence-change": [evidence: AssumptionResultsEngineeringEvidence | undefined];
+  "engineering-evidence-change": [evidence: EngineeringEvidenceEnvelope | undefined];
 }>();
 
 interface FactorSpecificationDraft {
@@ -713,23 +716,16 @@ interface DimensionChainProjectionCacheEntry {
   readonly projection: DimensionChainReportProjection;
 }
 
-function clonePlain<T>(value: T): T {
-  if (typeof structuredClone === "function") {
-    return structuredClone(value);
-  }
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== "object") return value;
-  for (const nested of Object.values(value as Record<string, unknown>)) {
-    deepFreeze(nested);
-  }
-  return Object.freeze(value);
+function workbookIdentityForSession(session: DeepReadonly<F7SessionSnapshot>): EngineeringEvidenceWorkbookIdentity {
+  return {
+    workbookContentHash: session.workbook.workbookContentHash,
+    workbookFileName: session.workbook.fileName,
+    worksheetName: session.selectedWorksheetNames[0] ?? "",
+  };
 }
 
 function freezeProjectionCacheEntry(entry: DimensionChainProjectionCacheEntry): Readonly<DimensionChainProjectionCacheEntry> {
-  return deepFreeze(clonePlain(entry));
+  return snapshotPlainDto(entry);
 }
 
 const currentSessionKey = computed(() => JSON.stringify({
@@ -777,7 +773,15 @@ const engineeringEvidence = computed<AssumptionResultsEngineeringEvidence | unde
 });
 
 watch(engineeringEvidence, (evidence) => {
-  emit("engineering-evidence-change", evidence);
+  if (evidence === undefined) {
+    emit("engineering-evidence-change", undefined);
+    return;
+  }
+  emit("engineering-evidence-change", snapshotPlainDto({
+    sessionId: props.session.sessionId,
+    workbookIdentity: workbookIdentityForSession(props.session),
+    evidence,
+  }));
 }, { immediate: true });
 
 function onReportProjectionChange(projection: DimensionChainReportProjection): void {

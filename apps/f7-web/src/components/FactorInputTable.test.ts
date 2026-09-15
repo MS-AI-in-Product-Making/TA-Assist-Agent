@@ -206,12 +206,15 @@ function latestEvidence(wrapper: ReturnType<typeof mount>): Record<string, unkno
 }
 
 function latestDimensionChain(wrapper: ReturnType<typeof mount>): Record<string, unknown> | undefined {
-  const evidence = latestEvidence(wrapper);
+  const envelope = latestEvidence(wrapper);
+  const evidence = envelope?.evidence as Record<string, unknown> | undefined;
   return evidence?.dimensionChain as Record<string, unknown> | undefined;
 }
 
 function latestTypedEvidence(wrapper: ReturnType<typeof mount>): AssumptionResultsEngineeringEvidence | undefined {
-  return wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as AssumptionResultsEngineeringEvidence | undefined;
+  const envelope = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+  if (!envelope) return undefined;
+  return envelope.evidence as AssumptionResultsEngineeringEvidence | undefined;
 }
 
 const FastDimensionChainPanelStub = defineComponent({
@@ -255,6 +258,28 @@ function mountWithFastStubs(props: {
 }
 
 describe("FactorInputTable engineering evidence event", () => {
+  it("emits a session-bound envelope for engineering evidence", () => {
+    const wrapper = mount(FactorInputTable, {
+      props: {
+        session: createSession({ status: "measurement_entry", sessionId: "session-envelope" }),
+        busy: false,
+        editingSetup: false,
+      },
+    });
+
+    const envelope = latestEvidence(wrapper);
+    expect(envelope).toBeTruthy();
+    expect(envelope?.sessionId).toBe("session-envelope");
+    expect(envelope?.workbookIdentity).toEqual({
+      workbookContentHash: HASH_A,
+      workbookFileName: "demo.xlsx",
+      worksheetName: "Anonymous_TA",
+    });
+    expect((envelope?.evidence as Record<string, unknown> | undefined)?.dimensionChain).toEqual(
+      expect.objectContaining({ status: "fallback" }),
+    );
+  });
+
   it("emits undefined while setup is editable", () => {
     const wrapper = mountWithFastStubs({
       session: createSession({ status: "factor_setup" }),
@@ -289,7 +314,8 @@ describe("FactorInputTable engineering evidence event", () => {
     const chain = wrapper.getComponent({ name: "DimensionChainPanel" });
     const sourceSignature = chain.props("sourceSignature") as string;
     const emitted = wrapper.emitted("engineering-evidence-change");
-    const initialEvidence = emitted?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const initialEnvelope = emitted?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const initialEvidence = initialEnvelope?.evidence as Record<string, unknown> | undefined;
     expect(initialEvidence).toBeTruthy();
     expect(initialEvidence?.dimensionChain).toEqual({
       status: "fallback",
@@ -322,7 +348,8 @@ describe("FactorInputTable engineering evidence event", () => {
     });
     await wrapper.vm.$nextTick();
 
-    const latest = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const latestEnvelope = wrapper.emitted("engineering-evidence-change")?.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const latest = latestEnvelope?.evidence as Record<string, unknown> | undefined;
     expect(latest).toBeTruthy();
     expect(latest?.dimensionChain).toEqual(expect.objectContaining({
       status: "generated",
@@ -423,14 +450,16 @@ describe("FactorInputTable engineering evidence event", () => {
     const resetSourceSignature = resetChain.props("sourceSignature") as string;
     const emittedAfterReset = (wrapper.emitted("engineering-evidence-change") ?? []).slice(emissionCountBeforeReset);
     const hasResetFallbackEvidence = emittedAfterReset.some((entry) => {
-      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      const envelope = entry?.[0] as Record<string, unknown> | undefined;
+      const evidence = envelope?.evidence as Record<string, unknown> | undefined;
       const chainProjection = evidence?.dimensionChain as Record<string, unknown> | undefined;
       return chainProjection?.status === "fallback" && chainProjection?.sourceSignature === resetSourceSignature;
     });
     expect(hasResetFallbackEvidence).toBe(true);
 
     const hasResetGeneratedEvidence = emittedAfterReset.some((entry) => {
-      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      const envelope = entry?.[0] as Record<string, unknown> | undefined;
+      const evidence = envelope?.evidence as Record<string, unknown> | undefined;
       const chainProjection = evidence?.dimensionChain as Record<string, unknown> | undefined;
       return chainProjection?.status === "generated" && chainProjection?.sourceSignature === resetSourceSignature;
     });
@@ -452,7 +481,7 @@ describe("FactorInputTable engineering evidence event", () => {
     await wrapper.vm.$nextTick();
     await wrapper.setProps({ editingSetup: false });
     await wrapper.vm.$nextTick();
-    const beforeReplacement = latestEvidence(wrapper);
+    const beforeReplacement = latestTypedEvidence(wrapper);
     expect(beforeReplacement).toBeTruthy();
     expect(beforeReplacement?.dimensionChain).toEqual(expect.objectContaining({
       status: "generated",
@@ -492,7 +521,8 @@ describe("FactorInputTable engineering evidence event", () => {
     const undefinedIndex = emissionsAfterReplacement.findIndex((entry) => entry?.[0] === undefined);
     expect(undefinedIndex).toBeGreaterThanOrEqual(0);
     const fallbackIndex = emissionsAfterReplacement.findIndex((entry) => {
-      const evidence = entry?.[0] as Record<string, unknown> | undefined;
+      const envelope = entry?.[0] as Record<string, unknown> | undefined;
+      const evidence = envelope?.evidence as Record<string, unknown> | undefined;
       return evidence?.dimensionChain
         && typeof evidence.dimensionChain === "object"
         && (evidence.dimensionChain as { status?: string }).status === "fallback";
@@ -505,7 +535,7 @@ describe("FactorInputTable engineering evidence event", () => {
     const afterOldProjectionCount = wrapper.emitted("engineering-evidence-change")?.length ?? 0;
     expect(afterOldProjectionCount).toBe(oldProjectionEmissionCount);
 
-    const currentProjectionEvidence = latestEvidence(wrapper);
+    const currentProjectionEvidence = latestTypedEvidence(wrapper);
     expect(currentProjectionEvidence).toBeTruthy();
     expect(currentProjectionEvidence?.dimensionChain).toEqual({
       status: "fallback",
@@ -584,7 +614,8 @@ describe("FactorInputTable engineering evidence event", () => {
     const nextSourceSignature = nextChain.props("sourceSignature") as string;
 
     const emissionsAfterSwitch = wrapper.emitted("engineering-evidence-change") ?? [];
-    const latestAfterSwitch = emissionsAfterSwitch.at(-1)?.[0] as AssumptionResultsEngineeringEvidence | undefined;
+    const latestEnvelope = emissionsAfterSwitch.at(-1)?.[0] as Record<string, unknown> | undefined;
+    const latestAfterSwitch = latestEnvelope?.evidence as AssumptionResultsEngineeringEvidence | undefined;
     expect(latestAfterSwitch?.dimensionChain).toEqual({
       status: "fallback",
       sourceSignature: nextSourceSignature,
