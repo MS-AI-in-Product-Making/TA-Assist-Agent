@@ -177,21 +177,15 @@ function validateDerivedEngineeringEvidence(
     ? specification.volume.actualValue
     : undefined;
   const requestVolume = dpm.volume;
-  if (requestVolume === undefined) {
-    if (dpm.failuresOverVolume !== undefined) {
-      if (sessionVolume === undefined || !finiteNumber(dpm.failuresOverVolume)) return false;
-      const expectedFailuresOverVolume = kernel.capability.totalDpm / 1_000_000 * sessionVolume;
-      if (!nearlyEqual(dpm.failuresOverVolume, expectedFailuresOverVolume)) return false;
-    }
+  const requestFailuresOverVolume = dpm.failuresOverVolume;
+  if (sessionVolume === undefined) {
+    if (requestVolume !== undefined || requestFailuresOverVolume !== undefined) return false;
   } else {
-    if (sessionVolume === undefined) return false;
-    if (!finiteNumber(requestVolume)) return false;
+    if (requestVolume === undefined || requestFailuresOverVolume === undefined) return false;
+    if (!finiteNumber(requestVolume) || !finiteNumber(requestFailuresOverVolume)) return false;
     if (!nearlyEqual(requestVolume, sessionVolume)) return false;
     const expectedFailuresOverVolume = kernel.capability.totalDpm / 1_000_000 * sessionVolume;
-    if (dpm.failuresOverVolume !== undefined) {
-      if (!finiteNumber(dpm.failuresOverVolume)) return false;
-      if (!nearlyEqual(dpm.failuresOverVolume, expectedFailuresOverVolume)) return false;
-    }
+    if (!nearlyEqual(requestFailuresOverVolume, expectedFailuresOverVolume)) return false;
   }
 
   return true;

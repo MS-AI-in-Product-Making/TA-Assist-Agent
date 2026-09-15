@@ -60,7 +60,7 @@ function cell(reference: string, value: string): string {
   return `<c r="${reference}"><v>${value}</v></c>`;
 }
 
-function sheetRows(firstFactorName = "Fabric thickness"): string {
+function sheetRows(firstFactorName = "Fabric thickness", includeVolume = true): string {
   const factors = [
     [firstFactorName, "-0.57", "0.0125", "-1", "0.57"],
     ["C-cover height", "-1.94", "0.025", "-1", "1.94"],
@@ -75,16 +75,20 @@ function sheetRows(firstFactorName = "Fabric thickness"): string {
     return `<row r="${row}">${cell(`G${row}`, factor[0])}${cell(`L${row}`, "0")}${cell(`M${row}`, "0")}${cell(`N${row}`, "0")}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, "Normal")}${cell(`R${row}`, factor[1])}${cell(`S${row}`, factor[4])}${cell(`T${row}`, factor[2])}</row>`;
   }).join("");
 
-  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="50">${cell("O50", "Additional Mean Shift")}${cell("P50", "0.01")}</row><row r="53">${cell("O53", "Response Summary")}</row><row r="54">${cell("O54", "Design Nominal")}${cell("P54", "1.627")}</row><row r="55">${cell("O55", "LSL")}${cell("P55", "-0.15")}</row><row r="56">${cell("O56", "USL")}${cell("P56", "0.05")}${cell("W56", "Volume")}${cell("X56", "1000")}</row><row r="57">${cell("O57", "Target Sigma Level")}${cell("P57", "4")}</row>`;
+  const volumeCells = includeVolume
+    ? `${cell("W56", "Volume")}${cell("X56", "1000")}`
+    : "";
+
+  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="50">${cell("O50", "Additional Mean Shift")}${cell("P50", "0.01")}</row><row r="53">${cell("O53", "Response Summary")}</row><row r="54">${cell("O54", "Design Nominal")}${cell("P54", "1.627")}</row><row r="55">${cell("O55", "LSL")}${cell("P55", "-0.15")}</row><row r="56">${cell("O56", "USL")}${cell("P56", "0.05")}${volumeCells}</row><row r="57">${cell("O57", "Target Sigma Level")}${cell("P57", "4")}</row>`;
 }
 
-function buildWorkbook(firstFactorName = "Fabric thickness"): Uint8Array {
+function buildWorkbook(firstFactorName = "Fabric thickness", includeVolume = true): Uint8Array {
   const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
   const xmlParts: Record<string, string> = {
     "xl/workbook.xml": workbookXml,
     "xl/worksheets/sheet1.xml": worksheet(`<row r="2">${cell("A2", "Document No.")}${cell("B2", "DOC-007")}</row><row r="4">${cell("A4", "Revision:")}${cell("B4", "R2")}</row><row r="6">${cell("A6", "Date:")}${cell("B6", "2026-07-23")}</row>`),
     "xl/worksheets/sheet2.xml": worksheet(`<row r="9">${cell("A9", "Device Level Dim")}${cell("C9", "Tolerance Loop Description")}</row><row r="10">${cell("A10", "Anonymous_TA")}${cell("C10", "First loop")}</row>`),
-    "xl/worksheets/sheet3.xml": worksheet(sheetRows(firstFactorName)),
+    "xl/worksheets/sheet3.xml": worksheet(sheetRows(firstFactorName, includeVolume)),
   };
   return createAnonymousWorkbookZip({ xmlParts });
 }
@@ -1993,6 +1997,127 @@ describe("f7 local server", () => {
       affectedInputReferences: ["f7-assumption-results-pdf"],
     });
     expect(events).toEqual([{ kind: "f7.assumption-results.pdf", status: 503 }]);
+  });
+
+  it("rejects assumption-results requests that omit one or both volume evidence fields when session volume is available", async () => {
+    const seededService = createRealService();
+    const imported = seededService.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook(),
+    });
+    const worksheet = seededService.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    seededService.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+    });
+
+    const getSession = seededService.getSession(imported.sessionId);
+    const validBody = toSessionBoundPdfRequest(getSession);
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const server = createF7LocalServer({ service: seededService, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const missingVolume = JSON.parse(JSON.stringify(validBody)) as AssumptionResultsPdfRouteRequest;
+    delete missingVolume.engineeringEvidence.responseSummary.defectsPerMillion.volume;
+    const missingFailuresOverVolume = JSON.parse(JSON.stringify(validBody)) as AssumptionResultsPdfRouteRequest;
+    delete missingFailuresOverVolume.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume;
+    const missingBoth = JSON.parse(JSON.stringify(validBody)) as AssumptionResultsPdfRouteRequest;
+    delete missingBoth.engineeringEvidence.responseSummary.defectsPerMillion.volume;
+    delete missingBoth.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume;
+
+    for (const body of [missingVolume, missingFailuresOverVolume, missingBoth]) {
+      const response = await httpJson({
+        port: address.port,
+        method: "POST",
+        path: "/f7/assumption-results/pdf",
+        body,
+      });
+      expectRequestEnvelope(response, 400);
+    }
+
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("rejects assumption-results requests that include volume evidence fields when session volume is unavailable", async () => {
+    const seededService = createRealService();
+    const imported = seededService.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "seed.xlsx",
+      workbookBytes: buildWorkbook("Fabric thickness", false),
+    });
+    const worksheet = seededService.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    seededService.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+      systemSpecification: {
+        lowerSpecLimit: -0.15,
+        upperSpecLimit: 0.05,
+        targetSigmaLevel: 4,
+      },
+    });
+
+    const getSession = seededService.getSession(imported.sessionId);
+    const validWithoutVolume = toSessionBoundPdfRequest(getSession);
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const server = createF7LocalServer({ service: seededService, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const withVolumeOnly = JSON.parse(JSON.stringify(validWithoutVolume)) as AssumptionResultsPdfRouteRequest;
+    withVolumeOnly.engineeringEvidence.responseSummary.defectsPerMillion.volume = 1000;
+
+    const withFailuresOnly = JSON.parse(JSON.stringify(validWithoutVolume)) as AssumptionResultsPdfRouteRequest;
+    withFailuresOnly.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume = 0.5;
+
+    const withBoth = JSON.parse(JSON.stringify(validWithoutVolume)) as AssumptionResultsPdfRouteRequest;
+    withBoth.engineeringEvidence.responseSummary.defectsPerMillion.volume = 1000;
+    withBoth.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume = 0.5;
+
+    for (const body of [withVolumeOnly, withFailuresOnly, withBoth]) {
+      const response = await httpJson({
+        port: address.port,
+        method: "POST",
+        path: "/f7/assumption-results/pdf",
+        body,
+      });
+      expectRequestEnvelope(response, 400);
+    }
+
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported transfer-encoding and does not dispatch service", async () => {

@@ -440,4 +440,53 @@ describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
       readyA,
     )).toEqual({ ok: false });
   });
+
+  it("requires both volume and failuresOverVolume when session volume is available", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+    expect(validateAssumptionResultsPdfRequestAgainstSession(baseline, ready)).toEqual({ ok: true });
+
+    const missingVolume = cloneRequest(baseline);
+    delete missingVolume.engineeringEvidence.responseSummary.defectsPerMillion.volume;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(missingVolume, ready)).toEqual({ ok: false });
+
+    const missingFailuresOverVolume = cloneRequest(baseline);
+    delete missingFailuresOverVolume.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(missingFailuresOverVolume, ready)).toEqual({ ok: false });
+
+    const missingBoth = cloneRequest(baseline);
+    delete missingBoth.engineeringEvidence.responseSummary.defectsPerMillion.volume;
+    delete missingBoth.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(missingBoth, ready)).toEqual({ ok: false });
+  });
+
+  it("requires both volume fields to be absent when session volume is unavailable", () => {
+    const { ready } = createReadySession();
+    const volumeUnavailable = {
+      ...ready,
+      systemSpecification: {
+        ...ready.systemSpecification,
+        status: "available" as const,
+        volume: {
+          status: "unavailable" as const,
+          reasonCode: "response_summary_value_missing" as const,
+        },
+      },
+    };
+    const baseline = buildSessionBoundRequest(volumeUnavailable);
+    expect(validateAssumptionResultsPdfRequestAgainstSession(baseline, volumeUnavailable)).toEqual({ ok: true });
+
+    const withVolumeOnly = cloneRequest(baseline);
+    withVolumeOnly.engineeringEvidence.responseSummary.defectsPerMillion.volume = 1000;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(withVolumeOnly, volumeUnavailable)).toEqual({ ok: false });
+
+    const withFailuresOnly = cloneRequest(baseline);
+    withFailuresOnly.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume = 0.5;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(withFailuresOnly, volumeUnavailable)).toEqual({ ok: false });
+
+    const withBoth = cloneRequest(baseline);
+    withBoth.engineeringEvidence.responseSummary.defectsPerMillion.volume = 1000;
+    withBoth.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume = 0.5;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(withBoth, volumeUnavailable)).toEqual({ ok: false });
+  });
 });
