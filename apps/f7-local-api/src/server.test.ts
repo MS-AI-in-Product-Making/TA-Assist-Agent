@@ -50,9 +50,9 @@ function cell(reference: string, value: string): string {
   return `<c r="${reference}"><v>${value}</v></c>`;
 }
 
-function sheetRows(): string {
+function sheetRows(firstFactorName = "Fabric thickness"): string {
   const factors = [
-    ["Fabric thickness", "-0.57", "0.0125", "-1", "0.57"],
+    [firstFactorName, "-0.57", "0.0125", "-1", "0.57"],
     ["C-cover height", "-1.94", "0.025", "-1", "1.94"],
     ["Shim thickness", "0.22", "0.0125", "+1", "0.22"],
     ["Switch height", "0.75", "0.025", "+1", "0.75"],
@@ -68,13 +68,13 @@ function sheetRows(): string {
   return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="54">${cell("O54", "LSL")}${cell("P54", "-0.15")}</row><row r="55">${cell("O55", "USL")}${cell("P55", "0.05")}</row>`;
 }
 
-function buildWorkbook(): Uint8Array {
+function buildWorkbook(firstFactorName = "Fabric thickness"): Uint8Array {
   const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
   const xmlParts: Record<string, string> = {
     "xl/workbook.xml": workbookXml,
     "xl/worksheets/sheet1.xml": worksheet(`<row r="2">${cell("A2", "Document No.")}${cell("B2", "DOC-007")}</row><row r="4">${cell("A4", "Revision:")}${cell("B4", "R2")}</row><row r="6">${cell("A6", "Date:")}${cell("B6", "2026-07-23")}</row>`),
     "xl/worksheets/sheet2.xml": worksheet(`<row r="9">${cell("A9", "Device Level Dim")}${cell("C9", "Tolerance Loop Description")}</row><row r="10">${cell("A10", "Anonymous_TA")}${cell("C10", "First loop")}</row>`),
-    "xl/worksheets/sheet3.xml": worksheet(sheetRows()),
+    "xl/worksheets/sheet3.xml": worksheet(sheetRows(firstFactorName)),
   };
   return createAnonymousWorkbookZip({ xmlParts });
 }
@@ -174,7 +174,11 @@ function validAssumptionResultsPdfRequest(): AssumptionResultsPdfRouteRequest {
       },
       dimensionChain: {
         status: "generated",
-        sourceSignature: HASH_A,
+        sourceSignature: JSON.stringify({
+          workbookName: "Design 装配.xlsx",
+          worksheetName: "TA Result",
+          factorIds: [HASH_B],
+        }),
         orientation: "horizontal",
         factors: [{
           id: HASH_B,
@@ -237,6 +241,71 @@ function validAssumptionResultsPdfRequest(): AssumptionResultsPdfRouteRequest {
           volume: 1000,
           failuresOverVolume: 0,
         },
+      },
+    },
+  };
+}
+
+function toSessionBoundPdfRequest(snapshot: ReturnType<F7SessionService["getSession"]>): AssumptionResultsPdfRouteRequest {
+  const confirmedFactors = snapshot.factors
+    .map((factorState) => factorState.evidence)
+    .filter((evidence): evidence is NonNullable<typeof evidence> => evidence !== undefined);
+  const firstFactor = confirmedFactors[0];
+  if (!firstFactor) {
+    throw new Error("Session fixture must include at least one confirmed factor evidence.");
+  }
+
+  return {
+    ...validAssumptionResultsPdfRequest(),
+    sessionId: snapshot.sessionId,
+    workbookName: snapshot.workbook.fileName,
+    worksheetName: firstFactor.worksheetName,
+    engineeringEvidence: {
+      ...validAssumptionResultsPdfRequest().engineeringEvidence,
+      factorSetup: {
+        ...validAssumptionResultsPdfRequest().engineeringEvidence.factorSetup,
+        rows: confirmedFactors.map((evidence, index) => ({
+          itemNumber: evidence.sourceRow,
+          factorName: evidence.factorName,
+          designNominal: evidence.designNominal,
+          upperTolerance: evidence.upperTolerance,
+          lowerTolerance: evidence.lowerTolerance,
+          longTermSafetyFactor: evidence.longTermSafetyFactor,
+          sigmaLevel: evidence.sigmaLevel,
+          distribution: evidence.distribution,
+          mean: evidence.calculatedMean,
+          tolerance: evidence.tolerance,
+          oneSigma: evidence.oneSigma,
+          contributionPercent: index === 0 ? 100 : 0,
+        })),
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: JSON.stringify({
+          worksheetName: firstFactor.worksheetName,
+          factors: confirmedFactors.map((evidence) => evidence.factorId),
+        }),
+        orientation: "horizontal",
+        factors: confirmedFactors.map((evidence) => ({
+          id: evidence.factorId,
+          itemNumber: evidence.sourceRow,
+          name: evidence.factorName,
+          designNominal: evidence.designNominal,
+          upperTolerance: evidence.upperTolerance,
+          lowerTolerance: evidence.lowerTolerance,
+          longTermSafetyFactor: evidence.longTermSafetyFactor,
+          sigmaLevel: evidence.sigmaLevel,
+          distribution: evidence.distribution,
+        })),
+        manualLayout: {
+          boundaryOffsets: Object.fromEntries(confirmedFactors.map((evidence) => [evidence.factorId, 0])),
+          laneOffsets: Object.fromEntries(confirmedFactors.map((evidence) => [evidence.factorId, 0])),
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [],
+        closureDirection: "start-to-end",
       },
     },
   };
@@ -1088,11 +1157,29 @@ describe("f7 local server", () => {
     const calls: string[] = [];
     const pdfBytes = Buffer.from("%PDF-1.7\nroute-test");
     const seededService = createRealService();
-    seededService.importWorkbook({
+    const imported = seededService.importWorkbook({
       contractId: "f7-analysis-request-v1",
       inputClassification: "confidential",
       fileName: "seed.xlsx",
       workbookBytes: buildWorkbook(),
+    });
+    const worksheet = seededService.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    seededService.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
     });
     const service: F7SessionService = {
       ...seededService,
@@ -1116,7 +1203,7 @@ describe("f7 local server", () => {
     });
     openServers.push(server);
     const address = await listenF7LocalServer(server, 0);
-    const body = validAssumptionResultsPdfRequest();
+    const body = toSessionBoundPdfRequest(seededService.getSession("session-fixed"));
 
     const response = await httpJson({
       port: address.port,
@@ -1157,6 +1244,39 @@ describe("f7 local server", () => {
       method: "POST",
       path: "/f7/assumption-results/pdf",
       body: { ...validAssumptionResultsPdfRequest(), unexpected: true },
+    });
+
+    expectRequestEnvelope(response, 400);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-JSON sourceSignature before session lookup or rendering", async () => {
+    const realService = createRealService();
+    const getSession = vi.fn((sessionId: string) => realService.getSession(sessionId));
+    const service: F7SessionService = { ...realService, getSession };
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-invalid")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const request = validAssumptionResultsPdfRequest();
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: {
+        ...request,
+        engineeringEvidence: {
+          ...request.engineeringEvidence,
+          dimensionChain: {
+            ...request.engineeringEvidence.dimensionChain,
+            sourceSignature: "not-json-source-signature",
+          },
+        },
+      },
     });
 
     expectRequestEnvelope(response, 400);
@@ -1329,11 +1449,29 @@ describe("f7 local server", () => {
 
   it("accepts every structurally valid Web action variant", async () => {
     const service = createRealService();
-    service.importWorkbook({
+    const imported = service.importWorkbook({
       contractId: "f7-analysis-request-v1",
       inputClassification: "confidential",
       fileName: "seed.xlsx",
       workbookBytes: buildWorkbook(),
+    });
+    const worksheet = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
     });
     const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
       render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
@@ -1341,7 +1479,7 @@ describe("f7 local server", () => {
     const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
     openServers.push(server);
     const address = await listenF7LocalServer(server, 0);
-    const base = validAssumptionResultsPdfRequest();
+    const base = toSessionBoundPdfRequest(service.getSession("session-fixed"));
 
     for (const actionItem of [
       {
@@ -1360,6 +1498,159 @@ describe("f7 local server", () => {
       });
       expect(response.status).toBe(200);
     }
+  });
+
+  it("rejects assumption-results PDF when workbook or worksheet does not match the current session", async () => {
+    const service = createRealService();
+    const workbook = buildWorkbook();
+    const imported = service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "Session-A.xlsx",
+      workbookBytes: workbook,
+    });
+    const confirmed = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    const ready = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: confirmed.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+    });
+
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const validBody = toSessionBoundPdfRequest(ready);
+    const workbookMismatch = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: {
+        ...validBody,
+        workbookName: "Session-B.xlsx",
+      },
+    });
+    expect(workbookMismatch.status).toBe(400);
+    expect(workbookMismatch.json).toMatchObject({ code: "validation_error" });
+
+    const worksheetMismatch = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: {
+        ...validBody,
+        worksheetName: "Session-B-Worksheet",
+      },
+    });
+    expect(worksheetMismatch.status).toBe(400);
+    expect(worksheetMismatch.json).toMatchObject({ code: "validation_error" });
+
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("rejects assumption-results PDF when engineeringEvidence factors do not match the current session and accepts matching A payload", async () => {
+    const service = createF7SessionService({
+      createId: (() => {
+        let next = 1;
+        return () => `session-${next++}`;
+      })(),
+      now: () => "2026-08-19T08:00:00.000Z",
+    });
+    const workbook = buildWorkbook();
+    const importedA = service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "Session-A.xlsx",
+      workbookBytes: workbook,
+    });
+    const worksheetA = service.confirmWorksheet({
+      sessionId: importedA.sessionId,
+      confirmation: {
+        workbookContentHash: importedA.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    const readyA = service.confirmFactorSetup({
+      sessionId: importedA.sessionId,
+      confirmations: worksheetA.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+    });
+
+    const importedB = service.importWorkbook({
+      contractId: "f7-analysis-request-v1",
+      inputClassification: "confidential",
+      fileName: "Session-B.xlsx",
+      workbookBytes: buildWorkbook("Fabric thickness B"),
+    });
+    const worksheetB = service.confirmWorksheet({
+      sessionId: importedB.sessionId,
+      confirmation: {
+        workbookContentHash: importedB.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    const readyB = service.confirmFactorSetup({
+      sessionId: importedB.sessionId,
+      confirmations: worksheetB.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
+    });
+
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\nfixture")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const bodyA = toSessionBoundPdfRequest(readyA);
+    const bodyB = toSessionBoundPdfRequest(readyB);
+    const crossSessionResponse = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: {
+        ...bodyA,
+        engineeringEvidence: bodyB.engineeringEvidence,
+      },
+    });
+    expect(crossSessionResponse.status).toBe(400);
+    expect(crossSessionResponse.json).toMatchObject({ code: "validation_error" });
+
+    const validResponse = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/assumption-results/pdf",
+      body: bodyA,
+    });
+    expect(validResponse.status).toBe(200);
+    expect(assumptionResultsPdfRenderer.render).toHaveBeenCalledTimes(1);
   });
 
   it("uses controlled session error mapping and does not render a missing session", async () => {
@@ -1390,11 +1681,29 @@ describe("f7 local server", () => {
     ["non-PDF", Buffer.from("not-a-pdf")],
   ])("maps %s assumption-results renderer output to controlled 500 JSON", async (_caseName, pdfBytes) => {
     const service = createRealService();
-    service.importWorkbook({
+    const imported = service.importWorkbook({
       contractId: "f7-analysis-request-v1",
       inputClassification: "confidential",
       fileName: "seed.xlsx",
       workbookBytes: buildWorkbook(),
+    });
+    const worksheet = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
     });
     const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
       render: vi.fn(async () => pdfBytes),
@@ -1412,7 +1721,7 @@ describe("f7 local server", () => {
       port: address.port,
       method: "POST",
       path: "/f7/assumption-results/pdf",
-      body: validAssumptionResultsPdfRequest(),
+      body: toSessionBoundPdfRequest(service.getSession("session-fixed")),
     });
 
     expect(response.status).toBe(500);
@@ -1429,11 +1738,29 @@ describe("f7 local server", () => {
 
   it("maps assumption-results renderer failures to controlled 500 without PDF bytes", async () => {
     const service = createRealService();
-    service.importWorkbook({
+    const imported = service.importWorkbook({
       contractId: "f7-analysis-request-v1",
       inputClassification: "confidential",
       fileName: "seed.xlsx",
       workbookBytes: buildWorkbook(),
+    });
+    const worksheet = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
     });
     const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
       render: vi.fn(async () => {
@@ -1453,7 +1780,7 @@ describe("f7 local server", () => {
       port: address.port,
       method: "POST",
       path: "/f7/assumption-results/pdf",
-      body: validAssumptionResultsPdfRequest(),
+      body: toSessionBoundPdfRequest(service.getSession("session-fixed")),
     });
 
     expect(response.status).toBe(500);
@@ -1471,11 +1798,29 @@ describe("f7 local server", () => {
 
   it("maps assumption-results renderer queue saturation to controlled 503", async () => {
     const service = createRealService();
-    service.importWorkbook({
+    const imported = service.importWorkbook({
       contractId: "f7-analysis-request-v1",
       inputClassification: "confidential",
       fileName: "seed.xlsx",
       workbookBytes: buildWorkbook(),
+    });
+    const worksheet = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: {
+        workbookContentHash: imported.workbook.workbookContentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+    service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: worksheet.factors.map((factor) => ({
+        factorCandidateId: factor.factorCandidate.factorCandidateId,
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        confirmed: true,
+      })),
     });
     const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
       render: vi.fn(async () => {
@@ -1495,7 +1840,7 @@ describe("f7 local server", () => {
       port: address.port,
       method: "POST",
       path: "/f7/assumption-results/pdf",
-      body: validAssumptionResultsPdfRequest(),
+      body: toSessionBoundPdfRequest(service.getSession("session-fixed")),
     });
 
     expect(response.status).toBe(503);

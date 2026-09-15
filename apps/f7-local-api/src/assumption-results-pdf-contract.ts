@@ -8,6 +8,8 @@ const percentage = finiteNumber.min(0).max(100);
 const nonNegativeInteger = z.number().int().nonnegative();
 const boundedOffset = finiteNumber.min(-10_000).max(10_000);
 const boundedId = z.string().regex(/^[a-f0-9]{64}$/);
+const boundedText = z.string().min(1).max(20_000);
+const boundedFraction = finiteNumber.min(0).max(1);
 const sigmaBand = z.union([
   z.literal(1),
   z.literal(3),
@@ -23,6 +25,23 @@ const setupDistribution = z.enum([
   "Elliptical",
   "Beta",
 ]);
+
+const jsonSourceSignature = boundedText.superRefine((value, context) => {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      context.addIssue({
+        code: "custom",
+        message: "sourceSignature must be JSON object or array text.",
+      });
+    }
+  } catch {
+    context.addIssue({
+      code: "custom",
+      message: "sourceSignature must be valid JSON text.",
+    });
+  }
+});
 
 const summaryRowSchema = z.object({
   metric: shortText,
@@ -171,7 +190,7 @@ const dimensionChainManualLayoutSchema = z.object({
 const dimensionChainSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("generated"),
-    sourceSignature: boundedId,
+    sourceSignature: jsonSourceSignature,
     orientation: z.enum(["horizontal", "vertical"]),
     factors: z.array(dimensionChainFactorSchema).max(100),
     manualLayout: dimensionChainManualLayoutSchema,
@@ -180,7 +199,7 @@ const dimensionChainSchema = z.discriminatedUnion("status", [
   }).strict(),
   z.object({
     status: z.literal("fallback"),
-    sourceSignature: boundedId,
+    sourceSignature: jsonSourceSignature,
   }).strict(),
 ]);
 
@@ -237,7 +256,7 @@ const responseSummarySchema = z.object({
     outOfSpecPercent: finiteNumber,
     yieldPercent: finiteNumber,
     volume: nonNegativeInteger.optional(),
-    failuresOverVolume: nonNegativeInteger.optional(),
+          failuresOverVolume: boundedFraction.optional(),
   }).strict(),
 }).strict();
 

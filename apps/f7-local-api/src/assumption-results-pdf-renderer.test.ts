@@ -17,7 +17,6 @@ import {
 } from "./assumption-results-pdf-renderer.js";
 
 const INJECTED_TEXT = `<img src=x onerror="alert('unsafe')"> & analysis`;
-const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 
 function validRequest(): AssumptionResultsPdfRouteRequest {
@@ -140,7 +139,11 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
       },
       dimensionChain: {
         status: "generated",
-        sourceSignature: HASH_A,
+        sourceSignature: JSON.stringify({
+          workbookName: "Workbook source",
+          worksheetName: "Anonymous_TA",
+          factorIds: [HASH_B],
+        }),
         orientation: "horizontal",
         factors: [{
           id: HASH_B,
@@ -316,6 +319,29 @@ describe("assumption results PDF contract", () => {
         optionId: "arbitrary-action",
       }],
     }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      engineeringEvidence: {
+        ...validRequest().engineeringEvidence,
+        dimensionChain: {
+          ...validRequest().engineeringEvidence.dimensionChain,
+          sourceSignature: "not-json-signature",
+        },
+      },
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      engineeringEvidence: {
+        ...validRequest().engineeringEvidence,
+        responseSummary: {
+          ...validRequest().engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...validRequest().engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: 1.01,
+          },
+        },
+      },
+    }).success).toBe(false);
   });
 
   it("enforces the optionId-discriminated adjustment and outcome contract", () => {
@@ -372,6 +398,27 @@ describe("assumption results PDF contract", () => {
   it("accepts required engineeringEvidence and rejects strict invalid variants", () => {
     const request = validRequest();
     expect(assumptionResultsPdfRouteRequestSchema.safeParse(request).success).toBe(true);
+
+    const webSourceSignature = JSON.stringify({
+      workbookName: request.workbookName,
+      worksheetName: request.worksheetName,
+      factorIds: request.engineeringEvidence.dimensionChain.status === "generated"
+        ? request.engineeringEvidence.dimensionChain.factors.map((factor) => factor.id)
+        : [],
+      orientation: request.engineeringEvidence.dimensionChain.status === "generated"
+        ? request.engineeringEvidence.dimensionChain.orientation
+        : "fallback",
+    });
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...request.engineeringEvidence.dimensionChain,
+          sourceSignature: webSourceSignature,
+        },
+      },
+    }).success).toBe(true);
 
     expect(assumptionResultsPdfRouteRequestSchema.safeParse({
       ...request,
@@ -483,6 +530,20 @@ describe("assumption results PDF contract", () => {
           defectsPerMillion: {
             ...request.engineeringEvidence.responseSummary.defectsPerMillion,
             volume: 1.5,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: 12.75,
           },
         },
       },

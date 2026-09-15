@@ -26,6 +26,7 @@ import {
   AssumptionResultsPdfQueueFullError,
   type AssumptionResultsPdfRenderer,
 } from "./assumption-results-pdf-renderer.js";
+import { validateAssumptionResultsPdfRequestAgainstSession } from "./assumption-results-pdf-session-validation.js";
 import { F7_SESSION_NOT_FOUND_REASON_CODE } from "./f7-session-service.js";
 
 const REQUEST_SUMMARY = "F7 request is invalid.";
@@ -544,8 +545,9 @@ async function handleRequest(
     const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
     const routeRequest = assumptionResultsPdfRouteRequestSchema.safeParse(body);
     if (!routeRequest.success) rejectBadRequest();
+    let sessionSnapshot;
     try {
-      service.getSession(routeRequest.data.sessionId);
+      sessionSnapshot = service.getSession(routeRequest.data.sessionId);
     } catch (error) {
       const parsedError = typedErrorSchema.safeParse(error);
       const reasonCode = error && typeof error === "object" && "reasonCode" in error
@@ -560,6 +562,10 @@ async function handleRequest(
       }
       throw error;
     }
+
+    const validation = validateAssumptionResultsPdfRequestAgainstSession(routeRequest.data, sessionSnapshot);
+    if (!validation.ok) rejectBadRequest();
+
     const pdfBytes = await assumptionResultsPdfRenderer.render(routeRequest.data);
     if (pdfBytes.length === 0 || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
       throw new Error("Assumption-results renderer returned invalid PDF bytes.");
