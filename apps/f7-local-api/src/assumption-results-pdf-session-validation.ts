@@ -1,4 +1,5 @@
 import type { F7SessionSnapshot } from "@ai-assist/contracts";
+import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
 
 function hasUniqueValues(values: readonly string[]): boolean {
@@ -11,6 +12,189 @@ function parseBoundaryKey(key: string): { readonly left: string; readonly right:
   const [left, right] = parts;
   if (!left || !right) return undefined;
   return { left, right };
+}
+
+const ABSOLUTE_TOLERANCE = 1e-12;
+const RELATIVE_TOLERANCE = 1e-9;
+
+const DISTRIBUTION_BY_LABEL = {
+  Normal: "normal",
+  Uniform: "uniform",
+  Triangular: "triangular",
+  Trapezoidal: "trapezoidal",
+  Elliptical: "elliptical",
+  Beta: "beta",
+} as const;
+
+function nearlyEqual(left: number, right: number): boolean {
+  return Math.abs(left - right)
+    <= Math.max(ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE * Math.max(Math.abs(left), Math.abs(right)));
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function toStatus(value: "PASS" | "FAIL"): "PASS" | "FAIL" {
+  return value;
+}
+
+function validateDerivedEngineeringEvidence(
+  request: AssumptionResultsPdfRouteRequest,
+  sessionEvidenceRows: readonly NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>[],
+  session: F7SessionSnapshot,
+): boolean {
+  const specification = session.systemSpecification;
+  if (
+    specification?.status !== "available"
+    || specification.lowerSpecLimit.status !== "available"
+    || specification.upperSpecLimit.status !== "available"
+    || specification.targetSigmaLevel.status !== "available"
+    || specification.additionalMeanShift.status !== "available"
+  ) {
+    return false;
+  }
+
+  const additionalMeanShift = request.engineeringEvidence.factorSetup.footer.additionalMeanShift;
+
+  const kernelFactors = sessionEvidenceRows.map((evidence) => ({
+    source: {
+      worksheetName: evidence.worksheetName,
+      tableId: evidence.tableId,
+      sourceRow: evidence.sourceRow,
+    },
+    name: evidence.factorName,
+    unit: evidence.unit,
+    input: {
+      nominalValue: evidence.designNominal,
+      upperTolerance: evidence.upperTolerance,
+      lowerTolerance: evidence.lowerTolerance,
+      longTermSafetyFactor: evidence.longTermSafetyFactor,
+      sigmaLevel: evidence.sigmaLevel,
+      distribution: DISTRIBUTION_BY_LABEL[evidence.distribution],
+    },
+  }));
+
+  const kernel = calculateToleranceAnalysis({
+    factors: kernelFactors,
+    system: {
+      designNominal: kernelFactors.reduce((sum, factor) => sum + factor.input.nominalValue, 0),
+      lowerSpecLimit: specification.lowerSpecLimit.actualValue,
+      upperSpecLimit: specification.upperSpecLimit.actualValue,
+      targetSigmaLevel: specification.targetSigmaLevel.actualValue,
+      targetCpk: specification.targetSigmaLevel.actualValue / 3,
+      shift: additionalMeanShift,
+    },
+  });
+
+  const factorByKey = new Map(kernel.factors.map((factor) => [
+    JSON.stringify([factor.source.worksheetName, factor.source.tableId, factor.source.sourceRow, factor.name]),
+    factor,
+  ]));
+
+  for (const evidenceRow of request.engineeringEvidence.factorSetup.rows) {
+    const sourceEvidence = sessionEvidenceRows[evidenceRow.itemNumber - 1];
+    if (!sourceEvidence) return false;
+    const key = JSON.stringify([
+      sourceEvidence.worksheetName,
+      sourceEvidence.tableId,
+      sourceEvidence.sourceRow,
+      sourceEvidence.factorName,
+    ]);
+    const factor = factorByKey.get(key);
+    if (!factor) return false;
+    if (!nearlyEqual(evidenceRow.mean, factor.mean)) return false;
+    if (!nearlyEqual(evidenceRow.tolerance, factor.halfTolerance)) return false;
+    if (!nearlyEqual(evidenceRow.oneSigma, factor.sigma)) return false;
+    if (!nearlyEqual(evidenceRow.contributionPercent, factor.contribution * 100)) return false;
+  }
+
+  const contributionTotalPercent = kernel.factors.reduce((sum, factor) => sum + factor.contribution, 0) * 100;
+  const footer = request.engineeringEvidence.factorSetup.footer;
+  if (!nearlyEqual(footer.designNominalTotal, kernel.system.designNominal)) return false;
+  if (!nearlyEqual(footer.upperWorstCaseTolerance, kernel.system.responseUpperTolerance)) return false;
+  if (!nearlyEqual(footer.lowerWorstCaseTolerance, kernel.system.responseLowerTolerance)) return false;
+  if (!nearlyEqual(footer.meanResponse, kernel.system.mean - kernel.system.shift)) return false;
+  if (!nearlyEqual(footer.rssTolerance, kernel.system.rssSigma * 3)) return false;
+  if (!nearlyEqual(footer.rssSigma, kernel.system.rssSigma)) return false;
+  if (!nearlyEqual(footer.contributionTotalPercent, contributionTotalPercent)) return false;
+  if (!nearlyEqual(footer.adjustedMean, kernel.system.mean)) return false;
+
+  const distribution = request.engineeringEvidence.responseDistribution;
+  if (!nearlyEqual(distribution.mean, kernel.system.mean)) return false;
+  if (!nearlyEqual(distribution.standardDeviation, kernel.system.rssSigma)) return false;
+  if (!nearlyEqual(distribution.lowerSpecLimit, kernel.capability.lowerSpecLimit)) return false;
+  if (!nearlyEqual(distribution.upperSpecLimit, kernel.capability.upperSpecLimit)) return false;
+  if (!nearlyEqual(distribution.target, kernel.system.designNominal)) return false;
+
+  const summary = request.engineeringEvidence.responseSummary;
+  const expectedSigmaBands = [1, 3, 4, 4.5, 6] as const;
+  if (summary.rssAndWorstCase.sigmaBands.length !== expectedSigmaBands.length) return false;
+  for (const [index, sigma] of expectedSigmaBands.entries()) {
+    const sigmaBand = summary.rssAndWorstCase.sigmaBands[index];
+    if (!sigmaBand || sigmaBand.sigma !== sigma) return false;
+    if (!nearlyEqual(sigmaBand.tolerance, kernel.system.rssSigma * sigma)) return false;
+    if (!nearlyEqual(sigmaBand.upper, kernel.system.mean + kernel.system.rssSigma * sigma)) return false;
+    if (!nearlyEqual(sigmaBand.lower, kernel.system.mean - kernel.system.rssSigma * sigma)) return false;
+  }
+
+  if (!nearlyEqual(summary.rssAndWorstCase.worstCase.tolerance, kernel.system.worstCaseTolerance)) return false;
+  if (!nearlyEqual(summary.rssAndWorstCase.worstCase.upper, kernel.system.worstCaseUpperBound)) return false;
+  if (!nearlyEqual(summary.rssAndWorstCase.worstCase.lower, kernel.system.worstCaseLowerBound)) return false;
+
+  if (!nearlyEqual(summary.responseAndSpecifications.designNominal, kernel.system.designNominal)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.meanResponse, kernel.system.mean - kernel.system.shift)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.additionalMeanShift, kernel.system.shift)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.adjustedMean, kernel.system.mean)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.lowerSpecLimit, kernel.capability.lowerSpecLimit)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.upperSpecLimit, kernel.capability.upperSpecLimit)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.targetSigmaLevel, kernel.capability.targetSigmaLevel)) return false;
+  if (!nearlyEqual(summary.responseAndSpecifications.targetCpk, kernel.capability.targetCpk)) return false;
+
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.lowerZ.value, kernel.capability.lowerZ)) return false;
+  if (summary.sigmaLevelAndCapability.lowerZ.status !== toStatus(kernel.capability.lowerCpkStatus)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.upperZ.value, kernel.capability.upperZ)) return false;
+  if (summary.sigmaLevelAndCapability.upperZ.status !== toStatus(kernel.capability.upperCpkStatus)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.calculatedSigmaLevel.value, kernel.capability.z)) return false;
+  if (summary.sigmaLevelAndCapability.calculatedSigmaLevel.status !== toStatus(kernel.capability.status)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.cp.value, kernel.capability.cp)) return false;
+  if (summary.sigmaLevelAndCapability.cp.status !== toStatus(kernel.capability.cpStatus)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.lowerCpk.value, kernel.capability.lowerCpk)) return false;
+  if (summary.sigmaLevelAndCapability.lowerCpk.status !== toStatus(kernel.capability.lowerCpkStatus)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.upperCpk.value, kernel.capability.upperCpk)) return false;
+  if (summary.sigmaLevelAndCapability.upperCpk.status !== toStatus(kernel.capability.upperCpkStatus)) return false;
+  if (!nearlyEqual(summary.sigmaLevelAndCapability.calculatedCpk.value, kernel.capability.cpk)) return false;
+  if (summary.sigmaLevelAndCapability.calculatedCpk.status !== toStatus(kernel.capability.status)) return false;
+
+  const dpm = summary.defectsPerMillion;
+  if (!nearlyEqual(dpm.lowerDpm, kernel.capability.lowerDpm)) return false;
+  if (!nearlyEqual(dpm.upperDpm, kernel.capability.upperDpm)) return false;
+  if (!nearlyEqual(dpm.totalDpm, kernel.capability.totalDpm)) return false;
+  if (!nearlyEqual(dpm.outOfSpecPercent, kernel.capability.outOfSpecRatio * 100)) return false;
+  if (!nearlyEqual(dpm.yieldPercent, kernel.capability.yield * 100)) return false;
+
+  const sessionVolume = specification.volume?.status === "available"
+    ? specification.volume.actualValue
+    : undefined;
+  const requestVolume = dpm.volume;
+  if (requestVolume === undefined) {
+    if (dpm.failuresOverVolume !== undefined) {
+      if (sessionVolume === undefined || !finiteNumber(dpm.failuresOverVolume)) return false;
+      const expectedFailuresOverVolume = kernel.capability.totalDpm / 1_000_000 * sessionVolume;
+      if (!nearlyEqual(dpm.failuresOverVolume, expectedFailuresOverVolume)) return false;
+    }
+  } else {
+    if (sessionVolume === undefined) return false;
+    if (!finiteNumber(requestVolume)) return false;
+    if (!nearlyEqual(requestVolume, sessionVolume)) return false;
+    const expectedFailuresOverVolume = kernel.capability.totalDpm / 1_000_000 * sessionVolume;
+    if (dpm.failuresOverVolume !== undefined) {
+      if (!finiteNumber(dpm.failuresOverVolume)) return false;
+      if (!nearlyEqual(dpm.failuresOverVolume, expectedFailuresOverVolume)) return false;
+    }
+  }
+
+  return true;
 }
 
 export function validateAssumptionResultsPdfRequestAgainstSession(
@@ -125,6 +309,10 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
         return { ok: false };
       }
     }
+  }
+
+  if (!validateDerivedEngineeringEvidence(request, sessionEvidenceRows, session)) {
+    return { ok: false };
   }
 
   return { ok: true };

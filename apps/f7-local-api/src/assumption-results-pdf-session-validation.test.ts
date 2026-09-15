@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
 import { createF7SessionService } from "./f7-session-service.js";
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
 import { validateAssumptionResultsPdfRequestAgainstSession } from "./assumption-results-pdf-session-validation.js";
@@ -25,8 +26,17 @@ function sheetRows(firstFactorName = "Fabric thickness"): string {
     return `<row r="${row}">${cell(`G${row}`, factor[0])}${cell(`L${row}`, "0")}${cell(`M${row}`, "0")}${cell(`N${row}`, "0")}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, "Normal")}${cell(`R${row}`, factor[1])}${cell(`S${row}`, factor[4])}${cell(`T${row}`, factor[2])}</row>`;
   }).join("");
 
-  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="54">${cell("O54", "LSL")}${cell("P54", "-0.15")}</row><row r="55">${cell("O55", "USL")}${cell("P55", "0.05")}</row>`;
+  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="50">${cell("O50", "Additional Mean Shift")}${cell("P50", "0.01")}</row><row r="53">${cell("O53", "Response Summary")}</row><row r="54">${cell("O54", "Design Nominal")}${cell("P54", "1.627")}</row><row r="55">${cell("O55", "LSL")}${cell("P55", "-0.15")}</row><row r="56">${cell("O56", "USL")}${cell("P56", "0.05")}${cell("W56", "Volume")}${cell("X56", "1000")}</row><row r="57">${cell("O57", "Target Sigma Level")}${cell("P57", "4")}</row>`;
 }
+
+const DISTRIBUTION_BY_LABEL = {
+  Normal: "normal",
+  Uniform: "uniform",
+  Triangular: "triangular",
+  Trapezoidal: "trapezoidal",
+  Elliptical: "elliptical",
+  Beta: "beta",
+} as const;
 
 function buildWorkbook(firstFactorName = "Fabric thickness"): Uint8Array {
   const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
@@ -85,6 +95,59 @@ function buildSessionBoundRequest(snapshot: ReturnType<ReturnType<typeof createS
   const firstEvidence = evidenceRows[0];
   if (!firstEvidence) throw new Error("Expected confirmed factor evidence in test fixture session.");
 
+  const specification = snapshot.systemSpecification;
+  if (
+    specification?.status !== "available"
+    || specification.lowerSpecLimit.status !== "available"
+    || specification.upperSpecLimit.status !== "available"
+    || specification.targetSigmaLevel.status !== "available"
+    || specification.additionalMeanShift.status !== "available"
+  ) {
+    throw new Error("Expected available system specification in test fixture session.");
+  }
+
+  const additionalMeanShift = specification.additionalMeanShift.valueOrigin === "defaulted"
+    ? 0
+    : specification.additionalMeanShift.actualValue;
+  const kernelFactors = evidenceRows.map((evidence) => ({
+    source: {
+      worksheetName: evidence.worksheetName,
+      tableId: evidence.tableId,
+      sourceRow: evidence.sourceRow,
+    },
+    name: evidence.factorName,
+    unit: evidence.unit,
+    input: {
+      nominalValue: evidence.designNominal,
+      upperTolerance: evidence.upperTolerance,
+      lowerTolerance: evidence.lowerTolerance,
+      longTermSafetyFactor: evidence.longTermSafetyFactor,
+      sigmaLevel: evidence.sigmaLevel,
+      distribution: DISTRIBUTION_BY_LABEL[evidence.distribution],
+    },
+  }));
+  const calculation = calculateToleranceAnalysis({
+    factors: kernelFactors,
+    system: {
+      designNominal: kernelFactors.reduce((sum, factor) => sum + factor.input.nominalValue, 0),
+      lowerSpecLimit: specification.lowerSpecLimit.actualValue,
+      upperSpecLimit: specification.upperSpecLimit.actualValue,
+      targetSigmaLevel: specification.targetSigmaLevel.actualValue,
+      targetCpk: specification.targetSigmaLevel.actualValue / 3,
+      shift: additionalMeanShift,
+    },
+  });
+
+  const calculationByKey = new Map(calculation.factors.map((factor) => [
+    JSON.stringify([factor.source.worksheetName, factor.source.tableId, factor.source.sourceRow, factor.name]),
+    factor,
+  ]));
+  const sigmaBands = [1, 3, 4, 4.5, 6] as const;
+  const volume = specification.volume?.status === "available" ? specification.volume.actualValue : undefined;
+  const failuresOverVolume = volume === undefined
+    ? undefined
+    : calculation.capability.totalDpm / 1_000_000 * volume;
+
   return {
     sessionId: snapshot.sessionId,
     workbookName: snapshot.workbook.fileName,
@@ -119,6 +182,21 @@ function buildSessionBoundRequest(snapshot: ReturnType<ReturnType<typeof createS
     engineeringEvidence: {
       factorSetup: {
         rows: evidenceRows.map((evidence, index) => ({
+          ...(() => {
+            const factor = calculationByKey.get(JSON.stringify([
+              evidence.worksheetName,
+              evidence.tableId,
+              evidence.sourceRow,
+              evidence.factorName,
+            ]));
+            if (!factor) throw new Error("Expected matched kernel factor in test fixture session.");
+            return {
+              mean: factor.mean,
+              tolerance: factor.halfTolerance,
+              oneSigma: factor.sigma,
+              contributionPercent: factor.contribution * 100,
+            };
+          })(),
           itemNumber: index + 1,
           factorName: evidence.factorName,
           designNominal: evidence.designNominal,
@@ -127,21 +205,17 @@ function buildSessionBoundRequest(snapshot: ReturnType<ReturnType<typeof createS
           longTermSafetyFactor: evidence.longTermSafetyFactor,
           sigmaLevel: evidence.sigmaLevel,
           distribution: evidence.distribution,
-          mean: evidence.calculatedMean,
-          tolerance: evidence.tolerance,
-          oneSigma: evidence.oneSigma,
-          contributionPercent: index === 0 ? 100 : 0,
         })),
         footer: {
-          designNominalTotal: 0,
-          upperWorstCaseTolerance: 0,
-          lowerWorstCaseTolerance: 0,
-          meanResponse: 0,
-          rssTolerance: 0,
-          rssSigma: 0,
-          contributionTotalPercent: 100,
-          additionalMeanShift: 0,
-          adjustedMean: 0,
+          designNominalTotal: calculation.system.designNominal,
+          upperWorstCaseTolerance: calculation.system.responseUpperTolerance,
+          lowerWorstCaseTolerance: calculation.system.responseLowerTolerance,
+          meanResponse: calculation.system.mean - calculation.system.shift,
+          rssTolerance: calculation.system.rssSigma * 3,
+          rssSigma: calculation.system.rssSigma,
+          contributionTotalPercent: calculation.factors.reduce((sum, factor) => sum + factor.contribution, 0) * 100,
+          additionalMeanShift: calculation.system.shift,
+          adjustedMean: calculation.system.mean,
         },
       },
       dimensionChain: {
@@ -183,48 +257,61 @@ function buildSessionBoundRequest(snapshot: ReturnType<ReturnType<typeof createS
         closureDirection: "start-to-end",
       },
       responseDistribution: {
-        mean: 0,
-        standardDeviation: 0.1,
-        lowerSpecLimit: -1,
-        upperSpecLimit: 1,
-        target: 0,
+        mean: calculation.system.mean,
+        standardDeviation: calculation.system.rssSigma,
+        lowerSpecLimit: calculation.capability.lowerSpecLimit,
+        upperSpecLimit: calculation.capability.upperSpecLimit,
+        target: calculation.system.designNominal,
       },
       responseSummary: {
         rssAndWorstCase: {
-          sigmaBands: [{ sigma: 1, tolerance: 0.1, upper: 0.1, lower: -0.1 }],
-          worstCase: { tolerance: 0.2, upper: 0.2, lower: -0.2 },
+          sigmaBands: sigmaBands.map((sigma) => ({
+            sigma,
+            tolerance: calculation.system.rssSigma * sigma,
+            upper: calculation.system.mean + calculation.system.rssSigma * sigma,
+            lower: calculation.system.mean - calculation.system.rssSigma * sigma,
+          })),
+          worstCase: {
+            tolerance: calculation.system.worstCaseTolerance,
+            upper: calculation.system.worstCaseUpperBound,
+            lower: calculation.system.worstCaseLowerBound,
+          },
         },
         responseAndSpecifications: {
-          designNominal: 0,
-          meanResponse: 0,
-          additionalMeanShift: 0,
-          adjustedMean: 0,
-          lowerSpecLimit: -1,
-          upperSpecLimit: 1,
-          targetSigmaLevel: 4,
-          targetCpk: 1.33,
+          designNominal: calculation.system.designNominal,
+          meanResponse: calculation.system.mean - calculation.system.shift,
+          additionalMeanShift: calculation.system.shift,
+          adjustedMean: calculation.system.mean,
+          lowerSpecLimit: calculation.capability.lowerSpecLimit,
+          upperSpecLimit: calculation.capability.upperSpecLimit,
+          targetSigmaLevel: calculation.capability.targetSigmaLevel,
+          targetCpk: calculation.capability.targetCpk,
         },
         sigmaLevelAndCapability: {
-          lowerZ: { value: 4, status: "PASS" },
-          upperZ: { value: 4, status: "PASS" },
-          calculatedSigmaLevel: { value: 4, status: "PASS" },
-          cp: { value: 1.33, status: "PASS" },
-          lowerCpk: { value: 1.33, status: "PASS" },
-          upperCpk: { value: 1.33, status: "PASS" },
-          calculatedCpk: { value: 1.33, status: "PASS" },
+          lowerZ: { value: calculation.capability.lowerZ, status: calculation.capability.lowerCpkStatus },
+          upperZ: { value: calculation.capability.upperZ, status: calculation.capability.upperCpkStatus },
+          calculatedSigmaLevel: { value: calculation.capability.z, status: calculation.capability.status },
+          cp: { value: calculation.capability.cp, status: calculation.capability.cpStatus },
+          lowerCpk: { value: calculation.capability.lowerCpk, status: calculation.capability.lowerCpkStatus },
+          upperCpk: { value: calculation.capability.upperCpk, status: calculation.capability.upperCpkStatus },
+          calculatedCpk: { value: calculation.capability.cpk, status: calculation.capability.status },
         },
         defectsPerMillion: {
-          lowerDpm: 0,
-          upperDpm: 0,
-          totalDpm: 0,
-          outOfSpecPercent: 0,
-          yieldPercent: 100,
-          volume: 100,
-          failuresOverVolume: 12.75,
+          lowerDpm: calculation.capability.lowerDpm,
+          upperDpm: calculation.capability.upperDpm,
+          totalDpm: calculation.capability.totalDpm,
+          outOfSpecPercent: calculation.capability.outOfSpecRatio * 100,
+          yieldPercent: calculation.capability.yield * 100,
+          ...(volume === undefined ? {} : { volume }),
+          ...(failuresOverVolume === undefined ? {} : { failuresOverVolume }),
         },
       },
     },
   };
+}
+
+function cloneRequest(request: AssumptionResultsPdfRouteRequest): AssumptionResultsPdfRouteRequest {
+  return JSON.parse(JSON.stringify(request)) as AssumptionResultsPdfRouteRequest;
 }
 
 describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
@@ -299,6 +386,38 @@ describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
     };
 
     expect(validateAssumptionResultsPdfRequestAgainstSession(request, ready)).toEqual({ ok: true });
+  });
+
+  it("rejects any tampered derived engineering evidence field", () => {
+    const { ready } = createReadySession();
+    const baseline = buildSessionBoundRequest(ready);
+    expect(validateAssumptionResultsPdfRequestAgainstSession(baseline, ready)).toEqual({ ok: true });
+
+    const tamperedContribution = cloneRequest(baseline);
+    tamperedContribution.engineeringEvidence.factorSetup.rows[0]!.contributionPercent += 0.123;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedContribution, ready)).toEqual({ ok: false });
+
+    const tamperedFooterShift = cloneRequest(baseline);
+    tamperedFooterShift.engineeringEvidence.factorSetup.footer.additionalMeanShift += 0.01;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedFooterShift, ready)).toEqual({ ok: false });
+
+    const tamperedCurve = cloneRequest(baseline);
+    tamperedCurve.engineeringEvidence.responseDistribution.standardDeviation += 0.001;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedCurve, ready)).toEqual({ ok: false });
+
+    const tamperedCapability = cloneRequest(baseline);
+    tamperedCapability.engineeringEvidence.responseSummary.sigmaLevelAndCapability.calculatedCpk.value += 0.01;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedCapability, ready)).toEqual({ ok: false });
+
+    const tamperedDpm = cloneRequest(baseline);
+    tamperedDpm.engineeringEvidence.responseSummary.defectsPerMillion.totalDpm += 1;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedDpm, ready)).toEqual({ ok: false });
+
+    if (baseline.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume !== undefined) {
+      const tamperedFailures = cloneRequest(baseline);
+      tamperedFailures.engineeringEvidence.responseSummary.defectsPerMillion.failuresOverVolume += 0.5;
+      expect(validateAssumptionResultsPdfRequestAgainstSession(tamperedFailures, ready)).toEqual({ ok: false });
+    }
   });
 
   it("rejects workbook/worksheet mismatch and cross-session factor evidence", () => {
