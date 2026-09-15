@@ -605,4 +605,133 @@ describe("renderAssumptionResultsPdfEvidenceHtml", () => {
     expect(countMatches(fallbackSingle, /data-factor-segment="/g)).toBe(1);
     expect(fallbackSingle).toContain('data-factor-segment="fallback-1"');
   });
+
+  it("renders cumulative topology metadata for dimension-chain segments", () => {
+    const factorIds = ["f".repeat(64), "a".repeat(64), "b".repeat(64)];
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      factorSetup: {
+        rows: [
+          {
+            itemNumber: 1,
+            factorName: "Long",
+            designNominal: 12,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 12,
+            tolerance: 0.2,
+            oneSigma: 0.05,
+            contributionPercent: 50,
+          },
+          {
+            itemNumber: 2,
+            factorName: "Short",
+            designNominal: 3,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 3,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 30,
+          },
+          {
+            itemNumber: 3,
+            factorName: "Reverse",
+            designNominal: 6,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+            mean: 6,
+            tolerance: 0.1,
+            oneSigma: 0.025,
+            contributionPercent: 20,
+          },
+        ],
+        footer: {
+          designNominalTotal: 21,
+          upperWorstCaseTolerance: 0.4,
+          lowerWorstCaseTolerance: -0.4,
+          meanResponse: 21,
+          rssTolerance: 0.25,
+          rssSigma: 0.06,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: 21,
+        },
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: JSON.stringify({ workbookName: "W", worksheetName: "S", factorIds }),
+        orientation: "horizontal",
+        factors: [
+          {
+            id: factorIds[0]!,
+            itemNumber: 1,
+            name: "Long",
+            designNominal: 12,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+          {
+            id: factorIds[1]!,
+            itemNumber: 2,
+            name: "Short",
+            designNominal: 3,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+          {
+            id: factorIds[2]!,
+            itemNumber: 3,
+            name: "Reverse",
+            designNominal: 6,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "Normal",
+          },
+        ],
+        manualLayout: {
+          boundaryOffsets: {},
+          laneOffsets: {},
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [factorIds[2]!],
+        closureDirection: "start-to-end",
+      },
+    }));
+
+    const topologyMatch = html.match(/<polyline[^>]*data-chain-topology="cumulative"[^>]*points="([^"]+)"/);
+    expect(topologyMatch?.[1]).toBeDefined();
+    const topologyPoints = (topologyMatch?.[1] ?? "").trim().split(/\s+/);
+    expect(topologyPoints).toHaveLength(4);
+
+    const segmentMatches = [...html.matchAll(/<line[^>]*data-factor-segment="([^"]+)"[^>]*data-segment-index="(\d+)"[^>]*data-segment-length="([^"]+)"[^>]*data-cumulative-length="([^"]+)"[^>]*data-cumulative-ratio="([^"]+)"/g)];
+    expect(segmentMatches).toHaveLength(3);
+
+    const cumulativeLengths = segmentMatches.map((match) => Number(match[4]));
+    const cumulativeRatios = segmentMatches.map((match) => Number(match[5]));
+
+    expect(cumulativeLengths[1]).toBeGreaterThan(cumulativeLengths[0]!);
+    expect(cumulativeLengths[2]).toBeGreaterThan(cumulativeLengths[1]!);
+    expect(cumulativeRatios[0]).toBeLessThan(cumulativeRatios[1]!);
+    expect(cumulativeRatios[1]).toBeLessThan(cumulativeRatios[2]!);
+    expect(cumulativeRatios[2]).toBeCloseTo(1, 6);
+  });
 });

@@ -877,6 +877,11 @@ describe("renderAssumptionResultsPdfHtml", () => {
 
     expect(html).toMatch(/\.report-page--decision\s*{[^}]*break-before:\s*page;/);
     expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*break-after:\s*page;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*43%\s+1fr;[^}]*height:\s*100%;[^}]*overflow:\s*visible;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.factor-setup-panel\s*{[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*display:\s*grid;[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
   });
 });
 

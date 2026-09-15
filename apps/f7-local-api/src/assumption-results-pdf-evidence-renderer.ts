@@ -146,6 +146,13 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
 
   const segmentMinLength = orientation === "vertical" ? 24 : 36;
   const segmentMaxLength = orientation === "vertical" ? 60 : 112;
+  const plannedSegmentLengths = factors.map((factor) => {
+    const scale = normalizedMagnitude(chainNumber(factor.designNominal));
+    return segmentMinLength + (segmentMaxLength - segmentMinLength) * scale;
+  });
+  const totalPlannedLength = plannedSegmentLengths.reduce((sum, current) => sum + current, 0);
+  const topologyPoints: string[] = [];
+  let cumulativeLength = 0;
 
   const factorSegments = factors.map((factor, index) => {
     const anchor = points[index];
@@ -158,14 +165,25 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
     const to = orientation === "vertical"
       ? { x: anchor.x, y: anchor.y + direction * length }
       : { x: anchor.x + direction * length, y: anchor.y };
+    const segmentLength = Math.hypot(to.x - anchor.x, to.y - anchor.y);
+    cumulativeLength += segmentLength;
+    topologyPoints.push(`${to.x.toFixed(2)},${to.y.toFixed(2)}`);
+    const segmentLengthAttribute = Number(segmentLength.toFixed(4));
+    const cumulativeLengthAttribute = Number(cumulativeLength.toFixed(4));
+    const cumulativeRatio = totalPlannedLength > 0 ? cumulativeLength / totalPlannedLength : 0;
+    const cumulativeRatioAttribute = Number(cumulativeRatio.toFixed(6));
     const labelX = orientation === "vertical" ? anchor.x + 8 : (anchor.x + to.x) / 2;
     const labelY = orientation === "vertical" ? (anchor.y + to.y) / 2 : anchor.y - 8;
     const segmentId = factor.id.startsWith("fallback-") ? factor.id : factor.id.slice(0, 8);
     return `<g>
-      <line data-factor-segment="${safeText(segmentId)}" x1="${anchor.x.toFixed(2)}" y1="${anchor.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" stroke="#2a8992" stroke-width="2" marker-end="url(#chain-arrow)"/>
+      <line data-factor-segment="${safeText(segmentId)}" data-segment-index="${index + 1}" data-segment-length="${segmentLengthAttribute}" data-cumulative-length="${cumulativeLengthAttribute}" data-cumulative-ratio="${cumulativeRatioAttribute}" x1="${anchor.x.toFixed(2)}" y1="${anchor.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" stroke="#2a8992" stroke-width="2" marker-end="url(#chain-arrow)"/>
         <text x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="middle">Item ${factor.itemNumber} ${safeText(factor.name)} DN ${signedFinite(factor.designNominal)} Tol ${signedFinite(factor.upperTolerance)} / ${finite(factor.lowerTolerance)}</text>
       </g>`;
   }).join("");
+
+  const cumulativeTopologyPoints = points.length === 0
+    ? ""
+    : [`${points[0]?.x.toFixed(2)},${points[0]?.y.toFixed(2)}`, ...topologyPoints].join(" ");
 
   return `<section class="evidence-panel">
     <h3>Dimension Chain</h3>
@@ -196,6 +214,7 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
       </g>`;
   }).join("")}
       ${factorSegments}
+      ${cumulativeTopologyPoints.length > 0 ? `<polyline data-chain-topology="cumulative" points="${cumulativeTopologyPoints}" fill="none" stroke="#1f2933" stroke-width="1.2" stroke-dasharray="2 2"/>` : ""}
       <line data-chain-closure x1="${closureFrom.x.toFixed(2)}" y1="${closureFrom.y.toFixed(2)}" x2="${closureTo.x.toFixed(2)}" y2="${closureTo.y.toFixed(2)}" stroke="#a3342d" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#chain-arrow-red)"/>
       <text x="24" y="156">${safeText(isFallback ? "Fallback from factorSetup rows" : "Generated from validated factor setup")}</text>
       <text x="24" y="170">${safeText(chain.sourceSignature)}</text>
