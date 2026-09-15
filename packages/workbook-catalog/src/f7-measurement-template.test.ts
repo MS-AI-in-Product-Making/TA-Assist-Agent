@@ -225,6 +225,93 @@ describe("F7 measurement template authority", () => {
     expect(crossZeroFactor?.specificationSource).toBe("Derived");
   });
 
+  it("accepts worksheet authoritative non-crossing factor limits that differ from derived endpoints", () => {
+    const authority = createF7MeasurementImportAuthority(makeInput({
+      factors: [
+        makeFactor({
+          designNominal: 10,
+          lowerTolerance: -2,
+          upperTolerance: 4,
+          calculatedMean: 11,
+          physicalMean: 11,
+          signedContributionMean: 11,
+          loopCoefficient: 1,
+          baselineSampler: {
+            samplerId: "NORMAL_LOCATION_SCALE_V1",
+            physicalMean: 11,
+            standardDeviation: 0.025,
+            support: "REAL",
+          },
+          lowerSpecLimit: 9,
+          upperSpecLimit: 20,
+          specificationSource: "Worksheet",
+        }),
+      ],
+    }));
+
+    const [factor] = authority.manifest.factors;
+    expect(factor?.specificationSource).toBe("Worksheet");
+    expect(factor?.limitStatus).toBe("VALID");
+    expect(factor?.lowerSpecLimit).toBe(9);
+    expect(factor?.upperSpecLimit).toBe(20);
+  });
+
+  it("accepts worksheet cross-zero factor limits when the authoritative lower limit is zero", () => {
+    const authority = createF7MeasurementImportAuthority(makeInput({
+      factors: [
+        makeFactor({
+          designNominal: -2,
+          lowerTolerance: -3,
+          upperTolerance: 7,
+          calculatedMean: -4,
+          physicalMean: 4,
+          signedContributionMean: -4,
+          loopCoefficient: -1,
+          baselineSampler: {
+            samplerId: "NORMAL_LOCATION_SCALE_V1",
+            physicalMean: 4,
+            standardDeviation: 0.025,
+            support: "REAL",
+          },
+          lowerSpecLimit: 0,
+          upperSpecLimit: 15,
+          specificationSource: "Worksheet",
+        }),
+      ],
+    }));
+
+    const [factor] = authority.manifest.factors;
+    expect(factor?.specificationSource).toBe("Worksheet");
+    expect(factor?.limitStatus).toBe("CROSSES_ZERO");
+    expect(factor?.lowerSpecLimit).toBe(0);
+    expect(factor?.upperSpecLimit).toBe(15);
+  });
+
+  it("rejects worksheet cross-zero factor limits when the authoritative lower limit is above zero", () => {
+    expect(() => createF7MeasurementImportAuthority(makeInput({
+      factors: [
+        makeFactor({
+          designNominal: -2,
+          lowerTolerance: -3,
+          upperTolerance: 7,
+          calculatedMean: -4,
+          physicalMean: 4,
+          signedContributionMean: -4,
+          loopCoefficient: -1,
+          baselineSampler: {
+            samplerId: "NORMAL_LOCATION_SCALE_V1",
+            physicalMean: 4,
+            standardDeviation: 0.025,
+            support: "REAL",
+          },
+          lowerSpecLimit: 0.01,
+          upperSpecLimit: 15,
+          specificationSource: "Worksheet",
+        }),
+      ],
+    }))).toThrow("F7 measurement template authority input is invalid.");
+  });
+
   it("creates stable domain-separated digests and identical input yields identical authority", () => {
     const input = makeInput();
     const first = createF7MeasurementImportAuthority(input);

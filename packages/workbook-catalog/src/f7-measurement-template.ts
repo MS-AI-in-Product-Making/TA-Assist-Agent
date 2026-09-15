@@ -246,12 +246,19 @@ function validateFactorAlignment(
   const lowerEndpoint = normalizeNegativeZero(factor.designNominal + factor.lowerTolerance);
   const upperEndpoint = normalizeNegativeZero(factor.designNominal + factor.upperTolerance);
   const crossesZero = Math.min(lowerEndpoint, upperEndpoint) <= 0 && Math.max(lowerEndpoint, upperEndpoint) >= 0;
+  const scale = Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint), 1);
+  const factorSource = specificationSource(factor.specificationSource);
+
+  if (factorSource === "Worksheet") {
+    if (crossesZero && !nearlyEqualAtScale(factor.lowerSpecLimit, 0, scale)) throw requestError(INPUT_SUMMARY);
+    return;
+  }
+
   const expectedLimits = normalizedPhysicalSpecificationLimits(
     factor.designNominal,
     factor.lowerTolerance,
     factor.upperTolerance,
   );
-  const scale = Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint), 1);
 
   if (crossesZero) {
     if (!nearlyEqualAtScale(factor.lowerSpecLimit, 0, scale)) throw requestError(INPUT_SUMMARY);
