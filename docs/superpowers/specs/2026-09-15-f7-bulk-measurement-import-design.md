@@ -1,7 +1,7 @@
 # F7 Bulk Measurement Import Design
 
 **Date:** 2026-09-15
-**Status:** Approved direction; awaiting written-spec review
+**Status:** Approved
 **Target branch:** `User/Ralf/F7_Bulk_Measurement_Import`
 **Selected layout:** A - top-level `Import Data` / `Enter Individually` mode switch
 
