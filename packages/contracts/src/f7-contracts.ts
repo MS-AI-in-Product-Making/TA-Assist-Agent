@@ -41,6 +41,9 @@ export const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.10;
 const controlledCellReferenceSchema = z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/);
 const sourceCellsSchema = z
   .record(z.string().min(1), controlledCellReferenceSchema);
+const factorTraceabilitySchema = z.string().trim().min(1).max(300);
+
+export const f7SpecificationSourceSchema = z.enum(["Worksheet", "Derived"]);
 
 function requireGovernedFactorSource(
   value: { readonly sourceCells: Readonly<Record<string, string>>; readonly userAdded?: true | undefined },
@@ -235,6 +238,8 @@ export const f7FactorCandidateSchema = z
     sourceCells: sourceCellsSchema,
     factorCandidateId: sha256LowerSchema,
     factorName: z.string().min(1),
+    partNumber: factorTraceabilitySchema.optional(),
+    dimId: factorTraceabilitySchema.optional(),
     userAdded: z.literal(true).optional(),
     workbookUnitEvidence: z.string().min(1).optional(),
     excelSignedMean: finiteNumberSchema,
@@ -243,6 +248,7 @@ export const f7FactorCandidateSchema = z
     sigmaLevel: f7FactorCalculationControlFields.sigmaLevel.optional(),
     standardDeviation: finitePositiveNumberSchema,
     distribution: f7ToleranceDistributionSchema,
+    specificationSource: f7SpecificationSourceSchema.optional(),
     lowerSpecLimit: finiteNumberSchema,
     upperSpecLimit: finiteNumberSchema,
   })
@@ -288,6 +294,8 @@ export const f7FactorEvidenceSchema = z
     factorCandidateId: sha256LowerSchema,
     factorId: sha256LowerSchema,
     factorName: z.string().min(1),
+    partNumber: factorTraceabilitySchema.optional(),
+    dimId: factorTraceabilitySchema.optional(),
     userAdded: z.literal(true).optional(),
     unit: z.string().trim().min(1),
     unitSource: f7UnitSourceSchema,
@@ -298,6 +306,7 @@ export const f7FactorEvidenceSchema = z
     physicalMean: z.number().finite().min(0),
     signedContributionMean: finiteNumberSchema,
     baselineSampler: f7BaselineSamplerSchema,
+    specificationSource: f7SpecificationSourceSchema.optional(),
     lowerSpecLimit: finiteNumberSchema,
     upperSpecLimit: finiteNumberSchema,
   })
@@ -342,18 +351,30 @@ export const f7FactorEvidenceSchema = z
       });
     }
 
-    const expectedLimits = normalizedPhysicalSpecificationLimits(
-      evidence.designNominal,
-      evidence.lowerTolerance,
-      evidence.upperTolerance,
-    );
-    if (Math.abs(evidence.lowerSpecLimit - expectedLimits.lower) > 1e-12
-      || Math.abs(evidence.upperSpecLimit - expectedLimits.upper) > 1e-12) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "specification limits must equal the normalized tolerance endpoints",
-        path: ["lowerSpecLimit"],
-      });
+    if (evidence.specificationSource === "Worksheet") {
+      if (evidence.lowerSpecLimit < 0
+        || evidence.sourceCells.lowerSpecLimit === undefined
+        || evidence.sourceCells.upperSpecLimit === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Worksheet specification limits require nonnegative limits and controlled Factor limit source cells",
+          path: ["lowerSpecLimit"],
+        });
+      }
+    } else {
+      const expectedLimits = normalizedPhysicalSpecificationLimits(
+        evidence.designNominal,
+        evidence.lowerTolerance,
+        evidence.upperTolerance,
+      );
+      if (Math.abs(evidence.lowerSpecLimit - expectedLimits.lower) > 1e-12
+        || Math.abs(evidence.upperSpecLimit - expectedLimits.upper) > 1e-12) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Derived specification limits must equal the normalized tolerance endpoints",
+          path: ["lowerSpecLimit"],
+        });
+      }
     }
 
     if (Math.abs(evidence.baselineSampler.physicalMean - evidence.physicalMean) > 1e-12) {

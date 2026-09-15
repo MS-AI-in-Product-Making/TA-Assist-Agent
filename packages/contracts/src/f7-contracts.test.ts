@@ -1053,6 +1053,76 @@ describe("F7 phase 1 factor contracts", () => {
     expect(f7FactorEvidenceSchema.safeParse(missingFactorId).success).toBe(false);
   });
 
+  it("preserves optional Factor traceability and governed specification provenance", () => {
+    const candidate = {
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 2,
+      sourceCells: {
+        factorName: "Analysis-A!A2",
+        partNumber: "Analysis-A!B2",
+        dimId: "Analysis-A!C2",
+        lowerSpecLimit: "Analysis-A!D2",
+        upperSpecLimit: "Analysis-A!E2",
+      },
+      factorCandidateId: SHA256_2,
+      factorName: "Gap",
+      partNumber: "PN-007",
+      dimId: "DIM-42",
+      excelSignedMean: -0.2,
+      designNominal: -0.2,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      standardDeviation: 0.01,
+      distribution: "Normal",
+      specificationSource: "Worksheet",
+      lowerSpecLimit: 0.01,
+      upperSpecLimit: 0.5,
+    } as const;
+    expect(f7FactorCandidateSchema.parse(candidate)).toEqual(candidate);
+
+    const { excelSignedMean: _excelSignedMean, standardDeviation: _standardDeviation, ...candidateEvidenceFields } = candidate;
+    const worksheetEvidence = {
+      ...candidateEvidenceFields,
+      factorId: SHA256,
+      unit: "mm",
+      unitSource: "workbook",
+      longTermSafetyFactor: 1,
+      sigmaLevel: 5,
+      calculatedMean: -0.2,
+      tolerance: 0.1,
+      oneSigma: 0.02,
+      percentContributionToSigma: 1,
+      loopCoefficient: -1,
+      physicalMean: 0.2,
+      signedContributionMean: -0.2,
+      baselineSampler: {
+        samplerId: "NORMAL_LOCATION_SCALE_V1",
+        physicalMean: 0.2,
+        standardDeviation: 0.02,
+        support: "REAL",
+      },
+    } as const;
+    expect(f7FactorEvidenceSchema.parse(worksheetEvidence)).toEqual(worksheetEvidence);
+    expect(f7FactorEvidenceSchema.safeParse({
+      ...worksheetEvidence,
+      sourceCells: { factorName: "Analysis-A!A2" },
+    }).success).toBe(false);
+
+    const legacyDerived = {
+      ...worksheetEvidence,
+      specificationSource: undefined,
+      lowerSpecLimit: 0.1,
+      upperSpecLimit: 0.3,
+    };
+    delete (legacyDerived as { specificationSource?: string }).specificationSource;
+    expect(f7FactorEvidenceSchema.safeParse(legacyDerived).success).toBe(true);
+    expect(f7FactorEvidenceSchema.safeParse({ ...legacyDerived, lowerSpecLimit: 0.01 }).success).toBe(false);
+    expect(f7FactorCandidateSchema.safeParse({ ...candidate, partNumber: " ".repeat(2) }).success).toBe(false);
+    expect(f7FactorCandidateSchema.safeParse({ ...candidate, dimId: "x".repeat(301) }).success).toBe(false);
+  });
+
   it("uses coefficient zero for neutral Assembly Shift factors and rejects unknown fields", () => {
     expect(f7LoopCoefficientSchema.safeParse(-1).success).toBe(true);
     expect(f7LoopCoefficientSchema.safeParse(0).success).toBe(true);

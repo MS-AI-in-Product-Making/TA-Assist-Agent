@@ -41,7 +41,7 @@ function formulaCell(reference: string, formula: string, cachedValue: string): s
   return `<c r="${reference}" t="n"><f>${formula}</f><v>${cachedValue}</v></c>`;
 }
 
-function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
+function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
   const headerRow = options.headerRow ?? 13;
   const start = options.startRow ?? headerRow + 1;
   const factors = [
@@ -54,7 +54,11 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
     ["Glass thickness", "1", "0.0125", "+1", "1"],
   ] as const;
 
-  const header = `<row r="${headerRow}">${cell(`G${headerRow}`, "Factor Description (TA Loop)")}${cell(`L${headerRow}`, "Design Nominal")}${cell(`M${headerRow}`, "+ Tolerance")}${cell(`N${headerRow}`, "- Tolerance")}${cell(`O${headerRow}`, "Long Term/Safety Factor")}${cell(`P${headerRow}`, "Sigma level")}${cell(`Q${headerRow}`, "Distribution")}${cell(`R${headerRow}`, "Mean")}${cell(`S${headerRow}`, "Tolerance")}${cell(`T${headerRow}`, "1 Sigma")}${options.duplicateFactorHeader ? cell(`W${headerRow}`, "Factor Description (TA Loop)") : ""}</row>`;
+  const factorImportHeader = options.factorImportColumns
+    ? `${cell(`H${headerRow}`, "Part Number")}${cell(`I${headerRow}`, "DIM ID")}${cell(`J${headerRow}`, "Factor LSL")}${options.omitFactorUpperHeader ? "" : cell(`K${headerRow}`, "Factor USL")}`
+    : "";
+  const factorHeader = options.factorImportColumns ? "Factor Description" : "Factor Description (TA Loop)";
+  const header = `<row r="${headerRow}">${cell(`G${headerRow}`, factorHeader)}${factorImportHeader}${cell(`L${headerRow}`, "Design Nominal")}${cell(`M${headerRow}`, "+ Tolerance")}${cell(`N${headerRow}`, "- Tolerance")}${cell(`O${headerRow}`, "Long Term/Safety Factor")}${cell(`P${headerRow}`, "Sigma level")}${cell(`Q${headerRow}`, "Distribution")}${cell(`R${headerRow}`, "Mean")}${cell(`S${headerRow}`, "Tolerance")}${cell(`T${headerRow}`, "1 Sigma")}${options.duplicateFactorHeader ? cell(`W${headerRow}`, "Factor Description (TA Loop)") : ""}</row>`;
   const dataRows = factors.map((factor, index) => {
     const row = start + index;
     const distribution = index === 0 && options.distributionOverride ? options.distributionOverride : "Normal";
@@ -69,7 +73,10 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
       : "0";
     const upperTolerance = options.factorSpecifications ? (index === 1 || index === 3 ? "0.1" : "0.05") : "0";
     const lowerTolerance = options.factorSpecifications ? `-${upperTolerance}` : "0";
-    return `<row r="${row}">${cell(`G${row}`, index === 0 && options.markerInCell ? options.markerInCell : factor[0])}${cell(`L${row}`, nominal)}${cell(`M${row}`, upperTolerance)}${cell(`N${row}`, lowerTolerance)}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, distribution)}${meanCell}${cell(`S${row}`, factor[4])}${sigmaCell}</row>`;
+    const factorImportCells = options.factorImportColumns
+      ? `${cell(`H${row}`, `PN-${index + 1}`)}${cell(`I${row}`, `DIM-${index + 1}`)}${cell(`J${row}`, index === 0 ? "0.5" : "0.1")}${index === 0 && options.omitFirstFactorUpperLimit ? "" : cell(`K${row}`, index === 0 ? "0.8" : "2.5")}`
+      : "";
+    return `<row r="${row}">${cell(`G${row}`, index === 0 && options.markerInCell ? options.markerInCell : factor[0])}${factorImportCells}${cell(`L${row}`, nominal)}${cell(`M${row}`, upperTolerance)}${cell(`N${row}`, lowerTolerance)}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, distribution)}${meanCell}${cell(`S${row}`, factor[4])}${sigmaCell}</row>`;
   }).join("");
 
   const specRows = options.specRowsXml
@@ -81,7 +88,7 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
   return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row>${header}${dataRows}${specRows}${secondHeader}${options.tailRowsXml ?? ""}`;
 }
 
-function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
+function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly factorImportColumns?: boolean; readonly omitFactorUpperHeader?: boolean; readonly omitFirstFactorUpperLimit?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
   const workbookXml = options.includeSecondWorksheet
     ? `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/><sheet name="Anonymous_TA_2" sheetId="4" r:id="rId4"/></sheets></workbook>`
     : `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
@@ -407,6 +414,92 @@ describe("F7 interim excel adapter", () => {
     });
   });
 
+  it("preserves controlled Factor traceability and explicit physical limits through confirmation", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true, factorImportColumns: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const firstCandidate = extracted.candidates[0]!;
+
+    expect(firstCandidate).toMatchObject({
+      partNumber: "PN-1",
+      dimId: "DIM-1",
+      specificationSource: "Worksheet",
+      lowerSpecLimit: 0.5,
+      upperSpecLimit: 0.8,
+      sourceCells: {
+        partNumber: "Anonymous_TA!H14",
+        dimId: "Anonymous_TA!I14",
+        lowerSpecLimit: "Anonymous_TA!J14",
+        upperSpecLimit: "Anonymous_TA!K14",
+      },
+    });
+    const firstFactor = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmCandidates(extracted),
+    }).factors[0]!;
+    expect(firstFactor).toMatchObject({
+      partNumber: "PN-1",
+      dimId: "DIM-1",
+      specificationSource: "Worksheet",
+      lowerSpecLimit: 0.5,
+      upperSpecLimit: 0.8,
+    });
+    const withoutImportedMetadata = confirmF7FactorSetup({
+      extractionResult: {
+        ...extracted,
+        candidates: extracted.candidates.map((candidate, index) => index === 0
+          ? {
+              ...candidate,
+              partNumber: undefined,
+              dimId: undefined,
+              specificationSource: "Derived" as const,
+              lowerSpecLimit: 0.52,
+              upperSpecLimit: 0.62,
+            }
+          : candidate),
+      },
+      confirmations: confirmCandidates(extracted),
+    });
+    expect(withoutImportedMetadata.factors[0]?.factorCandidateId).toBe(firstCandidate.factorCandidateId);
+    expect(withoutImportedMetadata.factors[0]?.factorId).toBe(firstFactor.factorId);
+  });
+
+  it("marks normalized limits as Derived and omits traceability when columns are absent", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+
+    expect(extracted.candidates[0]?.specificationSource).toBe("Derived");
+    expect(extracted.candidates[0]?.lowerSpecLimit).toBeCloseTo(0.52, 12);
+    expect(extracted.candidates[0]?.upperSpecLimit).toBeCloseTo(0.62, 12);
+    expect(extracted.candidates[0]).not.toHaveProperty("partNumber");
+    expect(extracted.candidates[0]).not.toHaveProperty("dimId");
+
+    const result = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: [confirmCandidates(extracted)[0]!, {
+        factorCandidateId: "b".repeat(64),
+        factorName: "User factor",
+        userAdded: true,
+        designNominal: 0.4,
+        upperTolerance: 0.08,
+        lowerTolerance: -0.04,
+        confirmed: true,
+      }],
+    });
+    expect(result.factors[1]).not.toHaveProperty("partNumber");
+    expect(result.factors[1]).not.toHaveProperty("dimId");
+    expect(result.factors[1]?.specificationSource).toBe("Derived");
+  });
+
   it("rejects stale workbook hash and invalid strict worksheet confirmation payloads", () => {
     const workbookBytes = buildWorkbook();
     const imported = importWorkbook(workbookBytes);
@@ -582,6 +675,20 @@ describe("F7 interim excel adapter", () => {
     }
   });
 
+  it("requires controlled Factor limit headers and row values as complete pairs", () => {
+    for (const workbookBytes of [
+      buildWorkbook({ factorSpecifications: true, factorImportColumns: true, omitFactorUpperHeader: true }),
+      buildWorkbook({ factorSpecifications: true, factorImportColumns: true, omitFirstFactorUpperLimit: true }),
+    ]) {
+      const imported = importWorkbook(workbookBytes);
+      expect(() => extractF7FactorCandidates({
+        workbookBytes,
+        importResult: imported,
+        confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+      })).toThrow("F7 factor extraction request is invalid.");
+    }
+  });
+
   it("RED: chooses the earliest adjacent strong lower/upper specification pair after factor rows", () => {
     const workbookBytes = buildWorkbook({
       specRowsXml: [
@@ -607,7 +714,9 @@ describe("F7 interim excel adapter", () => {
       },
     });
 
-    expect(extracted.candidates.every((candidate) => candidate.lowerSpecLimit === -0.15 && candidate.upperSpecLimit === 0.05)).toBe(true);
+    expect(extracted.candidates[0]?.specificationSource).toBe("Derived");
+    expect(extracted.candidates[0]?.lowerSpecLimit).toBeCloseTo(0.52, 12);
+    expect(extracted.candidates[0]?.upperSpecLimit).toBeCloseTo(0.72, 12);
     expect(extracted.candidates.every((candidate) => candidate.sourceCells.lowerSpecLimit === "Anonymous_TA!P54" && candidate.sourceCells.upperSpecLimit === "Anonymous_TA!P55")).toBe(true);
   });
 
@@ -631,7 +740,9 @@ describe("F7 interim excel adapter", () => {
       },
     });
 
-    expect(extracted.candidates.every((candidate) => candidate.lowerSpecLimit === -0.11 && candidate.upperSpecLimit === 0.09)).toBe(true);
+    expect(extracted.candidates[0]?.specificationSource).toBe("Derived");
+    expect(extracted.candidates[0]?.lowerSpecLimit).toBeCloseTo(0.48, 12);
+    expect(extracted.candidates[0]?.upperSpecLimit).toBeCloseTo(0.68, 12);
     expect(extracted.candidates.every((candidate) => candidate.sourceCells.lowerSpecLimit === "Anonymous_TA!K40" && candidate.sourceCells.upperSpecLimit === "Anonymous_TA!K41")).toBe(true);
   });
 

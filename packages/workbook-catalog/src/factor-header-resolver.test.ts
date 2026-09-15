@@ -62,6 +62,36 @@ describe("resolveFactorHeaderCluster", () => {
     expect(result.columns.percentContributionToSigma).toMatchObject({ semanticField: "percentContributionToSigma", sourceColumn: "U", headerText: "% Cont. to σ" });
   });
 
+  it("resolves controlled Factor traceability and physical limit headers", () => {
+    const result = resolveFactorHeaderCluster([
+      { reference: "G13", value: "Factor Description" },
+      { reference: "H13", value: "Part Number" },
+      { reference: "I13", value: "DIM ID" },
+      { reference: "J13", value: "Factor LSL" },
+      { reference: "K13", value: "Factor USL" },
+    ]);
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") return;
+    expect(result.columns.partNumber?.sourceColumn).toBe("H");
+    expect(result.columns.dimCharacteristicId?.sourceColumn).toBe("I");
+    expect(result.columns.factorLowerSpecLimit?.sourceColumn).toBe("J");
+    expect(result.columns.factorUpperSpecLimit?.sourceColumn).toBe("K");
+  });
+
+  it("does not treat response-level LSL and USL labels as Factor columns", () => {
+    const result = resolveFactorHeaderCluster([
+      { reference: "G13", value: "Factor Description" },
+      { reference: "J13", value: "LSL" },
+      { reference: "K13", value: "USL" },
+    ]);
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") return;
+    expect(result.columns.factorLowerSpecLimit).toBeUndefined();
+    expect(result.columns.factorUpperSpecLimit).toBeUndefined();
+  });
+
   it("fails closed when the primary anchor is missing", () => {
     expect(resolveFactorHeaderCluster(cluster(7).slice(1))).toEqual({
       status: "unavailable",
