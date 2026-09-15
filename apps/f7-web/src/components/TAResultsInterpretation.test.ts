@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import TAResultsInterpretation, * as taResultsInterpretationModule from "./TAResultsInterpretation.vue";
 import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
 import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
 import type {
   F7NarrativeResultJudgment,
@@ -196,6 +197,81 @@ function expectedEvidenceValue(key: string, value: number | string): string {
   return /percent/i.test(key) ? `${formattedValue}%` : formattedValue;
 }
 
+function engineeringEvidenceFixture(): AssumptionResultsEngineeringEvidence {
+  return {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: "Factor 01",
+        designNominal: 0.03,
+        upperTolerance: 0.3,
+        lowerTolerance: -0.3,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        distribution: "Normal",
+        mean: 0.03,
+        tolerance: 0.3,
+        oneSigma: 0.1,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: 0.03,
+        upperWorstCaseTolerance: 0.3,
+        lowerWorstCaseTolerance: -0.3,
+        meanResponse: 0.03,
+        rssTolerance: 0.3,
+        rssSigma: 0.1,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: 0.03,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: "fixture-signature",
+    },
+    responseDistribution: {
+      mean: 0.03,
+      standardDeviation: 0.1,
+      lowerSpecLimit: -0.1,
+      upperSpecLimit: 0.1,
+      target: 0,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.1, upper: 0.13, lower: -0.07 }],
+        worstCase: { tolerance: 0.3, upper: 0.33, lower: -0.27 },
+      },
+      responseAndSpecifications: {
+        designNominal: 0.03,
+        meanResponse: 0.03,
+        additionalMeanShift: 0,
+        adjustedMean: 0.03,
+        lowerSpecLimit: -0.1,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 3, status: "PASS" },
+        upperZ: { value: 3, status: "PASS" },
+        calculatedSigmaLevel: { value: 3, status: "PASS" },
+        cp: { value: 1, status: "PASS" },
+        lowerCpk: { value: 1, status: "PASS" },
+        upperCpk: { value: 1, status: "PASS" },
+        calculatedCpk: { value: 1, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 1350,
+        upperDpm: 1350,
+        totalDpm: 2700,
+        outOfSpecPercent: 0.27,
+        yieldPercent: 99.73,
+      },
+    },
+  };
+}
+
 describe("TAResultsInterpretation", () => {
   it("shows no adjustment required for a zero adjustment or balanced direction", () => {
     const formatMeanAdjustment = (taResultsInterpretationModule as {
@@ -237,7 +313,7 @@ describe("TAResultsInterpretation", () => {
       new Blob(["%PDF-1.7"], { type: "application/pdf" })
     ));
     const availableWrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
     const unavailableWrapper = mount(TAResultsInterpretation, {
       props: { session: unavailableInterpretationSnapshot(), generatePdf },
@@ -252,6 +328,25 @@ describe("TAResultsInterpretation", () => {
     const unavailableButton = unavailableWrapper.get("[data-generate-assumption-results-pdf]");
     expect(unavailableButton.attributes("disabled")).toBeDefined();
     expect(unavailableButton.attributes("title")).toContain("available assumption results");
+  });
+
+  it("keeps Generate PDF disabled until current engineering evidence is provided", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    const button = wrapper.get("[data-generate-assumption-results-pdf]");
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    expect(generatePdf).not.toHaveBeenCalled();
+
+    const evidence = engineeringEvidenceFixture();
+    await wrapper.setProps({ engineeringEvidence: evidence });
+    expect(button.attributes("disabled")).toBeUndefined();
   });
 
   it("maps the exact displayed interpretation into the structured PDF request", async () => {
@@ -275,7 +370,11 @@ describe("TAResultsInterpretation", () => {
     });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf,
+        engineeringEvidence: engineeringEvidenceFixture(),
+      },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -353,6 +452,7 @@ describe("TAResultsInterpretation", () => {
       })),
       processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
       processGuidance: processGuidanceEntries().map(({ state, title, message }) => ({ state, title, message })),
+      engineeringEvidence: engineeringEvidenceFixture(),
     });
   });
 
@@ -366,7 +466,7 @@ describe("TAResultsInterpretation", () => {
     });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -387,7 +487,7 @@ describe("TAResultsInterpretation", () => {
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -420,7 +520,7 @@ describe("TAResultsInterpretation", () => {
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -443,7 +543,7 @@ describe("TAResultsInterpretation", () => {
     });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -470,6 +570,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => pdf),
       },
     });
@@ -497,6 +598,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; })),
       },
     });
@@ -525,6 +627,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       },
     });
@@ -550,6 +653,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => {
           throw {
             code: "pdf_failed",

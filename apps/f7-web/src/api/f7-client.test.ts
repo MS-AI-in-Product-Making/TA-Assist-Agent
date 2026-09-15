@@ -283,6 +283,78 @@ const assumptionResultsPdfRequest = {
   }],
   processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
   processGuidance: [{ state: "guidance", title: "Next step", message: "Collect measurements." }],
+  engineeringEvidence: {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: "C-cover height",
+        designNominal: -1.94,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        mean: -1.94,
+        tolerance: 0.1,
+        oneSigma: 0.025,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: -1.94,
+        upperWorstCaseTolerance: 0.1,
+        lowerWorstCaseTolerance: -0.1,
+        meanResponse: -1.94,
+        rssTolerance: 0.1,
+        rssSigma: 0.025,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: -1.94,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: HASH_A,
+    },
+    responseDistribution: {
+      mean: -1.94,
+      standardDeviation: 0.025,
+      lowerSpecLimit: -2.04,
+      upperSpecLimit: -1.84,
+      target: -1.94,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.025, upper: -1.915, lower: -1.965 }],
+        worstCase: { tolerance: 0.1, upper: -1.84, lower: -2.04 },
+      },
+      responseAndSpecifications: {
+        designNominal: -1.94,
+        meanResponse: -1.94,
+        additionalMeanShift: 0,
+        adjustedMean: -1.94,
+        lowerSpecLimit: -2.04,
+        upperSpecLimit: -1.84,
+        targetSigmaLevel: 4,
+        targetCpk: 1.33,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 4, status: "PASS" },
+        upperZ: { value: 4, status: "PASS" },
+        calculatedSigmaLevel: { value: 4, status: "PASS" },
+        cp: { value: 1.33, status: "PASS" },
+        lowerCpk: { value: 1.33, status: "PASS" },
+        upperCpk: { value: 1.33, status: "PASS" },
+        calculatedCpk: { value: 1.33, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 31.67,
+        upperDpm: 31.67,
+        totalDpm: 63.34,
+        outOfSpecPercent: 0.006334,
+        yieldPercent: 99.993666,
+      },
+    },
+  },
 } as const satisfies AssumptionResultsPdfRequest;
 
 function generatePdfThroughClientContract(client: F7Client): Promise<Blob> {

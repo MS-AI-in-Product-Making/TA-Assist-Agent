@@ -27,6 +27,7 @@ import type {
   F7WorksheetConfirmRouteRequest,
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
+import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
 import { f7ReportProjectionSchema, f7SessionSnapshotSchema } from "@ai-assist/contracts";
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
@@ -217,6 +218,7 @@ export type AssumptionResultsPdfRequest = {
     readonly title: string;
     readonly message: string;
   }[];
+  readonly engineeringEvidence: AssumptionResultsEngineeringEvidence;
 };
 
 export interface F7Client {

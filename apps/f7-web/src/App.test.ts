@@ -13,6 +13,7 @@ import type {
   F7ReportProjection,
   F7SessionSnapshot,
 } from "./api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "./assumption-results-pdf-evidence";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
@@ -818,6 +819,81 @@ async function editFactorSetup(wrapper: ReturnType<typeof mount>): Promise<void>
 
 async function openMeasurementWorkspace(wrapper: ReturnType<typeof mount>): Promise<void> {
   await wrapper.get(`[data-open-measurement='${HASH_C}']`).trigger("click");
+}
+
+function engineeringEvidenceFixture(seed: string): AssumptionResultsEngineeringEvidence {
+  return {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: `Factor-${seed}`,
+        designNominal: -0.57,
+        upperTolerance: 0.05,
+        lowerTolerance: -0.05,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        mean: -0.57,
+        tolerance: 0.05,
+        oneSigma: 0.0125,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: -0.57,
+        upperWorstCaseTolerance: 0.05,
+        lowerWorstCaseTolerance: -0.05,
+        meanResponse: -0.57,
+        rssTolerance: 0.05,
+        rssSigma: 0.0125,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: -0.57,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: `sig-${seed}`,
+    },
+    responseDistribution: {
+      mean: -0.57,
+      standardDeviation: 0.0125,
+      lowerSpecLimit: -0.62,
+      upperSpecLimit: -0.52,
+      target: -0.57,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.0125, upper: -0.5575, lower: -0.5825 }],
+        worstCase: { tolerance: 0.05, upper: -0.52, lower: -0.62 },
+      },
+      responseAndSpecifications: {
+        designNominal: -0.57,
+        meanResponse: -0.57,
+        additionalMeanShift: 0,
+        adjustedMean: -0.57,
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 4, status: "PASS" },
+        upperZ: { value: 4, status: "PASS" },
+        calculatedSigmaLevel: { value: 4, status: "PASS" },
+        cp: { value: 1.33, status: "PASS" },
+        lowerCpk: { value: 1.33, status: "PASS" },
+        upperCpk: { value: 1.33, status: "PASS" },
+        calculatedCpk: { value: 1.33, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 31.67,
+        upperDpm: 31.67,
+        totalDpm: 63.34,
+        outOfSpecPercent: 0.006334,
+        yieldPercent: 99.993666,
+      },
+    },
+  };
 }
 
 describe("F7 workbench shell", () => {
@@ -3563,6 +3639,8 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
 
     await uploadWorkbook(wrapper);
+    wrapper.getComponent({ name: "FactorInputTable" }).vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    await wrapper.vm.$nextTick();
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
 
     expect(generateAssumptionResultsPdf).toHaveBeenCalledOnce();
@@ -3571,6 +3649,88 @@ describe("F7 workbench shell", () => {
       workbookName: "demo.xlsx",
       worksheetName: "Anonymous_TA",
     }));
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("14) keeps assumption-results PDF disabled until current session engineering evidence is available", async () => {
+    const client = createMockClient(measurementEntrySnapshot());
+    const wrapper = mount(App, { props: { client } });
+    const buttonSelector = "[data-generate-assumption-results-pdf]";
+
+    await uploadWorkbook(wrapper);
+    await vi.waitFor(() => {
+      expect(wrapper.get(buttonSelector).attributes("disabled")).toBeDefined();
+    });
+
+    const factorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    factorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    await wrapper.vm.$nextTick();
+
+    await vi.waitFor(() => {
+      expect(wrapper.get(buttonSelector).attributes("disabled")).toBeUndefined();
+    });
+  });
+
+  it("15) clears stale evidence on session change and only forwards matching current-session evidence", async () => {
+    const replacementSession = createSnapshot({
+      ...measurementEntrySnapshot(),
+      sessionId: "session-02",
+      workbook: {
+        fileName: "next.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    const client = createMockClient(measurementEntrySnapshot());
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(measurementEntrySnapshot())
+      .mockResolvedValueOnce(replacementSession);
+    const generateAssumptionResultsPdf = vi.mocked(client.generateAssumptionResultsPdf);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:app-assumption-results-2"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], "demo.xlsx"));
+    const firstFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    await wrapper.vm.$nextTick();
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledTimes(1);
+    expect(generateAssumptionResultsPdf.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      sessionId: "session-01",
+      workbookName: "demo.xlsx",
+    }));
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "next.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await vi.waitFor(() => {
+      expect(vi.mocked(client.importWorkbook)).toHaveBeenCalledTimes(2);
+    });
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+    });
+
+    const currentFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-01"));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+
+    currentFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceFixture("session-02"));
+    await wrapper.vm.$nextTick();
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeUndefined();
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledTimes(2);
+    expect(generateAssumptionResultsPdf.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      sessionId: "session-02",
+      workbookName: "next.xlsx",
+    }));
+
     click.mockRestore();
     vi.unstubAllGlobals();
   });

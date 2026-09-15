@@ -21,6 +21,7 @@ import { FileDown } from "lucide-vue-next";
 import { computed, onBeforeUnmount, ref, watch, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
 import { buildSpecificationFallbackDisplay } from "../specification-fallback-display";
 import ContributorParetoChart from "./ContributorParetoChart.vue";
@@ -28,6 +29,7 @@ import ContributorParetoChart from "./ContributorParetoChart.vue";
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly generatePdf?: (request: AssumptionResultsPdfRequest) => Promise<globalThis.Blob>;
+  readonly engineeringEvidence?: AssumptionResultsEngineeringEvidence;
 }>();
 
 const generatingPdf = ref(false);
@@ -66,6 +68,7 @@ const selectedWorksheetName = computed(() => props.session.selectedWorksheetName
 const canGeneratePdf = computed(() => (
   interpretation.value.status === "available"
   && props.generatePdf !== undefined
+  && props.engineeringEvidence !== undefined
   && props.session.sessionId.length > 0
   && props.session.workbook.fileName.length > 0
   && selectedWorksheetName.value.length > 0
@@ -105,6 +108,8 @@ function isPdfActionOptionId(value: string): value is PdfActionOptionId {
 function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
   const current = interpretation.value;
   if (current.status !== "available" || !canGeneratePdf.value) return undefined;
+  const engineeringEvidence = props.engineeringEvidence;
+  if (!engineeringEvidence) return undefined;
   const fallbackDisplay = specificationFallbackDisplay.value;
 
   return {
@@ -194,6 +199,7 @@ function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
     processGuidance: current.processGuidance.status === "available"
       ? current.processGuidance.entries.map(({ state, title, message }) => ({ state, title, message }))
       : [],
+    engineeringEvidence,
   };
 }
 
@@ -237,7 +243,7 @@ async function handleGeneratePdf(): Promise<void> {
 
   const sessionId = request.sessionId;
   const downloadFileName = pdfFileName(request.workbookName, request.worksheetName);
-  const startedAt = performance.now();
+  const startedAt = globalThis.performance.now();
   const currentToken = ++generationToken;
   const isCurrentGeneration = (): boolean => (
     !disposed
@@ -260,7 +266,7 @@ async function handleGeneratePdf(): Promise<void> {
     anchor.hidden = true;
     globalThis.document.body.append(anchor);
     anchor.click();
-    const elapsedSeconds = (performance.now() - startedAt) / 1_000;
+    const elapsedSeconds = (globalThis.performance.now() - startedAt) / 1_000;
     pdfStatus.value = `PDF downloaded in ${elapsedSeconds.toFixed(1)} seconds.`;
   } catch (error) {
     if (isCurrentGeneration()) pdfError.value = exportErrorMessage(error);
