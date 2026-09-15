@@ -242,7 +242,7 @@ git commit -m "feat(f7): build measurement template authority"
 - Create: `packages/workbook-catalog/src/f7-measurement-template-writer.test.ts`
 - Modify: `packages/workbook-catalog/src/index.ts`
 
-- [ ] **Step 1: Write failing OOXML writer tests**
+- [x] **Step 1: Write failing OOXML writer tests**
 
 Generate twice from the same manifest and assert identical bytes. Read the output through `readSafeZip()` and `readOoxmlWorkbook()`. Assert `Measurements` is visible, `_F7_MANIFEST` is `veryHidden`, locked rows and 500 measurement rows exist, enum data validations exist, warning styles mark cross-zero Factors, and formulas/macros/external links are absent.
 
@@ -256,26 +256,28 @@ expect(workbook.worksheets.map(({ name, state }) => ({ name, state }))).toEqual(
 ]);
 ```
 
-- [ ] **Step 2: Run the writer test and verify RED**
+- [x] **Step 2: Run the writer test and verify RED**
 
 Run: `npx.cmd vitest run --project node packages/workbook-catalog/src/f7-measurement-template-writer.test.ts`
 
 Expected: FAIL because the writer does not exist.
 
-- [ ] **Step 3: Implement the minimal deterministic OOXML package**
+- [x] **Step 3: Implement the minimal deterministic OOXML package**
 
 Use the package's existing `fflate` dependency and deterministic timestamps. Generate only required content types, root/workbook relationships, workbook, styles, and two worksheets. Use inline strings, XML escaping, worksheet protection, locked/unlocked styles, list validations, freeze panes, filters only where required, and a fixed ZIP entry order. Do not use the root `xlsx` devDependency.
 
 ```ts
 export function generateF7MeasurementTemplate(
-  input: F7MeasurementImportManifest,
+  input: F7MeasurementImportAuthority,
 ): Uint8Array {
-  const manifest = f7MeasurementImportManifestSchema.parse(input);
-  return zipSync(buildTemplateParts(manifest), { level: 6, mtime: FIXED_ZIP_DATE });
+  const authority = f7MeasurementImportAuthoritySchema.parse(input);
+  return zipSync(buildTemplateParts(authority), { level: 6, mtime: FIXED_ZIP_DATE });
 }
 ```
 
-- [ ] **Step 4: Run writer and security regressions**
+The writer accepts the complete authority because the governed manifest sheet reserves fixed cells for `sessionStateDigest` and `authorityDigest`, which are authority fields outside the nested manifest.
+
+- [x] **Step 4: Run writer and security regressions**
 
 Run:
 
@@ -285,7 +287,7 @@ npx.cmd vitest run --project node packages/workbook-catalog/src/f7-measurement-t
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add packages/workbook-catalog/src/f7-measurement-template-writer.ts packages/workbook-catalog/src/f7-measurement-template-writer.test.ts packages/workbook-catalog/src/index.ts

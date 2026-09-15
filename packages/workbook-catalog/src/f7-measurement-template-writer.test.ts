@@ -37,6 +37,8 @@ describe("generateF7MeasurementTemplate", () => {
 
     const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
     expect(sheet1).toContain('<c r="B2" t="inlineStr" s="3"><is><t>Width</t></is></c>');
+    expect(sheet1).toContain('<c r="B8" s="3"><v>0</v></c>');
+    expect(sheet1).toContain('<c r="B9" s="3"><v>0.15</v></c>');
   });
 
   it("is deterministic for the same authority", () => {
@@ -101,8 +103,8 @@ describe("generateF7MeasurementTemplate", () => {
       { reference: "B12", value: "UNORDERED_SAMPLE" },
       { reference: "B14", value: "RANGE_D2" },
     ]));
-    expect(worksheet?.cells).not.toContainEqual(expect.objectContaining({ reference: "B3" }));
-    expect(worksheet?.cells).not.toContainEqual(expect.objectContaining({ reference: "B4" }));
+    expect(worksheet?.cells).toContainEqual({ reference: "B3", value: "" });
+    expect(worksheet?.cells).toContainEqual({ reference: "B4", value: "" });
     expect(worksheet?.cells).not.toContainEqual(expect.objectContaining({ reference: "B13" }));
 
     const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
@@ -156,14 +158,26 @@ describe("generateF7MeasurementTemplate", () => {
     expect(sheet1).toContain('<c r="B14" t="inlineStr" s="1"><is><t>RANGE_D2</t></is></c>');
     expect(sheet1).toContain('<row r="15"/>');
     expect(sheet1).toContain('<row r="514"/>');
+    expect(sheet1).toContain('<protectedRange name="MeasurementsInput" sqref="B15:B514"/>');
+    expect(sheet1).toContain('<c r="B3" t="inlineStr" s="0"><is><t></t></is></c>');
+    expect(sheet1).toContain('<c r="B4" t="inlineStr" s="0"><is><t></t></is></c>');
+    expect(sheet1).not.toContain('<col min="2" max="2" width="12" style="1"');
+    expect(sheet1).not.toContain("<mergeCells");
     expect(styles).toContain('<protection locked="0"/>');
     expect(styles).toContain('<protection locked="1"/>');
+    expect(styles).toContain('<alignment horizontal="center"/><protection locked="0"/>');
   });
 
   it("rejects invalid XML controls and accepts XML escaping safely", () => {
     const invalidAuthority = structuredClone(makeAuthority());
     invalidAuthority.manifest.worksheetName = "A\u0001B";
     expect(() => generateF7MeasurementTemplate(invalidAuthority)).toThrow();
+    const nonCharacterAuthority = structuredClone(makeAuthority());
+    nonCharacterAuthority.manifest.worksheetName = "A\uFFFFB";
+    expect(() => generateF7MeasurementTemplate(nonCharacterAuthority)).toThrow();
+    const surrogateAuthority = structuredClone(makeAuthority());
+    surrogateAuthority.manifest.worksheetName = "A\uD800B";
+    expect(() => generateF7MeasurementTemplate(surrogateAuthority)).toThrow();
 
     const archive = generateF7MeasurementTemplate(makeAuthority([makeEvidence({ factorName: 'Name & <>",\'' })]));
     const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
