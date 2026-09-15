@@ -3361,6 +3361,199 @@ describe("F7 bulk measurement import contracts", () => {
     }).success).toBe(false);
   });
 
+  it("requires import-specific ready blocked validation consistency and factor-scoped issue identities", () => {
+    const readyWithBlocking = f7MeasurementImportFactorPreviewSchema.safeParse(createReadyFactorPreview({
+      validation: {
+        ...createValidationResult("ready", SHA256),
+        blockingIssues: [{ reason: "sample_count_below_minimum", factorId: SHA256, rowNumbers: [20, 21] }],
+      },
+    }));
+    expect(readyWithBlocking.success).toBe(false);
+    if (!readyWithBlocking.success) {
+      expect(readyWithBlocking.error.issues.some((issue) => issue.path.join(".") === "validation.blockingIssues")).toBe(true);
+    }
+
+    const blockedWithoutBlocking = f7MeasurementImportFactorPreviewSchema.safeParse(createBlockedFactorPreview({
+      validation: {
+        ...createValidationResult("blocked", SHA256_2),
+        blockingIssues: [],
+      },
+    }));
+    expect(blockedWithoutBlocking.success).toBe(false);
+    if (!blockedWithoutBlocking.success) {
+      expect(blockedWithoutBlocking.error.issues.some((issue) => issue.path.join(".") === "validation.blockingIssues")).toBe(true);
+    }
+
+    const previewIssueFactorMismatch = f7MeasurementImportFactorPreviewSchema.safeParse(createReadyFactorPreview({
+      validation: {
+        ...createValidationResult("ready", SHA256),
+        advisoryIssues: [{ reason: "fit_uncertainty", factorId: SHA256_2, rowNumbers: [22] }],
+      },
+    }));
+    expect(previewIssueFactorMismatch.success).toBe(false);
+    if (!previewIssueFactorMismatch.success) {
+      expect(previewIssueFactorMismatch.error.issues.some((issue) => issue.path.join(".") === "validation.advisoryIssues.0.factorId")).toBe(true);
+    }
+
+    const storedReadyWithBlocking = f7MeasurementImportStoredBatchSchema.safeParse({
+      previewId: "preview-1",
+      sessionId: "session-1",
+      expiresAt: "2026-09-15T08:15:00.000Z",
+      sessionStateDigest: "4".repeat(64),
+      factorSetDigest: "f".repeat(64),
+      authority: createMeasurementImportAuthority(),
+      replacementFactorIds: [SHA256],
+      factors: [{
+        factorId: SHA256,
+        factorName: "Gap A",
+        unit: "mm",
+        replacesExistingFactor: true,
+        dataset: createMeasurementDataset(SHA256),
+        validation: {
+          ...createValidationResult("ready", SHA256),
+          blockingIssues: [{ reason: "sample_count_below_minimum", factorId: SHA256, rowNumbers: [20, 21] }],
+        },
+      }],
+    });
+    expect(storedReadyWithBlocking.success).toBe(false);
+    if (!storedReadyWithBlocking.success) {
+      expect(storedReadyWithBlocking.error.issues.some((issue) => issue.path.join(".") === "factors.0.validation.blockingIssues")).toBe(true);
+    }
+
+    const storedIssueFactorMismatch = f7MeasurementImportStoredBatchSchema.safeParse({
+      previewId: "preview-1",
+      sessionId: "session-1",
+      expiresAt: "2026-09-15T08:15:00.000Z",
+      sessionStateDigest: "4".repeat(64),
+      factorSetDigest: "f".repeat(64),
+      authority: createMeasurementImportAuthority(),
+      replacementFactorIds: [SHA256],
+      factors: [{
+        factorId: SHA256,
+        factorName: "Gap A",
+        unit: "mm",
+        replacesExistingFactor: true,
+        dataset: createMeasurementDataset(SHA256),
+        validation: {
+          ...createValidationResult("ready", SHA256),
+          advisoryIssues: [{ reason: "fit_uncertainty", factorId: SHA256_2, rowNumbers: [22] }],
+        },
+      }],
+    });
+    expect(storedIssueFactorMismatch.success).toBe(false);
+    if (!storedIssueFactorMismatch.success) {
+      expect(storedIssueFactorMismatch.error.issues.some((issue) => issue.path.join(".") === "factors.0.validation.advisoryIssues.0.factorId")).toBe(true);
+    }
+  });
+
+  it("requires stored batch factors to match manifest membership and identity fields", () => {
+    const absentManifestFactor = f7MeasurementImportStoredBatchSchema.safeParse({
+      previewId: "preview-1",
+      sessionId: "session-1",
+      expiresAt: "2026-09-15T08:15:00.000Z",
+      sessionStateDigest: "4".repeat(64),
+      factorSetDigest: "f".repeat(64),
+      authority: createMeasurementImportAuthority(),
+      replacementFactorIds: [SHA256],
+      factors: [{
+        factorId: "c".repeat(64),
+        factorName: "Gap C",
+        unit: "mm",
+        replacesExistingFactor: true,
+        dataset: createMeasurementDataset("c".repeat(64)),
+        validation: createValidationResult("ready", "c".repeat(64)),
+      }],
+    });
+    expect(absentManifestFactor.success).toBe(false);
+    if (!absentManifestFactor.success) {
+      expect(absentManifestFactor.error.issues.some((issue) => issue.path.join(".") === "factors.0.factorId")).toBe(true);
+    }
+
+    const mismatchedFactorName = f7MeasurementImportStoredBatchSchema.safeParse({
+      previewId: "preview-1",
+      sessionId: "session-1",
+      expiresAt: "2026-09-15T08:15:00.000Z",
+      sessionStateDigest: "4".repeat(64),
+      factorSetDigest: "f".repeat(64),
+      authority: createMeasurementImportAuthority(),
+      replacementFactorIds: [SHA256],
+      factors: [{
+        factorId: SHA256,
+        factorName: "Wrong Gap A",
+        unit: "mm",
+        replacesExistingFactor: true,
+        dataset: createMeasurementDataset(SHA256),
+        validation: createValidationResult("ready", SHA256),
+      }],
+    });
+    expect(mismatchedFactorName.success).toBe(false);
+    if (!mismatchedFactorName.success) {
+      expect(mismatchedFactorName.error.issues.some((issue) => issue.path.join(".") === "factors.0.factorName")).toBe(true);
+    }
+
+    const mismatchedUnit = f7MeasurementImportStoredBatchSchema.safeParse({
+      previewId: "preview-1",
+      sessionId: "session-1",
+      expiresAt: "2026-09-15T08:15:00.000Z",
+      sessionStateDigest: "4".repeat(64),
+      factorSetDigest: "f".repeat(64),
+      authority: createMeasurementImportAuthority(),
+      replacementFactorIds: [SHA256],
+      factors: [{
+        factorId: SHA256,
+        factorName: "Gap A",
+        unit: "inch",
+        replacesExistingFactor: true,
+        dataset: createMeasurementDataset(SHA256, "inch"),
+        validation: createValidationResult("ready", SHA256),
+      }],
+    });
+    expect(mismatchedUnit.success).toBe(false);
+    if (!mismatchedUnit.success) {
+      expect(mismatchedUnit.error.issues.some((issue) => issue.path.join(".") === "factors.0.unit")).toBe(true);
+    }
+  });
+
+  it("requires canonical base64, hardened xlsx filenames, and unique commit replacement ids", () => {
+    expect(f7MeasurementImportPreviewRequestSchema.safeParse({
+      sessionId: "session-1",
+      fileName: "正常導入.xlsx",
+      workbookBase64: "AA==",
+    }).success).toBe(true);
+    expect(f7MeasurementImportPreviewRequestSchema.safeParse({
+      sessionId: "session-1",
+      fileName: "normal report.xlsx",
+      workbookBase64: "AAA=",
+    }).success).toBe(true);
+
+    for (const workbookBase64 of ["AB==", "AC==", "AAB=", "AAC="]) {
+      expect(f7MeasurementImportPreviewRequestSchema.safeParse({
+        sessionId: "session-1",
+        fileName: "BulkImport.xlsx",
+        workbookBase64,
+      }).success).toBe(false);
+    }
+
+    for (const fileName of ["folder/report.xlsx", "folder\\report.xlsx", ".xlsx", "bad\u0000name.xlsx"]) {
+      expect(f7MeasurementImportPreviewRequestSchema.safeParse({
+        sessionId: "session-1",
+        fileName,
+        workbookBase64: "QUJDRA==",
+      }).success).toBe(false);
+    }
+
+    const duplicateReplacementIds = f7MeasurementImportCommitRequestSchema.safeParse({
+      sessionId: "session-1",
+      previewId: "preview-1",
+      replacementFactorIds: [SHA256, SHA256],
+      confirmed: true,
+    });
+    expect(duplicateReplacementIds.success).toBe(false);
+    if (!duplicateReplacementIds.success) {
+      expect(duplicateReplacementIds.error.issues.some((issue) => issue.path.join(".") === "replacementFactorIds")).toBe(true);
+    }
+  });
+
   it("bounds diagnostics and enforces exact aggregate counts", () => {
     const ready = createReadyFactorPreview();
     const diagnostics = Array.from({ length: F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS + 1 }, (_, index) =>

@@ -608,9 +608,35 @@ const base64CanonicalSchema = z
   .string()
   .min(1)
   .max(22_369_624)
-  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$/);
 
-const workbookXlsxFileNameSchema = z.string().min(1).max(255).regex(/\.xlsx$/i);
+const workbookXlsxFileNameSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .superRefine((fileName, context) => {
+    if (!/\.xlsx$/i.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must end with .xlsx",
+      });
+      return;
+    }
+
+    if (/[\\/\x00-\x1F\x7F]/.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not contain path separators or ASCII control characters",
+      });
+    }
+
+    if (fileName.slice(0, -5).trim().length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must include a non-empty base name before .xlsx",
+      });
+    }
+  });
 const worksheetColumnSchema = z.string().regex(/^[A-Z]+$/);
 const boundedOpaqueIdSchema = z.string().trim().min(1).max(300);
 const boundedDisplayMessageSchema = z.string().trim().min(1).max(500);
@@ -623,6 +649,21 @@ function requireUniqueFactorIds(
 ): void {
   const factorIds = factors.map((factor) => factor.factorId);
   if (new Set(factorIds).size !== factorIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message,
+      path: [...path],
+    });
+  }
+}
+
+function requireUniqueStringValues(
+  values: readonly string[],
+  context: z.RefinementCtx,
+  path: readonly (string | number)[],
+  message: string,
+): void {
+  if (new Set(values).size !== values.length) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message,
@@ -660,6 +701,56 @@ function requireExactReplacementFactorIds(
       code: z.ZodIssueCode.custom,
       message: "replacementFactorIds must equal the exact ordered replacement factor set",
       path: [...path],
+    });
+  }
+}
+
+function requireImportValidationConsistency(
+  validation: {
+    readonly status: "ready" | "blocked";
+    readonly blockingIssues: ReadonlyArray<unknown>;
+  },
+  context: z.RefinementCtx,
+  path: readonly (string | number)[] = ["validation", "blockingIssues"],
+): void {
+  if (validation.status === "ready" && validation.blockingIssues.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "ready validation must not contain blockingIssues",
+      path: [...path],
+    });
+  }
+
+  if (validation.status === "blocked" && validation.blockingIssues.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "blocked validation must contain at least one blocking issue",
+      path: [...path],
+    });
+  }
+}
+
+function requireValidationIssueFactorIdsMatch(
+  factorId: string,
+  validation: {
+    readonly blockingIssues: ReadonlyArray<{ readonly factorId?: string | undefined }>;
+    readonly advisoryIssues: ReadonlyArray<{ readonly factorId?: string | undefined }>;
+  },
+  context: z.RefinementCtx,
+  path: readonly (string | number)[] = ["validation"],
+): void {
+  for (const [issueArrayName, issues] of [
+    ["blockingIssues", validation.blockingIssues],
+    ["advisoryIssues", validation.advisoryIssues],
+  ] as const) {
+    issues.forEach((issue, index) => {
+      if (issue.factorId !== undefined && issue.factorId !== factorId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${issueArrayName} factorId must match factorId when provided`,
+          path: [...path, issueArrayName, index, "factorId"],
+        });
+      }
     });
   }
 }
@@ -779,6 +870,8 @@ export const f7MeasurementImportFactorPreviewSchema = z
   .strict()
   .superRefine((preview, context) => {
     requireMatchingRationalSubgroupConfiguration(preview, context);
+    requireImportValidationConsistency(preview.validation, context);
+    requireValidationIssueFactorIdsMatch(preview.factorId, preview.validation, context);
 
     if (preview.status !== preview.validation.status) {
       context.addIssue({
@@ -935,6 +1028,9 @@ const f7MeasurementImportStoredBatchFactorSchema = z
   })
   .strict()
   .superRefine((factor, context) => {
+    requireImportValidationConsistency(factor.validation, context, ["validation", "blockingIssues"]);
+    requireValidationIssueFactorIdsMatch(factor.factorId, factor.validation, context, ["validation"]);
+
     if (factor.dataset.factorId !== factor.factorId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -973,6 +1069,39 @@ export const f7MeasurementImportStoredBatchSchema = z
   .superRefine((batch, context) => {
     requireUniqueFactorIds(batch.factors, context, ["factors"], "stored batch factorIds must be unique");
     requireExactReplacementFactorIds(batch.replacementFactorIds, batch.factors, context);
+
+    const manifestFactorsById = new Map(
+      batch.authority.manifest.factors.map((factor) => [factor.factorId, factor] as const),
+    );
+
+    batch.factors.forEach((factor, index) => {
+      const manifestFactor = manifestFactorsById.get(factor.factorId);
+      if (manifestFactor === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "stored batch factorId must exist in authority.manifest.factors",
+          path: ["factors", index, "factorId"],
+        });
+        return;
+      }
+
+      if (factor.factorName !== manifestFactor.factorName) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "stored batch factorName must match authority.manifest.factors",
+          path: ["factors", index, "factorName"],
+        });
+      }
+
+      if (factor.unit !== manifestFactor.unit) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "stored batch unit must match authority.manifest.factors",
+          path: ["factors", index, "unit"],
+        });
+      }
+    });
+
     if (batch.authority.sessionId !== batch.sessionId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1003,7 +1132,15 @@ export const f7MeasurementImportCommitRequestSchema = z
     replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     confirmed: z.literal(true),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    requireUniqueStringValues(
+      request.replacementFactorIds,
+      context,
+      ["replacementFactorIds"],
+      "replacementFactorIds must be unique",
+    );
+  });
 
 export const F7_DISTRIBUTION_CANDIDATE_ORDER = [
   "normal",
