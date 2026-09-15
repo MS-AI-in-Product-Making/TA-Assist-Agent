@@ -129,10 +129,32 @@ describe("F7 measurement template authority", () => {
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn).toBe(2);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(500);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBeGreaterThan(1);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(
-      F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow + F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS - 1,
-    );
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBe(10);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(509);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows).toEqual({
+      factorName: 2,
+      unit: 3,
+      designNominal: 4,
+      upperTolerance: 5,
+      lowerTolerance: 6,
+      lowerSpecLimit: 7,
+      upperSpecLimit: 8,
+    });
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest).toEqual({
+      contractIdCell: "_F7_MANIFEST!B2",
+      contractVersionCell: "_F7_MANIFEST!B3",
+      templateIdCell: "_F7_MANIFEST!B4",
+      workbookContentHashCell: "_F7_MANIFEST!B5",
+      worksheetNameCell: "_F7_MANIFEST!B6",
+      worksheetStableIdCell: "_F7_MANIFEST!B7",
+      factorSetDigestCell: "_F7_MANIFEST!B8",
+      factorsDigestCell: "_F7_MANIFEST!B9",
+      lockedValueDigestCell: "_F7_MANIFEST!B10",
+      lockedCoordinateDigestCell: "_F7_MANIFEST!B11",
+      sessionStateDigestCell: "_F7_MANIFEST!B12",
+      authorityDigestCell: "_F7_MANIFEST!B13",
+      factorsStartRow: 16,
+    });
   });
 
   it("builds a valid authority with factor columns starting at B in evidence order", () => {
