@@ -128,7 +128,7 @@ The shared contracts add strict, bounded schemas for:
 - commit request with `sessionId`, preview ID, exact replacement Factor IDs, and `confirmed: true`;
 - commit response using the existing analysis-result envelope and updated session snapshot.
 
-Collections use existing F7 Factor limits and the existing maximum of 500 observations per Factor. Schemas reject unknown fields, non-finite numbers, duplicate Factor IDs, duplicate observation rows, invalid structure/configuration combinations, and inconsistent aggregate counts.
+Bulk-import collections allow at most 100 Factors without changing the public F7 snapshot schema, and retain the existing maximum of 500 observations per Factor. Schemas reject unknown fields, non-finite numbers, duplicate Factor IDs, duplicate observation rows, invalid structure/configuration combinations, and inconsistent aggregate counts.
 
 The diagnostic reason set distinguishes at least invalid template identity, stale template, changed locked cell, missing/extra/duplicate Factor, invalid enum, missing structure configuration, non-finite measurement, negative physical measurement, sample validation failure, and unsupported workbook content.
 
