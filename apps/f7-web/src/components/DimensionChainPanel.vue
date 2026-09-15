@@ -169,6 +169,15 @@ function isProjectionDeferredByInteraction(
 let deferredProjection: DimensionChainReportProjection | undefined;
 let suppressProjectionEmission = false;
 let skipProjectionSignature: string | undefined;
+let skipProjectionEpoch = 0;
+
+function setSkipProjectionSignature(signature: string): void {
+  skipProjectionSignature = signature;
+  const epoch = ++skipProjectionEpoch;
+  Promise.resolve().then(() => {
+    if (skipProjectionEpoch === epoch) skipProjectionSignature = undefined;
+  });
+}
 
 function flushProjection(projection: DimensionChainReportProjection): void {
   emit("report-projection-change", projection);
@@ -931,7 +940,7 @@ function finishInteraction(cancel = false, release = true): void {
     suppressProjectionEmission = false;
     const projection = deferredProjection ?? reportProjection.value;
     deferredProjection = undefined;
-    skipProjectionSignature = JSON.stringify(projection);
+    setSkipProjectionSignature(JSON.stringify(projection));
     flushProjection(projection);
   }
 }

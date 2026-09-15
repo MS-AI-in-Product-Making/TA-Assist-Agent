@@ -320,6 +320,97 @@ describe("DimensionChainPanel", () => {
     expect((wrapper.emitted("report-projection-change")?.length ?? 0) - beforeCancelCount).toBe(1);
   });
 
+  it("emits on drag, orientation switch, and switch back, and keeps latest horizontal layout after return", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    const guide = wrapper.get("[data-dimension-guide-handle='factor-1::factor-2']");
+    const baselineCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+
+    dispatchPointer(guide.element, "pointerdown", {
+      button: 0,
+      buttons: 1,
+      clientX: 220,
+      clientY: 88,
+      pointerId: 611,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0,
+      buttons: 1,
+      clientX: 248,
+      clientY: 88,
+      pointerId: 611,
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("report-projection-change")?.length ?? 0).toBe(baselineCount);
+
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0,
+      buttons: 0,
+      clientX: 248,
+      clientY: 88,
+      pointerId: 611,
+    });
+    await wrapper.vm.$nextTick();
+    const afterFirstDragCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+    expect(afterFirstDragCount - baselineCount).toBe(1);
+
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const afterVerticalCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+    expect(afterVerticalCount - afterFirstDragCount).toBe(1);
+
+    await wrapper.get("button[aria-label='Horizontal dimension chain']").trigger("click");
+    const afterHorizontalBackCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+    expect(afterHorizontalBackCount - afterVerticalCount).toBe(1);
+
+    dispatchPointer(guide.element, "pointerdown", {
+      button: 0,
+      buttons: 1,
+      clientX: 248,
+      clientY: 88,
+      pointerId: 612,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0,
+      buttons: 1,
+      clientX: 278,
+      clientY: 88,
+      pointerId: 612,
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("report-projection-change")?.length ?? 0).toBe(afterHorizontalBackCount);
+
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0,
+      buttons: 0,
+      clientX: 278,
+      clientY: 88,
+      pointerId: 612,
+    });
+    await wrapper.vm.$nextTick();
+    const finalCount = wrapper.emitted("report-projection-change")?.length ?? 0;
+    expect(finalCount - afterHorizontalBackCount).toBe(1);
+
+    const finalProjection = wrapper.emitted("report-projection-change")?.at(-1)?.[0] as Record<string, unknown>;
+    expect(finalProjection.status).toBe("generated");
+    expect(finalProjection.orientation).toBe("horizontal");
+
+    const manualLayout = finalProjection.manualLayout as {
+      readonly boundaryOffsets: Readonly<Record<string, number>>;
+    };
+    const boundaryOffset = manualLayout.boundaryOffsets["factor-1::factor-2"];
+    expect(boundaryOffset).toBeGreaterThan(50);
+  });
+
   it("resets to generated projection with exact report keys after stale fallback update", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
