@@ -26,6 +26,8 @@ import {
 } from "./server.js";
 
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const HASH_A = "a".repeat(64);
+const HASH_B = "b".repeat(64);
 
 type ServerOptions = Parameters<typeof createProductionF7LocalServer>[0];
 
@@ -142,6 +144,101 @@ function validAssumptionResultsPdfRequest(): AssumptionResultsPdfRouteRequest {
     contributors: [],
     processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
     processGuidance: [],
+    engineeringEvidence: {
+      factorSetup: {
+        rows: [{
+          itemNumber: 1,
+          factorName: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+          mean: -1.94,
+          tolerance: 0.1,
+          oneSigma: 0.025,
+          contributionPercent: 100,
+        }],
+        footer: {
+          designNominalTotal: -1.94,
+          upperWorstCaseTolerance: 0.1,
+          lowerWorstCaseTolerance: -0.1,
+          meanResponse: -1.94,
+          rssTolerance: 0.1,
+          rssSigma: 0.025,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+        },
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: HASH_A,
+        orientation: "horizontal",
+        factors: [{
+          id: HASH_B,
+          itemNumber: 1,
+          name: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        }],
+        manualLayout: {
+          boundaryOffsets: { [HASH_B]: 0 },
+          laneOffsets: { [HASH_B]: 0 },
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [HASH_B],
+        closureDirection: "start-to-end",
+      },
+      responseDistribution: {
+        mean: -1.94,
+        standardDeviation: 0.025,
+        lowerSpecLimit: -2.04,
+        upperSpecLimit: -1.84,
+        target: -1.94,
+      },
+      responseSummary: {
+        rssAndWorstCase: {
+          sigmaBands: [{ sigma: 1, tolerance: 0.025, upper: -1.915, lower: -1.965 }],
+          worstCase: { tolerance: 0.1, upper: -1.84, lower: -2.04 },
+        },
+        responseAndSpecifications: {
+          designNominal: -1.94,
+          meanResponse: -1.94,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+          lowerSpecLimit: -2.04,
+          upperSpecLimit: -1.84,
+          targetSigmaLevel: 4,
+          targetCpk: 1.33,
+        },
+        sigmaLevelAndCapability: {
+          lowerZ: { value: 4, status: "PASS" },
+          upperZ: { value: 4, status: "PASS" },
+          calculatedSigmaLevel: { value: 4, status: "PASS" },
+          cp: { value: 1.33, status: "PASS" },
+          lowerCpk: { value: 1.33, status: "PASS" },
+          upperCpk: { value: 1.33, status: "PASS" },
+          calculatedCpk: { value: 1.33, status: "PASS" },
+        },
+        defectsPerMillion: {
+          lowerDpm: 31.67,
+          upperDpm: 31.67,
+          totalDpm: 63.34,
+          outOfSpecPercent: 0.006334,
+          yieldPercent: 99.993666,
+          volume: 1000,
+          failuresOverVolume: 0,
+        },
+      },
+    },
   };
 }
 
@@ -1063,6 +1160,169 @@ describe("f7 local server", () => {
     });
 
     expectRequestEnvelope(response, 400);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("rejects strict invalid engineeringEvidence payloads before session lookup or rendering", async () => {
+    const realService = createRealService();
+    const getSession = vi.fn((sessionId: string) => realService.getSession(sessionId));
+    const service: F7SessionService = { ...realService, getSession };
+    const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-invalid")),
+    };
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const base = validAssumptionResultsPdfRequest();
+
+    const invalidBodies: unknown[] = [
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          factorSetup: {
+            ...base.engineeringEvidence.factorSetup,
+            rows: Array.from({ length: 101 }, (_, index) => ({
+              ...base.engineeringEvidence.factorSetup.rows[0],
+              itemNumber: index + 1,
+            })),
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseDistribution: {
+            ...base.engineeringEvidence.responseDistribution,
+            standardDeviation: Number.NaN,
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseDistribution: {
+            ...base.engineeringEvidence.responseDistribution,
+            target: Number.POSITIVE_INFINITY,
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseDistribution: {
+            ...base.engineeringEvidence.responseDistribution,
+            html: "<strong>unsafe</strong>",
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          dimensionChain: {
+            ...base.engineeringEvidence.dimensionChain,
+            status: "unknown",
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          dimensionChain: {
+            ...(base.engineeringEvidence.dimensionChain.status === "generated"
+              ? base.engineeringEvidence.dimensionChain
+              : {
+                status: "generated" as const,
+                sourceSignature: HASH_A,
+                orientation: "horizontal" as const,
+                factors: [],
+                manualLayout: { boundaryOffsets: {}, laneOffsets: {} },
+                reversedFactorIds: [],
+                closureDirection: "start-to-end" as const,
+              }),
+            manualLayout: {
+              ...(base.engineeringEvidence.dimensionChain.status === "generated"
+                ? base.engineeringEvidence.dimensionChain.manualLayout
+                : { boundaryOffsets: {}, laneOffsets: {} }),
+              laneOffsets: { [HASH_B]: -10001 },
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseSummary: {
+            ...base.engineeringEvidence.responseSummary,
+            defectsPerMillion: {
+              ...base.engineeringEvidence.responseSummary.defectsPerMillion,
+              volume: -1,
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseSummary: {
+            ...base.engineeringEvidence.responseSummary,
+            defectsPerMillion: {
+              ...base.engineeringEvidence.responseSummary.defectsPerMillion,
+              volume: 3.14,
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          responseSummary: {
+            rssAndWorstCase: base.engineeringEvidence.responseSummary.rssAndWorstCase,
+          },
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          imageUrl: "https://example.invalid/1.png",
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          dataUrl: "data:image/png;base64,AA==",
+        },
+      },
+      {
+        ...base,
+        engineeringEvidence: {
+          ...base.engineeringEvidence,
+          path: "C:/tmp/unsafe.png",
+        },
+      },
+    ];
+
+    for (const body of invalidBodies) {
+      const response = await httpJson({
+        port: address.port,
+        method: "POST",
+        path: "/f7/assumption-results/pdf",
+        body,
+      });
+      expectRequestEnvelope(response, 400);
+    }
+
     expect(getSession).not.toHaveBeenCalled();
     expect(assumptionResultsPdfRenderer.render).not.toHaveBeenCalled();
   });

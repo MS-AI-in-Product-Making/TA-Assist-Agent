@@ -5,6 +5,24 @@ const displayText = z.string().min(1).max(2_000);
 const narrativeText = z.string().min(1).max(4_000);
 const finiteNumber = z.number().finite();
 const percentage = finiteNumber.min(0).max(100);
+const nonNegativeInteger = z.number().int().nonnegative();
+const boundedOffset = finiteNumber.min(-10_000).max(10_000);
+const boundedId = z.string().regex(/^[a-f0-9]{64}$/);
+const sigmaBand = z.union([
+  z.literal(1),
+  z.literal(3),
+  z.literal(4),
+  z.literal(4.5),
+  z.literal(6),
+]);
+const setupDistribution = z.enum([
+  "Normal",
+  "Uniform",
+  "Triangular",
+  "Trapezoidal",
+  "Elliptical",
+  "Beta",
+]);
 
 const summaryRowSchema = z.object({
   metric: shortText,
@@ -98,6 +116,138 @@ const guidanceSchema = z.object({
   message: narrativeText,
 }).strict();
 
+const engineeringEvidenceFactorRowSchema = z.object({
+  itemNumber: nonNegativeInteger,
+  factorName: shortText,
+  designNominal: finiteNumber,
+  upperTolerance: finiteNumber,
+  lowerTolerance: finiteNumber,
+  longTermSafetyFactor: finiteNumber,
+  sigmaLevel: finiteNumber,
+  distribution: setupDistribution,
+  mean: finiteNumber,
+  tolerance: finiteNumber,
+  oneSigma: finiteNumber,
+  contributionPercent: percentage,
+}).strict();
+
+const engineeringEvidenceFactorFooterSchema = z.object({
+  designNominalTotal: finiteNumber,
+  upperWorstCaseTolerance: finiteNumber,
+  lowerWorstCaseTolerance: finiteNumber,
+  meanResponse: finiteNumber,
+  rssTolerance: finiteNumber,
+  rssSigma: finiteNumber,
+  contributionTotalPercent: percentage,
+  additionalMeanShift: finiteNumber,
+  adjustedMean: finiteNumber,
+}).strict();
+
+const engineeringEvidenceFactorSetupSchema = z.object({
+  rows: z.array(engineeringEvidenceFactorRowSchema).max(100),
+  footer: engineeringEvidenceFactorFooterSchema,
+}).strict();
+
+const dimensionChainFactorSchema = z.object({
+  id: boundedId,
+  itemNumber: nonNegativeInteger,
+  name: shortText,
+  designNominal: finiteNumber,
+  upperTolerance: finiteNumber,
+  lowerTolerance: finiteNumber,
+  longTermSafetyFactor: finiteNumber,
+  sigmaLevel: finiteNumber,
+  distribution: setupDistribution,
+}).strict();
+
+const dimensionChainManualLayoutSchema = z.object({
+  boundaryOffsets: z.record(boundedId, boundedOffset),
+  laneOffsets: z.record(boundedId, boundedOffset),
+  closureStartOffset: boundedOffset.optional(),
+  closureEndOffset: boundedOffset.optional(),
+  closureLaneOffset: boundedOffset.optional(),
+}).strict();
+
+const dimensionChainSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("generated"),
+    sourceSignature: boundedId,
+    orientation: z.enum(["horizontal", "vertical"]),
+    factors: z.array(dimensionChainFactorSchema).max(100),
+    manualLayout: dimensionChainManualLayoutSchema,
+    reversedFactorIds: z.array(boundedId).max(100),
+    closureDirection: z.enum(["start-to-end", "end-to-start"]),
+  }).strict(),
+  z.object({
+    status: z.literal("fallback"),
+    sourceSignature: boundedId,
+  }).strict(),
+]);
+
+const responseDistributionSchema = z.object({
+  mean: finiteNumber,
+  standardDeviation: finiteNumber,
+  lowerSpecLimit: finiteNumber,
+  upperSpecLimit: finiteNumber,
+  target: finiteNumber,
+}).strict();
+
+const responseSummaryStatusMetricSchema = z.object({
+  value: finiteNumber,
+  status: z.enum(["PASS", "FAIL"]),
+}).strict();
+
+const responseSummarySchema = z.object({
+  rssAndWorstCase: z.object({
+    sigmaBands: z.array(z.object({
+      sigma: sigmaBand,
+      tolerance: finiteNumber,
+      upper: finiteNumber,
+      lower: finiteNumber,
+    }).strict()).max(100),
+    worstCase: z.object({
+      tolerance: finiteNumber,
+      upper: finiteNumber,
+      lower: finiteNumber,
+    }).strict(),
+  }).strict(),
+  responseAndSpecifications: z.object({
+    designNominal: finiteNumber,
+    meanResponse: finiteNumber,
+    additionalMeanShift: finiteNumber,
+    adjustedMean: finiteNumber,
+    lowerSpecLimit: finiteNumber,
+    upperSpecLimit: finiteNumber,
+    targetSigmaLevel: finiteNumber,
+    targetCpk: finiteNumber,
+  }).strict(),
+  sigmaLevelAndCapability: z.object({
+    lowerZ: responseSummaryStatusMetricSchema,
+    upperZ: responseSummaryStatusMetricSchema,
+    calculatedSigmaLevel: responseSummaryStatusMetricSchema,
+    cp: responseSummaryStatusMetricSchema,
+    lowerCpk: responseSummaryStatusMetricSchema,
+    upperCpk: responseSummaryStatusMetricSchema,
+    calculatedCpk: responseSummaryStatusMetricSchema,
+  }).strict(),
+  defectsPerMillion: z.object({
+    lowerDpm: finiteNumber,
+    upperDpm: finiteNumber,
+    totalDpm: finiteNumber,
+    outOfSpecPercent: finiteNumber,
+    yieldPercent: finiteNumber,
+    volume: nonNegativeInteger.optional(),
+    failuresOverVolume: nonNegativeInteger.optional(),
+  }).strict(),
+}).strict();
+
+const engineeringEvidenceSchema = z.object({
+  factorSetup: engineeringEvidenceFactorSetupSchema,
+  dimensionChain: dimensionChainSchema,
+  responseDistribution: responseDistributionSchema,
+  responseSummary: responseSummarySchema,
+}).strict();
+
 export const assumptionResultsPdfRouteRequestSchema = z.object({
   sessionId: z.string().min(1).max(200),
   workbookName: z.string().min(1).max(300),
@@ -111,6 +261,7 @@ export const assumptionResultsPdfRouteRequestSchema = z.object({
   contributors: z.array(contributorSchema).max(100),
   processGuidanceContext: displayText,
   processGuidance: z.array(guidanceSchema).max(50),
+  engineeringEvidence: engineeringEvidenceSchema,
 }).strict().superRefine((request, context) => {
   for (let index = 1; index < request.contributors.length; index += 1) {
     const previous = request.contributors[index - 1];

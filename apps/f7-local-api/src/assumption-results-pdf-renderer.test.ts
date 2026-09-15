@@ -1,5 +1,5 @@
 import { access, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -17,6 +17,8 @@ import {
 } from "./assumption-results-pdf-renderer.js";
 
 const INJECTED_TEXT = `<img src=x onerror="alert('unsafe')"> & analysis`;
+const HASH_A = "a".repeat(64);
+const HASH_B = "b".repeat(64);
 
 function validRequest(): AssumptionResultsPdfRouteRequest {
   return {
@@ -108,6 +110,101 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
       title: `Review ${INJECTED_TEXT}`,
       message: `Process ${INJECTED_TEXT}`,
     }],
+    engineeringEvidence: {
+      factorSetup: {
+        rows: [{
+          itemNumber: 1,
+          factorName: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+          mean: -1.94,
+          tolerance: 0.1,
+          oneSigma: 0.025,
+          contributionPercent: 100,
+        }],
+        footer: {
+          designNominalTotal: -1.94,
+          upperWorstCaseTolerance: 0.1,
+          lowerWorstCaseTolerance: -0.1,
+          meanResponse: -1.94,
+          rssTolerance: 0.1,
+          rssSigma: 0.025,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+        },
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: HASH_A,
+        orientation: "horizontal",
+        factors: [{
+          id: HASH_B,
+          itemNumber: 1,
+          name: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        }],
+        manualLayout: {
+          boundaryOffsets: { [HASH_B]: 0 },
+          laneOffsets: { [HASH_B]: 0 },
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [HASH_B],
+        closureDirection: "start-to-end",
+      },
+      responseDistribution: {
+        mean: -1.94,
+        standardDeviation: 0.025,
+        lowerSpecLimit: -2.04,
+        upperSpecLimit: -1.84,
+        target: -1.94,
+      },
+      responseSummary: {
+        rssAndWorstCase: {
+          sigmaBands: [{ sigma: 1, tolerance: 0.025, upper: -1.915, lower: -1.965 }],
+          worstCase: { tolerance: 0.1, upper: -1.84, lower: -2.04 },
+        },
+        responseAndSpecifications: {
+          designNominal: -1.94,
+          meanResponse: -1.94,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+          lowerSpecLimit: -2.04,
+          upperSpecLimit: -1.84,
+          targetSigmaLevel: 4,
+          targetCpk: 1.33,
+        },
+        sigmaLevelAndCapability: {
+          lowerZ: { value: 4, status: "PASS" },
+          upperZ: { value: 4, status: "PASS" },
+          calculatedSigmaLevel: { value: 4, status: "PASS" },
+          cp: { value: 1.33, status: "PASS" },
+          lowerCpk: { value: 1.33, status: "PASS" },
+          upperCpk: { value: 1.33, status: "PASS" },
+          calculatedCpk: { value: 1.33, status: "PASS" },
+        },
+        defectsPerMillion: {
+          lowerDpm: 31.67,
+          upperDpm: 31.67,
+          totalDpm: 63.34,
+          outOfSpecPercent: 0.006334,
+          yieldPercent: 99.993666,
+          volume: 1000,
+          failuresOverVolume: 0,
+        },
+      },
+    },
   };
 }
 
@@ -269,6 +366,161 @@ describe("assumption results PDF contract", () => {
         { ...contributor, cumulativePercent: 60 },
         { ...contributor, factorName: "Factor B", cumulativePercent: 59.99 },
       ],
+    }).success).toBe(false);
+  });
+
+  it("accepts required engineeringEvidence and rejects strict invalid variants", () => {
+    const request = validRequest();
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse(request).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          rows: Array.from({ length: 101 }, (_, index) => ({
+            ...request.engineeringEvidence.factorSetup.rows[0],
+            itemNumber: index + 1,
+            factorName: `Factor ${index + 1}`,
+          })),
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseDistribution: {
+          ...request.engineeringEvidence.responseDistribution,
+          standardDeviation: Number.POSITIVE_INFINITY,
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          sigmaLevelAndCapability: {
+            ...request.engineeringEvidence.responseSummary.sigmaLevelAndCapability,
+            cp: { value: Number.NaN, status: "PASS" },
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseDistribution: {
+          ...request.engineeringEvidence.responseDistribution,
+          svg: "<svg></svg>",
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...(request.engineeringEvidence.dimensionChain.status === "generated"
+            ? request.engineeringEvidence.dimensionChain
+            : {
+              status: "generated" as const,
+              sourceSignature: HASH_A,
+              orientation: "horizontal" as const,
+              factors: [],
+              manualLayout: { boundaryOffsets: {}, laneOffsets: {} },
+              reversedFactorIds: [],
+              closureDirection: "start-to-end" as const,
+            }),
+          manualLayout: {
+            ...(request.engineeringEvidence.dimensionChain.status === "generated"
+              ? request.engineeringEvidence.dimensionChain.manualLayout
+              : { boundaryOffsets: {}, laneOffsets: {} }),
+            boundaryOffsets: { [HASH_B]: 10001 },
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          rssAndWorstCase: request.engineeringEvidence.responseSummary.rssAndWorstCase,
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            volume: -1,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            volume: 1.5,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...request.engineeringEvidence.dimensionChain,
+          status: "invalid-discriminator",
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        imageUrl: "https://example.invalid/image.png",
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dataUrl: "data:text/plain;base64,Zm9v",
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        path: "C:/tmp/unsafe",
+      },
     }).success).toBe(false);
   });
 
