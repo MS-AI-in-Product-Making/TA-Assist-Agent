@@ -193,6 +193,22 @@ function countMatches(html: string, pattern: RegExp): number {
   return [...html.matchAll(pattern)].length;
 }
 
+function parsePair(pair: string): { x: number; y: number } {
+  const [xText, yText] = pair.split(",");
+  return {
+    x: Number.parseFloat(xText ?? "NaN"),
+    y: Number.parseFloat(yText ?? "NaN"),
+  };
+}
+
+function expectSamePoint(
+  actual: { x: number; y: number },
+  expected: { x: number; y: number },
+): void {
+  expect(actual.x).toBeCloseTo(expected.x, 6);
+  expect(actual.y).toBeCloseTo(expected.y, 6);
+}
+
 describe("renderAssumptionResultsPdfEvidenceHtml", () => {
   it("renders fallback dimension labels from factorSetup rows", () => {
     const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
@@ -250,13 +266,15 @@ describe("renderAssumptionResultsPdfEvidenceHtml", () => {
       },
     }));
 
-    const horizontalFactorX = extractNumberAttribute(horizontalHtml, "data-factor-id=\"aaaaaaaa\"", "x");
-    const verticalFactorX = extractNumberAttribute(verticalReversedHtml, "data-factor-id=\"aaaaaaaa\"", "x");
-    expect(verticalFactorX).not.toBe(horizontalFactorX);
+    const horizontalFirstSegment = horizontalHtml.match(/data-chain-segment="0"[^>]*x1="([^"]+)"[^>]*y1="([^"]+)"[^>]*x2="([^"]+)"[^>]*y2="([^"]+)"/);
+    const verticalFirstSegment = verticalReversedHtml.match(/data-chain-segment="0"[^>]*x1="([^"]+)"[^>]*y1="([^"]+)"[^>]*x2="([^"]+)"[^>]*y2="([^"]+)"/);
+    expect(horizontalFirstSegment).not.toBeNull();
+    expect(verticalFirstSegment).not.toBeNull();
 
-    const horizontalArrowX2 = extractNumberAttribute(horizontalHtml, "data-chain-axis", "x2");
-    const verticalArrowX2 = extractNumberAttribute(verticalReversedHtml, "data-chain-axis", "x2");
-    expect(verticalArrowX2).not.toBe(horizontalArrowX2);
+    const horizontalYDelta = Math.abs(Number(horizontalFirstSegment?.[2]) - Number(horizontalFirstSegment?.[4]));
+    const verticalYDelta = Math.abs(Number(verticalFirstSegment?.[2]) - Number(verticalFirstSegment?.[4]));
+    expect(horizontalYDelta).toBeCloseTo(0, 6);
+    expect(verticalYDelta).toBeGreaterThan(0);
   });
 
   it("does not emit bare points strings and renders finite polyline coordinates", () => {
@@ -606,7 +624,7 @@ describe("renderAssumptionResultsPdfEvidenceHtml", () => {
     expect(fallbackSingle).toContain('data-factor-segment="fallback-1"');
   });
 
-  it("renders cumulative topology metadata for dimension-chain segments", () => {
+  it("renders cumulative physical vertices with contiguous chain segments and directional closure", () => {
     const factorIds = ["f".repeat(64), "a".repeat(64), "b".repeat(64)];
     const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
       factorSetup: {
@@ -713,25 +731,139 @@ describe("renderAssumptionResultsPdfEvidenceHtml", () => {
           closureLaneOffset: 0,
         },
         reversedFactorIds: [factorIds[2]!],
-        closureDirection: "start-to-end",
+        closureDirection: "end-to-start",
       },
     }));
 
-    const topologyMatch = html.match(/<polyline[^>]*data-chain-topology="cumulative"[^>]*points="([^"]+)"/);
-    expect(topologyMatch?.[1]).toBeDefined();
-    const topologyPoints = (topologyMatch?.[1] ?? "").trim().split(/\s+/);
-    expect(topologyPoints).toHaveLength(4);
-
-    const segmentMatches = [...html.matchAll(/<line[^>]*data-factor-segment="([^"]+)"[^>]*data-segment-index="(\d+)"[^>]*data-segment-length="([^"]+)"[^>]*data-cumulative-length="([^"]+)"[^>]*data-cumulative-ratio="([^"]+)"/g)];
+    const segmentMatches = [...html.matchAll(/<line[^>]*data-chain-segment="(\d+)"[^>]*data-physical-start="([^"]+)"[^>]*data-physical-end="([^"]+)"[^>]*x1="([^"]+)"[^>]*y1="([^"]+)"[^>]*x2="([^"]+)"[^>]*y2="([^"]+)"/g)];
     expect(segmentMatches).toHaveLength(3);
 
-    const cumulativeLengths = segmentMatches.map((match) => Number(match[4]));
-    const cumulativeRatios = segmentMatches.map((match) => Number(match[5]));
+    for (let index = 1; index < segmentMatches.length; index += 1) {
+      const previousEnd = parsePair(segmentMatches[index - 1]?.[3] ?? "");
+      const currentStart = parsePair(segmentMatches[index]?.[2] ?? "");
+      expectSamePoint(previousEnd, currentStart);
+    }
 
-    expect(cumulativeLengths[1]).toBeGreaterThan(cumulativeLengths[0]!);
-    expect(cumulativeLengths[2]).toBeGreaterThan(cumulativeLengths[1]!);
-    expect(cumulativeRatios[0]).toBeLessThan(cumulativeRatios[1]!);
-    expect(cumulativeRatios[1]).toBeLessThan(cumulativeRatios[2]!);
-    expect(cumulativeRatios[2]).toBeCloseTo(1, 6);
+    for (const segment of segmentMatches) {
+      const physicalStart = parsePair(segment[2] ?? "");
+      const physicalEnd = parsePair(segment[3] ?? "");
+      const renderedStart = { x: Number(segment[4]), y: Number(segment[5]) };
+      const renderedEnd = { x: Number(segment[6]), y: Number(segment[7]) };
+      const forward = Math.abs(renderedStart.x - physicalStart.x) < 1e-6
+        && Math.abs(renderedStart.y - physicalStart.y) < 1e-6;
+      expectSamePoint(renderedStart, forward ? physicalStart : physicalEnd);
+      expectSamePoint(renderedEnd, forward ? physicalEnd : physicalStart);
+    }
+
+    const firstStart = parsePair(segmentMatches[0]?.[2] ?? "");
+    const finalEnd = parsePair(segmentMatches[segmentMatches.length - 1]?.[3] ?? "");
+    const closure = html.match(/<polyline[^>]*data-chain-closure[^>]*points="([^"]+)"[^>]*data-physical-start="([^"]+)"[^>]*data-physical-end="([^"]+)"/);
+    expect(closure).not.toBeNull();
+    const closurePhysicalStart = parsePair(closure?.[2] ?? "");
+    const closurePhysicalEnd = parsePair(closure?.[3] ?? "");
+    expectSamePoint(closurePhysicalStart, finalEnd);
+    expectSamePoint(closurePhysicalEnd, firstStart);
+    const closurePoints = (closure?.[1] ?? "").split(" ").map(parsePair);
+    expectSamePoint(closurePoints[0] ?? { x: NaN, y: NaN }, finalEnd);
+    expectSamePoint(closurePoints.at(-1) ?? { x: NaN, y: NaN }, firstStart);
+    expect(closurePoints.length).toBeGreaterThan(2);
+
+    expect(html).toContain("data-chain-origin");
+    expect(html).toContain("data-chain-closure-label");
+    expect(html).toContain("Closure");
+    expect(html).toContain("stroke=\"#176b3a\"");
+    expect(html).toContain("stroke=\"#a3342d\"");
+    expect(html).toMatch(/<text[^>]*data-chain-label="0"[^>]*>[\s\S]*<tspan/);
+
+    const segmentsByColor = [...html.matchAll(/<line[^>]*data-chain-segment="\d+"[^>]*stroke="([^"]+)"/g)].map((match) => match[1]);
+    expect(segmentsByColor).toContain("#176b3a");
+  });
+
+  it("applies closure guide and lane offsets to actual intermediate points without disconnecting endpoints", () => {
+    const base = buildEvidence();
+    const generated = base.dimensionChain.status === "generated" ? base.dimensionChain : undefined;
+    if (!generated) throw new Error("Expected generated dimension chain fixture");
+
+    const baselineHtml = renderAssumptionResultsPdfEvidenceHtml(base);
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      dimensionChain: {
+        ...generated,
+        manualLayout: {
+          ...generated.manualLayout,
+          closureStartOffset: 18,
+          closureEndOffset: -12,
+          closureLaneOffset: 20,
+        },
+      },
+    }));
+    const closure = html.match(/<polyline[^>]*data-chain-closure[^>]*points="([^"]+)"[^>]*data-start-offset="([^"]+)"[^>]*data-end-offset="([^"]+)"[^>]*data-lane-offset="([^"]+)"/);
+
+    expect(closure).not.toBeNull();
+    expect(Number(closure?.[2])).toBe(18);
+    expect(Number(closure?.[3])).toBe(-12);
+    expect(Number(closure?.[4])).toBe(20);
+    const baselinePoints = (baselineHtml.match(/<polyline[^>]*data-chain-closure[^>]*points="([^"]+)"/)?.[1] ?? "")
+      .split(" ").map(parsePair);
+    const offsetPoints = (closure?.[1] ?? "").split(" ").map(parsePair);
+    expect(offsetPoints).toHaveLength(4);
+    expectSamePoint(offsetPoints[0] ?? { x: NaN, y: NaN }, baselinePoints[0] ?? { x: NaN, y: NaN });
+    expectSamePoint(offsetPoints[3] ?? { x: NaN, y: NaN }, baselinePoints[3] ?? { x: NaN, y: NaN });
+    expect(offsetPoints[1]).not.toEqual(baselinePoints[1]);
+    expect(offsetPoints[2]).not.toEqual(baselinePoints[2]);
+  });
+
+  it.each([
+    { direction: "end-to-start" as const, firstEndpoint: "physicalStart", lastEndpoint: "physicalEnd" },
+    { direction: "start-to-end" as const, firstEndpoint: "physicalEnd", lastEndpoint: "physicalStart" },
+  ])("renders $direction closure point order from its physical endpoints", ({
+    direction,
+    firstEndpoint,
+    lastEndpoint,
+  }) => {
+    const base = buildEvidence();
+    const generated = base.dimensionChain.status === "generated" ? base.dimensionChain : undefined;
+    if (!generated) throw new Error("Expected generated dimension chain fixture");
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      dimensionChain: { ...generated, closureDirection: direction },
+    }));
+    const closure = html.match(/<polyline[^>]*data-chain-closure[^>]*points="([^"]+)"[^>]*data-physical-start="([^"]+)"[^>]*data-physical-end="([^"]+)"/);
+    expect(closure).not.toBeNull();
+    const points = (closure?.[1] ?? "").split(" ").map(parsePair);
+    const endpoints = {
+      physicalStart: parsePair(closure?.[2] ?? ""),
+      physicalEnd: parsePair(closure?.[3] ?? ""),
+    };
+    expectSamePoint(points[0] ?? { x: NaN, y: NaN }, endpoints[firstEndpoint]);
+    expectSamePoint(points.at(-1) ?? { x: NaN, y: NaN }, endpoints[lastEndpoint]);
+  });
+
+  it("fits cumulative chain vertices inside the SVG viewBox for vertical positive factors", () => {
+    const base = buildEvidence();
+    const generated = base.dimensionChain.status === "generated" ? base.dimensionChain : undefined;
+    if (!generated) throw new Error("Expected generated dimension chain fixture");
+
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
+      dimensionChain: {
+        ...generated,
+        orientation: "vertical",
+      },
+    }));
+    const endpoints = [...html.matchAll(/data-physical-(?:start|end)="([^"]+)"/g)]
+      .map((match) => parsePair(match[1] ?? ""));
+
+    expect(endpoints.length).toBeGreaterThan(0);
+    for (const endpoint of endpoints) {
+      expect(endpoint.x).toBeGreaterThanOrEqual(24);
+      expect(endpoint.x).toBeLessThanOrEqual(596);
+      expect(endpoint.y).toBeGreaterThanOrEqual(24);
+      expect(endpoint.y).toBeLessThanOrEqual(144);
+    }
+    const labels = [...html.matchAll(/data-chain-label="\d+"[^>]*x="([^"]+)"[^>]*y="([^"]+)"/g)];
+    for (const label of labels) {
+      expect(Number(label[1])).toBeGreaterThanOrEqual(24);
+      expect(Number(label[1])).toBeLessThanOrEqual(596);
+      expect(Number(label[2])).toBeGreaterThanOrEqual(24);
+      expect(Number(label[2])).toBeLessThanOrEqual(133);
+    }
   });
 });

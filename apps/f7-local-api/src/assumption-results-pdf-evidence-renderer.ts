@@ -44,6 +44,10 @@ function chainNumber(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
 function renderFactorSetupRows(rows: AssumptionResultsPdfEvidenceRequest["factorSetup"]["rows"]): string {
   return rows.map((row) => `<tr>
             <td>${row.itemNumber}</td>
@@ -82,6 +86,10 @@ function chainFactors(input: AssumptionResultsPdfEvidenceRequest): readonly Chai
   }));
 }
 
+function formatPoint(value: { x: number; y: number }): string {
+  return `${value.x.toFixed(3)},${value.y.toFixed(3)}`;
+}
+
 function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): string {
   const chain = input.dimensionChain;
   const isFallback = chain.status === "fallback";
@@ -91,131 +99,116 @@ function renderDimensionChain(input: AssumptionResultsPdfEvidenceRequest): strin
   const reversed = chain.status === "generated" ? new Set(chain.reversedFactorIds) : new Set<string>();
   const boundaryOffsets = chain.status === "generated" ? chain.manualLayout.boundaryOffsets : {};
   const laneOffsets = chain.status === "generated" ? chain.manualLayout.laneOffsets : {};
-  const closureStartOffset = chain.status === "generated" ? chainNumber(chain.manualLayout.closureStartOffset) : 0;
-  const closureEndOffset = chain.status === "generated" ? chainNumber(chain.manualLayout.closureEndOffset) : 0;
-  const closureLaneOffset = chain.status === "generated" ? chainNumber(chain.manualLayout.closureLaneOffset) : 0;
-
-  const x0 = orientation === "vertical" ? 132 : 56;
-  const y0 = orientation === "vertical" ? 30 : 92;
-  const x1 = orientation === "vertical" ? 132 : 564;
-  const y1 = orientation === "vertical" ? 162 : 156;
-  const span = Math.max(1, factors.length - 1);
-  const maxNominalMagnitude = factors.reduce((maximum, factor) => {
-    const magnitude = Math.abs(chainNumber(factor.designNominal));
-    return Math.max(maximum, magnitude);
-  }, 0);
-  const normalizedMagnitude = (value: number): number => {
-    const denominator = Math.max(1e-9, maxNominalMagnitude);
-    return Math.min(1, Math.max(0, Math.abs(value) / denominator));
-  };
-
-  const points = factors.map((factor, index) => {
-    let offset = chainNumber(laneOffsets[factor.id]);
-    if (index > 0) {
-      const previous = factors[index - 1];
-      if (previous) offset += chainNumber(boundaryOffsets[`${previous.id}::${factor.id}`]);
-    }
-    if (orientation === "vertical") {
-      return {
-        x: x0 + offset,
-        y: y0 + (index / span) * (y1 - y0),
-      };
-    }
-    return {
-      x: x0 + (index / span) * (x1 - x0),
-      y: y0 + offset,
-    };
+  const axisStart = orientation === "vertical" ? 24 : 56;
+  const axisEnd = orientation === "vertical" ? 144 : 564;
+  const axisRange = axisEnd - axisStart;
+  const segmentCount = factors.length;
+  const minVisualLength = segmentCount > 0
+    ? Math.max(8, Math.min(orientation === "vertical" ? 18 : 26, axisRange / (segmentCount * 1.35)))
+    : 0;
+  const magnitudes = factors.map((factor) => Math.abs(chainNumber(factor.designNominal)));
+  const weightTotal = magnitudes.reduce((sum, current) => sum + current, 0);
+  const baseTotal = segmentCount * minVisualLength;
+  const distributable = Math.max(0, axisRange - baseTotal);
+  const scaledLengths = factors.map((_factor, index) => {
+    if (segmentCount === 0) return 0;
+    if (weightTotal <= 1e-9) return minVisualLength + distributable / segmentCount;
+    return minVisualLength + distributable * (magnitudes[index] ?? 0) / weightTotal;
   });
 
-  const axisStart = orientation === "vertical"
-    ? { x: x0, y: y0 - 22 + closureStartOffset }
-    : { x: x0 - 20 + closureStartOffset, y: y0 };
-  const axisEnd = orientation === "vertical"
-    ? { x: x0, y: y1 + 22 + closureEndOffset }
-    : { x: x1 + 20 + closureEndOffset, y: y0 };
+  const cumulativePositions = [0];
+  for (let index = 0; index < factors.length; index += 1) {
+    const factor = factors[index];
+    if (!factor) continue;
+    const direction = chainNumber(factor.designNominal) < 0 ? -1 : 1;
+    const delta = direction * (scaledLengths[index] ?? minVisualLength);
+    cumulativePositions.push((cumulativePositions[index] ?? 0) + delta);
+  }
 
-  const closureStart = orientation === "vertical"
-    ? { x: x0 + 58 + closureLaneOffset, y: y0 - 10 }
-    : { x: x0 - 8, y: y0 + 54 + closureLaneOffset };
-  const closureEnd = orientation === "vertical"
-    ? { x: x0 + 58 + closureLaneOffset, y: y1 + 10 }
-    : { x: x1 + 8, y: y0 + 54 + closureLaneOffset };
+  const minimumPosition = Math.min(...cumulativePositions);
+  const maximumPosition = Math.max(...cumulativePositions);
+  const positionSpan = Math.max(1e-9, maximumPosition - minimumPosition);
+  const mapPosition = (position: number): number => axisStart
+    + ((position - minimumPosition) / positionSpan) * axisRange;
+  const vertices = cumulativePositions.map((position) => orientation === "vertical"
+    ? { x: 310, y: mapPosition(position) }
+    : { x: mapPosition(position), y: 92 });
 
-  const closureFrom = closure === "end-to-start" ? closureEnd : closureStart;
-  const closureTo = closure === "end-to-start" ? closureStart : closureEnd;
+  for (let index = 1; index < factors.length; index += 1) {
+    const previousFactor = factors[index - 1];
+    const factor = factors[index];
+    const vertex = vertices[index];
+    if (!previousFactor || !factor || !vertex) continue;
+    const boundaryKey = `${previousFactor.id}::${factor.id}`;
+    const boundaryOffset = chainNumber(boundaryOffsets[boundaryKey]);
+    if (orientation === "vertical") vertex.x = Math.min(596, Math.max(24, vertex.x + boundaryOffset));
+    else vertex.y = Math.min(144, Math.max(24, vertex.y + boundaryOffset));
+  }
 
-  const segmentMinLength = orientation === "vertical" ? 24 : 36;
-  const segmentMaxLength = orientation === "vertical" ? 60 : 112;
-  const plannedSegmentLengths = factors.map((factor) => {
-    const scale = normalizedMagnitude(chainNumber(factor.designNominal));
-    return segmentMinLength + (segmentMaxLength - segmentMinLength) * scale;
-  });
-  const totalPlannedLength = plannedSegmentLengths.reduce((sum, current) => sum + current, 0);
-  const topologyPoints: string[] = [];
-  let cumulativeLength = 0;
+  const originVertex = vertices[0] ?? (orientation === "vertical" ? { x: 310, y: 84 } : { x: 310, y: 92 });
+  const finalVertex = vertices[vertices.length - 1] ?? originVertex;
 
   const factorSegments = factors.map((factor, index) => {
-    const anchor = points[index];
-    if (!anchor) return "";
-    const rawDirection = chainNumber(factor.designNominal) < 0 ? -1 : 1;
-    const reverseDirection = reversed.has(factor.id) ? -1 : 1;
-    const direction = rawDirection * reverseDirection;
-    const scale = normalizedMagnitude(chainNumber(factor.designNominal));
-    const length = segmentMinLength + (segmentMaxLength - segmentMinLength) * scale;
-    const to = orientation === "vertical"
-      ? { x: anchor.x, y: anchor.y + direction * length }
-      : { x: anchor.x + direction * length, y: anchor.y };
-    const segmentLength = Math.hypot(to.x - anchor.x, to.y - anchor.y);
-    cumulativeLength += segmentLength;
-    topologyPoints.push(`${to.x.toFixed(2)},${to.y.toFixed(2)}`);
-    const segmentLengthAttribute = Number(segmentLength.toFixed(4));
-    const cumulativeLengthAttribute = Number(cumulativeLength.toFixed(4));
-    const cumulativeRatio = totalPlannedLength > 0 ? cumulativeLength / totalPlannedLength : 0;
-    const cumulativeRatioAttribute = Number(cumulativeRatio.toFixed(6));
-    const labelX = orientation === "vertical" ? anchor.x + 8 : (anchor.x + to.x) / 2;
-    const labelY = orientation === "vertical" ? (anchor.y + to.y) / 2 : anchor.y - 8;
+    const physicalStart = vertices[index];
+    const physicalEnd = vertices[index + 1];
+    if (!physicalStart || !physicalEnd) return "";
+    const isReversedVisual = reversed.has(factor.id);
+    const visualStart = isReversedVisual ? physicalEnd : physicalStart;
+    const visualEnd = isReversedVisual ? physicalStart : physicalEnd;
+    const laneOffset = chainNumber(laneOffsets[factor.id]);
+    const midpointX = (physicalStart.x + physicalEnd.x) / 2;
+    const midpointY = (physicalStart.y + physicalEnd.y) / 2;
+    const labelX = clamp(orientation === "vertical" ? midpointX + 9 + laneOffset : midpointX, 24, 596);
+    const labelY = clamp(orientation === "vertical" ? midpointY : midpointY - 8 + laneOffset, 24, 133);
+    const isPositive = chainNumber(factor.designNominal) >= 0;
+    const strokeColor = isPositive ? "#176b3a" : "#a3342d";
+    const markerId = isPositive ? "chain-arrow-green" : "chain-arrow-red";
     const segmentId = factor.id.startsWith("fallback-") ? factor.id : factor.id.slice(0, 8);
     return `<g>
-      <line data-factor-segment="${safeText(segmentId)}" data-segment-index="${index + 1}" data-segment-length="${segmentLengthAttribute}" data-cumulative-length="${cumulativeLengthAttribute}" data-cumulative-ratio="${cumulativeRatioAttribute}" x1="${anchor.x.toFixed(2)}" y1="${anchor.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" stroke="#2a8992" stroke-width="2" marker-end="url(#chain-arrow)"/>
-        <text x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="middle">Item ${factor.itemNumber} ${safeText(factor.name)} DN ${signedFinite(factor.designNominal)} Tol ${signedFinite(factor.upperTolerance)} / ${finite(factor.lowerTolerance)}</text>
-      </g>`;
+      <line data-chain-segment="${index}" data-factor-segment="${safeText(segmentId)}" data-segment-index="${index + 1}" data-physical-start="${formatPoint(physicalStart)}" data-physical-end="${formatPoint(physicalEnd)}" x1="${visualStart.x.toFixed(3)}" y1="${visualStart.y.toFixed(3)}" x2="${visualEnd.x.toFixed(3)}" y2="${visualEnd.y.toFixed(3)}" stroke="${strokeColor}" stroke-width="2" marker-end="url(#${markerId})"/>
+      <text data-chain-label="${index}" x="${labelX.toFixed(3)}" y="${labelY.toFixed(3)}" text-anchor="middle">
+        <tspan x="${labelX.toFixed(3)}" dy="0">Item ${factor.itemNumber} ${safeText(factor.name)}</tspan>
+        <tspan x="${labelX.toFixed(3)}" dy="11">DN ${signedFinite(factor.designNominal)} Tol ${signedFinite(factor.upperTolerance)} / ${finite(factor.lowerTolerance)}</tspan>
+      </text>
+    </g>`;
   }).join("");
 
-  const cumulativeTopologyPoints = points.length === 0
-    ? ""
-    : [`${points[0]?.x.toFixed(2)},${points[0]?.y.toFixed(2)}`, ...topologyPoints].join(" ");
+  const closureStartOffset = chainNumber(chain.status === "generated" ? chain.manualLayout.closureStartOffset : 0);
+  const closureEndOffset = chainNumber(chain.status === "generated" ? chain.manualLayout.closureEndOffset : 0);
+  const closureLaneOffset = chainNumber(chain.status === "generated" ? chain.manualLayout.closureLaneOffset : 0);
+  const closureLane = orientation === "vertical"
+    ? clamp(550 + closureLaneOffset, 24, 596)
+    : clamp(132 + closureLaneOffset, 24, 144);
+  const closureStartGuide = orientation === "vertical"
+    ? { x: closureLane, y: clamp(finalVertex.y + closureStartOffset, 24, 144) }
+    : { x: clamp(finalVertex.x + closureStartOffset, 24, 596), y: closureLane };
+  const closureEndGuide = orientation === "vertical"
+    ? { x: closureLane, y: clamp(originVertex.y + closureEndOffset, 24, 144) }
+    : { x: clamp(originVertex.x + closureEndOffset, 24, 596), y: closureLane };
+  const physicalClosurePoints = [finalVertex, closureStartGuide, closureEndGuide, originVertex];
+  const closureDisplayPoints = closure === "end-to-start"
+    ? physicalClosurePoints
+    : [...physicalClosurePoints].reverse();
+  const closureLabelX = clamp((closureStartGuide.x + closureEndGuide.x) / 2, 24, 596);
+  const closureLabelY = clamp((closureStartGuide.y + closureEndGuide.y) / 2 - 4, 24, 144);
 
   return `<section class="evidence-panel">
     <h3>Dimension Chain</h3>
     <p class="dimension-note">${isFallback ? "fallback to standard horizontal chain from factorSetup rows" : "generated chain preserved for report"}; orientation: ${safeText(orientation)}; ${chain.status === "generated" ? "manual layout" : "automatic layout"}; ${reversed.size > 0 ? "reversed factor segments" : "forward factor segments"}; closure: ${safeText(closure)}.</p>
     <svg data-dimension-chain viewBox="0 0 620 184" role="img" aria-label="Dimension Chain">
       <defs>
-        <marker id="chain-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3.5 L0,7 z" fill="#176b75"/>
+        <marker id="chain-arrow-green" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3.5 L0,7 z" fill="#176b3a"/>
         </marker>
         <marker id="chain-arrow-red" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
           <path d="M0,0 L7,3.5 L0,7 z" fill="#a3342d"/>
         </marker>
       </defs>
       <rect x="0" y="0" width="620" height="184" rx="10" fill="#f6fbfb" stroke="#b8c4c8"/>
-      <line data-chain-axis x1="${axisStart.x.toFixed(2)}" y1="${axisStart.y.toFixed(2)}" x2="${axisEnd.x.toFixed(2)}" y2="${axisEnd.y.toFixed(2)}" stroke="#176b75" stroke-width="2" marker-end="url(#chain-arrow)"/>
-      ${factors.map((factor, index) => {
-    const point = points[index];
-    if (!point) return "";
-    const isVertical = orientation === "vertical";
-    const width = isVertical ? 118 : 94;
-    const height = isVertical ? 28 : 36;
-    const x = point.x - width / 2;
-    const y = point.y - height / 2;
-    return `<g>
-        <rect data-factor-id="${safeText(factor.id.slice(0, 8))}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${width}" height="${height}" rx="7" fill="#ffffff" stroke="#6a7b83"/>
-        <text x="${point.x.toFixed(2)}" y="${(point.y - 3).toFixed(2)}" text-anchor="middle">${safeText(factor.name)}</text>
-        <text x="${point.x.toFixed(2)}" y="${(point.y + 10).toFixed(2)}" text-anchor="middle">${safeText(factor.id.slice(0, 8))}</text>
-      </g>`;
-  }).join("")}
+      <circle data-chain-origin cx="${originVertex.x.toFixed(3)}" cy="${originVertex.y.toFixed(3)}" r="4" fill="#176b3a"/>
       ${factorSegments}
-      ${cumulativeTopologyPoints.length > 0 ? `<polyline data-chain-topology="cumulative" points="${cumulativeTopologyPoints}" fill="none" stroke="#1f2933" stroke-width="1.2" stroke-dasharray="2 2"/>` : ""}
-      <line data-chain-closure x1="${closureFrom.x.toFixed(2)}" y1="${closureFrom.y.toFixed(2)}" x2="${closureTo.x.toFixed(2)}" y2="${closureTo.y.toFixed(2)}" stroke="#a3342d" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#chain-arrow-red)"/>
+      <polyline data-chain-closure points="${closureDisplayPoints.map(formatPoint).join(" ")}" data-physical-start="${formatPoint(finalVertex)}" data-physical-end="${formatPoint(originVertex)}" data-start-offset="${closureStartOffset}" data-end-offset="${closureEndOffset}" data-lane-offset="${closureLaneOffset}" fill="none" stroke="#176b3a" stroke-width="1.8" marker-end="url(#chain-arrow-green)"/>
+      <text data-chain-closure-label x="${closureLabelX.toFixed(3)}" y="${closureLabelY.toFixed(3)}">Closure</text>
       <text x="24" y="156">${safeText(isFallback ? "Fallback from factorSetup rows" : "Generated from validated factor setup")}</text>
       <text x="24" y="170">${safeText(chain.sourceSignature)}</text>
     </svg>
@@ -250,7 +243,7 @@ function renderNormalCurve(curve: AssumptionResultsPdfEvidenceRequest["responseD
   const sigmaLeftX = scaleX(lowerSigma);
   const sigmaRightX = scaleX(upperSigma);
 
-  return `<section class="evidence-panel">
+  return `<section class="evidence-panel evidence-panel--curve">
     <h3>Normal Distribution Curve</h3>
     <p class="curve-note">Mean ${finite(curve.mean)}; LSL ${finite(curve.lowerSpecLimit)}; USL ${finite(curve.upperSpecLimit)}; Target ${finite(curve.target)}; ±3σ ${finite(3 * sigma)}.</p>
     <svg data-normal-curve viewBox="0 0 520 180" role="img" aria-label="Normal Distribution Curve">
@@ -319,28 +312,34 @@ function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["res
 export function renderAssumptionResultsPdfEvidenceHtml(input: AssumptionResultsPdfEvidenceRequest): string {
   return `
     <div class="report-page report-page--evidence">
-      <header>
-        <h1>Engineering Evidence</h1>
-        <p>Layout B</p>
-      </header>
-      <section class="factor-setup-panel">
-        <h2>Factor Setup</h2>
-        <table>
-          <thead><tr><th>#</th><th>Factor</th><th>Design Nominal</th><th>Upper Tol.</th><th>Lower Tol.</th><th>LT Safety</th><th>Sigma Level</th><th>Distribution</th><th>Mean</th><th>Combined Tol.</th><th>1 Sigma</th><th>Contribution</th></tr></thead>
-          <tbody>${renderFactorSetupRows(input.factorSetup.rows)}</tbody>
-          <tfoot>
-            <tr><th colspan="2">Total Design Nominal</th><td colspan="10">${finite(input.factorSetup.footer.designNominalTotal)}</td></tr>
-            <tr><th colspan="2">Upper Worst Case Tolerance</th><td colspan="10">${finite(input.factorSetup.footer.upperWorstCaseTolerance)}</td></tr>
-            <tr><th colspan="2">Lower Worst Case Tolerance</th><td colspan="10">${finite(input.factorSetup.footer.lowerWorstCaseTolerance)}</td></tr>
-            <tr><th colspan="2">Mean Response</th><td colspan="10">${finite(input.factorSetup.footer.meanResponse)}</td></tr>
-            <tr><th colspan="2">RSS Tolerance</th><td colspan="10">${finite(input.factorSetup.footer.rssTolerance)}</td></tr>
-            <tr><th colspan="2">RSS Sigma</th><td colspan="10">${finite(input.factorSetup.footer.rssSigma)}</td></tr>
-            <tr><th colspan="2">Contribution Total Percent</th><td colspan="10">${finite(input.factorSetup.footer.contributionTotalPercent)}%</td></tr>
-            <tr><th colspan="2">Additional Mean Shift</th><td colspan="10">${finite(input.factorSetup.footer.additionalMeanShift)}</td></tr>
-            <tr><th colspan="2">Adjusted Mean</th><td colspan="10">${finite(input.factorSetup.footer.adjustedMean)}</td></tr>
-          </tfoot>
-        </table>
-      </section>
+      <div class="evidence-top">
+        <header>
+          <h1>Engineering Evidence</h1>
+          <p>Layout B</p>
+        </header>
+        <section class="factor-setup-panel">
+          <h2>Factor Setup</h2>
+          <table>
+            <thead><tr><th>#</th><th>Factor</th><th>Design Nominal</th><th>Upper Tol.</th><th>Lower Tol.</th><th>LT Safety</th><th>Sigma Level</th><th>Distribution</th><th>Mean</th><th>Combined Tol.</th><th>1 Sigma</th><th>Contribution</th></tr></thead>
+            <tbody>${renderFactorSetupRows(input.factorSetup.rows)}</tbody>
+            <tfoot>
+              <tr data-footer-core-total>
+                <th colspan="3" data-footer-field="design-nominal-total">Design Nominal Total: ${finite(input.factorSetup.footer.designNominalTotal)}</th>
+                <th colspan="3" data-footer-field="upper-worst-case-tolerance">Upper Worst Case Tol.: ${finite(input.factorSetup.footer.upperWorstCaseTolerance)}</th>
+                <th colspan="3" data-footer-field="lower-worst-case-tolerance">Lower Worst Case Tol.: ${finite(input.factorSetup.footer.lowerWorstCaseTolerance)}</th>
+                <th colspan="3" data-footer-field="contribution-total">Contribution Total: ${finite(input.factorSetup.footer.contributionTotalPercent)}%</th>
+              </tr>
+              <tr data-footer-derived-total>
+                <th colspan="2" data-footer-field="mean-response">Mean Response: ${finite(input.factorSetup.footer.meanResponse)}</th>
+                <th colspan="2" data-footer-field="rss-tolerance">RSS Tol.: ${finite(input.factorSetup.footer.rssTolerance)}</th>
+                <th colspan="2" data-footer-field="rss-sigma">RSS Sigma: ${finite(input.factorSetup.footer.rssSigma)}</th>
+                <th colspan="3" data-footer-field="additional-mean-shift">Additional Mean Shift: ${finite(input.factorSetup.footer.additionalMeanShift)}</th>
+                <th colspan="3" data-footer-field="adjusted-mean">Adjusted Mean: ${finite(input.factorSetup.footer.adjustedMean)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+      </div>
       <div class="evidence-lower-grid">
         ${renderDimensionChain(input)}
         <div class="evidence-right-stack">

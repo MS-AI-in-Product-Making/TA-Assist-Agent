@@ -218,25 +218,30 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .guidance { border-left: 2px solid #6a7b83; padding-left: 3mm; }
     .guidance--warning { border-color: #b45309; }
     .report-page--evidence {
-      break-after: page;
+      height: 180mm;
+      box-sizing: border-box;
       display: grid;
-      grid-template-rows: 43% 1fr;
-      height: 100%;
-      overflow: visible;
+      grid-template-rows: 76mm minmax(0,1fr);
+      gap: 2mm;
+      break-after: page;
     }
     .report-page--evidence h1 { margin-bottom: 1mm; }
+    .report-page--evidence .evidence-top { min-height: 0; }
     .report-page--evidence .factor-setup-panel { min-height: 0; }
-    .report-page--evidence .factor-setup-panel table { table-layout: fixed; }
+    .report-page--evidence .factor-setup-panel table { table-layout: fixed; font-size: 7.4pt; }
+    .report-page--evidence .factor-setup-panel th,
+    .report-page--evidence .factor-setup-panel td { padding: 0.75mm 1.1mm; line-height: 1.15; }
     .report-page--evidence .evidence-lower-grid {
       display: grid;
       gap: 3mm;
       grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
-      margin-top: 3mm;
       min-height: 0;
     }
-    .report-page--evidence .evidence-panel { break-inside: avoid; border: 1px solid #b8c4c8; padding: 2mm; }
+    .report-page--evidence .evidence-panel { break-inside: avoid; border: 1px solid #b8c4c8; padding: 2mm; min-height: 0; }
     .report-page--evidence .evidence-panel svg { display: block; height: auto; max-width: 100%; width: 100%; }
-    .report-page--evidence .evidence-right-stack { display: grid; gap: 3mm; }
+    .report-page--evidence .evidence-right-stack { display: grid; gap: 3mm; min-height: 0; grid-template-rows: minmax(0, .95fr) minmax(0, 1.05fr); }
+    .report-page--evidence .evidence-panel--curve { display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+    .report-page--evidence .evidence-panel--curve svg { height: 100%; max-height: 100%; min-height: 0; }
     .report-page--evidence .dimension-note, .report-page--evidence .curve-note { color: #52616b; margin: 0 0 1.5mm; }
     .report-page--evidence .response-summary-grid {
       display: grid;
