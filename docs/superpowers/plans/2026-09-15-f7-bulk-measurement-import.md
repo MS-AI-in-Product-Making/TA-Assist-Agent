@@ -180,7 +180,7 @@ git commit -m "feat(f7): define bulk measurement import contracts"
 - Create: `packages/workbook-catalog/src/f7-measurement-template.test.ts`
 - Modify: `packages/workbook-catalog/src/index.ts`
 
-- [ ] **Step 1: Write failing authority tests**
+- [x] **Step 1: Write failing authority tests**
 
 Assert fixed coordinates, ordered Factor columns beginning at `B`, first measurement row, 500 reserved rows, cross-zero status, Part Number/DIM ID blank handling, and stable domain-separated SHA-256 digests. Assert order, unit, specifications, workbook hash, worksheet, or revision changes the appropriate digest.
 
@@ -198,13 +198,13 @@ expect(authority.manifest.factors[0]).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `npx.cmd vitest run --project node packages/workbook-catalog/src/f7-measurement-template.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement pure layout, limits, and digest helpers**
+- [x] **Step 3: Implement pure layout, limits, and digest helpers**
 
 Export `F7_MEASUREMENT_TEMPLATE_LAYOUT`, `createF7MeasurementImportAuthority()`, `hashF7MeasurementFactorSet()`, and `hashF7MeasurementSessionState()`. Use `createHash("sha256")` with length-prefixed UTF-8 fields and explicit domains. Authority input contains only validated workbook identity, selected worksheet, private revision, template ID, and confirmed evidence.
 
@@ -222,13 +222,13 @@ export const F7_MEASUREMENT_TEMPLATE_LAYOUT = Object.freeze({
 
 Treat the already-confirmed evidence LSL/USL as authoritative. Compute `CROSSES_ZERO` only from signed nominal/tolerance endpoints and assert it agrees with confirmed physical limits.
 
-- [ ] **Step 4: Run the test and verify GREEN**
+- [x] **Step 4: Run the test and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add packages/workbook-catalog/src/f7-measurement-template.ts packages/workbook-catalog/src/f7-measurement-template.test.ts packages/workbook-catalog/src/index.ts
