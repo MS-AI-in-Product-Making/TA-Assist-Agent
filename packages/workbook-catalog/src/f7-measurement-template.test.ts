@@ -1,9 +1,14 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS,
+  F7_MEASUREMENT_IMPORT_MAX_FACTORS,
+  F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID,
   f7MeasurementImportAuthoritySchema,
   type F7FactorEvidence,
-} from "../../contracts/src/f7-contracts.js";
+} from "@ai-assist/contracts";
 import {
   F7_MEASUREMENT_TEMPLATE_LAYOUT,
   createF7MeasurementImportAuthority,
@@ -19,6 +24,19 @@ const WORKSHEET_NAME = "Anonymous_TA";
 const WORKSHEET_STABLE_ID = "worksheet-stable-001";
 const WORKSHEET_STABLE_ID_2 = "worksheet-stable-002";
 const SESSION_ID = "session-1";
+const LOCKED_COORDINATE_DOMAIN = "f7-measurement-locked-coordinates-v1";
+
+function hashLengthPrefixed(domain: string, parts: readonly string[]): string {
+  const hash = createHash("sha256");
+  hash.update(domain, "utf8");
+  hash.update("\n", "utf8");
+  for (const part of parts) {
+    hash.update(`${Buffer.byteLength(part, "utf8")}:`, "utf8");
+    hash.update(part, "utf8");
+    hash.update("|", "utf8");
+  }
+  return hash.digest("hex");
+}
 
 function makeFactor(overrides: Partial<F7FactorEvidence> = {}): F7FactorEvidence {
   const base: F7FactorEvidence = {
@@ -121,6 +139,18 @@ function makeInput(
   };
 }
 
+function makeManyFactors(count: number): F7FactorEvidence[] {
+  return Array.from({ length: count }, (_, index) => makeFactor({
+    factorCandidateId: `${(index + 1).toString(16).padStart(64, "0")}`.slice(-64),
+    factorId: `${(index + 101).toString(16).padStart(64, "0")}`.slice(-64),
+    factorName: `Factor ${index + 1}`,
+    sourceRow: 14 + index,
+    tableId: `table-${index + 1}`,
+    partNumber: `PN-${index + 1}`,
+    dimId: `DIM-${index + 1}`,
+  }));
+}
+
 describe("F7 measurement template authority", () => {
   it("exposes a frozen deterministic layout with reserved 500-row measurement capacity", () => {
     expect(Object.isFrozen(F7_MEASUREMENT_TEMPLATE_LAYOUT)).toBe(true);
@@ -155,6 +185,47 @@ describe("F7 measurement template authority", () => {
       authorityDigestCell: "_F7_MANIFEST!B13",
       factorsStartRow: 16,
     });
+  });
+
+  it("uses the public contracts exports and keeps the source free of deep contracts imports", () => {
+    const source = readFileSync(fileURLToPath(new URL("./f7-measurement-template.ts", import.meta.url)), "utf8");
+
+    expect(F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID).toBe("f7-measurement-import-template-v1");
+    expect(F7_MEASUREMENT_IMPORT_MAX_FACTORS).toBe(100);
+    expect(f7MeasurementImportAuthoritySchema).toBeDefined();
+    expect(source).not.toContain("../../contracts/src/f7-contracts.js");
+    expect(source).not.toContain("unknown as");
+  });
+
+  it("includes every immutable manifest coordinate in the locked-coordinate digest", () => {
+    const authority = createF7MeasurementImportAuthority(makeInput());
+    const expectedLockedCoordinateDigest = hashLengthPrefixed(LOCKED_COORDINATE_DOMAIN, [
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.contractIdCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.contractVersionCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.templateIdCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.workbookContentHashCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.worksheetNameCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.worksheetStableIdCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorSetDigestCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsDigestCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.lockedValueDigestCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.lockedCoordinateDigestCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.sessionStateDigestCell,
+      F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.authorityDigestCell,
+      String(F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow),
+      ...authority.manifest.factors.flatMap((factor) => [factor.factorId, factor.immutableCoordinateDigest]),
+    ]);
+
+    expect(authority.manifest.lockedCoordinateDigest).toBe(expectedLockedCoordinateDigest);
+  });
+
+  it("rejects more than 100 factors in the hash helper and authority creator", () => {
+    const hundredOneFactors = makeManyFactors(F7_MEASUREMENT_IMPORT_MAX_FACTORS + 1);
+
+    expect(() => hashF7MeasurementFactorSet(hundredOneFactors)).toThrow();
+    expect(() => createF7MeasurementImportAuthority(makeInput({ factors: hundredOneFactors }))).toThrow();
   });
 
   it("builds a valid authority with factor columns starting at B in evidence order", () => {

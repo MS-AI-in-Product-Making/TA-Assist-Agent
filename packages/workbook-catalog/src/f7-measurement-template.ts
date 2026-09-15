@@ -1,17 +1,19 @@
 import { createHash } from "node:crypto";
 import {
   F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS,
+  F7_MEASUREMENT_IMPORT_MAX_FACTORS,
+  F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID,
   createTypedError,
   f7FactorEvidenceSchema,
+  f7MeasurementImportAuthoritySchema,
+  f7MeasurementImportFactorManifestSchema,
+  f7MeasurementImportManifestSchema,
   type F7FactorEvidence,
 } from "@ai-assist/contracts";
-import * as f7ContractSource from "../../contracts/src/f7-contracts.js";
 import { z } from "zod";
 
 const INPUT_REFERENCE = "f7-measurement-template-input";
 const INPUT_SUMMARY = "F7 measurement template authority input is invalid.";
-const F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID = "f7-measurement-import-template-v1";
-
 const FACTOR_SET_DOMAIN = "f7-measurement-factor-set-v1";
 const SESSION_STATE_DOMAIN = "f7-measurement-session-state-v1";
 const AUTHORITY_DOMAIN = "f7-measurement-authority-v1";
@@ -66,7 +68,7 @@ type ParsedFactorEvidence = F7FactorEvidence & {
   readonly specificationSource?: F7SpecificationSource;
 };
 
-interface F7MeasurementImportFactorCoordinates {
+type F7MeasurementImportFactorCoordinates = {
   readonly factorNameCell: string;
   readonly unitCell: string;
   readonly designNominalCell: string;
@@ -76,50 +78,11 @@ interface F7MeasurementImportFactorCoordinates {
   readonly upperSpecLimitCell: string;
   readonly measurementColumn: string;
   readonly firstMeasurementCell: string;
-}
+};
 
-interface F7MeasurementImportFactorManifest {
-  readonly factorId: string;
-  readonly factorName: string;
-  readonly partNumber?: string;
-  readonly dimId?: string;
-  readonly unit: string;
-  readonly designNominal: number;
-  readonly upperTolerance: number;
-  readonly lowerTolerance: number;
-  readonly lowerSpecLimit: number;
-  readonly upperSpecLimit: number;
-  readonly specificationSource: F7SpecificationSource;
-  readonly limitStatus: "VALID" | "CROSSES_ZERO";
-  readonly coordinates: F7MeasurementImportFactorCoordinates;
-  readonly immutableValueDigest: string;
-  readonly immutableCoordinateDigest: string;
-}
-
-interface F7MeasurementImportManifest {
-  readonly contractId: typeof F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID;
-  readonly contractVersion: 1;
-  readonly templateId: string;
-  readonly workbookContentHash: string;
-  readonly worksheetName: string;
-  readonly worksheetStableId: string;
-  readonly factorSetDigest: string;
-  readonly factorsDigest: string;
-  readonly lockedValueDigest: string;
-  readonly lockedCoordinateDigest: string;
-  readonly factors: readonly F7MeasurementImportFactorManifest[];
-}
-
-export interface F7MeasurementImportAuthority {
-  readonly sessionId: string;
-  readonly sessionStateDigest: string;
-  readonly authorityDigest: string;
-  readonly manifest: F7MeasurementImportManifest;
-}
-
-const f7MeasurementImportAuthoritySchema = (
-  f7ContractSource as unknown as { readonly f7MeasurementImportAuthoritySchema: z.ZodType<F7MeasurementImportAuthority> }
-).f7MeasurementImportAuthoritySchema;
+type F7MeasurementImportFactorManifest = z.infer<typeof f7MeasurementImportFactorManifestSchema>;
+type F7MeasurementImportManifest = z.infer<typeof f7MeasurementImportManifestSchema>;
+export type F7MeasurementImportAuthority = z.infer<typeof f7MeasurementImportAuthoritySchema>;
 
 export interface F7MeasurementImportAuthorityInput {
   readonly sessionId: string;
@@ -146,7 +109,7 @@ const authorityInputSchema = z.object({
   worksheetName: z.string().trim().min(1).max(300),
   worksheetStableId: z.string().min(1),
   measurementImportRevision: z.number().int().nonnegative(),
-  factors: z.array(f7FactorEvidenceSchema).min(1),
+  factors: z.array(f7FactorEvidenceSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
 }).strict();
 
 const sessionStateInputSchema = z.object({
@@ -317,6 +280,27 @@ function hashProjectedFactorCoordinates(factor: Omit<F7MeasurementImportFactorMa
   ]);
 }
 
+function hashLockedCoordinateValues(manifest: F7MeasurementImportManifest): string {
+  return hashLengthPrefixed(LOCKED_COORDINATES_DOMAIN, [
+    F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName,
+    F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName,
+    MANIFEST_COORDINATES.contractIdCell,
+    MANIFEST_COORDINATES.contractVersionCell,
+    MANIFEST_COORDINATES.templateIdCell,
+    MANIFEST_COORDINATES.workbookContentHashCell,
+    MANIFEST_COORDINATES.worksheetNameCell,
+    MANIFEST_COORDINATES.worksheetStableIdCell,
+    MANIFEST_COORDINATES.factorSetDigestCell,
+    MANIFEST_COORDINATES.factorsDigestCell,
+    MANIFEST_COORDINATES.lockedValueDigestCell,
+    MANIFEST_COORDINATES.lockedCoordinateDigestCell,
+    MANIFEST_COORDINATES.sessionStateDigestCell,
+    MANIFEST_COORDINATES.authorityDigestCell,
+    String(MANIFEST_COORDINATES.factorsStartRow),
+    ...manifest.factors.flatMap((factor) => [factor.factorId, factor.immutableCoordinateDigest]),
+  ]);
+}
+
 function projectManifestFactor(factor: ParsedFactorEvidence, index: number): F7MeasurementImportFactorManifest {
   const column = columnLetters(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn + index);
   const factorSource = specificationSource(factor.specificationSource);
@@ -348,7 +332,7 @@ function projectManifestFactor(factor: ParsedFactorEvidence, index: number): F7M
 }
 
 export function hashF7MeasurementFactorSet(factorsInput: readonly F7FactorEvidence[]): string {
-  const factors = z.array(f7FactorEvidenceSchema).min(1).parse(factorsInput) as readonly ParsedFactorEvidence[];
+  const factors = z.array(f7FactorEvidenceSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS).parse(factorsInput) as readonly ParsedFactorEvidence[];
   return hashLengthPrefixed(FACTOR_SET_DOMAIN, factors.flatMap((factor) => [
     factor.factorId,
     factor.factorName,
@@ -399,21 +383,6 @@ export function createF7MeasurementImportAuthority(input: F7MeasurementImportAut
     parsed.data.worksheetName,
     ...manifestFactors.flatMap((factor) => [factor.factorId, factor.immutableValueDigest]),
   ]);
-  const lockedCoordinateDigest = hashLengthPrefixed(LOCKED_COORDINATES_DOMAIN, [
-    F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName,
-    F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName,
-    MANIFEST_COORDINATES.contractIdCell,
-    MANIFEST_COORDINATES.contractVersionCell,
-    MANIFEST_COORDINATES.templateIdCell,
-    MANIFEST_COORDINATES.workbookContentHashCell,
-    MANIFEST_COORDINATES.worksheetNameCell,
-    MANIFEST_COORDINATES.worksheetStableIdCell,
-    MANIFEST_COORDINATES.factorSetDigestCell,
-    MANIFEST_COORDINATES.factorsDigestCell,
-    MANIFEST_COORDINATES.lockedValueDigestCell,
-    MANIFEST_COORDINATES.lockedCoordinateDigestCell,
-    ...manifestFactors.flatMap((factor) => [factor.factorId, factor.immutableCoordinateDigest]),
-  ]);
   const sessionStateDigest = hashF7MeasurementSessionState({
     templateId: parsed.data.templateId,
     workbookContentHash: parsed.data.workbookContentHash,
@@ -422,24 +391,31 @@ export function createF7MeasurementImportAuthority(input: F7MeasurementImportAut
     measurementImportRevision: parsed.data.measurementImportRevision,
   });
 
+  const manifest = {
+    contractId: F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID,
+    contractVersion: 1 as const,
+    templateId: parsed.data.templateId,
+    workbookContentHash: parsed.data.workbookContentHash,
+    worksheetName: parsed.data.worksheetName,
+    worksheetStableId: parsed.data.worksheetStableId,
+    factorSetDigest,
+    factorsDigest,
+    lockedValueDigest,
+    lockedCoordinateDigest: "",
+    factors: manifestFactors,
+  } satisfies F7MeasurementImportManifest;
+
+  const lockedCoordinateDigest = hashLockedCoordinateValues(manifest);
+
   const authority = {
     sessionId: parsed.data.sessionId,
     sessionStateDigest,
     authorityDigest: "",
     manifest: {
-      contractId: F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID,
-      contractVersion: 1,
-      templateId: parsed.data.templateId,
-      workbookContentHash: parsed.data.workbookContentHash,
-      worksheetName: parsed.data.worksheetName,
-      worksheetStableId: parsed.data.worksheetStableId,
-      factorSetDigest,
-      factorsDigest,
-      lockedValueDigest,
+      ...manifest,
       lockedCoordinateDigest,
-      factors: manifestFactors,
     },
-  };
+  } satisfies F7MeasurementImportAuthority;
 
   authority.authorityDigest = hashLengthPrefixed(AUTHORITY_DOMAIN, [
     authority.sessionId,
