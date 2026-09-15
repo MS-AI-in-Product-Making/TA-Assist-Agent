@@ -55,7 +55,7 @@
 - Modify: `packages/workbook-catalog/src/f7-excel-adapter.ts`
 - Modify: `packages/workbook-catalog/src/f7-excel-adapter.test.ts`
 
-- [ ] **Step 1: Write failing resolver, contract, and adapter tests**
+- [x] **Step 1: Write failing resolver, contract, and adapter tests**
 
 Add a resolver case with headers `Factor Description`, `Part Number`, `DIM ID`, `Factor LSL`, and `Factor USL`. Assert optional traceability and explicit physical limits survive candidate extraction and confirmation. Assert missing Factor limit columns use normalized nominal/tolerance endpoints with source `Derived`; exact controlled Factor LSL/USL columns use source `Worksheet`; response-level `LSL`/`USL` labels elsewhere are never treated as Factor columns. Absent traceability and user-added Factors omit Part Number/DIM ID. Assert changing display traceability does not change `factorCandidateId` or `factorId`.
 
@@ -75,7 +75,7 @@ expect(setup.factors[0]).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -85,7 +85,7 @@ npx.cmd vitest run --project node packages/contracts/src/f7-contracts.test.ts pa
 
 Expected: FAIL because traceability, exact Factor limit semantics, and specification source do not exist.
 
-- [ ] **Step 3: Implement minimal optional traceability**
+- [x] **Step 3: Implement minimal optional traceability**
 
 Add `partNumber`, `factorLowerSpecLimit`, and `factorUpperSpecLimit` to `FACTOR_FIELD_ORDER`. Use aliases `part number`, `part no`, and `part no.` only for Part Number, and exact aliases `factor lsl`/`factor lower spec limit` and `factor usl`/`factor upper spec limit` only for physical Factor limits. Add bounded optional `partNumber` and `dimId` strings plus optional backward-compatible `specificationSource: "Worksheet" | "Derived"` to candidate/evidence schemas. Existing evidence without the field behaves as `Derived`.
 
@@ -99,13 +99,13 @@ const optionalTraceabilityFields = {
 } as const;
 ```
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS with existing extraction and factor identity tests unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add packages/contracts/src/f7-contracts.ts packages/contracts/src/f7-contracts.test.ts packages/workbook-catalog/src/factor-header-resolver.ts packages/workbook-catalog/src/factor-header-resolver.test.ts packages/workbook-catalog/src/f7-excel-adapter.ts packages/workbook-catalog/src/f7-excel-adapter.test.ts
