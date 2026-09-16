@@ -40,6 +40,20 @@ const BASELINE_FACTOR_ID = "b".repeat(64);
 const MEASURED_FACTOR_ID = "c".repeat(64);
 const BASELINE_CANDIDATE_ID = "d".repeat(64);
 const MEASURED_CANDIDATE_ID = "e".repeat(64);
+const BASELINE_CANDIDATE_SETUP = {
+  designNominal: -9,
+  upperTolerance: 0.9,
+  lowerTolerance: -0.7,
+  standardDeviation: 0.45,
+  distribution: "Uniform" as const,
+};
+const MEASURED_CANDIDATE_SETUP = {
+  designNominal: 8.75,
+  upperTolerance: 0.8,
+  lowerTolerance: -0.6,
+  standardDeviation: 0.35,
+  distribution: "Uniform" as const,
+};
 const DATASET_HASH = "f".repeat(64);
 const RUN_SEED = "1".repeat(64);
 const BOOTSTRAP_SEED = "2".repeat(64);
@@ -70,12 +84,13 @@ function createCandidate(options: {
   factorName: string;
   sourceRow: number;
   designNominal: number;
+  upperTolerance: number;
+  lowerTolerance: number;
   standardDeviation: number;
+  distribution: "Normal" | "Uniform";
 }) {
-  const lowerTolerance = -0.2;
-  const upperTolerance = 0.2;
-  const lowerEndpoint = options.designNominal + lowerTolerance;
-  const upperEndpoint = options.designNominal + upperTolerance;
+  const lowerEndpoint = options.designNominal + options.lowerTolerance;
+  const upperEndpoint = options.designNominal + options.upperTolerance;
   return {
     workbookContentHash: WORKBOOK_HASH,
     worksheetName: WORKSHEET_NAME,
@@ -90,10 +105,10 @@ function createCandidate(options: {
     workbookUnitEvidence: "mm",
     excelSignedMean: options.designNominal,
     designNominal: options.designNominal,
-    upperTolerance,
-    lowerTolerance,
+    upperTolerance: options.upperTolerance,
+    lowerTolerance: options.lowerTolerance,
     standardDeviation: options.standardDeviation,
-    distribution: "Normal" as const,
+    distribution: options.distribution,
     lowerSpecLimit: Math.min(lowerEndpoint, upperEndpoint),
     upperSpecLimit: Math.max(lowerEndpoint, upperEndpoint),
   };
@@ -324,15 +339,13 @@ function createSnapshot(
     factorCandidateId: BASELINE_CANDIDATE_ID,
     factorName: "Baseline frame",
     sourceRow: 14,
-    designNominal: -1,
-    standardDeviation: 0.1,
+    ...BASELINE_CANDIDATE_SETUP,
   });
   const measuredCandidate = createCandidate({
     factorCandidateId: MEASURED_CANDIDATE_ID,
     factorName: MEASURED_FACTOR_NAME,
     sourceRow: 15,
-    designNominal: 1.25,
-    standardDeviation: 0.08,
+    ...MEASURED_CANDIDATE_SETUP,
   });
   const baselineEvidence = createEvidence({
     factorCandidateId: BASELINE_CANDIDATE_ID,
@@ -634,6 +647,14 @@ describe("createF7ReportProjection", () => {
         sourceReferences: ["Analysis-A!G15", "Analysis-A!R15", MEASUREMENT_SOURCE],
       },
     ]);
+    expect(report.factors[0]?.designNominal).not.toBe(BASELINE_CANDIDATE_SETUP.designNominal);
+    expect(report.factors[0]?.upperTolerance).not.toBe(BASELINE_CANDIDATE_SETUP.upperTolerance);
+    expect(report.factors[0]?.lowerTolerance).not.toBe(BASELINE_CANDIDATE_SETUP.lowerTolerance);
+    expect(report.factors[0]?.setupDistribution).not.toBe(BASELINE_CANDIDATE_SETUP.distribution);
+    expect(report.factors[1]?.designNominal).not.toBe(MEASURED_CANDIDATE_SETUP.designNominal);
+    expect(report.factors[1]?.upperTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.upperTolerance);
+    expect(report.factors[1]?.lowerTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.lowerTolerance);
+    expect(report.factors[1]?.setupDistribution).not.toBe(MEASURED_CANDIDATE_SETUP.distribution);
   });
 
   it("adds an F0-grounded Setup versus Monte Carlo interpretation and optimization direction", () => {
