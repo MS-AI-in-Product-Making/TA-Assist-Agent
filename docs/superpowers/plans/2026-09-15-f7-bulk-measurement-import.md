@@ -301,7 +301,7 @@ git commit -m "feat(f7): generate measurement import template"
 - Create: `packages/workbook-catalog/src/f7-measurement-template-parser.test.ts`
 - Modify: `packages/workbook-catalog/src/index.ts`
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 Create completed templates for all three structures. Assert physical Excel rows are preserved; ordered sequence is assigned `1..n`; rational subgroup labels are contiguous full blocks; zero is accepted; blank cells are ignored; and diagnostics sort by Factor then row. Cover stale/wrong manifest, changed locked cells, renamed/deleted sheets, missing/extra/duplicate Factors, invalid enum/config, incomplete subgroup, formula/date/boolean/error/string/non-finite/negative measurement cells, macros, external links, embedded content, and nonblank content outside the 500-cell area.
 
@@ -319,13 +319,13 @@ expect(blocked.diagnostics[0]).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Run the parser test and verify RED**
+- [x] **Step 2: Run the parser test and verify RED**
 
 Run: `npx.cmd vitest run --project node packages/workbook-catalog/src/f7-measurement-template-parser.test.ts`
 
 Expected: FAIL because the parser does not exist.
 
-- [ ] **Step 3: Implement defensive fixed-coordinate parsing**
+- [x] **Step 3: Implement defensive fixed-coordinate parsing**
 
 Call `readSafeZip()` first, enforce an explicit OOXML part allowlist, then call `readOoxmlWorkbook()`. Read the hidden template ID before selecting server authority, but trust only the registry-provided authority. Compare every immutable cell with the manifest digest. Build existing `F7MeasurementDataset` values directly so Excel `originalRow` is retained, then parse through `f7MeasurementDatasetSchema` and `validateF7MeasurementDataset()`.
 
@@ -343,7 +343,7 @@ export function parseF7MeasurementTemplate(
 
 Malformed nonblank cells become blocking diagnostics, never silent rejection summaries. Out-of-spec nonnegative values remain observations and add advisory counts outside this parser result. Cap diagnostics at 2,000 deterministically.
 
-- [ ] **Step 4: Run focused Stage 1 tests and verify GREEN**
+- [x] **Step 4: Run focused Stage 1 tests and verify GREEN**
 
 Run:
 
@@ -353,7 +353,7 @@ npx.cmd vitest run --project node packages/contracts/src/f7-contracts.test.ts pa
 
 Expected: PASS.
 
-- [ ] **Step 5: Build package outputs and commit**
+- [x] **Step 5: Build package outputs and commit**
 
 Run: `npm.cmd run build -- --force`
 

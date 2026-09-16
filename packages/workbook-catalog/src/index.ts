@@ -35,6 +35,7 @@ export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export { normalizeF7Factor } from "./f7-factor-normalization.js";
 export { createF7WorkbookImport, extractF7FactorCandidates, confirmF7FactorSetup } from "./f7-excel-adapter.js";
 export { generateF7MeasurementTemplate } from "./f7-measurement-template-writer.js";
+export { parseF7MeasurementTemplate } from "./f7-measurement-template-parser.js";
 export { parseF7MeasurementPaste } from "./f7-measurement-parser.js";
 export { applyF7MeasurementDisposition, validateF7MeasurementDataset } from "./f7-dataset-validation.js";
 export {
@@ -45,6 +46,7 @@ export {
 } from "./f7-measurement-template.js";
 export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
 export type { F7MeasurementImportAuthorityInput } from "./f7-measurement-template.js";
+export type { F7MeasurementTemplateParseResult } from "./f7-measurement-template-parser.js";
 export type {
 	F7WorkbookImportResult,
 	F7FactorCandidateExtractionResult,
