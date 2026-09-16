@@ -229,6 +229,84 @@ describe("parseF7MeasurementTemplate", () => {
     });
   });
 
+  it.each([
+    ["label column measurement row content", (sheet: string) => insertCell(sheet, 15, inlineCell("A15", "tampered", 1)), "Measurements!A15", 15],
+    ["far metadata column content", (sheet: string) => insertSyntheticCell(sheet, 2, inlineCell("Z2", "tampered", 1)), "Measurements!Z2", 2],
+    ["far measurement column content", (sheet: string) => insertSyntheticCell(sheet, 15, numberCell("Z15", 1, 1)), "Measurements!Z15", 15],
+    ["foreign namespace metadata cell", (sheet: string) => insertSyntheticCell(sheet, 2, '<x:c xmlns:x="urn:evil" r="B2"><x:is><x:t>tampered</x:t></x:is></x:c>'), "Measurements!B2", 2],
+    ["foreign namespace far measurement cell", (sheet: string) => insertSyntheticCell(sheet, 515, '<x:c xmlns:x="urn:evil" r="B515"><x:v>1</x:v></x:c>'), "Measurements!B515", 515],
+  ])("blocks unauthorized raw worksheet content: %s", (_label, mutateSheet, sheetCell, rowNumber) => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => mutateSheet(withTwentySamplesForColumns(sheet, ["B"])));
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content", sheetCell, rowNumber }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
+  it("accepts a negative design nominal that crosses zero when observations are nonnegative", () => {
+    const authority = makeNegativeCrossZeroAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      let edited = sheet;
+      for (let offset = 0; offset < 20; offset += 1) {
+        const row = 15 + offset;
+        edited = insertCell(edited, row, numberCell(`B${row}`, offset / 100, 1));
+      }
+      return edited;
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.datasets).toHaveLength(1);
+    expect(result.datasets[0]?.observations).toHaveLength(20);
+    expect(result.datasets[0]?.observations[0]).toMatchObject({ originalRow: 15, value: 0 });
+    expect(result.datasets[0]?.observations.at(-1)).toMatchObject({ originalRow: 34, value: 0.19 });
+  });
+
+  it("accepts the full governed 500-observation capacity", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      let edited = sheet;
+      for (let row = 15; row <= 514; row += 1) edited = insertCell(edited, row, numberCell(`B${row}`, 1 + (row - 15) / 1000, 1));
+      return edited;
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.datasets[0]?.observations).toHaveLength(500);
+    expect(result.datasets[0]?.observations[0]).toMatchObject({ originalRow: 15, value: 1 });
+    expect(result.datasets[0]?.observations.at(-1)).toMatchObject({ originalRow: 514, value: 1.499 });
+  });
+
+  it("retains nonnegative observations outside factor specification limits", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      let edited = sheet;
+      for (let offset = 0; offset < 20; offset += 1) {
+        const row = 15 + offset;
+        const value = offset % 2 === 0 ? 0.2 : 1.8;
+        edited = insertCell(edited, row, numberCell(`B${row}`, value, 1));
+      }
+      return edited;
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.datasets[0]?.observations).toHaveLength(20);
+    expect(result.datasets[0]?.observations[0]).toMatchObject({ originalRow: 15, value: 0.2 });
+    expect(result.datasets[0]?.observations[1]).toMatchObject({ originalRow: 16, value: 1.8 });
+  });
+
   it("caps diagnostics at 2000 after deterministic Factor and row sorting", () => {
     const authority = makeAuthorityWithFactorCount(5);
     const bytes = editTemplate(authority, (sheet) => {
@@ -280,7 +358,63 @@ function makeAuthorityWithFactorCount(count: number) {
   });
 }
 
-function makeEvidence(candidate: string, factor: string, factorName: string, sourceRow: number): F7FactorEvidence {
+function makeNegativeCrossZeroAuthority() {
+  return createF7MeasurementImportAuthority({
+    sessionId: "session-1",
+    templateId: "template-1",
+    workbookContentHash: HASH,
+    worksheetName: "TA",
+    worksheetStableId: "worksheet-1",
+    measurementImportRevision: 0,
+    factors: [
+      makeEvidence("b", "c", "Cross Zero", 14, {
+        designNominal: -0.05,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        calculatedMean: -0.05,
+        tolerance: 0.1,
+        oneSigma: 0.025,
+        loopCoefficient: -1,
+        physicalMean: 0.05,
+        signedContributionMean: -0.05,
+        lowerSpecLimit: 0,
+        upperSpecLimit: 0.15,
+        baselineSampler: {
+          samplerId: "NORMAL_LOCATION_SCALE_V1",
+          physicalMean: 0.05,
+          standardDeviation: 0.025,
+          support: "REAL",
+        },
+      }),
+    ],
+  });
+}
+
+function makeSingleFactorAuthority() {
+  return createF7MeasurementImportAuthority({
+    sessionId: "session-1",
+    templateId: "template-1",
+    workbookContentHash: HASH,
+    worksheetName: "TA",
+    worksheetStableId: "worksheet-1",
+    measurementImportRevision: 0,
+    factors: [makeEvidence("b", "c", "Width", 14)],
+  });
+}
+
+function makeEvidence(
+  candidate: string,
+  factor: string,
+  factorName: string,
+  sourceRow: number,
+  overrides: Partial<F7FactorEvidence> = {},
+): F7FactorEvidence {
+  const baselineSampler = overrides.baselineSampler ?? {
+    samplerId: "NORMAL_LOCATION_SCALE_V1",
+    physicalMean: 1,
+    standardDeviation: 0.025,
+    support: "REAL",
+  };
   return {
     workbookContentHash: HASH,
     worksheetName: "TA",
@@ -317,12 +451,8 @@ function makeEvidence(candidate: string, factor: string, factorName: string, sou
       lowerSpecLimit: `TA!J${sourceRow}`,
       upperSpecLimit: `TA!K${sourceRow}`,
     },
-    baselineSampler: {
-      samplerId: "NORMAL_LOCATION_SCALE_V1",
-      physicalMean: 1,
-      standardDeviation: 0.025,
-      support: "REAL",
-    },
+    baselineSampler,
+    ...overrides,
   };
 }
 
@@ -359,6 +489,15 @@ function insertCell(sheet: string, row: number, cell: string): string {
   return sheet.replace(rowPattern, `$1${cell}${closingRow}`);
 }
 
+function insertSyntheticCell(sheet: string, row: number, cell: string): string {
+  const emptyRow = `<row r="${row}"/>`;
+  if (sheet.includes(emptyRow)) return sheet.replace(emptyRow, `<row r="${row}">${cell}</row>`);
+  const closingRow = `</row>`;
+  const rowPattern = new RegExp(`(<row r="${row}"[^>]*>[\\s\\S]*?)${closingRow}`);
+  if (rowPattern.test(sheet)) return sheet.replace(rowPattern, `$1${cell}${closingRow}`);
+  return sheet.replace("</sheetData>", `<row r="${row}">${cell}</row></sheetData>`);
+}
+
 function replaceOrInsertCell(sheet: string, reference: string, cell: string): string {
   const pattern = new RegExp(`<c r="${reference}"[^>]*>[\\s\\S]*?<\\/c>`);
   return pattern.test(sheet) ? sheet.replace(pattern, cell) : insertCell(sheet, Number(reference.match(/\d+$/)?.[0]), cell);
@@ -373,6 +512,15 @@ function withTwentySamples(sheet: string): string {
   for (let offset = 0; offset < 20; offset += 1) {
     const row = 15 + offset;
     for (const column of ["B", "C", "D"]) edited = insertCell(edited, row, numberCell(`${column}${row}`, 1 + offset / 100, 1));
+  }
+  return edited;
+}
+
+function withTwentySamplesForColumns(sheet: string, columns: readonly string[]): string {
+  let edited = sheet;
+  for (let offset = 0; offset < 20; offset += 1) {
+    const row = 15 + offset;
+    for (const column of columns) edited = insertCell(edited, row, numberCell(`${column}${row}`, 1 + offset / 100, 1));
   }
   return edited;
 }

@@ -9,6 +9,7 @@ import {
   type F7MeasurementImportDiagnostic,
 } from "@ai-assist/contracts";
 import { validateF7MeasurementDataset } from "./f7-dataset-validation.js";
+import { normalizeF7Factor } from "./f7-factor-normalization.js";
 import { hashF7MeasurementDatasetContent } from "./f7-measurement-parser.js";
 import { F7_MEASUREMENT_TEMPLATE_LAYOUT } from "./f7-measurement-template.js";
 import { MAX_DOM_DEPTH, MAX_TOTAL_CELLS, readOoxmlWorkbook, type OoxmlCell } from "./ooxml-reader.js";
@@ -43,6 +44,10 @@ interface RawCell {
   readonly type?: string;
   readonly hasFormula: boolean;
   readonly value: string;
+}
+
+interface ParsedRawWorksheet {
+  readonly cells: ReadonlyMap<string, RawCell>;
 }
 
 interface PendingDiagnostic {
@@ -101,35 +106,22 @@ export function parseF7MeasurementTemplate(
     return blocked(diagnostics);
   }
 
-  let rawCells: ReadonlyMap<string, RawCell>;
+  let rawWorksheet: ParsedRawWorksheet;
   try {
-    rawCells = parseRawCells(parts.get("xl/worksheets/sheet1.xml")!);
+    rawWorksheet = inspectRawWorksheet(parts.get("xl/worksheets/sheet1.xml")!, authority, addDiagnostic);
   } catch {
     addDiagnostic("unsupported_workbook_content", "Visible worksheet XML cannot be inspected safely.");
     return blocked(diagnostics);
   }
+  const rawCells = rawWorksheet.cells;
+  if (diagnostics.length > 0) return blocked(diagnostics);
   for (const [reference, cell] of rawCells) {
     const location = splitReference(reference);
-    const factorIndex = location.column ? columnIndex(location.column) - F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn : -1;
-    const inMeasurementArea = factorIndex >= 0
-      && factorIndex < authority.manifest.factors.length
-      && location.row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow
-      && location.row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
-    const afterMeasurementArea = factorIndex >= 0
-      && factorIndex < authority.manifest.factors.length
-      && location.row > F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
-    if (afterMeasurementArea && !isBlank(cell.value)) {
-      addDiagnostic("unsupported_workbook_content", "Nonblank measurement content exists outside the reserved 500-row area.", {
-        factorIndex,
-        sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${reference}`,
-        rowNumber: location.row,
-      });
-      continue;
-    }
-    if (!inMeasurementArea || isBlank(cell.value)) continue;
+    if (!isMeasurementCellReference(authority, reference) || isBlank(cell.value)) continue;
+    const factorIndex = factorIndexForColumn(authority, location.column);
     if (cell.hasFormula || cell.type === "b" || cell.type === "e" || cell.type === "d") {
       addDiagnostic("non_finite_measurement", "Measurement cell must contain a finite numeric literal.", {
-        factorIndex,
+        ...(factorIndex !== undefined ? { factorIndex } : {}),
         sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${reference}`,
         rowNumber: location.row,
       });
@@ -499,6 +491,18 @@ function checkOutsideMeasurementArea(
 
 function factorEvidence(authority: ParsedAuthority, index: number): unknown {
   const factor = authority.manifest.factors[index]!;
+  const specificationSource = factor.specificationSource;
+  const tolerance = (factor.upperTolerance - factor.lowerTolerance) / 2;
+  const oneSigma = tolerance / 4;
+  const loopCoefficient = Math.sign(factor.designNominal) as -1 | 0 | 1;
+  const calculatedMean = factor.designNominal < 0
+    ? factor.designNominal - (factor.upperTolerance + factor.lowerTolerance) / 2
+    : factor.designNominal + (factor.upperTolerance + factor.lowerTolerance) / 2;
+  const { physicalMean, signedContributionMean } = normalizeF7Factor({
+    excelSignedMean: calculatedMean,
+    loopCoefficient,
+    standardDeviation: oneSigma,
+  });
   return {
     workbookContentHash: authority.manifest.workbookContentHash,
     worksheetName: authority.manifest.worksheetName,
@@ -517,19 +521,21 @@ function factorEvidence(authority: ParsedAuthority, index: number): unknown {
     longTermSafetyFactor: 1,
     sigmaLevel: 4,
     distribution: "Normal",
-    calculatedMean: factor.designNominal,
-    tolerance: Math.max(Math.abs(factor.upperTolerance), Math.abs(factor.lowerTolerance)),
-    oneSigma: Math.max(Math.abs(factor.upperTolerance), Math.abs(factor.lowerTolerance)) / 4,
+    calculatedMean,
+    tolerance,
+    oneSigma,
     percentContributionToSigma: 1,
-    loopCoefficient: 1,
-    physicalMean: Math.abs(factor.designNominal),
-    signedContributionMean: factor.designNominal,
-    specificationSource: factor.specificationSource,
+    loopCoefficient,
+    physicalMean,
+    signedContributionMean,
+    specificationSource,
     lowerSpecLimit: factor.lowerSpecLimit,
     upperSpecLimit: factor.upperSpecLimit,
     sourceCells: {
       factorName: factor.coordinates.factorNameCell,
-      distribution: factor.coordinates.factorNameCell,
+      designNominal: factor.coordinates.designNominalCell,
+      upperTolerance: factor.coordinates.upperToleranceCell,
+      lowerTolerance: factor.coordinates.lowerToleranceCell,
       excelSignedMean: factor.coordinates.designNominalCell,
       standardDeviation: factor.coordinates.upperToleranceCell,
       factorLowerSpecLimit: factor.coordinates.lowerSpecLimitCell,
@@ -539,20 +545,25 @@ function factorEvidence(authority: ParsedAuthority, index: number): unknown {
     },
     baselineSampler: {
       samplerId: "NORMAL_LOCATION_SCALE_V1",
-      physicalMean: Math.abs(factor.designNominal),
-      standardDeviation: Math.max(Math.abs(factor.upperTolerance), Math.abs(factor.lowerTolerance)) / 4,
+      physicalMean,
+      standardDeviation: oneSigma,
       support: "REAL",
     },
   };
 }
 
-function parseRawCells(bytes: Uint8Array): ReadonlyMap<string, RawCell> {
+function inspectRawWorksheet(
+  bytes: Uint8Array,
+  authority: ParsedAuthority,
+  add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+): ParsedRawWorksheet {
   if (bytes.byteLength > MAX_XML_PART_BYTES) throw new Error("XML part budget exceeded");
   const diagnostics: string[] = [];
   const document = new DOMParser({ locator: false, onError: (_level, message) => diagnostics.push(message) })
     .parseFromString(new TextDecoder("utf-8", { fatal: true }).decode(bytes), "application/xml");
   const root = document.documentElement;
   if (diagnostics.length > 0 || !root || root.localName === "parsererror") throw new Error("Invalid XML");
+  if (root.namespaceURI !== XML_NAMESPACE || root.localName !== "worksheet") throw new Error("Unexpected worksheet root");
   const pending: Array<{ node: Element; depth: number }> = [{ node: root, depth: 1 }];
   let nodeCount = 0;
   for (let index = 0; index < pending.length; index += 1) {
@@ -562,26 +573,125 @@ function parseRawCells(bytes: Uint8Array): ReadonlyMap<string, RawCell> {
     if (nodeCount > MAX_RAW_DOM_NODES) throw new Error("XML node budget exceeded");
     for (let childIndex = 0; childIndex < current.node.childNodes.length; childIndex += 1) {
       const child = current.node.childNodes.item(childIndex);
-      if (child) pending.push({ node: child as Element, depth: current.depth + 1 });
+      if (child?.nodeType === 1) pending.push({ node: child as Element, depth: current.depth + 1 });
     }
   }
   const result = new Map<string, RawCell>();
-  const cells = Array.from(document.getElementsByTagNameNS(XML_NAMESPACE, "c")) as Element[];
-  if (cells.length > MAX_TOTAL_CELLS) throw new Error("Cell budget exceeded");
-  for (const cell of cells) {
-    const reference = cell.getAttribute("r");
-    if (!reference || result.has(reference)) throw new Error("Invalid or duplicate cell reference");
-    const formula = cell.getElementsByTagNameNS(XML_NAMESPACE, "f");
-    const values = cell.getElementsByTagNameNS(XML_NAMESPACE, "v");
-    const texts = cell.getElementsByTagNameNS(XML_NAMESPACE, "t");
-    result.set(reference, {
-      reference,
-      ...(cell.getAttribute("t") ? { type: cell.getAttribute("t")! } : {}),
-      hasFormula: formula.length > 0,
-      value: texts.item(0)?.textContent ?? values.item(0)?.textContent ?? "",
-    });
+  const sheetData = directChildElement(root, "sheetData");
+  if (!sheetData) throw new Error("Worksheet is missing sheetData");
+  for (let childIndex = 0; childIndex < sheetData.childNodes.length; childIndex += 1) {
+    const rowNode = sheetData.childNodes.item(childIndex);
+    if (!rowNode || rowNode.nodeType !== 1) continue;
+    const rowElement = rowNode as Element;
+    if (rowElement.namespaceURI !== XML_NAMESPACE || rowElement.localName !== "row") {
+      addUnsupportedWorksheetContent(add, authority, rowElement.getAttribute("r") ?? "", rowElement.getAttribute("r") ?? undefined);
+      continue;
+    }
+    for (let cellIndex = 0; cellIndex < rowElement.childNodes.length; cellIndex += 1) {
+      const cellNode = rowElement.childNodes.item(cellIndex);
+      if (!cellNode || cellNode.nodeType !== 1) continue;
+      const cellElement = cellNode as Element;
+      const reference = cellElement.getAttribute("r") ?? "";
+      if (cellElement.namespaceURI !== XML_NAMESPACE || cellElement.localName !== "c") {
+        addUnsupportedWorksheetContent(add, authority, reference, rowElement.getAttribute("r") ?? undefined);
+        continue;
+      }
+      if (!reference || result.has(reference)) throw new Error("Invalid or duplicate cell reference");
+      if (hasForeignNamespaceDescendant(cellElement)) {
+        addUnsupportedWorksheetContent(add, authority, reference);
+        continue;
+      }
+      const cell = parseRawCell(cellElement);
+      result.set(reference, cell);
+      if (!isAllowedVisibleCellReference(authority, reference) && isUnauthorizedRawCell(cell)) {
+        addUnsupportedWorksheetContent(add, authority, reference);
+      }
+    }
   }
-  return result;
+  if (result.size > MAX_TOTAL_CELLS) throw new Error("Cell budget exceeded");
+  return Object.freeze({ cells: result });
+}
+
+function directChildElement(parent: Element, localName: string): Element | undefined {
+  for (let index = 0; index < parent.childNodes.length; index += 1) {
+    const child = parent.childNodes.item(index);
+    if (!child || child.nodeType !== 1) continue;
+    const element = child as Element;
+    if (element.namespaceURI === XML_NAMESPACE && element.localName === localName) return element;
+  }
+  return undefined;
+}
+
+function hasForeignNamespaceDescendant(element: Element): boolean {
+  const pending: Element[] = [element];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    for (let index = 0; index < current.childNodes.length; index += 1) {
+      const child = current.childNodes.item(index);
+      if (!child || child.nodeType !== 1) continue;
+      const childElement = child as Element;
+      if (childElement.namespaceURI !== XML_NAMESPACE) return true;
+      pending.push(childElement);
+    }
+  }
+  return false;
+}
+
+function parseRawCell(cell: Element): RawCell {
+  const reference = cell.getAttribute("r");
+  if (!reference) throw new Error("Missing cell reference");
+  const formula = cell.getElementsByTagNameNS(XML_NAMESPACE, "f");
+  const values = cell.getElementsByTagNameNS(XML_NAMESPACE, "v");
+  const texts = cell.getElementsByTagNameNS(XML_NAMESPACE, "t");
+  return {
+    reference,
+    ...(cell.getAttribute("t") ? { type: cell.getAttribute("t")! } : {}),
+    hasFormula: formula.length > 0,
+    value: texts.item(0)?.textContent ?? values.item(0)?.textContent ?? "",
+  };
+}
+
+function addUnsupportedWorksheetContent(
+  add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+  authority: ParsedAuthority,
+  reference: string,
+  fallbackRow?: string,
+): void {
+  const location = splitReference(reference);
+  const rowNumber = location.row || Number(fallbackRow ?? 0) || undefined;
+  const factorIndex = location.column ? factorIndexForColumn(authority, location.column) : undefined;
+  add("unsupported_workbook_content", "Visible worksheet contains content outside the controlled template layout.", {
+    ...(factorIndex !== undefined ? { factorIndex } : {}),
+    ...(reference ? { sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${reference}` } : {}),
+    ...(rowNumber ? { rowNumber } : {}),
+  });
+}
+
+function isUnauthorizedRawCell(cell: RawCell): boolean {
+  return cell.hasFormula || cell.type !== undefined || !isBlank(cell.value);
+}
+
+function factorIndexForColumn(authority: ParsedAuthority, column: string): number | undefined {
+  const index = columnIndex(column) - F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn;
+  return index >= 0 && index < authority.manifest.factors.length ? index : undefined;
+}
+
+function isMeasurementCellReference(authority: ParsedAuthority, reference: string): boolean {
+  const { column, row } = splitReference(reference);
+  const factorIndex = factorIndexForColumn(authority, column);
+  return factorIndex !== undefined
+    && row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow
+    && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
+}
+
+function isAllowedVisibleCellReference(authority: ParsedAuthority, reference: string): boolean {
+  const { column, row } = splitReference(reference);
+  if (!column || row === 0) return false;
+  if (column === "A") return row >= 1 && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.estimator;
+  const factorIndex = factorIndexForColumn(authority, column);
+  if (factorIndex === undefined) return false;
+  return row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.factorName
+    && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
 }
 
 function splitReference(reference: string): { column: string; row: number } {
