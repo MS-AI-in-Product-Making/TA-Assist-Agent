@@ -807,13 +807,48 @@ function createInitialSnapshot(
 }
 
 function normalizeSnapshot(currentSnapshot: F8SessionSnapshot, candidateSnapshot: F8SessionSnapshot): F8SessionSnapshot {
+  const analysisRequestContext = resolveAnalysisRequestContext(
+    currentSnapshot.analysisRequestContext,
+    candidateSnapshot.analysisRequestContext,
+    currentSnapshot.sessionId,
+  );
   return f8SessionSnapshotSchema.parse({
     ...candidateSnapshot,
     contractVersion: "f8-session-snapshot-v1",
     sessionId: currentSnapshot.sessionId,
     revision: currentSnapshot.revision + 1,
-    analysisRequestContext: candidateSnapshot.analysisRequestContext ?? currentSnapshot.analysisRequestContext,
+    ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
   });
+}
+
+function resolveAnalysisRequestContext(
+  currentContext: AnalysisRequestContext | undefined,
+  candidateContext: AnalysisRequestContext | undefined,
+  sessionId: string,
+): AnalysisRequestContext | undefined {
+  if (candidateContext === undefined) {
+    return currentContext;
+  }
+
+  if (currentContext === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} cannot add request context after creation.`,
+      suggestedAction: "Keep historical snapshots read-only and create a new session when governed request context is required.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  if (stableStringify(candidateContext) !== stableStringify(currentContext)) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} cannot override its original request context.`,
+      suggestedAction: "Omit analysisRequestContext from post-create snapshot transitions or keep it byte-equivalent to the stored session value.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  return currentContext;
 }
 
 function prepareSnapshotTransition(

@@ -23,6 +23,11 @@ const REQUEST_CONTEXT = {
   utcOffsetMinutes: -420,
   source: "web",
 } as const;
+const OVERRIDE_REQUEST_CONTEXT = {
+  requestedAt: "2026-09-17T08:00:00.000Z",
+  utcOffsetMinutes: 60,
+  source: "cli",
+} as const;
 
 const tempRoots: string[] = [];
 
@@ -105,6 +110,56 @@ describe("SessionStore", () => {
     expect(updated.analysisRequestContext).toEqual(REQUEST_CONTEXT);
     expect(readPersistedSnapshot(rootDir).analysisRequestContext).toEqual(REQUEST_CONTEXT);
     await store.close();
+  });
+
+  it("rejects explicit request-context overrides across command, snapshot-mutation, and attempt-result paths", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+
+    try {
+      await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        ...acceptWorkbook(snapshot),
+        snapshot: {
+          ...acceptWorkbook(snapshot).snapshot,
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      }))).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      await expect(store.applySnapshotMutation(1, (snapshot) => ({
+        snapshot: {
+          ...snapshot,
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      }))).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: {
+          ...snapshotWithAttempt({
+            revision: 1,
+            state: "review_required",
+            activeAttempt: null,
+          }),
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+      expect(readPersistedSnapshot(rootDir).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    } finally {
+      await store.close();
+    }
   });
 
   it("materializes missing historical interaction language as legacy_fallback and persists it", async () => {
