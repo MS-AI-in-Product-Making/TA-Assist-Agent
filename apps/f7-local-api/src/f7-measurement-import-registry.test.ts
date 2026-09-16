@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import type {
   F7FactorEvidence,
   F7MeasurementImportAuthority,
+  F7MeasurementImportAuthorityContext,
   F7MeasurementImportStoredBatch,
+  TypedError,
 } from "@ai-assist/contracts";
+import { typedErrorSchema } from "@ai-assist/contracts";
 import { createF7MeasurementImportAuthority } from "@ai-assist/workbook-catalog";
 import {
+  F7_MEASUREMENT_IMPORT_MAX_PREVIEWS_PER_SESSION,
+  F7_MEASUREMENT_IMPORT_MAX_TEMPLATES_PER_SESSION,
   F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS,
   MAX_F7_MEASUREMENT_IMPORT_PREVIEWS,
   MAX_F7_MEASUREMENT_IMPORT_TEMPLATES,
@@ -150,6 +155,36 @@ function makeStoredBatch(input: {
   };
 }
 
+function makeAuthorityContext(input: {
+  sessionId?: string;
+  templateId: string;
+  expectedMeasurementImportRevision?: number;
+  worksheetStableId?: string;
+  factors?: readonly F7FactorEvidence[];
+}): F7MeasurementImportAuthorityContext {
+  const expectedMeasurementImportRevision = input.expectedMeasurementImportRevision ?? 0;
+  return {
+    authority: makeAuthority({
+      sessionId: input.sessionId,
+      templateId: input.templateId,
+      measurementImportRevision: expectedMeasurementImportRevision,
+      worksheetStableId: input.worksheetStableId,
+      factors: input.factors,
+    }),
+    expectedMeasurementImportRevision,
+  };
+}
+
+function expectTypedValidationError(error: unknown): TypedError {
+  const parsed = typedErrorSchema.safeParse(error);
+  expect(parsed.success).toBe(true);
+  if (!parsed.success) {
+    throw error instanceof Error ? error : new Error("expected typed validation error");
+  }
+  expect(parsed.data.code).toBe("validation_error");
+  return parsed.data;
+}
+
 function createClock(initial = BASE_TIME) {
   let value = initial;
   return {
@@ -183,7 +218,7 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     expect(() => invalidIdRegistry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({ templateId }),
     })).toThrow(/id/i);
 
     const duplicateId = "b".repeat(32);
@@ -193,7 +228,7 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     const template = duplicateRegistry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({ templateId }),
     });
     expect(template.templateId).toBe(duplicateId);
     expect(() => duplicateRegistry.storePreview({
@@ -207,19 +242,23 @@ describe("createF7MeasurementImportRegistry", () => {
     })).toThrow(/duplicate/i);
   });
 
-  it("stores a frozen deep-cloned authoritative template, resolves it for the owning session, and increments session generations", () => {
+  it("stores a frozen deep-cloned authoritative template context, resolves authority without leaking revision, and increments session generations", () => {
     const clock = createClock();
     const registry = createF7MeasurementImportRegistry({
       now: clock.now,
       createId: createIdSource(["1".repeat(32), "2".repeat(32)]),
     });
-    const sourceAuthority = structuredClone(makeAuthority({ templateId: "1".repeat(32) }));
+    const sourceContext = structuredClone(makeAuthorityContext({
+      templateId: "1".repeat(32),
+      expectedMeasurementImportRevision: 7,
+    }));
     const first = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: () => sourceAuthority,
+      createAuthority: () => sourceContext,
     });
 
-    sourceAuthority.manifest.factors[0]!.factorName = "Mutated after register";
+    sourceContext.authority.manifest.factors[0]!.factorName = "Mutated after register";
+    sourceContext.expectedMeasurementImportRevision = 999;
 
     const resolved = registry.resolveTemplate({
       sessionId: SESSION_ID,
@@ -230,6 +269,7 @@ describe("createF7MeasurementImportRegistry", () => {
     expect(resolved.sessionGeneration).toBe(1);
     expect(resolved.authority.manifest.templateId).toBe(first.templateId);
     expect(resolved.authority.manifest.factors[0]?.factorName).toBe("Factor 1");
+    expect(JSON.stringify(resolved.authority)).not.toContain("expectedMeasurementImportRevision");
     expect(Object.isFrozen(resolved.authority)).toBe(true);
     expect(Object.isFrozen(resolved.authority.manifest)).toBe(true);
     expect(Object.isFrozen(resolved.authority.manifest.factors)).toBe(true);
@@ -237,9 +277,9 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const second = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         templateId,
-        measurementImportRevision: 1,
+        expectedMeasurementImportRevision: 8,
         worksheetStableId: "worksheet-stable-002",
       }),
     });
@@ -266,7 +306,10 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const template = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 3,
+      }),
     });
     const firstPreview = registry.storePreview({
       sessionId: SESSION_ID,
@@ -295,12 +338,16 @@ describe("createF7MeasurementImportRegistry", () => {
     expect(firstClaim.status).toBe("claimed");
     if (firstClaim.status !== "claimed") throw new Error("expected claimed preview");
     expect(firstClaim.preview.previewId).toBe(secondPreview.previewId);
+    expect(firstClaim.expectedMeasurementImportRevision).toBe(3);
     expect(Object.isFrozen(firstClaim.preview)).toBe(true);
     expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: secondPreview.previewId })).toEqual({ status: "consumed" });
 
     const nextTemplate = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId, measurementImportRevision: 1 }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 4,
+      }),
     });
     const nextPreview = registry.storePreview({
       sessionId: SESSION_ID,
@@ -313,7 +360,7 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     expect(nextPreview.sessionGeneration).toBe(2);
     expect(nextPreview.previewGeneration).toBe(1);
-    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: firstPreview.previewId })).toEqual({ status: "stale" });
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: firstPreview.previewId })).toEqual({ status: "not_found" });
   });
 
   it("distinguishes session ownership, exact ttl boundaries, and process restart invalidation without leaking data", () => {
@@ -324,7 +371,10 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     const template = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 11,
+      }),
     });
     const preview = registry.storePreview({
       sessionId: SESSION_ID,
@@ -341,7 +391,10 @@ describe("createF7MeasurementImportRegistry", () => {
 
     clock.advance(F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS - 1);
     expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: template.templateId })).toMatchObject({ status: "available" });
-    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: preview.previewId }).status).toBe("claimed");
+    const claimedPreview = registry.claimPreview({ sessionId: SESSION_ID, previewId: preview.previewId });
+    expect(claimedPreview.status).toBe("claimed");
+    if (claimedPreview.status !== "claimed") throw new Error("expected claimed preview");
+    expect(claimedPreview.expectedMeasurementImportRevision).toBe(11);
 
     const expiringClock = createClock();
     const expiringRegistry = createF7MeasurementImportRegistry({
@@ -350,7 +403,10 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     const expiringTemplate = expiringRegistry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 15,
+      }),
     });
     const expiringPreview = expiringRegistry.storePreview({
       sessionId: SESSION_ID,
@@ -383,7 +439,7 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const templates = Array.from({ length: MAX_F7_MEASUREMENT_IMPORT_TEMPLATES }, (_, index) => registry.registerTemplate({
       sessionId: `template-session-${index + 1}`,
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         sessionId: `template-session-${index + 1}`,
         templateId,
         worksheetStableId: `worksheet-${index + 1}`,
@@ -393,7 +449,7 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const evictingTemplate = registry.registerTemplate({
       sessionId: "template-session-overflow",
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         sessionId: "template-session-overflow",
         templateId,
         worksheetStableId: "worksheet-overflow",
@@ -413,7 +469,7 @@ describe("createF7MeasurementImportRegistry", () => {
     clock.advance(F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS);
     const pruningTemplate = registry.registerTemplate({
       sessionId: "template-session-pruned",
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         sessionId: "template-session-pruned",
         templateId,
         worksheetStableId: "worksheet-pruned",
@@ -433,7 +489,7 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const previewTemplates = Array.from({ length: MAX_F7_MEASUREMENT_IMPORT_PREVIEWS }, (_, index) => previewRegistry.registerTemplate({
       sessionId: `preview-session-${index + 1}`,
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         sessionId: `preview-session-${index + 1}`,
         templateId,
         worksheetStableId: `preview-worksheet-${index + 1}`,
@@ -453,7 +509,7 @@ describe("createF7MeasurementImportRegistry", () => {
 
     const overflowTemplate = previewRegistry.registerTemplate({
       sessionId: "preview-session-overflow",
-      createAuthority: ({ templateId }) => makeAuthority({
+      createAuthority: ({ templateId }) => makeAuthorityContext({
         sessionId: "preview-session-overflow",
         templateId,
         worksheetStableId: "preview-overflow-template",
@@ -487,7 +543,7 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     const template = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({ templateId }),
     });
 
     expect(() => registry.storePreview({
@@ -516,7 +572,10 @@ describe("createF7MeasurementImportRegistry", () => {
 
     registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId, measurementImportRevision: 1 }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 1,
+      }),
     });
     expect(() => registry.storePreview({
       sessionId: SESSION_ID,
@@ -536,7 +595,10 @@ describe("createF7MeasurementImportRegistry", () => {
     });
     const template = registry.registerTemplate({
       sessionId: SESSION_ID,
-      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 23,
+      }),
     });
 
     const forgedAuthority = structuredClone(template.authority);
@@ -576,5 +638,175 @@ describe("createF7MeasurementImportRegistry", () => {
       }),
     })).toThrow(/factor.*digest/i);
     expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "4".repeat(32) })).toEqual({ status: "not_found" });
+  });
+
+  it("keeps consumed previews terminal for the owning session even after ttl expiry or newer records while session mismatch still leaks nothing", () => {
+    const clock = createClock();
+    const registry = createF7MeasurementImportRegistry({
+      now: clock.now,
+      createId: createIdSource(["1".repeat(32), "2".repeat(32), "3".repeat(32), "4".repeat(32)]),
+    });
+    const template = registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 31,
+      }),
+    });
+    const preview = registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        previewId,
+        expiresAt,
+        authority: template.authority,
+      }),
+    });
+
+    const claimed = registry.claimPreview({ sessionId: SESSION_ID, previewId: preview.previewId });
+    expect(claimed.status).toBe("claimed");
+    expect(registry.claimPreview({ sessionId: OTHER_SESSION_ID, previewId: preview.previewId })).toEqual({ status: "session_mismatch" });
+
+    clock.advance(F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS + 1);
+    registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        templateId,
+        expectedMeasurementImportRevision: 32,
+      }),
+    });
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: preview.previewId })).toEqual({ status: "consumed" });
+  });
+
+  it("enforces per-session template and preview caps before global eviction so one noisy session does not evict another session current records", () => {
+    const clock = createClock();
+    const ids = Array.from({ length: 32 }, (_, index) => `${(index + 1).toString(16).padStart(32, "0")}`);
+    const registry = createF7MeasurementImportRegistry({ now: clock.now, createId: createIdSource(ids) });
+
+    const sessionBTemplate = registry.registerTemplate({
+      sessionId: "session-b",
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        sessionId: "session-b",
+        templateId,
+        expectedMeasurementImportRevision: 1,
+        worksheetStableId: "b-template",
+      }),
+    });
+
+    const sessionATemplates = Array.from({ length: F7_MEASUREMENT_IMPORT_MAX_TEMPLATES_PER_SESSION + 1 }, (_, index) => registry.registerTemplate({
+      sessionId: "session-a",
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        sessionId: "session-a",
+        templateId,
+        expectedMeasurementImportRevision: index + 1,
+        worksheetStableId: `a-template-${index + 1}`,
+      }),
+    }));
+
+    expect(registry.resolveTemplate({ sessionId: "session-b", templateId: sessionBTemplate.templateId })).toMatchObject({ status: "available" });
+    expect(registry.resolveTemplate({ sessionId: "session-a", templateId: sessionATemplates.at(-1)!.templateId })).toMatchObject({ status: "available" });
+    expect(registry.resolveTemplate({ sessionId: "session-a", templateId: sessionATemplates[0]!.templateId })).toEqual({ status: "not_found" });
+
+    const sessionBPreview = registry.storePreview({
+      sessionId: "session-b",
+      templateId: sessionBTemplate.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        sessionId: "session-b",
+        previewId,
+        expiresAt,
+        authority: sessionBTemplate.authority,
+      }),
+    });
+    const latestATemplate = sessionATemplates.at(-1)!;
+    const sessionAPreviews = Array.from({ length: F7_MEASUREMENT_IMPORT_MAX_PREVIEWS_PER_SESSION + 1 }, () => registry.storePreview({
+      sessionId: "session-a",
+      templateId: latestATemplate.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        sessionId: "session-a",
+        previewId,
+        expiresAt,
+        authority: latestATemplate.authority,
+      }),
+    }));
+
+    expect(registry.claimPreview({ sessionId: "session-b", previewId: sessionBPreview.previewId })).toMatchObject({ status: "claimed" });
+    expect(registry.claimPreview({ sessionId: "session-a", previewId: sessionAPreviews.at(-1)!.previewId })).toMatchObject({ status: "claimed" });
+    expect(registry.claimPreview({ sessionId: "session-a", previewId: sessionAPreviews[0]!.previewId })).toEqual({ status: "not_found" });
+  });
+
+  it("invokes createAuthority and createStoredBatch exactly once and leaves state unchanged when either callback throws or returns invalid data", () => {
+    const registry = createF7MeasurementImportRegistry({
+      now: () => BASE_TIME,
+      createId: createIdSource(["1".repeat(32), "2".repeat(32), "3".repeat(32), "4".repeat(32), "5".repeat(32)]),
+    });
+
+    let createAuthorityCalls = 0;
+    expect(() => registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: () => {
+        createAuthorityCalls += 1;
+        throw new Error("boom-authority");
+      },
+    })).toThrow(/boom-authority/);
+    expect(createAuthorityCalls).toBe(1);
+    expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: "1".repeat(32) })).toEqual({ status: "not_found" });
+
+    expect(() => registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => ({
+        ...makeAuthorityContext({ templateId }),
+        expectedMeasurementImportRevision: -1,
+      }),
+    })).toThrow(/expectedMeasurementImportRevision/i);
+    expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: "2".repeat(32) })).toEqual({ status: "not_found" });
+
+    const template = registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthorityContext({ templateId, expectedMeasurementImportRevision: 5 }),
+    });
+
+    let createStoredBatchCalls = 0;
+    expect(() => registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: () => {
+        createStoredBatchCalls += 1;
+        throw new Error("boom-preview");
+      },
+    })).toThrow(/boom-preview/);
+    expect(createStoredBatchCalls).toBe(1);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "4".repeat(32) })).toEqual({ status: "not_found" });
+
+    expect(() => registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => ({
+        ...makeStoredBatch({ previewId, expiresAt, authority: template.authority }),
+        expiresAt: "invalid-date",
+      }),
+    })).toThrow(/expiresAt/i);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "5".repeat(32) })).toEqual({ status: "not_found" });
+    expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: template.templateId })).toMatchObject({ status: "available" });
+  });
+
+  it("converts extreme safe-integer now or expiry overflows into typed validation errors instead of RangeError", () => {
+    const registry = createF7MeasurementImportRegistry({
+      now: () => Number.MAX_SAFE_INTEGER,
+      createId: createIdSource(["1".repeat(32)]),
+    });
+
+    let error: unknown;
+    try {
+      registry.registerTemplate({
+        sessionId: SESSION_ID,
+        createAuthority: ({ templateId }) => makeAuthorityContext({ templateId }),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).not.toBeInstanceOf(RangeError);
+    const typedError = expectTypedValidationError(error);
+    expect(typedError.summary).toMatch(/epoch millisecond|date/i);
   });
 });

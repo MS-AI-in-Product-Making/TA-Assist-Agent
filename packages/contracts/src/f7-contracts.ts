@@ -829,6 +829,13 @@ export const f7MeasurementImportAuthoritySchema = z
   })
   .strict();
 
+export const f7MeasurementImportAuthorityContextSchema = z
+  .object({
+    authority: f7MeasurementImportAuthoritySchema,
+    expectedMeasurementImportRevision: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const f7MeasurementImportDiagnosticReasonSchema = z.enum([
   "invalid_template_identity",
   "stale_template",
@@ -3091,6 +3098,7 @@ export type F7MeasurementImportFactorLimitStatus = z.infer<typeof f7MeasurementI
 export type F7MeasurementImportFactorManifest = z.infer<typeof f7MeasurementImportFactorManifestSchema>;
 export type F7MeasurementImportManifest = z.infer<typeof f7MeasurementImportManifestSchema>;
 export type F7MeasurementImportAuthority = z.infer<typeof f7MeasurementImportAuthoritySchema>;
+export type F7MeasurementImportAuthorityContext = z.infer<typeof f7MeasurementImportAuthorityContextSchema>;
 export type F7MeasurementImportDiagnosticReason = z.infer<typeof f7MeasurementImportDiagnosticReasonSchema>;
 export type F7MeasurementImportDiagnostic = z.infer<typeof f7MeasurementImportDiagnosticSchema>;
 export type F7MeasurementImportFactorPreview = z.infer<typeof f7MeasurementImportFactorPreviewSchema>;
@@ -3146,7 +3154,7 @@ export interface F7SessionService {
   importWorkbook(request: F7WorkbookImportRequest): F7SessionSnapshot;
   confirmWorksheet(request: { sessionId: string; confirmation: WorksheetSelectionConfirmation }): F7SessionSnapshot;
   confirmFactorSetup(request: F7FactorConfirmRouteRequest): F7SessionSnapshot;
-  getMeasurementImportAuthority(request: { sessionId: string; templateId: string }): F7MeasurementImportAuthority;
+  getMeasurementImportAuthority(request: { sessionId: string; templateId: string }): F7MeasurementImportAuthorityContext;
   commitMeasurementImport(request: F7MeasurementImportCommitMutation): F7SessionSnapshot;
   setFactorMode(request: { sessionId: string; factorId: string; mode: F7FactorSourceMode }): F7SessionSnapshot;
   pasteMeasurements(request: F7MeasurementPasteRequest & { sessionId: string }): F7SessionSnapshot;

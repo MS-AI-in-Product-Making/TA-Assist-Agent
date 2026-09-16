@@ -17,7 +17,7 @@ import {
   type F7DistributionCandidateFamily,
   type F7FactorInput,
   type F7FactorConfirmRouteRequest,
-  type F7MeasurementImportAuthority,
+  type F7MeasurementImportAuthorityContext,
   type F7MeasurementImportCommitMutation,
   type F7FactorSourceMode,
   type F7MeasurementDispositionRequest,
@@ -498,7 +498,7 @@ export function createF7SessionService(dependencies: {
     return cloneFrozenSnapshot(snapshot);
   };
 
-  const getMeasurementImportAuthority = (request: { sessionId: string; templateId: string }): F7MeasurementImportAuthority => {
+  const getMeasurementImportAuthority = (request: { sessionId: string; templateId: string }): F7MeasurementImportAuthorityContext => {
     const parsedRequest = z.object({
       sessionId: z.string().min(1),
       templateId: measurementImportTemplateIdSchema,
@@ -507,15 +507,18 @@ export function createF7SessionService(dependencies: {
 
     const current = readSession(parsedRequest.data.sessionId);
     const factors = confirmedFactorEvidence(current.snapshot);
-    return createF7MeasurementImportAuthority({
-      sessionId: parsedRequest.data.sessionId,
-      templateId: parsedRequest.data.templateId,
-      workbookContentHash: current.snapshot.workbook.workbookContentHash,
-      worksheetName: current.snapshot.selectedWorksheetNames[0]!,
-      worksheetStableId: selectedWorksheetStableId(current.snapshot),
-      measurementImportRevision: current.measurementImportRevision,
-      factors,
-    });
+    return {
+      authority: createF7MeasurementImportAuthority({
+        sessionId: parsedRequest.data.sessionId,
+        templateId: parsedRequest.data.templateId,
+        workbookContentHash: current.snapshot.workbook.workbookContentHash,
+        worksheetName: current.snapshot.selectedWorksheetNames[0]!,
+        worksheetStableId: selectedWorksheetStableId(current.snapshot),
+        measurementImportRevision: current.measurementImportRevision,
+        factors,
+      }),
+      expectedMeasurementImportRevision: current.measurementImportRevision,
+    };
   };
 
   const commitMeasurementImport = (request: F7MeasurementImportCommitMutation): F7SessionSnapshot => {
@@ -529,10 +532,16 @@ export function createF7SessionService(dependencies: {
       });
     }
 
-    const currentAuthority = getMeasurementImportAuthority({
+    const currentAuthorityContext = getMeasurementImportAuthority({
       sessionId: parsedRequest.data.sessionId,
       templateId: parsedRequest.data.authority.manifest.templateId,
     });
+    const currentAuthority = currentAuthorityContext.authority;
+    if (currentAuthorityContext.expectedMeasurementImportRevision !== parsedRequest.data.expectedMeasurementImportRevision) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
+        reasonCode: STALE_MEASUREMENT_IMPORT_REVISION_REASON_CODE,
+      });
+    }
     if (currentAuthority.sessionStateDigest !== parsedRequest.data.sessionStateDigest
       || currentAuthority.sessionStateDigest !== parsedRequest.data.authority.sessionStateDigest) {
       throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
