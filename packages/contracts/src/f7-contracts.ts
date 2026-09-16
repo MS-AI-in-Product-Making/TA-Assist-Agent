@@ -1469,6 +1469,10 @@ export const f7ReportFactorSchema = z
     factorName: z.string().min(1),
     loopCoefficient: f7LoopCoefficientSchema,
     sourceMode: f7FactorSourceModeSchema,
+    ...editableFactorSpecificationFields,
+    longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor,
+    sigmaLevel: f7FactorCalculationControlFields.sigmaLevel,
+    setupDistribution: f7ToleranceDistributionSchema,
     approvedDistribution: f7DistributionCandidateFamilySchema,
     sourceReferences: z.array(z.string().min(1)).min(1),
   })

@@ -254,6 +254,12 @@ function createReportFixture(
       factorName: "Gap",
       loopCoefficient: 1 as const,
       sourceMode: "MEASURED" as const,
+      designNominal: 10,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1.5,
+      sigmaLevel: 3,
+      setupDistribution: "Normal" as const,
       approvedDistribution: "normal" as const,
       sourceReferences: ["Analysis-A!A2", "clipboard"],
     }],
@@ -302,6 +308,36 @@ describe("F7 report contracts", () => {
     expect(f7ReportProjectionSchema.safeParse({
       ...report,
       summary: { ...report.summary, mean: Number.POSITIVE_INFINITY },
+    }).success).toBe(false);
+  });
+
+  it("requires strict confirmed Factor Setup inputs for every report factor", () => {
+    const report = createReportFixture();
+    const requiredSetupFields = [
+      "designNominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "longTermSafetyFactor",
+      "sigmaLevel",
+      "setupDistribution",
+    ] as const;
+
+    for (const field of requiredSetupFields) {
+      const factor: Partial<(typeof report.factors)[number]> = { ...report.factors[0] };
+      delete factor[field];
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [factor],
+      }).success).toBe(false);
+    }
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], designNominal: Number.POSITIVE_INFINITY }],
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], setupDistribution: "normal" }],
     }).success).toBe(false);
   });
 
