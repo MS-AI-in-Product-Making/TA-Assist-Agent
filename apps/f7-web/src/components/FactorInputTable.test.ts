@@ -815,3 +815,155 @@ describe("FactorInputTable engineering evidence event", () => {
     expect(afterShiftEvidence?.responseSummary?.responseAndSpecifications?.adjustedMean).not.toBe(beforeShiftAdjustedMean);
   });
 });
+
+describe("FactorInputTable measurement entry modes", () => {
+  function createModeSession(): F7SessionSnapshot {
+    const base = createSession({ status: "measurement_entry" });
+    const baseline = base.factors[0]!;
+    return {
+      ...base,
+      factors: [
+        baseline,
+        {
+          ...baseline,
+          factorCandidate: {
+            ...baseline.factorCandidate,
+            factorCandidateId: HASH_D,
+            factorName: "Measured factor",
+          },
+          setup: baseline.setup
+            ? {
+                ...baseline.setup,
+                factorCandidateId: HASH_D,
+              }
+            : baseline.setup,
+          evidence: baseline.evidence
+            ? {
+                ...baseline.evidence,
+                factorCandidateId: HASH_D,
+                factorId: HASH_A,
+                factorName: "Measured factor",
+              }
+            : baseline.evidence,
+          sourceMode: "MEASURED",
+          input: {
+            mode: "MEASURED",
+            dataset: {
+              factorId: HASH_A,
+              unit: "mm",
+              structure: "ORDERED_INDIVIDUALS",
+              sourceReference: "import-01",
+              importedAt: "2026-09-16T08:00:00.000Z",
+              msaStatus: "unknown",
+              observations: [
+                { originalRow: 1, value: 0.11, disposition: "included" },
+                { originalRow: 2, value: 0.12, disposition: "included" },
+              ],
+              missingRowCount: 0,
+              rejectionSummaries: [],
+              originalRowCount: 2,
+              analyzedCount: 2,
+              contentHash: HASH_C,
+            },
+          },
+          measurementPasteResult: {
+            status: "ready",
+            factorId: HASH_A,
+            dataset: {
+              factorId: HASH_A,
+              unit: "mm",
+              structure: "ORDERED_INDIVIDUALS",
+              sourceReference: "import-01",
+              importedAt: "2026-09-16T08:00:00.000Z",
+              msaStatus: "unknown",
+              observations: [
+                { originalRow: 1, value: 0.11, disposition: "included" },
+                { originalRow: 2, value: 0.12, disposition: "included" },
+              ],
+              missingRowCount: 0,
+              rejectionSummaries: [],
+              originalRowCount: 2,
+              analyzedCount: 2,
+              contentHash: HASH_C,
+            },
+            validation: {
+              status: "ready",
+              blockingIssues: [],
+              advisoryIssues: [],
+              candidateEligibility: {
+                normal: "eligible",
+                lognormal: "eligible",
+                weibull: "eligible",
+                gamma: "eligible",
+                uniform: "eligible_with_boundary_warning",
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  it("shows textual source modes and no radios in import mode", () => {
+    const wrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "import";
+    });
+
+    expect(wrapper.text()).toContain("BASELINE_ASSUMPTION");
+    expect(wrapper.text()).toContain("MEASURED");
+    expect(wrapper.findAll("input[type='radio']")).toHaveLength(0);
+  });
+
+  it("retains source mode radios in individual mode", () => {
+    const wrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "individual",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "individual";
+    });
+
+    expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
+    expect(wrapper.findAll("input[type='radio']").length).toBeGreaterThan(0);
+  });
+
+  it("keeps open workspace visible for measured factors in both modes", () => {
+    const importWrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "import";
+    });
+    const individualWrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "individual",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "individual";
+    });
+
+    expect(importWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
+    expect(individualWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
+  });
+});

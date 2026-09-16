@@ -40,6 +40,7 @@ const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
   readonly editingSetup: boolean;
+  readonly measurementEntryMode?: "import" | "individual";
 }>();
 
 const emit = defineEmits<{
@@ -929,7 +930,13 @@ function onModeChange(factorId: string, event: Event): void {
 </script>
 
 <template>
-  <section class="workbench-panel" aria-label="Factor setup and source mode">
+  <section
+    id="measurement-entry-individual-panel"
+    class="workbench-panel"
+    aria-label="Factor setup and source mode"
+    :role="measurementEntryMode === 'individual' ? 'tabpanel' : undefined"
+    :aria-labelledby="measurementEntryMode === 'individual' ? 'measurement-entry-individual-tab' : undefined"
+  >
     <div class="factor-setup-heading">
       <h2>Factor Setup</h2>
       <div class="factor-setup-actions">
@@ -1219,7 +1226,22 @@ function onModeChange(factorId: string, event: Event): void {
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
             <td data-column-key="sourceMode">
               <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
-                <fieldset class="source-mode-options">
+                <template v-if="props.measurementEntryMode === 'import'">
+                  <div class="source-mode-readonly">
+                    <span>{{ factor.sourceMode }}</span>
+                    <button
+                      v-if="factor.sourceMode === 'MEASURED'"
+                      type="button"
+                      class="factor-workspace-button"
+                      :data-open-measurement="factor.evidence.factorId"
+                      :disabled="busy"
+                      @click="emit('openMeasurement', factor.evidence.factorId)"
+                    >
+                      Open workspace
+                    </button>
+                  </div>
+                </template>
+                <fieldset v-else class="source-mode-options">
                   <legend>Source mode</legend>
                   <label class="source-mode-option">
                     <input

@@ -4,6 +4,7 @@ import { computed, markRaw, nextTick, ref, shallowRef, watch } from "vue";
 import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
+import MeasurementImportPanel from "./components/MeasurementImportPanel.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
 import MonteCarloPanel from "./components/MonteCarloPanel.vue";
 import ReportPanel from "./components/ReportPanel.vue";
@@ -26,6 +27,8 @@ const activeMeasurementFactorId = ref("");
 const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
 const editingFactorSetup = ref(false);
+const measurementEntryMode = ref<"import" | "individual">("import");
+const measurementImportSuccessMessage = ref("");
 const reportRetryAvailable = ref(false);
 const workbookInput = ref<HTMLInputElement>();
 const pendingWorkbookFile = ref<File>();
@@ -125,6 +128,21 @@ const simulationReady = computed(() => {
   ));
 });
 
+const measuredDatasetPresent = computed(() => store.session.value?.factors.some((factor) => factor.measurementPasteResult?.dataset !== undefined) ?? false);
+
+const measurementImportPanelVisible = computed(() => {
+  const session = store.session.value;
+  if (!session) return false;
+  if (editingFactorSetup.value || activeMeasurementFactorId.value) return false;
+  if (activeMeasurementStage.value !== "measurement" && activeMeasurementStage.value !== "capability" && activeMeasurementStage.value !== "distribution") return false;
+  return session.status === "measurement_entry" || session.status === "phase_1_ready";
+});
+
+watch(() => store.session.value?.sessionId ?? "", (nextSessionId, previousSessionId) => {
+  if (!nextSessionId || nextSessionId === previousSessionId) return;
+  measurementEntryMode.value = measuredDatasetPresent.value ? "individual" : "import";
+}, { immediate: true });
+
 const workflowSteps = [
   { id: 1, label: "Select worksheet" },
   { id: 2, label: "Measurement Data Import & Analysis" },
@@ -190,6 +208,7 @@ async function importWorkbookFile(file: File): Promise<void> {
   importingWorkbookFileName.value = file.name;
   try {
     await store.importWorkbook(file);
+    measurementImportSuccessMessage.value = "";
     reportRequestToken += 1;
     activeMeasurementFactorId.value = "";
     activeMeasurementStage.value = "measurement";
@@ -328,6 +347,53 @@ async function onSetMode(factorId: string, mode: F7SourceMode): Promise<void> {
       activeMeasurementFactorId.value = "";
     }
   });
+}
+
+function onMeasurementEntryModeChange(mode: "import" | "individual"): void {
+  if (mode === measurementEntryMode.value) return;
+  store.cancelMeasurementImport();
+  measurementImportSuccessMessage.value = "";
+  measurementEntryMode.value = mode;
+}
+
+async function onDownloadMeasurementTemplate(): Promise<void> {
+  await swallowHandledError(async () => {
+    const download = await store.downloadMeasurementTemplate();
+    const blob = new Blob([Uint8Array.from(download.bytes).buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = globalThis.document.createElement("a");
+      anchor.href = url;
+      anchor.download = download.fileName;
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  });
+}
+
+async function onPreviewMeasurementImport(file: File): Promise<void> {
+  measurementImportSuccessMessage.value = "";
+  await swallowHandledError(async () => {
+    await store.previewMeasurementImport(file);
+  });
+}
+
+async function onCommitMeasurementImport(): Promise<void> {
+  const replacementCount = store.measurementImportPreview.value?.replacementCount ?? 0;
+  const factorCount = store.measurementImportPreview.value?.factorCount ?? 0;
+  await swallowHandledError(async () => {
+    await store.commitMeasurementImport();
+    const label = factorCount === 1 ? "dataset" : "datasets";
+    measurementImportSuccessMessage.value = `Ready. Imported ${factorCount} measured ${label} with ${replacementCount} replacement${replacementCount === 1 ? "" : "s"}.`;
+  });
+}
+
+function onCancelMeasurementImport(): void {
+  store.cancelMeasurementImport();
+  measurementImportSuccessMessage.value = "";
 }
 
 function onOpenMeasurement(factorId: string): void {
@@ -549,11 +615,27 @@ async function openReport(): Promise<void> {
           @confirm="onConfirmWorksheet"
         />
 
+        <MeasurementImportPanel
+          v-if="measurementImportPanelVisible"
+          :session="store.session.value"
+          :preview="store.measurementImportPreview.value"
+          :busy="store.isBusy.value"
+          :action="store.busyAction.value === 'downloadMeasurementTemplate' || store.busyAction.value === 'previewMeasurementImport' || store.busyAction.value === 'commitMeasurementImport' ? store.busyAction.value : null"
+          :mode="measurementEntryMode"
+          :success-message="measurementImportSuccessMessage || null"
+          @download="onDownloadMeasurementTemplate"
+          @upload="onPreviewMeasurementImport"
+          @confirm="onCommitMeasurementImport"
+          @cancel="onCancelMeasurementImport"
+          @mode-change="onMeasurementEntryModeChange"
+        />
+
         <FactorInputTable
           v-if="!activeMeasurementFactorId && (activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && (store.session.value.status === 'factor_setup' || store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :busy="store.isBusy.value"
           :editing-setup="editingFactorSetup"
+          :measurement-entry-mode="measurementEntryMode"
           @confirm-factors="onConfirmFactors"
           @edit-setup="onEditFactorSetup"
           @set-mode="onSetMode"
