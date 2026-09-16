@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import * as contractExports from "./index.js";
 import {
+  analysisRequestContextSchema,
   calculationCriticalitySchema,
   calculationMethodSchema,
   capabilityEntrySchema,
@@ -18,6 +19,7 @@ import {
   createTypedError,
   drawingGovernanceRequestSchema,
   drawingGovernanceResultSchema,
+  drawingGovernanceResultV3Schema,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
   f4ExcelComparisonResultSchema,
@@ -1893,6 +1895,31 @@ describe("F3 drawing governance v2 contracts", () => {
     },
   };
 
+  function readyDrawingGovernanceV3Fixture() {
+    return {
+      contractVersion: "v1",
+      modelVersion: "drawing-governance-v3",
+      outputClassification: "confidential",
+      featureId: "F3",
+      status: "completed",
+      artifactRoot: "controlled/f1",
+      workbook: { fileName: "Anonymous.xlsx", contentHash },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Anonymous device gap",
+        rows: [{ ...governanceRow }],
+      }],
+      ado: { status: "not_requested" },
+      summary: {
+        worksheetCount: 1,
+        factorCount: 1,
+        completeCount: 1,
+        governanceRequiredCount: 0,
+        duplicateConflictCount: 0,
+      },
+    };
+  }
+
   function schemas() {
     const requestSchema = Reflect.get(contractExports, "drawingGovernanceRequestV2Schema") as { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } } | undefined;
     const resultSchema = Reflect.get(contractExports, "drawingGovernanceResultV2Schema") as { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } } | undefined;
@@ -1919,6 +1946,28 @@ describe("F3 drawing governance v2 contracts", () => {
       status: "input_rejected",
       artifactIssues: [{ reasonCode: "description_missing", artifactReference: "worksheet:Analysis-A" }],
     }).success).toBe(true);
+  });
+
+  it("accepts complete structured ADO readback identity", () => {
+    const parsed = drawingGovernanceResultV3Schema.parse({
+      ...readyDrawingGovernanceV3Fixture(),
+      ado: {
+        status: "updated",
+        operation: "created",
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+    });
+
+    expect(parsed.ado.workItemId).toBe(1119604);
+  });
+
+  it("rejects partial ADO identity", () => {
+    expect(drawingGovernanceResultV3Schema.safeParse({
+      ...readyDrawingGovernanceV3Fixture(),
+      ado: { status: "updated", operation: "updated", workItemId: 1119604 },
+    }).success).toBe(false);
   });
 
   it("rejects formal keys for unresolved identifiers and inconsistent summaries", () => {

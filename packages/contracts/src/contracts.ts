@@ -6260,6 +6260,156 @@ export const drawingGovernanceResultV2Schema = z.union([
   drawingGovernanceAcceptedResultV2Schema,
 ]);
 
+export interface AdoTraceabilityV3 {
+  status: "not_requested" | "draft_ready" | "confirmation_required" | "updated" | "blocked" | "failed";
+  operation?: "created" | "updated";
+  organization?: string;
+  project?: string;
+  workItemId?: number;
+  reasonCode?: string;
+}
+
+const adoTraceabilityV3StatusSchema = z.enum([
+  "not_requested",
+  "draft_ready",
+  "confirmation_required",
+  "updated",
+  "blocked",
+  "failed",
+]);
+
+const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z
+  .object({
+    status: adoTraceabilityV3StatusSchema,
+    operation: z.enum(["created", "updated"]).optional(),
+    organization: z.string().min(1).optional(),
+    project: z.string().min(1).optional(),
+    workItemId: z.number().int().positive().optional(),
+    reasonCode: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine((ado, context) => {
+    const hasStructuredIdentity = ado.operation !== undefined
+      || ado.organization !== undefined
+      || ado.project !== undefined
+      || ado.workItemId !== undefined;
+
+    if (ado.status === "updated") {
+      if (
+        ado.operation === undefined
+        || ado.organization === undefined
+        || ado.project === undefined
+        || ado.workItemId === undefined
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "updated ADO status requires complete structured identity",
+          path: ["status"],
+        });
+      }
+      if (ado.reasonCode !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "updated ADO status must not include reasonCode",
+          path: ["reasonCode"],
+        });
+      }
+      return;
+    }
+
+    if (hasStructuredIdentity) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "structured ADO identity is allowed only for updated status",
+        path: ["status"],
+      });
+    }
+  });
+
+const drawingGovernanceAcceptedResultV3Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v3"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.enum(["completed", "governance_required"]),
+  artifactRoot: z.string().min(1),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    rows: z.array(f3GovernanceRowSchema),
+  }).strict().superRefine((worksheet, context) => {
+    worksheet.rows.forEach((row, index) => {
+      if (row.imageReference.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference worksheet must match the containing worksheet", path: ["rows", index, "imageReference", "worksheetName"] });
+      }
+    });
+  })),
+  ado: adoTraceabilityV3Schema,
+  summary: z.object({
+    worksheetCount: z.number().int().nonnegative(),
+    factorCount: z.number().int().nonnegative(),
+    completeCount: z.number().int().nonnegative(),
+    governanceRequiredCount: z.number().int().nonnegative(),
+    duplicateConflictCount: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((result, context) => {
+  const rows = result.worksheets.flatMap((worksheet) => worksheet.rows);
+  const completeCount = rows.filter((row) => row.governanceStatus === "complete").length;
+  const expectedSummary = {
+    worksheetCount: result.worksheets.length,
+    factorCount: rows.length,
+    completeCount,
+    governanceRequiredCount: rows.length - completeCount,
+    duplicateConflictCount: rows.filter((row) => row.qualitySignals.includes("duplicate_conflict")).length,
+  };
+
+  for (const [field, value] of Object.entries(expectedSummary)) {
+    if (result.summary[field as keyof typeof expectedSummary] !== value) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${field} must match governance records`,
+        path: ["summary", field],
+      });
+    }
+  }
+
+  const expectedStatus = expectedSummary.governanceRequiredCount === 0
+    ? "completed"
+    : "governance_required";
+  if (result.status !== expectedStatus) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "status must match governance records",
+      path: ["status"],
+    });
+  }
+});
+
+const drawingGovernanceInputRejectedResultV3Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v3"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.literal("input_rejected"),
+  artifactIssues: z.array(z.object({
+    reasonCode: z.enum([
+      "f2_report_missing",
+      "f2_report_invalid",
+      "workbook_identity_mismatch",
+      "description_missing",
+      "no_ready_worksheet",
+      "worksheet_selection_invalid",
+    ]),
+    artifactReference: z.string().min(1),
+  }).strict()).min(1),
+}).strict();
+
+export const drawingGovernanceResultV3Schema = z.union([
+  drawingGovernanceInputRejectedResultV3Schema,
+  drawingGovernanceAcceptedResultV3Schema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -6329,6 +6479,7 @@ export type F2ReadyWorksheet = z.infer<typeof f2ReadyWorksheetSchema>;
 export type F4HandoffReady = z.infer<typeof f4HandoffReadySchema>;
 export type DrawingGovernanceRequestV2 = z.infer<typeof drawingGovernanceRequestV2Schema>;
 export type DrawingGovernanceResultV2 = z.infer<typeof drawingGovernanceResultV2Schema>;
+export type DrawingGovernanceResultV3 = z.infer<typeof drawingGovernanceResultV3Schema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
 export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;

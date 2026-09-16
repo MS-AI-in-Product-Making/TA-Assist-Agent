@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 import {
+  adoTargetIdentitySchema,
   confirmDownstreamScopeInternalPayloadSchema,
   f8SessionCommandSchema,
   f8PublicSessionCommandSchema,
@@ -848,6 +849,11 @@ describe("F8 session and host contracts", () => {
       activeAttempt: null,
       interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
+      analysisRequestContext: {
+        requestedAt: "2026-09-16T15:30:12.000Z",
+        utcOffsetMinutes: -420,
+        source: "web",
+      },
       artifactRefs: [
         {
           artifactId: "artifact-report-1",
@@ -1252,6 +1258,50 @@ describe("F8 session and host contracts", () => {
     expect(f8AdoProjectionSchema.parse(writeOutcomeUnknown)).toEqual(writeOutcomeUnknown);
   });
 
+  it("accepts exported ADO target identity and rejects URL-based receipts", () => {
+    expect(adoTargetIdentitySchema.parse({
+      organization: "MSFTDEVICES",
+      project: "Project A",
+      workItemId: 42,
+    })).toEqual({
+      organization: "MSFTDEVICES",
+      project: "Project A",
+      workItemId: 42,
+    });
+
+    expect(f8AdoProjectionSchema.safeParse({
+      contractVersion: "f8-ado-projection-v1",
+      sessionId: SESSION_ID,
+      state: "completed",
+      actionId: "ado-write:session:3",
+      validationActionId: "ado-validation:session:3",
+      expectedRevision: 3,
+      executionPhase: "reconcile",
+      confirmation: {
+        status: "confirmation_required",
+        workItemReference: "WI-1",
+        ownerReference: "owner-1",
+        commentReference: "C0",
+        expectedVersion: "1",
+        beforeContentHash: "b".repeat(64),
+        nextContent: "next content",
+        factorCount: 1,
+        confirmationHash: WORKBOOK_HASH,
+        diff: [{ before: "before", after: "next content", changed: true }],
+      },
+      receipt: {
+        operation: "updated",
+        targetIdentity: {
+          organization: "MSFTDEVICES",
+          project: "Project A",
+          workItemId: 42,
+        },
+        verifiedAt: "2026-09-01T00:00:00.000Z",
+        workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42",
+      },
+    }).success).toBe(false);
+  });
+
   it("keeps conversation turns, host actions, and drafts strict", () => {
     const conversationTurn = {
       contractVersion: "ta-conversation-turn-v1",
@@ -1342,11 +1392,13 @@ describe("F8 session and host contracts", () => {
           kind: "surface_reconcile",
           state: "matching",
           receipt: {
-            status: "updated",
-            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42",
-            commentReference: "11",
-            version: "2",
-            contentHash: WORKBOOK_HASH,
+            operation: "updated",
+            targetIdentity: {
+              organization: "MSFTDEVICES",
+              project: "Project A",
+              workItemId: 42,
+            },
+            verifiedAt: "2026-09-01T00:00:00.000Z",
           },
           observedCommentReference: "11",
           observedCommentVersion: "2",
