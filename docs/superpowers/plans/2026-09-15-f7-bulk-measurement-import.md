@@ -720,7 +720,7 @@ git commit -m "feat(f7): add bulk measurement import workspace"
 - Create: `test/f8-e2e/fixtures/f7-bulk-measurement-import.ts`
 - Use only ignored runtime output under: `local-test/F7_Test_Finetune_05/`
 
-- [ ] **Step 1: Write the failing browser acceptance test**
+- [x] **Step 1: Write the failing browser acceptance test**
 
 Use the existing anonymous workbook fixture. Download the generated template through the UI, then use the root test-only `xlsx` devDependency in the Playwright fixture helper to create controlled completed copies under `local-test/F7_Test_Finetune_05/`; production generation and parsing must not import `xlsx`. Verify:
 
@@ -732,7 +732,7 @@ Use the existing anonymous workbook fixture. Download the generated template thr
 6. a negative cell blocks the complete batch and identifies its Excel cell;
 7. overwrite review names the replacement count and requires explicit confirmation.
 
-- [ ] **Step 2: Run focused unit and integration regressions**
+- [x] **Step 2: Run focused unit and integration regressions**
 
 Run:
 
@@ -743,7 +743,7 @@ npx.cmd vitest run --project f7-web apps/f7-web/src/api/f7-client.test.ts apps/f
 
 Expected: all pass.
 
-- [ ] **Step 3: Run workspace validation**
+- [x] **Step 3: Run workspace validation**
 
 Run:
 
@@ -755,7 +755,9 @@ npm.cmd run test
 
 Expected: build, lint, and all Vitest projects pass. If unrelated pre-existing failures occur, record their exact command/output and do not modify unrelated modules.
 
-- [ ] **Step 4: Start the feature worktree and run Playwright**
+Observed: `npm.cmd run build -- --force` passed. `npm.cmd run lint` reported 92 existing errors and 1,864 warnings across unrelated workbench, F6, and script files. `npm.cmd run test` passed 4,519 tests with 39 skipped and retained two unrelated F6 failures: `scripts/f6-full-flow.test.mjs` returned `report_failed`, and `apps/cli/src/index.test.ts` timed out after 120 seconds.
+
+- [x] **Step 4: Start the feature worktree and run Playwright**
 
 From `.worktrees/f7-bulk-measurement-import`, start the long-running server:
 
@@ -771,7 +773,7 @@ npx.cmd playwright test test/f8-e2e/f7-bulk-measurement-import.spec.ts
 
 Expected: all acceptance scenarios pass in Edge. Capture desktop and mobile screenshots and verify no overlap, clipping, blank upload state, or unreadable diagnostic text.
 
-- [ ] **Step 5: Verify repository hygiene**
+- [x] **Step 5: Verify repository hygiene**
 
 Run:
 
@@ -782,7 +784,7 @@ git status --short
 
 Expected: no generated `.xlsx`, screenshots, PDFs, `.js`, `.map`, `dist`, or files under `local-test/F7_Test_Finetune_05/` are staged. Only intended source/test/plan files may remain.
 
-- [ ] **Step 6: Commit E2E coverage and push**
+- [x] **Step 6: Commit E2E coverage and push**
 
 ```powershell
 git add test/f8-e2e/f7-bulk-measurement-import.spec.ts test/f8-e2e/fixtures/f7-bulk-measurement-import.ts
