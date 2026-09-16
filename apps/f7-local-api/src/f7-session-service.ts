@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   createTypedError,
+  f7MeasurementImportCommitMutationSchema,
   f7DistributionCharacteristicKindSchema,
   f7DistributionApprovalRouteRequestSchema,
   f7FactorConfirmRouteRequestSchema,
@@ -16,6 +17,8 @@ import {
   type F7DistributionCandidateFamily,
   type F7FactorInput,
   type F7FactorConfirmRouteRequest,
+  type F7MeasurementImportAuthority,
+  type F7MeasurementImportCommitMutation,
   type F7FactorSourceMode,
   type F7MeasurementDispositionRequest,
   type F7MeasurementPasteRequest,
@@ -35,6 +38,7 @@ import {
 import {
   applyF7MeasurementDisposition,
   confirmF7FactorSetup,
+  createF7MeasurementImportAuthority,
   createWorkbookCatalog,
   createWorksheetAnalysisAssets as createWorksheetAnalysisAssetsDefault,
   createF7WorkbookImport,
@@ -56,6 +60,7 @@ import {
 interface InternalSession {
   readonly workbookBytes: Uint8Array;
   readonly importResult: F7WorkbookImportResult;
+  readonly measurementImportRevision: number;
   readonly extractionResult?: F7FactorCandidateExtractionResult;
   readonly dimensionChainImage?: {
     readonly mediaType: "image/png" | "image/jpeg";
@@ -70,9 +75,13 @@ const NOT_FOUND_SUMMARY = "F7 session state was not found.";
 const INTERNAL_REFERENCE = "f7-session-service";
 const DISTRIBUTION_FIT_SUMMARY = "F7 distribution fitting could not be calculated.";
 const SELECTED_WORKSHEET_SUMMARY = "F7 selected worksheet could not be read.";
+const STALE_MEASUREMENT_IMPORT_REVISION_REASON_CODE = "f7_measurement_import_stale_revision";
+const STALE_MEASUREMENT_IMPORT_FACTOR_SET_REASON_CODE = "f7_measurement_import_stale_factor_set";
+const STALE_MEASUREMENT_IMPORT_AUTHORITY_REASON_CODE = "f7_measurement_import_stale_authority";
 
 export const F7_SESSION_NOT_FOUND_REASON_CODE = "f7_session_not_found";
 export const MAX_F7_LOCAL_SESSIONS = 8;
+const measurementImportTemplateIdSchema = z.string().trim().min(1).max(300);
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   if (!value || typeof value !== "object" || seen.has(value)) return value;
@@ -139,6 +148,58 @@ function normalizeSnapshot(snapshot: F7SessionSnapshot): F7SessionSnapshot {
   return deepFreeze(f7SessionSnapshotSchema.parse(structuredClone(snapshot)));
 }
 
+function hasMeasuredDataset(
+  factorState: F7SessionSnapshot["factors"][number],
+): boolean {
+  return factorState.sourceMode === "MEASURED"
+    && factorState.input?.mode === "MEASURED"
+    && factorState.input.dataset !== undefined
+    && factorState.measurementPasteResult?.status === "ready"
+    && factorState.datasetValidation?.status === "ready";
+}
+
+function selectedWorksheetStableId(snapshot: F7SessionSnapshot): string {
+  const worksheetName = snapshot.selectedWorksheetNames[0];
+  if (snapshot.selectedWorksheetNames.length !== 1 || worksheetName === undefined) {
+    throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+  }
+  const selectedOption = snapshot.worksheetOptions.find((option) => option.worksheetName === worksheetName);
+  if (!selectedOption) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+  return `${selectedOption.selectionIndex}:${worksheetName}`;
+}
+
+function confirmedFactorEvidence(snapshot: F7SessionSnapshot): readonly NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>[] {
+  if ((snapshot.status !== "measurement_entry" && snapshot.status !== "phase_1_ready") || snapshot.factors.length === 0) {
+    throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+  }
+  const evidence = snapshot.factors.map((factorState) => factorState.evidence);
+  if (evidence.some((value) => value === undefined)) {
+    throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+  }
+  return evidence as readonly NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>[];
+}
+
+function measuredStateChanged(
+  previous: F7SessionSnapshot["factors"][number],
+  next: F7SessionSnapshot["factors"][number],
+): boolean {
+  return JSON.stringify({
+    sourceMode: previous.sourceMode,
+    input: previous.input,
+    datasetValidation: previous.datasetValidation,
+    measurementPasteResult: previous.measurementPasteResult,
+    distributionFitResult: previous.distributionFitResult,
+    distributionApproval: previous.distributionApproval,
+  }) !== JSON.stringify({
+    sourceMode: next.sourceMode,
+    input: next.input,
+    datasetValidation: next.datasetValidation,
+    measurementPasteResult: next.measurementPasteResult,
+    distributionFitResult: next.distributionFitResult,
+    distributionApproval: next.distributionApproval,
+  });
+}
+
 function readyForPhaseOne(factors: F7SessionSnapshot["factors"]): boolean {
   if (factors.length === 0) return false;
   for (const factor of factors) {
@@ -171,6 +232,7 @@ export function createF7SessionService(dependencies: {
   readonly createReportProjection?: typeof createF7ReportProjection;
   readonly createWorksheetAnalysisAssets?: (request: unknown) => WorksheetAnalysisAssetsResult;
   readonly readWorksheetImageAsset?: (request: unknown) => WorksheetImageReadResult;
+  readonly normalizeCommittedSnapshot?: (snapshot: F7SessionSnapshot) => F7SessionSnapshot;
 }): F7SessionService {
   if (typeof dependencies.createId !== "function" || typeof dependencies.now !== "function") {
     throw fixedError(SESSION_SUMMARY, "validation_error");
@@ -180,6 +242,7 @@ export function createF7SessionService(dependencies: {
   const projectReport = dependencies.createReportProjection ?? createF7ReportProjection;
   const createAnalysisAssets = dependencies.createWorksheetAnalysisAssets ?? createWorksheetAnalysisAssetsDefault;
   const readImageAsset = dependencies.readWorksheetImageAsset ?? readWorksheetImageAssetDefault;
+  const normalizeCommittedSnapshot = dependencies.normalizeCommittedSnapshot ?? normalizeSnapshot;
 
   const readSession = (sessionId: string): InternalSession => {
     const session = sessions.get(sessionId);
@@ -227,6 +290,7 @@ export function createF7SessionService(dependencies: {
     writeSession(sessionId, {
       workbookBytes: new Uint8Array(parsedRequest.data.workbookBytes),
       importResult,
+      measurementImportRevision: 0,
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
@@ -311,6 +375,7 @@ export function createF7SessionService(dependencies: {
 
     const nextSession: InternalSession = {
       ...current,
+      measurementImportRevision: current.measurementImportRevision + 1,
       extractionResult: extraction,
       snapshot,
     };
@@ -427,9 +492,139 @@ export function createF7SessionService(dependencies: {
 
     writeSession(parsedRequest.data.sessionId, {
       ...current,
+      measurementImportRevision: current.measurementImportRevision + 1,
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
+  };
+
+  const getMeasurementImportAuthority = (request: { sessionId: string; templateId: string }): F7MeasurementImportAuthority => {
+    const parsedRequest = z.object({
+      sessionId: z.string().min(1),
+      templateId: measurementImportTemplateIdSchema,
+    }).strict().safeParse(request);
+    if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+
+    const current = readSession(parsedRequest.data.sessionId);
+    const factors = confirmedFactorEvidence(current.snapshot);
+    return createF7MeasurementImportAuthority({
+      sessionId: parsedRequest.data.sessionId,
+      templateId: parsedRequest.data.templateId,
+      workbookContentHash: current.snapshot.workbook.workbookContentHash,
+      worksheetName: current.snapshot.selectedWorksheetNames[0]!,
+      worksheetStableId: selectedWorksheetStableId(current.snapshot),
+      measurementImportRevision: current.measurementImportRevision,
+      factors,
+    });
+  };
+
+  const commitMeasurementImport = (request: F7MeasurementImportCommitMutation): F7SessionSnapshot => {
+    const parsedRequest = f7MeasurementImportCommitMutationSchema.safeParse(request);
+    if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+
+    const current = readSession(parsedRequest.data.sessionId);
+    if (parsedRequest.data.expectedMeasurementImportRevision !== current.measurementImportRevision) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
+        reasonCode: STALE_MEASUREMENT_IMPORT_REVISION_REASON_CODE,
+      });
+    }
+
+    const currentAuthority = getMeasurementImportAuthority({
+      sessionId: parsedRequest.data.sessionId,
+      templateId: parsedRequest.data.authority.manifest.templateId,
+    });
+    if (currentAuthority.sessionStateDigest !== parsedRequest.data.sessionStateDigest
+      || currentAuthority.sessionStateDigest !== parsedRequest.data.authority.sessionStateDigest) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
+        reasonCode: STALE_MEASUREMENT_IMPORT_REVISION_REASON_CODE,
+      });
+    }
+    if (currentAuthority.manifest.factorSetDigest !== parsedRequest.data.factorSetDigest
+      || currentAuthority.manifest.factorSetDigest !== parsedRequest.data.authority.manifest.factorSetDigest) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
+        reasonCode: STALE_MEASUREMENT_IMPORT_FACTOR_SET_REASON_CODE,
+      });
+    }
+    if (currentAuthority.authorityDigest !== parsedRequest.data.authority.authorityDigest) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready", {
+        reasonCode: STALE_MEASUREMENT_IMPORT_AUTHORITY_REASON_CODE,
+      });
+    }
+
+    const currentFactorIds = current.snapshot.factors.map((factorState) => factorState.evidence?.factorId);
+    if (currentFactorIds.some((factorId) => factorId === undefined)) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+    }
+    if (parsedRequest.data.factors.length !== current.snapshot.factors.length) {
+      throw fixedError(SESSION_SUMMARY, "validation_error");
+    }
+
+    const replacementFactorIds = current.snapshot.factors
+      .filter((factorState) => hasMeasuredDataset(factorState))
+      .map((factorState) => factorState.evidence!.factorId);
+    if (replacementFactorIds.length !== parsedRequest.data.replacementFactorIds.length
+      || replacementFactorIds.some((factorId, index) => factorId !== parsedRequest.data.replacementFactorIds[index])) {
+      throw fixedError(SESSION_SUMMARY, "validation_error");
+    }
+
+    const factorMutationById = new Map(parsedRequest.data.factors.map((factor) => [factor.factorId, factor] as const));
+    const mutatedFactorIds = [...factorMutationById.keys()];
+    if (mutatedFactorIds.length !== currentFactorIds.length
+      || currentFactorIds.some((factorId) => factorId === undefined || !factorMutationById.has(factorId))) {
+      throw fixedError(SESSION_SUMMARY, "validation_error");
+    }
+
+    const factors = current.snapshot.factors.map((factorState) => {
+      const evidence = factorState.evidence;
+      if (!evidence) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      const factorMutation = factorMutationById.get(evidence.factorId);
+      if (!factorMutation) throw fixedError(SESSION_SUMMARY, "validation_error");
+      if (factorMutation.factorId !== evidence.factorId || factorMutation.unit !== evidence.unit || factorMutation.factorName !== evidence.factorName) {
+        throw fixedError(SESSION_SUMMARY, "validation_error");
+      }
+      if (factorMutation.validation.status !== "ready" || factorMutation.validation.blockingIssues.length > 0) {
+        throw fixedError(SESSION_SUMMARY, "validation_error");
+      }
+      if (factorMutation.dataset.factorId !== evidence.factorId || factorMutation.dataset.unit !== evidence.unit) {
+        throw fixedError(SESSION_SUMMARY, "validation_error");
+      }
+
+      const measurementPasteResult: F7MeasurementPasteResult = {
+        status: "ready",
+        factorId: evidence.factorId,
+        dataset: factorMutation.dataset,
+        validation: factorMutation.validation,
+      };
+
+      return {
+        factorCandidate: factorState.factorCandidate,
+        setup: factorState.setup,
+        evidence,
+        sourceMode: "MEASURED" as const,
+        input: {
+          mode: "MEASURED" as const,
+          dataset: factorMutation.dataset,
+        } satisfies F7FactorInput,
+        datasetValidation: factorMutation.validation,
+        measurementPasteResult,
+        distributionFitResult: undefined,
+        distributionApproval: undefined,
+      };
+    });
+
+    const candidateSnapshot = normalizeCommittedSnapshot({
+      ...current.snapshot,
+      factors,
+      status: computeMeasurementStatus({ ...current.snapshot, factors }),
+      monteCarloResult: undefined,
+    });
+
+    writeSession(parsedRequest.data.sessionId, {
+      ...current,
+      measurementImportRevision: current.measurementImportRevision + 1,
+      snapshot: candidateSnapshot,
+    });
+    return cloneFrozenSnapshot(candidateSnapshot);
   };
 
   const setFactorMode = (request: { sessionId: string; factorId: string; mode: F7FactorSourceMode }): F7SessionSnapshot => {
@@ -446,32 +641,36 @@ export function createF7SessionService(dependencies: {
     }
 
     let found = false;
+    let incrementMeasurementImportRevision = false;
     const factors = current.snapshot.factors.map((factorState) => {
       if (factorState.evidence?.factorId !== parsedRequest.data.factorId) return factorState;
       found = true;
-      if (parsedRequest.data.mode === "BASELINE_ASSUMPTION") {
-        if (factorState.evidence === undefined) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
-        const input: F7FactorInput = {
-          mode: "BASELINE_ASSUMPTION",
-          baselineSampler: factorState.evidence.baselineSampler,
-        };
-        return {
-          factorCandidate: factorState.factorCandidate,
-          setup: factorState.setup,
-          evidence: factorState.evidence,
-          sourceMode: "BASELINE_ASSUMPTION" as const,
-          input,
-        };
-      }
-      return {
-        factorCandidate: factorState.factorCandidate,
-        setup: factorState.setup,
-        evidence: factorState.evidence,
-        sourceMode: "MEASURED" as const,
-        input: {
-          mode: "MEASURED" as const,
-        },
-      };
+      const nextFactorState = parsedRequest.data.mode === "BASELINE_ASSUMPTION"
+        ? (() => {
+            if (factorState.evidence === undefined) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+            const input: F7FactorInput = {
+              mode: "BASELINE_ASSUMPTION",
+              baselineSampler: factorState.evidence.baselineSampler,
+            };
+            return {
+              factorCandidate: factorState.factorCandidate,
+              setup: factorState.setup,
+              evidence: factorState.evidence,
+              sourceMode: "BASELINE_ASSUMPTION" as const,
+              input,
+            };
+          })()
+        : {
+            factorCandidate: factorState.factorCandidate,
+            setup: factorState.setup,
+            evidence: factorState.evidence,
+            sourceMode: "MEASURED" as const,
+            input: {
+              mode: "MEASURED" as const,
+            },
+          };
+      incrementMeasurementImportRevision = measuredStateChanged(factorState, nextFactorState) || incrementMeasurementImportRevision;
+      return nextFactorState;
     });
 
     if (!found) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
@@ -485,6 +684,9 @@ export function createF7SessionService(dependencies: {
 
     writeSession(parsedRequest.data.sessionId, {
       ...current,
+      measurementImportRevision: incrementMeasurementImportRevision
+        ? current.measurementImportRevision + 1
+        : current.measurementImportRevision,
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
@@ -577,6 +779,7 @@ export function createF7SessionService(dependencies: {
 
     writeSession(parsedRequest.data.sessionId, {
       ...current,
+      measurementImportRevision: current.measurementImportRevision + 1,
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
@@ -653,6 +856,7 @@ export function createF7SessionService(dependencies: {
 
     writeSession(parsedSession.data.sessionId, {
       ...current,
+      measurementImportRevision: current.measurementImportRevision + 1,
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
@@ -869,6 +1073,8 @@ export function createF7SessionService(dependencies: {
     importWorkbook,
     confirmWorksheet,
     confirmFactorSetup,
+    getMeasurementImportAuthority,
+    commitMeasurementImport,
     setFactorMode,
     pasteMeasurements,
     applyMeasurementDisposition,

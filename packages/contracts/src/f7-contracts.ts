@@ -1131,6 +1131,76 @@ export const f7MeasurementImportStoredBatchSchema = z
     }
   });
 
+export const f7MeasurementImportCommitMutationSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    expectedMeasurementImportRevision: z.number().int().nonnegative(),
+    sessionStateDigest: sha256LowerSchema,
+    factorSetDigest: sha256LowerSchema,
+    authority: f7MeasurementImportAuthoritySchema,
+    replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    factors: z.array(f7MeasurementImportStoredBatchFactorSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+  })
+  .strict()
+  .superRefine((mutation, context) => {
+    requireUniqueFactorIds(mutation.factors, context, ["factors"], "commit mutation factorIds must be unique");
+    requireExactReplacementFactorIds(mutation.replacementFactorIds, mutation.factors, context);
+
+    const manifestFactorsById = new Map(
+      mutation.authority.manifest.factors.map((factor) => [factor.factorId, factor] as const),
+    );
+
+    mutation.factors.forEach((factor, index) => {
+      const manifestFactor = manifestFactorsById.get(factor.factorId);
+      if (manifestFactor === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "commit mutation factorId must exist in authority.manifest.factors",
+          path: ["factors", index, "factorId"],
+        });
+        return;
+      }
+
+      if (factor.factorName !== manifestFactor.factorName) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "commit mutation factorName must match authority.manifest.factors",
+          path: ["factors", index, "factorName"],
+        });
+      }
+
+      if (factor.unit !== manifestFactor.unit) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "commit mutation unit must match authority.manifest.factors",
+          path: ["factors", index, "unit"],
+        });
+      }
+    });
+
+    if (mutation.authority.sessionId !== mutation.sessionId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.sessionId must match sessionId",
+        path: ["authority", "sessionId"],
+      });
+    }
+    if (mutation.authority.sessionStateDigest !== mutation.sessionStateDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.sessionStateDigest must match sessionStateDigest",
+        path: ["authority", "sessionStateDigest"],
+      });
+    }
+    if (mutation.authority.manifest.factorSetDigest !== mutation.factorSetDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "authority.manifest.factorSetDigest must match factorSetDigest",
+        path: ["authority", "manifest", "factorSetDigest"],
+      });
+    }
+  });
+
 export const f7MeasurementImportCommitRequestSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -3027,6 +3097,7 @@ export type F7MeasurementImportFactorPreview = z.infer<typeof f7MeasurementImpor
 export type F7MeasurementImportPreviewRequest = z.infer<typeof f7MeasurementImportPreviewRequestSchema>;
 export type F7MeasurementImportPreviewResponse = z.infer<typeof f7MeasurementImportPreviewResponseSchema>;
 export type F7MeasurementImportStoredBatch = z.infer<typeof f7MeasurementImportStoredBatchSchema>;
+export type F7MeasurementImportCommitMutation = z.infer<typeof f7MeasurementImportCommitMutationSchema>;
 export type F7MeasurementImportCommitRequest = z.infer<typeof f7MeasurementImportCommitRequestSchema>;
 export type F7DistributionCandidateFamily = z.infer<typeof f7DistributionCandidateFamilySchema>;
 export type F7DistributionFitStatus = z.infer<typeof f7DistributionFitStatusSchema>;
@@ -3075,6 +3146,8 @@ export interface F7SessionService {
   importWorkbook(request: F7WorkbookImportRequest): F7SessionSnapshot;
   confirmWorksheet(request: { sessionId: string; confirmation: WorksheetSelectionConfirmation }): F7SessionSnapshot;
   confirmFactorSetup(request: F7FactorConfirmRouteRequest): F7SessionSnapshot;
+  getMeasurementImportAuthority(request: { sessionId: string; templateId: string }): F7MeasurementImportAuthority;
+  commitMeasurementImport(request: F7MeasurementImportCommitMutation): F7SessionSnapshot;
   setFactorMode(request: { sessionId: string; factorId: string; mode: F7FactorSourceMode }): F7SessionSnapshot;
   pasteMeasurements(request: F7MeasurementPasteRequest & { sessionId: string }): F7SessionSnapshot;
   applyMeasurementDisposition(request: F7MeasurementDispositionRequest & { sessionId: string }): F7SessionSnapshot;

@@ -7,6 +7,11 @@ import {
   typedErrorSchema,
   type F7FactorSetupConfirmation,
   type F7SessionSnapshot,
+  f7MeasurementImportCommitMutationSchema,
+  type F7MeasurementDataset,
+  type F7MeasurementImportAuthority,
+  type F7MeasurementImportCommitMutation,
+  type F7MeasurementImportStoredBatch,
 } from "@ai-assist/contracts";
 import { runF7MonteCarlo } from "@ai-assist/f7-simulation";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
@@ -91,6 +96,7 @@ function createService(options: {
   createId?: () => string;
   now?: () => string;
   createReportProjection?: Parameters<typeof createF7SessionService>[0]["createReportProjection"];
+  normalizeCommittedSnapshot?: Parameters<typeof createF7SessionService>[0]["normalizeCommittedSnapshot"];
 } = {}) {
   return createF7SessionService({
     createId: options.createId ?? (() => "session-fixed"),
@@ -98,6 +104,9 @@ function createService(options: {
     ...(options.createReportProjection === undefined
       ? {}
       : { createReportProjection: options.createReportProjection }),
+    ...(options.normalizeCommittedSnapshot === undefined
+      ? {}
+      : { normalizeCommittedSnapshot: options.normalizeCommittedSnapshot }),
   });
 }
 
@@ -233,6 +242,81 @@ function prepareBaselineSimulation(service: ReturnType<typeof createService>): F
     iterations: 10_000,
     runSeed: "e".repeat(64),
     correlationMode: "INDEPENDENT",
+  });
+}
+
+function prepareMeasuredSession(service: ReturnType<typeof createService>): F7SessionSnapshot {
+  const imported = service.importWorkbook(importRequest(buildWorkbook()));
+  const worksheetReady = service.confirmWorksheet({
+    sessionId: imported.sessionId,
+    confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+  });
+  return service.confirmFactorSetup({
+    sessionId: imported.sessionId,
+    confirmations: confirmAll(worksheetReady),
+  });
+}
+
+function prepareTwoFactorMeasuredSession(service: ReturnType<typeof createService>): F7SessionSnapshot {
+  const imported = service.importWorkbook(importRequest(buildWorkbook()));
+  const worksheetReady = service.confirmWorksheet({
+    sessionId: imported.sessionId,
+    confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+  });
+  return service.confirmFactorSetup({
+    sessionId: imported.sessionId,
+    confirmations: confirmAll(worksheetReady).slice(0, 2),
+  });
+}
+
+function measurementSeries(start: number, step: number, count = 20): string {
+  return Array.from({ length: count }, (_, index) => String(start + index * step)).join("\n");
+}
+
+function applyMeasuredPaste(
+  service: ReturnType<typeof createService>,
+  snapshot: F7SessionSnapshot,
+  factorId: string,
+  text: string,
+): F7SessionSnapshot {
+  const factor = snapshot.factors.find((entry) => entry.evidence?.factorId === factorId)?.evidence;
+  if (!factor) throw new Error(`expected factor ${factorId}`);
+  return service.pasteMeasurements({
+    sessionId: snapshot.sessionId,
+    factorId,
+    unit: factor.unit,
+    structure: "UNORDERED_SAMPLE",
+    sourceReference: `paste-${factorId.slice(0, 8)}`,
+    msaStatus: "available",
+    text,
+  });
+}
+
+function measuredDataset(snapshot: F7SessionSnapshot, factorId: string): F7MeasurementDataset {
+  const factor = snapshot.factors.find((entry) => entry.evidence?.factorId === factorId);
+  expect(factor?.measurementPasteResult?.status).toBe("ready");
+  const dataset = factor?.measurementPasteResult?.dataset;
+  expect(dataset).toBeDefined();
+  if (!dataset) throw new Error(`expected dataset for factor ${factorId}`);
+  return dataset;
+}
+
+function measurementImportCommitMutation(input: {
+  authority: F7MeasurementImportAuthority;
+  expectedMeasurementImportRevision: number;
+  factors: readonly F7MeasurementImportStoredBatch["factors"];
+  replacementFactorIds?: readonly string[];
+  sessionStateDigest?: string;
+  factorSetDigest?: string;
+}): F7MeasurementImportCommitMutation {
+  return f7MeasurementImportCommitMutationSchema.parse({
+    sessionId: input.authority.sessionId,
+    expectedMeasurementImportRevision: input.expectedMeasurementImportRevision,
+    sessionStateDigest: input.sessionStateDigest ?? input.authority.sessionStateDigest,
+    factorSetDigest: input.factorSetDigest ?? input.authority.manifest.factorSetDigest,
+    authority: input.authority,
+    replacementFactorIds: input.replacementFactorIds ?? [],
+    factors: input.factors,
   });
 }
 
@@ -1182,5 +1266,368 @@ describe("createF7SessionService", () => {
     }
     expectValidationErrorWithSummary(missingSessionError, "F7 session state was not found.");
     expect(f7SessionSnapshotSchema.safeParse(service.getSession(s1.sessionId)).success).toBe(true);
+  });
+
+  it("returns deterministic authority for confirmed factor setup, changes on template id, and does not expose revision in snapshots", () => {
+    const service = createService();
+    const snapshot = prepareMeasuredSession(service);
+    const before = JSON.stringify(service.getSession(snapshot.sessionId));
+
+    const first = service.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-alpha",
+    });
+    const second = service.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-alpha",
+    });
+    const changedTemplate = service.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-beta",
+    });
+
+    expect(first).toEqual(second);
+    expect(first.sessionStateDigest).not.toBe(changedTemplate.sessionStateDigest);
+    expect(first.authorityDigest).not.toBe(changedTemplate.authorityDigest);
+    expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(before);
+    expect(JSON.stringify(snapshot)).not.toContain("measurementImportRevision");
+  });
+
+  it("changes authority digest only for revision-incrementing operations, not fit distribution approval monte carlo or repeated getter calls", () => {
+    const service = createService();
+    const imported = service.importWorkbook(importRequest(buildWorkbook()));
+    let snapshot = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+    });
+    snapshot = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: confirmAll(snapshot),
+    });
+
+    let authority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    })).toEqual(authority);
+
+    const factorIds = snapshot.factors.map((factor) => factor.evidence!.factorId);
+    snapshot = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: snapshot.factors.map((factor, index) => ({
+        ...factor.setup!,
+        designNominal: index === 0 ? factor.setup!.designNominal + 0.01 : factor.setup!.designNominal,
+        confirmed: true as const,
+      })),
+    });
+    let nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+    authority = nextAuthority;
+
+    snapshot = service.setFactorMode({ sessionId: imported.sessionId, factorId: factorIds[0]!, mode: "MEASURED" });
+    nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+    authority = nextAuthority;
+
+    for (const factorId of factorIds.slice(1)) {
+      snapshot = service.setFactorMode({
+        sessionId: imported.sessionId,
+        factorId,
+        mode: "BASELINE_ASSUMPTION",
+      });
+    }
+    nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+    authority = nextAuthority;
+
+    snapshot = applyMeasuredPaste(service, snapshot, factorIds[0]!, measurementSeries(1, 0.25, 32));
+    nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+    authority = nextAuthority;
+
+    snapshot = service.applyMeasurementDisposition({
+      sessionId: imported.sessionId,
+      factorId: factorIds[0]!,
+      rowNumbers: [1],
+      action: "EXCLUDE",
+      reason: "OUTLIER",
+      operatorReference: "op-authority",
+      confirmed: true,
+    });
+    nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+    authority = nextAuthority;
+
+    snapshot = service.applyMeasurementDisposition({
+      sessionId: imported.sessionId,
+      factorId: factorIds[0]!,
+      rowNumbers: [1],
+      action: "RESTORE",
+      reason: "OUTLIER",
+      operatorReference: "op-authority",
+      confirmed: true,
+    });
+    snapshot = service.fitDistribution({ sessionId: imported.sessionId, factorId: factorIds[0]! });
+    const fitAuthority = service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    });
+    expect(fitAuthority).toEqual(service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    }));
+
+    vi.mocked(runF7MonteCarlo).mockImplementation((request) => createMonteCarloResult(
+      request as Parameters<typeof runF7MonteCarlo>[0] & { readonly targetSigmaLevel: number },
+    ));
+    const proposedFamily = snapshot.factors[0]?.distributionFitResult?.selectionDecision.proposedFinalFamily;
+    if (!proposedFamily) throw new Error("expected proposed family");
+    snapshot = service.approveDistribution({
+      sessionId: imported.sessionId,
+      factorId: factorIds[0]!,
+      family: proposedFamily,
+      confirmed: true,
+    });
+    expect(service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    })).toEqual(fitAuthority);
+    snapshot = service.runMonteCarlo({
+      sessionId: imported.sessionId,
+      lowerSpecLimit: -5,
+      upperSpecLimit: 5,
+      targetSigmaLevel: 4,
+      iterations: 10_000,
+      runSeed: "b".repeat(64),
+      correlationMode: "INDEPENDENT",
+    });
+    expect(snapshot.monteCarloResult).toBeDefined();
+    expect(service.getMeasurementImportAuthority({
+      sessionId: imported.sessionId,
+      templateId: "template-revision",
+    })).toEqual(fitAuthority);
+  });
+
+  it("commits a valid two-factor batch in one call, replaces measured factors exactly, and advances authority digest", () => {
+    const service = createService();
+    let revision = 2;
+    let snapshot = prepareTwoFactorMeasuredSession(service);
+    const factorIds = snapshot.factors.map((factor) => factor.evidence!.factorId);
+    for (const factorId of factorIds) {
+      snapshot = service.setFactorMode({ sessionId: snapshot.sessionId, factorId, mode: "MEASURED" });
+      revision += 1;
+    }
+    snapshot = applyMeasuredPaste(service, snapshot, factorIds[0]!, measurementSeries(1, 0.25, 32));
+    revision += 1;
+    snapshot = applyMeasuredPaste(service, snapshot, factorIds[1]!, measurementSeries(2, 0.25, 32));
+    revision += 1;
+
+    const authority = service.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-commit",
+    });
+    const factors = factorIds.slice(0, 2).map((factorId) => {
+      const factor = snapshot.factors.find((entry) => entry.evidence?.factorId === factorId)!;
+      return {
+        factorId,
+        factorName: factor.evidence!.factorName,
+        unit: factor.evidence!.unit,
+        replacesExistingFactor: true,
+        dataset: measuredDataset(snapshot, factorId),
+        validation: factor.datasetValidation!,
+      };
+    });
+
+    const committed = service.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors,
+    }));
+
+    expect(committed.status).toBe("phase_1_ready");
+    expect(committed.factors[0]?.sourceMode).toBe("MEASURED");
+    expect(committed.factors[1]?.sourceMode).toBe("MEASURED");
+    expect(committed.factors[0]?.measurementPasteResult).toEqual(expect.objectContaining({
+      status: "ready",
+      factorId: factorIds[0],
+      dataset: factors[0]!.dataset,
+      validation: factors[0]!.validation,
+    }));
+    expect(committed.factors[0]?.distributionFitResult).toBeUndefined();
+    expect(committed.factors[0]?.distributionApproval).toBeUndefined();
+    expect(committed.monteCarloResult).toBeUndefined();
+
+    const nextAuthority = service.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-commit",
+    });
+    expect(nextAuthority.sessionStateDigest).not.toBe(authority.sessionStateDigest);
+  });
+
+  it("rejects stale revision duplicate missing or extra factors stale digests id or unit mismatch blocked validation replacement mismatch and injected build failure without mutating", () => {
+    const baseService = createService();
+    let revision = 2;
+    let snapshot = prepareTwoFactorMeasuredSession(baseService);
+    const factorIds = snapshot.factors.map((factor) => factor.evidence!.factorId);
+    for (const factorId of factorIds) {
+      snapshot = baseService.setFactorMode({ sessionId: snapshot.sessionId, factorId, mode: "MEASURED" });
+      revision += 1;
+    }
+    snapshot = applyMeasuredPaste(baseService, snapshot, factorIds[0]!, measurementSeries(1, 0.25, 32));
+    revision += 1;
+    snapshot = applyMeasuredPaste(baseService, snapshot, factorIds[1]!, measurementSeries(2, 0.25, 32));
+    revision += 1;
+    const authority = baseService.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-stable",
+    });
+    const factors = factorIds.slice(0, 2).map((factorId) => {
+      const factor = snapshot.factors.find((entry) => entry.evidence?.factorId === factorId)!;
+      return {
+        factorId,
+        factorName: factor.evidence!.factorName,
+        unit: factor.evidence!.unit,
+        replacesExistingFactor: true,
+        dataset: measuredDataset(snapshot, factorId),
+        validation: factor.datasetValidation!,
+      };
+    });
+    const before = JSON.stringify(baseService.getSession(snapshot.sessionId));
+    const beforeAuthority = baseService.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-stable",
+    });
+
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision + 1,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors,
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors: [factors[0]!, factors[0]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: [factorIds[0]!],
+      factors: [factors[0]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors: [...factors, factors[0]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority: { ...authority, sessionStateDigest: "f".repeat(64) },
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      sessionStateDigest: "f".repeat(64),
+      factors,
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factorSetDigest: "e".repeat(64),
+      factors,
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors: [{ ...factors[0]!, factorId: "d".repeat(64) }, factors[1]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors: [{ ...factors[0]!, unit: "cm" }, factors[1]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: factorIds.slice(0, 2),
+      factors: [{
+        ...factors[0]!,
+        validation: {
+          ...factors[0]!.validation,
+          status: "blocked",
+          blockingIssues: [{ reason: "sample_count_below_minimum", factorId: factorIds[0]! }],
+        },
+      }, factors[1]!],
+    }))).toThrow();
+    expect(() => baseService.commitMeasurementImport(measurementImportCommitMutation({
+      authority,
+      expectedMeasurementImportRevision: revision,
+      replacementFactorIds: [factorIds[0]!],
+      factors,
+    }))).toThrow();
+
+    // @ts-expect-error TDD: Task 6 adds a private commit normalization injection hook.
+    const failingService = createService({ normalizeCommittedSnapshot: () => { throw new Error("boom"); } });
+    let failingRevision = 2;
+    let failingSnapshot = prepareTwoFactorMeasuredSession(failingService);
+    const failingFactorIds = failingSnapshot.factors.map((factor) => factor.evidence!.factorId);
+    for (const factorId of failingFactorIds) {
+      failingSnapshot = failingService.setFactorMode({ sessionId: failingSnapshot.sessionId, factorId, mode: "MEASURED" });
+      failingRevision += 1;
+    }
+    failingSnapshot = applyMeasuredPaste(failingService, failingSnapshot, failingFactorIds[0]!, measurementSeries(1, 0.25, 32));
+    failingRevision += 1;
+    failingSnapshot = applyMeasuredPaste(failingService, failingSnapshot, failingFactorIds[1]!, measurementSeries(2, 0.25, 32));
+    failingRevision += 1;
+    const failingAuthority = failingService.getMeasurementImportAuthority({
+      sessionId: failingSnapshot.sessionId,
+      templateId: "template-stable",
+    });
+    const failingBefore = JSON.stringify(failingService.getSession(failingSnapshot.sessionId));
+    const failingFactors = failingFactorIds.slice(0, 2).map((factorId) => {
+      const factor = failingSnapshot.factors.find((entry) => entry.evidence?.factorId === factorId)!;
+      return {
+        factorId,
+        factorName: factor.evidence!.factorName,
+        unit: factor.evidence!.unit,
+        replacesExistingFactor: true,
+        dataset: measuredDataset(failingSnapshot, factorId),
+        validation: factor.datasetValidation!,
+      };
+    });
+    expect(() => failingService.commitMeasurementImport(measurementImportCommitMutation({
+      authority: failingAuthority,
+      expectedMeasurementImportRevision: failingRevision,
+      replacementFactorIds: failingFactorIds.slice(0, 2),
+      factors: failingFactors,
+    }))).toThrow();
+
+    expect(JSON.stringify(baseService.getSession(snapshot.sessionId))).toBe(before);
+    expect(baseService.getMeasurementImportAuthority({
+      sessionId: snapshot.sessionId,
+      templateId: "template-stable",
+    })).toEqual(beforeAuthority);
+    expect(JSON.stringify(failingService.getSession(failingSnapshot.sessionId))).toBe(failingBefore);
   });
 });
