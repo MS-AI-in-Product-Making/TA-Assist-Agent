@@ -920,13 +920,13 @@ describe("TAResultsInterpretation", () => {
       "P2",
       "P3",
     ]);
-    expect(processGuidance.findAll("[data-process-priority-definition] strong").map((item) => item.text())).toEqual([
+    expect(processGuidance.findAll("[data-process-priority-definition] dt").map((item) => item.text())).toEqual([
       "P0",
       "P1",
       "P2",
       "P3",
     ]);
-    expect(processGuidance.findAll("[data-process-priority-definition] span").map((item) => item.text())).toEqual([
+    expect(processGuidance.findAll("[data-process-priority-definition] dd").map((item) => item.text())).toEqual([
       "P0 governed component definition.",
       "P1 governed component definition.",
       "P2 governed component definition.",
@@ -1095,7 +1095,7 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.text()).not.toContain("Tolerance Adjustment Priority (% Cont. to σ)");
   });
 
-  it("omits the entire guidance section when no process guidance entries are available", () => {
+  it("omits the entire guidance section when no process guidance content is available", () => {
     const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
     if (available.status !== "available") throw new Error("expected available interpretation");
     buildAssumptionResultsInterpretationSpy.mockReturnValue({
@@ -1114,6 +1114,51 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
   });
 
+  it("renders the guidance section when definitions exist even if ordinary actions are empty", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: priorityDefinitions(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
+    expect(wrapper.findAll("[data-process-priority-definition]")).toHaveLength(4);
+  });
+
+  it("renders the guidance section when only a priority recommendation exists", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: [],
+        priorityRecommendation: {
+          selectedPriority: "P0",
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true,
+        },
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
+    expect(wrapper.get("[data-process-priority-recommendation]").text()).toContain("Recommended priority P0");
+  });
+
   it("omits the entire guidance section when process guidance is unavailable", () => {
     const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
     if (available.status !== "available") throw new Error("expected available interpretation");
@@ -1130,6 +1175,39 @@ describe("TAResultsInterpretation", () => {
     });
 
     expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
+  });
+
+  it("renders priority definitions as a semantic description list while preserving hooks", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: priorityDefinitions(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const definitions = wrapper.get(".process-priority-definitions");
+    expect(definitions.element.tagName).toBe("DL");
+    expect(definitions.findAll("[data-process-priority-definition]")).toHaveLength(4);
+    expect(definitions.findAll("[data-process-priority-definition] dt").map((item) => item.text())).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(definitions.findAll("[data-process-priority-definition] dd").map((item) => item.text())).toEqual([
+      "P0 governed component definition.",
+      "P1 governed component definition.",
+      "P2 governed component definition.",
+      "P3 governed component definition.",
+    ]);
   });
 
   it("shows the incomplete-evidence visual state when a matched hypothesis lacks dependent facts", () => {

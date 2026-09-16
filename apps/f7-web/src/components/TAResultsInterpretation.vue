@@ -61,7 +61,11 @@ const processPriorityRecommendation = computed(() => (
 ));
 const shouldRenderProcessGuidance = computed(() => (
   interpretation.value.processGuidance.status === "available"
-  && interpretation.value.processGuidance.entries.length > 0
+  && (
+    interpretation.value.processGuidance.entries.length > 0
+    || interpretation.value.processGuidance.priorityDefinitions.length > 0
+    || interpretation.value.processGuidance.priorityRecommendation !== undefined
+  )
 ));
 const specificationFallbackDisplay = computed(() => (
   interpretation.value.status === "available"
@@ -684,20 +688,20 @@ async function handleGeneratePdf(): Promise<void> {
           <strong>Recommended priority {{ processPriorityRecommendation.selectedPriority }}</strong>
           <span data-process-priority-alignment>Final priority requires Microsoft ME/DM alignment.</span>
         </div>
-        <div
+        <dl
           class="process-priority-definitions"
           aria-label="V3 priority definitions"
         >
-          <p
+          <div
             v-for="definition in processPriorityDefinitions"
             :key="definition.entryId"
             data-process-priority-definition
             :data-priority="definition.priority"
           >
-            <strong>{{ definition.priority }}</strong>
-            <span>{{ definition.message }}</span>
-          </p>
-        </div>
+            <dt><strong>{{ definition.priority }}</strong></dt>
+            <dd>{{ definition.message }}</dd>
+          </div>
+        </dl>
       </div>
       <ol class="process-guidance-list action-sequence">
         <li

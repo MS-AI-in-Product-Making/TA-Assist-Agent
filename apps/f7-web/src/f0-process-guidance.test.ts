@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeepReadonly } from "vue";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
-import type { ProcessRequirementComponentCategory } from "@ai-assist/contracts";
+import type { ProcessRequirementComponentCategory, ProcessRequirementEntry } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
@@ -53,6 +53,10 @@ function entryIds(result: ReturnType<typeof buildF0ProcessGuidance>): string[] {
 
 function entryState(result: ReturnType<typeof buildF0ProcessGuidance>, entryId: string): string | undefined {
   return result.entries.find((entry) => entry.entryId === entryId)?.state;
+}
+
+function cloneEntry(entry: ProcessRequirementEntry): ProcessRequirementEntry {
+  return JSON.parse(JSON.stringify(entry)) as ProcessRequirementEntry;
 }
 
 describe("buildF0ProcessGuidance", () => {
@@ -118,6 +122,8 @@ describe("buildF0ProcessGuidance", () => {
       ],
       requiresMeDmAlignment: true,
     });
+    expect(result.entries.map(({ entryId }) => entryId)).not.toContain("priority-recommendation-battery-cts");
+    expect(result.entries.map(({ entryId }) => entryId)).not.toContain("priority-recommendation-cover-fit-and-function");
   });
 
   it("projects all four governed V3 priority definitions in strict priority order", () => {
@@ -304,6 +310,49 @@ describe("buildF0ProcessGuidance", () => {
           ? entries.filter(({ entryId }) => entryId !== target.entryId)
           : [...entries, target];
       },
+    }));
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(1), undefined, { load });
+
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
+  });
+
+  it("fails closed when a priority definition keeps id and title but the controlled message does not match", () => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const load: LoadDependency = vi.fn(() => ({
+      manifest: actual.manifest,
+      evaluateProcessRequirements: actual.evaluateProcessRequirements,
+      listProcessRequirements: (query: Parameters<typeof actual.listProcessRequirements>[0]) => (
+        actual.listProcessRequirements(query).map((entry) => {
+          if (entry.entryId !== "definition-priority-p0-components") return entry;
+          const cloned = cloneEntry(entry);
+          cloned.message = "Drifted message that should fail closed.";
+          return cloned;
+        })
+      ),
+    }));
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(1), undefined, { load });
+
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
+  });
+
+  it("fails closed when a priority definition keeps id and title but the controlled provenance does not match", () => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const load: LoadDependency = vi.fn(() => ({
+      manifest: actual.manifest,
+      evaluateProcessRequirements: actual.evaluateProcessRequirements,
+      listProcessRequirements: (query: Parameters<typeof actual.listProcessRequirements>[0]) => (
+        actual.listProcessRequirements(query).map((entry) => {
+          if (entry.entryId !== "definition-priority-p1-components") return entry;
+          const cloned = cloneEntry(entry);
+          cloned.provenance = {
+            ...cloned.provenance,
+            sourceRevision: "drifted-revision",
+          };
+          return cloned;
+        })
+      ),
     }));
 
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(1), undefined, { load });
