@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import {
   drawingGovernanceResultV2Schema,
   f2UserReportSchema,
@@ -486,6 +487,7 @@ export function loadF6ArtifactBundle({
   f5ArtifactRoot,
   publishRoot,
   selectedWorksheetNames,
+  analysisRequestContext,
   evidenceArtifactRoot,
   imageObservationArtifact,
   supplierCapabilityArtifact,
@@ -548,6 +550,8 @@ export function loadF6ArtifactBundle({
   const readyWorksheetNames = readyWorksheets.map(({ worksheetName }) => worksheetName);
   let selection = exactUniqueSelection(selectedWorksheetNames, readyWorksheetNames);
   if (!selection) return inputRejected("worksheet_selection_invalid", "selectedWorksheetNames");
+  const parsedAnalysisRequestContext = analysisRequestContextSchema.safeParse(analysisRequestContext);
+  if (!parsedAnalysisRequestContext.success) return inputRejected("artifact_contract_invalid", "analysisRequestContext");
 
   let requiredMultimodalLoaded;
   let requiredCompletedMultimodalWorksheets = [];
@@ -1157,7 +1161,7 @@ export function loadF6ArtifactBundle({
   if (!request.success) return inputRejected("artifact_contract_invalid", "F6-request");
   return {
     status: "accepted",
-    request: request.data,
+    request: { ...request.data, analysisRequestContext: parsedAnalysisRequestContext.data },
     f2Report: f2,
     f3Report: f3,
     f4Report: f4,

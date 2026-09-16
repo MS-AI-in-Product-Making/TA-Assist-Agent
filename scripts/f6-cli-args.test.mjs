@@ -4,6 +4,12 @@ import { parseF6CliArgs } from "./f6-cli-args.mjs";
 const ROOTS = ["f2 run", "f3 run", "f4 run", "f5 run"];
 const LANGUAGE_ARGS = ["--language", "en-US"];
 const MODEL_ARGS = ["--model-interpretation", "model/run-id/Feature6-Model-Interpretation.json"];
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
+const REQUEST_CONTEXT_ARGS = ["--analysis-request-context", JSON.stringify(REQUEST_CONTEXT)];
 const INTERACTION_LANGUAGE = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -26,11 +32,13 @@ describe("parseF6CliArgs", () => {
       "--analysis-context", "evidence/context.json",
       "--optimization-targets", "evidence/targets.json",
       "--model-interpretation", "model/run-id/Feature6-Model-Interpretation.json",
+      ...REQUEST_CONTEXT_ARGS,
     ])).toEqual({
       f2ArtifactRoot: "f2 run",
       f3ArtifactRoot: "f3 run",
       f4ArtifactRoot: "f4 run",
       f5ArtifactRoot: "f5 run",
+      analysisRequestContext: REQUEST_CONTEXT,
       interactionLanguage: INTERACTION_LANGUAGE,
       selectedWorksheetNames: ["Analysis-A", "Analysis B"],
       supplierCapabilityArtifact: "evidence/supplier.json",
@@ -44,11 +52,12 @@ describe("parseF6CliArgs", () => {
   });
 
   it("keeps optional supporting evidence values undefined", () => {
-    expect(parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toEqual({
+    expect(parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"])).toEqual({
       f2ArtifactRoot: ROOTS[0],
       f3ArtifactRoot: ROOTS[1],
       f4ArtifactRoot: ROOTS[2],
       f5ArtifactRoot: ROOTS[3],
+      analysisRequestContext: REQUEST_CONTEXT,
       interactionLanguage: INTERACTION_LANGUAGE,
       selectedWorksheetNames: ["Analysis-A"],
       supplierCapabilityArtifact: undefined,
@@ -70,7 +79,7 @@ describe("parseF6CliArgs", () => {
   });
 
   it("rejects a worksheet selection without governed model interpretation", () => {
-    expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
+    expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
   });
 
   it.each([[], ["f2"], ["f2", "f3"], ["f2", "f3", "f4"]])(
@@ -103,5 +112,18 @@ describe("parseF6CliArgs", () => {
   it("rejects unknown options and empty roots", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, "--unknown", "value"])).toThrow(/unknown option/i);
     expect(() => parseF6CliArgs(["f2", " ", "f4", "f5"])).toThrow(/artifact root/i);
+  });
+
+  it("parses request context as strict JSON and preserves the original request instant", () => {
+    expect(parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      ...MODEL_ARGS,
+      "--worksheet", "Analysis-A",
+      "--analysis-request-context", JSON.stringify(REQUEST_CONTEXT),
+    ])).toMatchObject({
+      selectedWorksheetNames: ["Analysis-A"],
+      analysisRequestContext: REQUEST_CONTEXT,
+    });
   });
 });

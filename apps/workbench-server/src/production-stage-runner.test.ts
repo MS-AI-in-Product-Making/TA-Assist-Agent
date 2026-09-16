@@ -36,6 +36,11 @@ const baseSnapshot = {
     source: "workflow_start",
     fallbackUsed: false,
   },
+  analysisRequestContext: {
+    requestedAt: "2026-09-16T08:30:12.000Z",
+    utcOffsetMinutes: -420,
+    source: "cli",
+  },
 } as const satisfies Partial<F8SessionSnapshot>;
 
 function createEnvironment(stage: "f3_running" | "f5_running" | "f6_running"): ProductionStageEnvironment {
@@ -484,6 +489,119 @@ describe("runProductionStage output gating", () => {
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/manifest.json"))).toBe(true);
       const projection = await readFile(join(serverRoot, "runtime", "workbench", "managed-artifacts", createEnvironment("f6_running").sessionId, "engineering-summary-projection", "revision-2.json"), "utf8");
       expect(projection).toContain("summary");
+    } finally {
+      await rm(serverRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("requires the current F6 request context and forwards it unchanged", async () => {
+    const serverRoot = await mkdtemp(join(tmpdir(), "ta-task4-f6-request-context-"));
+    try {
+      const sessionId = createEnvironment("f6_running").sessionId;
+      const publishRoot = join(serverRoot, "runtime", "workbench", "runner-output", sessionId);
+      const managedRoot = join(publishRoot, "managed");
+      const outputDir = join(managedRoot, "f6");
+      await Promise.all([
+        mkdir(outputDir, { recursive: true }),
+        mkdir(join(managedRoot, "f1"), { recursive: true }),
+        mkdir(join(managedRoot, "f2"), { recursive: true }),
+        mkdir(join(managedRoot, "f3"), { recursive: true }),
+        mkdir(join(managedRoot, "f4"), { recursive: true }),
+        mkdir(join(managedRoot, "f5"), { recursive: true }),
+      ]);
+      const optimizationJsonPath = join(outputDir, "Feature6-Optimization.json");
+      const finalReportMdPath = join(outputDir, "Feature6-Report.md");
+      const runSummaryPath = join(outputDir, "Feature6-Run-Summary.json");
+      const manifestPath = join(outputDir, "manifest.json");
+      await Promise.all([
+        writeFile(optimizationJsonPath, "{}\n", "utf8"),
+        writeFile(finalReportMdPath, "# report\n", "utf8"),
+        writeFile(runSummaryPath, "{}\n", "utf8"),
+        writeFile(manifestPath, "{}\n", "utf8"),
+      ]);
+      const baselineEnvironment = createEnvironment("f6_running");
+      const multimodalArtifact = await writeMultimodalArtifact(serverRoot, baselineEnvironment);
+      const orchestratorRunStage = vi.fn(async (_stage, input) => ({
+        status: "completed",
+        skillId: "improvement-evaluation-v1",
+        inputRevision: 2,
+        idempotencyKey: "attempt-1:f6_running",
+        output: {
+          status: "completed",
+          outputDirectory: outputDir,
+          optimizationJsonPath,
+          finalReportMdPath,
+          runSummaryPath,
+          manifestPath,
+          finalReportProjection: { summary: "ok" },
+        },
+      } as never));
+
+      await expect(runProductionStage("f6_running", {
+        ...baselineEnvironment,
+        serverRoot,
+        snapshot: {
+          ...baselineEnvironment.snapshot,
+          analysisRequestContext: undefined,
+          revision: 4,
+          artifactRefs: [{ artifactId: "f5-multimodal:2", kind: "f5_multimodal", revision: 2, validated: true, reviewContextId: "c".repeat(64), relativePath: "multimodal.json", contentHash: multimodalArtifact.contentHash }],
+        } as F8SessionSnapshot,
+        roots: {
+          f1Root: join(managedRoot, "f1"),
+          f2Root: join(managedRoot, "f2"),
+          f3Root: join(managedRoot, "f3"),
+          f4Root: join(managedRoot, "f4"),
+          f5Root: join(managedRoot, "f5"),
+          f6Root: outputDir,
+        },
+        multimodalArtifact,
+      }, {
+        ...orchestratorResult({}),
+        runStage: orchestratorRunStage,
+      })).rejects.toThrow(/request context/i);
+      expect(orchestratorRunStage).not.toHaveBeenCalled();
+
+      let capturedRequest: Record<string, unknown> | undefined;
+      await runProductionStage("f6_running", {
+        ...baselineEnvironment,
+        serverRoot,
+        snapshot: {
+          ...baselineEnvironment.snapshot,
+          revision: 4,
+          artifactRefs: [{ artifactId: "f5-multimodal:2", kind: "f5_multimodal", revision: 2, validated: true, reviewContextId: "c".repeat(64), relativePath: "multimodal.json", contentHash: multimodalArtifact.contentHash }],
+        } as F8SessionSnapshot,
+        roots: {
+          f1Root: join(managedRoot, "f1"),
+          f2Root: join(managedRoot, "f2"),
+          f3Root: join(managedRoot, "f3"),
+          f4Root: join(managedRoot, "f4"),
+          f5Root: join(managedRoot, "f5"),
+          f6Root: outputDir,
+        },
+        multimodalArtifact,
+      }, {
+        ...orchestratorResult({}),
+        runStage: async (_stage, input) => {
+          capturedRequest = (input.input as { request?: Record<string, unknown> }).request;
+          return {
+            status: "completed",
+            skillId: "improvement-evaluation-v1",
+            inputRevision: 2,
+            idempotencyKey: "attempt-1:f6_running",
+            output: {
+              status: "completed",
+              outputDirectory: outputDir,
+              optimizationJsonPath,
+              finalReportMdPath,
+              runSummaryPath,
+              manifestPath,
+              finalReportProjection: { summary: "ok" },
+            },
+          } as never;
+        },
+      });
+
+      expect(capturedRequest).toMatchObject({ analysisRequestContext: baseSnapshot.analysisRequestContext });
     } finally {
       await rm(serverRoot, { recursive: true, force: true });
     }

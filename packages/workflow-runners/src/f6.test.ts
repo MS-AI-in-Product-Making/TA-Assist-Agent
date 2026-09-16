@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
+
 import { runF6Optimization } from "./index.js";
+import { createF6ArtifactBundleFixture, installRequiredMultimodalV3 } from "../../../scripts/f6-artifact-test-fixture.mjs";
+import { loadF6ArtifactBundle } from "../../../scripts/f6-artifact-loader.mjs";
 
 const HASH = "a".repeat(64);
 const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
@@ -13,6 +17,11 @@ const LANGUAGE = {
   lockedAtTurnId: "turn-1",
   source: "workflow_start" as const,
   fallbackUsed: false,
+};
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli" as const,
 };
 
 function optimizationV3() {
@@ -58,6 +67,33 @@ function context() {
   };
 }
 
+function finalReportStub() {
+  return {
+    markdown: "# F6 report\n",
+    reportSummary: {
+      workbookDisposition: "CONDITIONAL_PASS",
+      worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }],
+    },
+    projection: {
+      schemaVersion: "ta-engineering-report-projection-v1",
+      title: "F6 report",
+      workbookDisposition: "CONDITIONAL_PASS",
+      worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }],
+      workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Loop Analysis-A",
+        disposition: "CONDITIONAL_PASS",
+        requiredAction: "Review",
+        findings: ["Stub report content for request-context tests."],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: ["F4:Analysis-A", "F5-multimodal:Analysis-A"],
+      }],
+    },
+  };
+}
+
 describe("runF6Optimization", () => {
   it("requires Context before Targets and Targets before F6", () => {
     expect(() => runF6Optimization({
@@ -66,6 +102,7 @@ describe("runF6Optimization", () => {
       f4ArtifactRoot: "C:/repo/test/demo-output/f4",
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
+      analysisRequestContext: REQUEST_CONTEXT,
       analysisContextPath: undefined,
       optimizationTargetsPath: "C:/repo/evidence/targets.json",
     }, context(), {
@@ -82,7 +119,7 @@ describe("runF6Optimization", () => {
       })),
       loadBundle: vi.fn(() => ({
         status: "accepted",
-        request: { worksheets: [] },
+        request: { analysisRequestContext: REQUEST_CONTEXT, worksheets: [] },
         f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
         f3Report: {},
         f4Report: {},
@@ -132,6 +169,7 @@ describe("runF6Optimization", () => {
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage: LANGUAGE,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: "a".repeat(64),
     }, context(), {
@@ -148,7 +186,7 @@ describe("runF6Optimization", () => {
       })),
       loadBundle: vi.fn(() => ({
         status: "accepted",
-        request: { worksheets: [] },
+        request: { analysisRequestContext: REQUEST_CONTEXT, worksheets: [] },
         f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
         f3Report: {},
         f4Report: {},
@@ -202,6 +240,7 @@ describe("runF6Optimization", () => {
       f4ArtifactRoot: "C:/repo/test/demo-output/f4",
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
+      analysisRequestContext: REQUEST_CONTEXT,
       expectedAnalysisContextContentHash: "a".repeat(64),
     } as any, context(), {
       resolveOutputLayout: vi.fn(() => ({
@@ -217,7 +256,7 @@ describe("runF6Optimization", () => {
       })),
       loadBundle: vi.fn(() => ({
         status: "accepted",
-        request: { worksheets: [] },
+        request: { analysisRequestContext: REQUEST_CONTEXT, worksheets: [] },
         f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
         f3Report: {},
         f4Report: {},
@@ -256,13 +295,14 @@ describe("runF6Optimization", () => {
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage: LANGUAGE,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: "a".repeat(64),
     }, context(), {
       resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({
         status: "accepted",
-        request: { worksheets: [] },
+        request: { analysisRequestContext: REQUEST_CONTEXT, worksheets: [] },
         f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
         f3Report: {},
         f4Report: {},
@@ -298,11 +338,12 @@ describe("runF6Optimization", () => {
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: HASH,
     } as any, context(), {
       resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
-      loadBundle: vi.fn(() => ({ status: "accepted", request: {}, f2Report: { artifactRoot: "f1" }, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
+      loadBundle: vi.fn(() => ({ status: "accepted", request: { analysisRequestContext: REQUEST_CONTEXT }, f2Report: { artifactRoot: "f1" }, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
       createOptimization,
       createFinalReport,
       renderOptimization: vi.fn(),
@@ -325,11 +366,12 @@ describe("runF6Optimization", () => {
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage: LANGUAGE,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: HASH,
     }, context(), {
       resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
-      loadBundle: vi.fn(() => ({ status: "accepted", request: {}, f2Report: { artifactRoot: "f1" }, f3Report: {}, f4Report: {}, f5Report: {}, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
+      loadBundle: vi.fn(() => ({ status: "accepted", request: { analysisRequestContext: REQUEST_CONTEXT }, f2Report: { artifactRoot: "f1" }, f3Report: {}, f4Report: {}, f5Report: {}, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
       createOptimization: vi.fn(optimizationV3),
       createFinalReport,
       renderOptimization,
@@ -339,5 +381,87 @@ describe("runF6Optimization", () => {
     expect(createFinalReport).not.toHaveBeenCalled();
     expect(renderOptimization).not.toHaveBeenCalled();
     expect(result.optimizationJsonPath).toBeUndefined();
+  });
+
+  it("fails closed without request context and persists request context unchanged", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    const root = mkdtempSync(path.join(tmpdir(), "f6-runner-request-context-"));
+    try {
+      const publishRoot = path.join(root, "publish");
+      const missingRunRoot = path.join(publishRoot, "f6-runs", "missing-context");
+      const contextRunRoot = path.join(publishRoot, "f6-runs", "with-context");
+      const createFinalReport = vi.fn(() => finalReportStub());
+      const requestBase = {
+        f2ArtifactRoot: bundle.f2ArtifactRoot,
+        f3ArtifactRoot: bundle.f3ArtifactRoot,
+        f4ArtifactRoot: bundle.f4ArtifactRoot,
+        f5ArtifactRoot: bundle.f5ArtifactRoot,
+        selectedWorksheetNames: bundle.selectedWorksheetNames,
+        interactionLanguage: LANGUAGE,
+        modelInterpretationPath: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
+        expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
+      };
+      const loadBundle = (analysisRequestContext) => loadF6ArtifactBundle({
+        ...bundle,
+        publishRoot: bundle.publishRoot,
+        modelInterpretationArtifactRoot: bundle.modelInterpretationArtifactRoot,
+        modelInterpretationArtifact: bundle.modelInterpretationArtifact,
+        expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
+        requireMultimodalV3: true,
+        ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
+      });
+
+      const missingContextResult = runF6Optimization(requestBase as any, context(), {
+        resolveOutputLayout: vi.fn(() => ({
+          artifactSetVersion: "f6-artifact-set-v3",
+          runId: "2026-09-16T08-30-12-000Z",
+          runRoot: missingRunRoot,
+          publishRoot,
+          optimizationJsonName: "Feature6-Optimization.json",
+          finalReportMdName: "Feature6-Report.md",
+          finalReportPdfName: "Feature6-Report.pdf",
+          runSummaryJsonName: "Feature6-Run-Summary.json",
+          manifestName: "manifest.json",
+        })),
+        loadBundle: vi.fn(() => loadBundle(undefined)),
+        createOptimization: createF6OptimizationV4,
+        createFinalReport,
+        renderFinalReportPdf: vi.fn(() => PDF),
+      });
+
+      expect(missingContextResult).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+      expect(missingContextResult.optimizationJsonPath).toBeUndefined();
+      expect(missingContextResult.finalReportMdPath).toBeUndefined();
+
+      const withContextResult = runF6Optimization({
+        ...requestBase,
+        analysisRequestContext: REQUEST_CONTEXT,
+      } as any, context(), {
+        resolveOutputLayout: vi.fn(() => ({
+          artifactSetVersion: "f6-artifact-set-v3",
+          runId: "2026-09-16T08-30-13-000Z",
+          runRoot: contextRunRoot,
+          publishRoot,
+          optimizationJsonName: "Feature6-Optimization.json",
+          finalReportMdName: "Feature6-Report.md",
+          finalReportPdfName: "Feature6-Report.pdf",
+          runSummaryJsonName: "Feature6-Run-Summary.json",
+          manifestName: "manifest.json",
+        })),
+        loadBundle: vi.fn(() => loadBundle(REQUEST_CONTEXT)),
+        createOptimization: createF6OptimizationV4,
+        createFinalReport,
+        renderFinalReportPdf: vi.fn(() => PDF),
+      });
+
+      expect(withContextResult.status).toBe("completed");
+      expect(createFinalReport).toHaveBeenCalledWith(expect.objectContaining({ analysisRequestContext: REQUEST_CONTEXT }), expect.anything());
+      expect(JSON.parse(readFileSync(path.join(contextRunRoot, "Feature6-Run-Summary.json"), "utf8"))).toMatchObject({ analysisRequestContext: REQUEST_CONTEXT });
+      expect(JSON.parse(readFileSync(path.join(contextRunRoot, "manifest.json"), "utf8"))).toMatchObject({ analysisRequestContext: REQUEST_CONTEXT });
+    } finally {
+      rmSync(bundle.root, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

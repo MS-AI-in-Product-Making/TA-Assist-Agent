@@ -1,4 +1,5 @@
 import type {
+  AnalysisRequestContext,
   F6AnalysisContextProposal,
   F6AnalysisContextV2,
   DrawingGovernanceResultV2,
@@ -177,6 +178,7 @@ export interface F6OptimizationRequest {
   readonly f4ArtifactRoot: string;
   readonly f5ArtifactRoot: string;
   readonly selectedWorksheetNames: readonly string[];
+  readonly analysisRequestContext: AnalysisRequestContext;
   readonly interactionLanguage: F6OptimizationResultV4["interactionLanguage"];
   readonly supplierCapabilityPath?: string;
   readonly datumStrategyPath?: string;
