@@ -50,6 +50,8 @@ interface ParsedRawWorksheet {
   readonly cells: ReadonlyMap<string, RawCell>;
 }
 
+type WorksheetInspectionKind = "visible" | "manifest";
+
 interface PendingDiagnostic {
   readonly diagnostic: F7MeasurementImportDiagnostic;
   readonly factorOrder: number;
@@ -108,9 +110,10 @@ export function parseF7MeasurementTemplate(
 
   let rawWorksheet: ParsedRawWorksheet;
   try {
-    rawWorksheet = inspectRawWorksheet(parts.get("xl/worksheets/sheet1.xml")!, authority, addDiagnostic);
+    rawWorksheet = inspectRawWorksheet(parts.get("xl/worksheets/sheet1.xml")!, authority, addDiagnostic, "visible");
+    inspectRawWorksheet(parts.get("xl/worksheets/sheet2.xml")!, authority, addDiagnostic, "manifest");
   } catch {
-    addDiagnostic("unsupported_workbook_content", "Visible worksheet XML cannot be inspected safely.");
+    addDiagnostic("unsupported_workbook_content", "Template worksheet XML cannot be inspected safely.");
     return blocked(diagnostics);
   }
   const rawCells = rawWorksheet.cells;
@@ -556,6 +559,7 @@ function inspectRawWorksheet(
   bytes: Uint8Array,
   authority: ParsedAuthority,
   add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+  kind: WorksheetInspectionKind,
 ): ParsedRawWorksheet {
   if (bytes.byteLength > MAX_XML_PART_BYTES) throw new Error("XML part budget exceeded");
   const diagnostics: string[] = [];
@@ -584,7 +588,12 @@ function inspectRawWorksheet(
     if (!rowNode || rowNode.nodeType !== 1) continue;
     const rowElement = rowNode as Element;
     if (rowElement.namespaceURI !== XML_NAMESPACE || rowElement.localName !== "row") {
-      addUnsupportedWorksheetContent(add, authority, rowElement.getAttribute("r") ?? "", rowElement.getAttribute("r") ?? undefined);
+      addUnsupportedWorksheetContent(add, authority, kind, rowElement.getAttribute("r") ?? "", rowElement.getAttribute("r") ?? undefined);
+      continue;
+    }
+    const rowReference = rowElement.getAttribute("r") ?? "";
+    if (kind === "manifest" && !isAllowedManifestRow(authority, Number(rowReference ?? 0))) {
+      addUnsupportedWorksheetContent(add, authority, kind, "", rowReference || undefined);
       continue;
     }
     for (let cellIndex = 0; cellIndex < rowElement.childNodes.length; cellIndex += 1) {
@@ -593,18 +602,21 @@ function inspectRawWorksheet(
       const cellElement = cellNode as Element;
       const reference = cellElement.getAttribute("r") ?? "";
       if (cellElement.namespaceURI !== XML_NAMESPACE || cellElement.localName !== "c") {
-        addUnsupportedWorksheetContent(add, authority, reference, rowElement.getAttribute("r") ?? undefined);
+        addUnsupportedWorksheetContent(add, authority, kind, reference, rowElement.getAttribute("r") ?? undefined);
         continue;
       }
       if (!reference || result.has(reference)) throw new Error("Invalid or duplicate cell reference");
-      if (hasForeignNamespaceDescendant(cellElement)) {
-        addUnsupportedWorksheetContent(add, authority, reference);
+      if (kind === "visible" && hasForeignNamespaceDescendant(cellElement)) {
+        addUnsupportedWorksheetContent(add, authority, kind, reference);
         continue;
       }
       const cell = parseRawCell(cellElement);
       result.set(reference, cell);
-      if (!isAllowedVisibleCellReference(authority, reference) && isUnauthorizedRawCell(cell)) {
-        addUnsupportedWorksheetContent(add, authority, reference);
+      if (kind === "visible" && !isAllowedVisibleCellReference(authority, reference) && isUnauthorizedRawCell(cell)) {
+        addUnsupportedWorksheetContent(add, authority, kind, reference);
+      }
+      if (kind === "manifest" && !isAllowedManifestCellReference(authority, reference)) {
+        addUnsupportedWorksheetContent(add, authority, kind, reference);
       }
     }
   }
@@ -654,15 +666,19 @@ function parseRawCell(cell: Element): RawCell {
 function addUnsupportedWorksheetContent(
   add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
   authority: ParsedAuthority,
+  kind: WorksheetInspectionKind,
   reference: string,
   fallbackRow?: string,
 ): void {
   const location = splitReference(reference);
   const rowNumber = location.row || Number(fallbackRow ?? 0) || undefined;
   const factorIndex = location.column ? factorIndexForColumn(authority, location.column) : undefined;
-  add("unsupported_workbook_content", "Visible worksheet contains content outside the controlled template layout.", {
+  const sheetName = kind === "visible"
+    ? F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName
+    : F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName;
+  add("unsupported_workbook_content", `${kind === "visible" ? "Visible" : "Manifest"} worksheet contains content outside the controlled template layout.`, {
     ...(factorIndex !== undefined ? { factorIndex } : {}),
-    ...(reference ? { sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${reference}` } : {}),
+    ...(reference ? { sheetCell: `${sheetName}!${reference}` } : {}),
     ...(rowNumber ? { rowNumber } : {}),
   });
 }
@@ -692,6 +708,19 @@ function isAllowedVisibleCellReference(authority: ParsedAuthority, reference: st
   if (factorIndex === undefined) return false;
   return row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.factorName
     && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
+}
+
+function isAllowedManifestRow(authority: ParsedAuthority, row: number): boolean {
+  if (row >= 2 && row <= 13) return true;
+  const lastFactorRow = F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + authority.manifest.factors.length - 1;
+  return row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow && row <= lastFactorRow;
+}
+
+function isAllowedManifestCellReference(authority: ParsedAuthority, reference: string): boolean {
+  const { column, row } = splitReference(reference);
+  if (!column || row === 0 || !isAllowedManifestRow(authority, row)) return false;
+  if (row >= 2 && row <= 13) return column === "A" || column === "B";
+  return columnIndex(column) >= columnIndex("A") && columnIndex(column) <= columnIndex("N");
 }
 
 function splitReference(reference: string): { column: string; row: number } {

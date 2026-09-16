@@ -220,6 +220,29 @@ describe("parseF7MeasurementTemplate", () => {
     });
   });
 
+  it("blocks hidden manifest foreign namespace content outside the semantic reader window", () => {
+    const authority = makeAuthority();
+    const bytes = editParts(authority, (parts) => {
+      mutateTextPart(parts, "xl/worksheets/sheet1.xml", (sheet) => withTwentySamples(sheet));
+      mutateTextPart(
+        parts,
+        "xl/worksheets/sheet2.xml",
+        (sheet) => sheet.replace(
+          "</sheetData>",
+          '<row r="99"><x:c xmlns:x="urn:evil" r="A99"><x:v>bad</x:v></x:c></row></sheetData>',
+        ),
+      );
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content" }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
   it("blocks nonblank content outside the reserved 500-row measurement area", () => {
     const authority = makeAuthority();
     const bytes = editTemplate(authority, (sheet) => sheet.replace("</sheetData>", `<row r="515">${numberCell("B515", 1, 1)}</row></sheetData>`));
