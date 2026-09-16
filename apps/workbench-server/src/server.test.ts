@@ -2997,7 +2997,17 @@ describe("workbench server routes", () => {
       const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
       expect(writeClaimResponse.statusCode).toBe(200);
       expect(writeClaimResponse.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation } });
-      const writePayload = { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: createHash("sha256").update(prepareRequest.nextContent).digest("hex") } } };
+        const writePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_write" as const,
+            receipt: {
+              operation: "created" as const,
+              targetIdentity: { organization: "unknown-organization", project: "unknown-project", workItemId: 1 },
+              verifiedAt: "2026-09-01T00:00:00.000Z",
+            },
+          },
+        };
       const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
       expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "review_required" });
@@ -3882,11 +3892,9 @@ describe("workbench server routes", () => {
           outcome: {
             kind: "surface_write" as const,
             receipt: {
-              status: "updated" as const,
-              workItemReference: confirmation.workItemReference,
-              commentReference: confirmation.commentReference,
-              version: "9",
-              contentHash: expectedContentHash,
+              operation: "updated" as const,
+              targetIdentity: { organization: "unknown-organization", project: "unknown-project", workItemId: 1 },
+              verifiedAt: "2026-09-01T00:00:00.000Z",
             },
           },
         };

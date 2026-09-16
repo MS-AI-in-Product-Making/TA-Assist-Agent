@@ -6260,14 +6260,31 @@ export const drawingGovernanceResultV2Schema = z.union([
   drawingGovernanceAcceptedResultV2Schema,
 ]);
 
-export interface AdoTraceabilityV3 {
-  status: "not_requested" | "draft_ready" | "confirmation_required" | "updated" | "blocked" | "failed";
-  operation?: "created" | "updated";
-  organization?: string;
-  project?: string;
-  workItemId?: number;
-  reasonCode?: string;
-}
+export type AdoTraceabilityV3 =
+  | {
+    status: "not_requested" | "draft_ready" | "confirmation_required";
+    operation?: undefined;
+    organization?: undefined;
+    project?: undefined;
+    workItemId?: undefined;
+    reasonCode?: undefined;
+  }
+  | {
+    status: "updated";
+    operation: "created" | "updated";
+    organization: string;
+    project: string;
+    workItemId: number;
+    reasonCode?: undefined;
+  }
+  | {
+    status: "blocked" | "failed";
+    operation?: undefined;
+    organization?: undefined;
+    project?: undefined;
+    workItemId?: undefined;
+    reasonCode?: string | undefined;
+  };
 
 const adoTraceabilityV3StatusSchema = z.enum([
   "not_requested",
@@ -6278,53 +6295,32 @@ const adoTraceabilityV3StatusSchema = z.enum([
   "failed",
 ]);
 
-const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z
-  .object({
-    status: adoTraceabilityV3StatusSchema,
-    operation: z.enum(["created", "updated"]).optional(),
-    organization: z.string().min(1).optional(),
-    project: z.string().min(1).optional(),
-    workItemId: z.number().int().positive().optional(),
+const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUnion("status", [
+  z.object({
+    status: z.enum(["not_requested", "draft_ready", "confirmation_required"]),
+    operation: z.undefined().optional(),
+    organization: z.undefined().optional(),
+    project: z.undefined().optional(),
+    workItemId: z.undefined().optional(),
+    reasonCode: z.undefined().optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("updated"),
+    operation: z.enum(["created", "updated"]),
+    organization: z.string().min(1),
+    project: z.string().min(1),
+    workItemId: z.number().int().positive(),
+    reasonCode: z.undefined().optional(),
+  }).strict(),
+  z.object({
+    status: z.enum(["blocked", "failed"]),
+    operation: z.undefined().optional(),
+    organization: z.undefined().optional(),
+    project: z.undefined().optional(),
+    workItemId: z.undefined().optional(),
     reasonCode: z.string().min(1).optional(),
-  })
-  .strict()
-  .superRefine((ado, context) => {
-    const hasStructuredIdentity = ado.operation !== undefined
-      || ado.organization !== undefined
-      || ado.project !== undefined
-      || ado.workItemId !== undefined;
-
-    if (ado.status === "updated") {
-      if (
-        ado.operation === undefined
-        || ado.organization === undefined
-        || ado.project === undefined
-        || ado.workItemId === undefined
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "updated ADO status requires complete structured identity",
-          path: ["status"],
-        });
-      }
-      if (ado.reasonCode !== undefined) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "updated ADO status must not include reasonCode",
-          path: ["reasonCode"],
-        });
-      }
-      return;
-    }
-
-    if (hasStructuredIdentity) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "structured ADO identity is allowed only for updated status",
-        path: ["status"],
-      });
-    }
-  });
+  }).strict(),
+]);
 
 const drawingGovernanceAcceptedResultV3Schema = z.object({
   contractVersion: contractVersionSchema,
