@@ -32,6 +32,9 @@ const DIMENSION_CHAIN_LABEL_LINE_HEIGHT = 13;
 const DIMENSION_CHAIN_LABEL_MAX_CHARACTERS = 62;
 const DIMENSION_CHAIN_ROW_GAP = 14;
 const DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE = 5;
+const DIMENSION_CHAIN_MAX_PAGE_HEIGHT = 500;
+const DIMENSION_CHAIN_PAGE_TOP = 24;
+const DIMENSION_CHAIN_FINAL_RESERVE = 70;
 
 export interface F7ReportPdfRenderer {
   render(request: F7ReportPdfRouteRequest): Promise<Buffer>;
@@ -140,35 +143,77 @@ function signedEngineeringNumber(value: number): string {
 }
 
 function wrapDimensionChainName(value: F7ReportFactor["factorName"]): readonly string[] {
-  const words = value.trim().split(/\s+/u);
-  const lines: string[] = [];
-  let currentLine = "";
-  for (const word of words) {
-    const chunks = Array.from({ length: Math.ceil(word.length / DIMENSION_CHAIN_LABEL_MAX_CHARACTERS) }, (_, index) => (
-      word.slice(index * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS, (index + 1) * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS)
-    ));
-    for (const chunk of chunks) {
-      const candidate = currentLine.length === 0 ? chunk : `${currentLine} ${chunk}`;
-      if (candidate.length <= DIMENSION_CHAIN_LABEL_MAX_CHARACTERS) {
-        currentLine = candidate;
-      } else {
-        lines.push(currentLine);
-        currentLine = chunk;
-      }
-    }
-  }
-  if (currentLine.length > 0) lines.push(currentLine);
-  return lines.length > 0 ? lines : [value];
+  const characters = Array.from(value);
+  if (characters.length === 0) return [""];
+  return Array.from(
+    { length: Math.ceil(characters.length / DIMENSION_CHAIN_LABEL_MAX_CHARACTERS) },
+    (_, index) => characters.slice(
+      index * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS,
+      (index + 1) * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS,
+    ).join(""),
+  );
 }
 
-function chunkDimensionChainSegments<T>(segments: readonly T[]): readonly (readonly T[])[] {
-  return Array.from(
-    { length: Math.ceil(segments.length / DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE) },
-    (_, index) => segments.slice(
-      index * DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE,
-      (index + 1) * DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE,
-    ),
-  );
+interface DimensionChainSegment {
+  readonly factor: F7ReportFactor;
+  readonly index: number;
+  readonly direction: "additive" | "subtractive" | "zero";
+  readonly directionLabel: string;
+  readonly labelLines: readonly string[];
+  readonly start: number;
+  readonly end: number;
+}
+
+interface DimensionChainLabelSlice extends DimensionChainSegment {
+  readonly partIndex: number;
+  readonly partCount: number;
+}
+
+function dimensionChainSliceLineCount(slice: DimensionChainLabelSlice): number {
+  return slice.labelLines.length + (slice.partIndex > 0 ? 1 : 0);
+}
+
+function dimensionChainSliceHeight(slice: DimensionChainLabelSlice): number {
+  return dimensionChainSliceLineCount(slice) * DIMENSION_CHAIN_LABEL_LINE_HEIGHT + DIMENSION_CHAIN_ROW_GAP * 2;
+}
+
+function deriveDimensionChainLabelSlices(segment: DimensionChainSegment): readonly DimensionChainLabelSlice[] {
+  const availableHeight = DIMENSION_CHAIN_MAX_PAGE_HEIGHT - DIMENSION_CHAIN_PAGE_TOP - DIMENSION_CHAIN_FINAL_RESERVE - DIMENSION_CHAIN_ROW_GAP * 2;
+  const firstPartCapacity = Math.floor(availableHeight / DIMENSION_CHAIN_LABEL_LINE_HEIGHT);
+  const continuationCapacity = firstPartCapacity - 1;
+  const lineGroups: string[][] = [];
+  let lineOffset = 0;
+  while (lineOffset < segment.labelLines.length) {
+    const capacity = lineGroups.length === 0 ? firstPartCapacity : continuationCapacity;
+    lineGroups.push(segment.labelLines.slice(lineOffset, lineOffset + capacity));
+    lineOffset += capacity;
+  }
+  return lineGroups.map((labelLines, partIndex) => ({
+    ...segment,
+    labelLines,
+    partIndex,
+    partCount: lineGroups.length,
+  }));
+}
+
+function packDimensionChainSlices(slices: readonly DimensionChainLabelSlice[]): readonly (readonly DimensionChainLabelSlice[])[] {
+  const pages: DimensionChainLabelSlice[][] = [];
+  let currentPage: DimensionChainLabelSlice[] = [];
+  let currentHeight = DIMENSION_CHAIN_PAGE_TOP + DIMENSION_CHAIN_FINAL_RESERVE;
+  for (const slice of slices) {
+    const sliceHeight = dimensionChainSliceHeight(slice);
+    const exceedsHeight = currentHeight + sliceHeight > DIMENSION_CHAIN_MAX_PAGE_HEIGHT;
+    const exceedsItemCap = currentPage.length >= DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE;
+    if (currentPage.length > 0 && (exceedsHeight || exceedsItemCap)) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentHeight = DIMENSION_CHAIN_PAGE_TOP + DIMENSION_CHAIN_FINAL_RESERVE;
+    }
+    currentPage.push(slice);
+    currentHeight += sliceHeight;
+  }
+  if (currentPage.length > 0) pages.push(currentPage);
+  return pages;
 }
 
 function renderDimensionChain(report: F7ReportProjection): string {
@@ -183,7 +228,7 @@ function renderDimensionChain(report: F7ReportProjection): string {
   const compressed = minimumNonZeroMagnitude !== Number.POSITIVE_INFINITY
     && maximumMagnitude / minimumNonZeroMagnitude > DIMENSION_CHAIN_COMPRESSION_RATIO;
   let accumulated = 0;
-  const segments = factors.map((factor, index) => {
+  const segments: readonly DimensionChainSegment[] = factors.map((factor, index) => {
     const start = accumulated;
     const magnitude = Math.abs(factor.designNominal);
     const direction = factor.designNominal > 0 ? "additive" : factor.designNominal < 0 ? "subtractive" : "zero";
@@ -210,19 +255,19 @@ function renderDimensionChain(report: F7ReportProjection): string {
   };
   const coordinate = (value: number): string => Number.isFinite(value) ? value.toFixed(2) : "0.00";
   const zeroX = displayX(0);
-  const pages = chunkDimensionChainSegments(segments);
+  const pages = packDimensionChainSlices(segments.flatMap(deriveDimensionChainLabelSlices));
 
-  return `<div class="dimension-chain-pages" data-dimension-chain-pages>${pages.map((pageSegments, pageOffset) => {
+  return `<div class="dimension-chain-pages" data-dimension-chain-pages>${pages.map((pageSlices, pageOffset) => {
     const pageIndex = pageOffset + 1;
     const pageCount = pages.length;
     const isFinalPage = pageIndex === pageCount;
-    let nextLabelY = 24;
-    const rows = pageSegments.map((segment) => {
+    let nextLabelY = DIMENSION_CHAIN_PAGE_TOP;
+    const rows = pageSlices.map((slice) => {
       const labelY = nextLabelY;
-      const metadataY = labelY + segment.labelLines.length * DIMENSION_CHAIN_LABEL_LINE_HEIGHT;
+      const metadataY = labelY + dimensionChainSliceLineCount(slice) * DIMENSION_CHAIN_LABEL_LINE_HEIGHT;
       const rowY = metadataY + DIMENSION_CHAIN_ROW_GAP;
       nextLabelY = rowY + DIMENSION_CHAIN_ROW_GAP;
-      return { ...segment, labelY, metadataY, rowY };
+      return { ...slice, labelY, metadataY, rowY };
     });
     const finalRowY = rows.at(-1)?.rowY ?? 44;
     const closureY = finalRowY + 42;
@@ -240,16 +285,27 @@ function renderDimensionChain(report: F7ReportProjection): string {
       <desc id="${descriptionId}">Horizontal signed dimension chain factors ${rows[0]!.index + 1} through ${rows.at(-1)!.index + 1} of ${segments.length}, reconstructed from governed Factor Setup inputs in report order.${isFinalPage ? " Includes the final closure to the global zero datum." : " The chain continues on the next page."}</desc>
       <defs><marker id="dimension-chain-arrow-additive-${markerSuffix}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker><marker id="dimension-chain-arrow-subtractive-${markerSuffix}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker><marker id="dimension-chain-arrow-closure-${markerSuffix}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
       <line class="dimension-chain-zero-axis" x1="${coordinate(zeroX)}" x2="${coordinate(zeroX)}" y1="22" y2="${coordinate((isFinalPage ? closureY : finalRowY) + 12)}"/>
-      ${rows.map((segment) => {
-        const startX = displayX(segment.start);
-        const endX = displayX(segment.end);
-        const fullLabel = `${segment.index + 1}. ${segment.factor.factorName} · ${signedEngineeringNumber(segment.factor.designNominal)} · ${segment.directionLabel}`;
-        const nameLines = segment.labelLines.map((line, lineIndex) => `<tspan data-dimension-chain-name-line x="54" dy="${lineIndex === 0 ? "0" : DIMENSION_CHAIN_LABEL_LINE_HEIGHT}">${escapeHtml(lineIndex === 0 ? `${segment.index + 1}. ${line}` : line)}</tspan>`).join("");
-        const label = `<title>${escapeHtml(fullLabel)}</title><text class="dimension-chain-label" x="54" y="${coordinate(segment.labelY)}">${nameLines}</text><text class="dimension-chain-metadata" x="54" y="${coordinate(segment.metadataY)}"><tspan>${escapeHtml(signedEngineeringNumber(segment.factor.designNominal))}</tspan><tspan dx="10">${segment.directionLabel}</tspan></text>`;
-        if (segment.direction === "zero") {
-          return `<g data-dimension-chain-segment data-direction="zero" data-row-y="${coordinate(segment.rowY)}">${label}<circle class="dimension-chain-zero" cx="${coordinate(startX)}" cy="${coordinate(segment.rowY)}" r="5"/><line class="dimension-chain-zero-tick" x1="${coordinate(startX)}" x2="${coordinate(startX)}" y1="${coordinate(segment.rowY - 9)}" y2="${coordinate(segment.rowY + 9)}"/></g>`;
+      ${rows.map((slice) => {
+        const startX = displayX(slice.start);
+        const endX = displayX(slice.end);
+        const fullLabel = `${slice.index + 1}. ${slice.factor.factorName} · ${signedEngineeringNumber(slice.factor.designNominal)} · ${slice.directionLabel}`;
+        const continuationCue = slice.partIndex > 0
+          ? `<tspan x="54" dy="0">Factor ${slice.index + 1} label continued</tspan>`
+          : "";
+        const nameLines = slice.labelLines.map((line, lineIndex) => {
+          const firstVisibleLine = slice.partIndex === 0 && lineIndex === 0;
+          const lineDelta = firstVisibleLine ? "0" : DIMENSION_CHAIN_LABEL_LINE_HEIGHT;
+          return `<tspan data-dimension-chain-name-line data-label-chunk="${escapeHtml(line)}" x="54" dy="${lineDelta}">${escapeHtml(firstVisibleLine ? `${slice.index + 1}. ${line}` : line)}</tspan>`;
+        }).join("");
+        const label = `${slice.partIndex === 0 ? `<title>${escapeHtml(fullLabel)}</title>` : ""}<text class="dimension-chain-label" x="54" y="${coordinate(slice.labelY)}">${continuationCue}${nameLines}</text><text class="dimension-chain-metadata" x="54" y="${coordinate(slice.metadataY)}"><tspan>Item ${slice.index + 1}</tspan><tspan dx="10">${escapeHtml(signedEngineeringNumber(slice.factor.designNominal))}</tspan><tspan dx="10">${slice.directionLabel}</tspan></text>`;
+        const partAttributes = `data-dimension-chain-factor-part data-factor-index="${slice.index + 1}" data-factor-id="${escapeHtml(slice.factor.factorId)}" data-factor-part="${slice.partIndex + 1}" data-factor-part-count="${slice.partCount}"`;
+        if (slice.partIndex > 0) {
+          return `<g ${partAttributes} data-factor-continuation="true" data-row-y="${coordinate(slice.rowY)}">${label}</g>`;
         }
-        return `<g data-dimension-chain-segment data-direction="${segment.direction}" data-row-y="${coordinate(segment.rowY)}">${label}<circle class="dimension-chain-node" cx="${coordinate(startX)}" cy="${coordinate(segment.rowY)}" r="3"/><line class="dimension-chain-segment dimension-chain-${segment.direction}" x1="${coordinate(startX)}" x2="${coordinate(endX)}" y1="${coordinate(segment.rowY)}" y2="${coordinate(segment.rowY)}" marker-end="url(#dimension-chain-arrow-${segment.direction}-${markerSuffix})"/></g>`;
+        if (slice.direction === "zero") {
+          return `<g data-dimension-chain-factor-part data-dimension-chain-segment data-factor-index="${slice.index + 1}" data-factor-id="${escapeHtml(slice.factor.factorId)}" data-factor-part="1" data-factor-part-count="${slice.partCount}" data-direction="zero" data-row-y="${coordinate(slice.rowY)}">${label}<circle class="dimension-chain-zero" cx="${coordinate(startX)}" cy="${coordinate(slice.rowY)}" r="5"/><line class="dimension-chain-zero-tick" x1="${coordinate(startX)}" x2="${coordinate(startX)}" y1="${coordinate(slice.rowY - 9)}" y2="${coordinate(slice.rowY + 9)}"/></g>`;
+        }
+        return `<g data-dimension-chain-factor-part data-dimension-chain-segment data-factor-index="${slice.index + 1}" data-factor-id="${escapeHtml(slice.factor.factorId)}" data-factor-part="1" data-factor-part-count="${slice.partCount}" data-direction="${slice.direction}" data-row-y="${coordinate(slice.rowY)}">${label}<circle class="dimension-chain-node" cx="${coordinate(startX)}" cy="${coordinate(slice.rowY)}" r="3"/><line class="dimension-chain-segment dimension-chain-${slice.direction}" x1="${coordinate(startX)}" x2="${coordinate(endX)}" y1="${coordinate(slice.rowY)}" y2="${coordinate(slice.rowY)}" marker-end="url(#dimension-chain-arrow-${slice.direction}-${markerSuffix})"/></g>`;
       }).join("")}
       ${isFinalPage ? `<g data-dimension-chain-closure><text class="dimension-chain-label dimension-chain-closure-label" x="54" y="${coordinate(closureY - 15)}">Final closure to global datum</text><line class="dimension-chain-closure" x1="${coordinate(displayX(closureStart))}" x2="${coordinate(zeroX)}" y1="${coordinate(closureY)}" y2="${coordinate(closureY)}" marker-end="url(#dimension-chain-arrow-closure-${markerSuffix})"/></g>` : ""}
     </svg></div>`;

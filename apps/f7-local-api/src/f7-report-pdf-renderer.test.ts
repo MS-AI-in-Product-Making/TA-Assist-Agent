@@ -178,6 +178,19 @@ function reportWithoutAnalysisFixture(): F7ReportProjection {
   };
 }
 
+function exactLengthFactorName(prefix: string, length: number): string {
+  return `${prefix}${"x".repeat(length - prefix.length)}`;
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
 describe("F7 report PDF renderer", () => {
   it("renders the governed report in Web order with chart, comparison, and F0 evidence", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
@@ -326,18 +339,23 @@ describe("F7 report PDF renderer", () => {
     expect(dimensionChain?.indexOf("Negative &amp; B")).toBeLessThan(dimensionChain?.indexOf("Zero &gt; C") ?? -1);
   });
 
-  it("paginates twenty Dimension Chain factors into bounded independently printable blocks", () => {
+  it("dynamically paginates long Dimension Chain labels into bounded independently printable blocks", () => {
     const report = reportFixture();
     const baseFactor = report.factors[0]!;
-    const longFactorName = "Long <escaped> & named factor with deterministic wrapping across every visible label word";
+    const oversizedFactorName = exactLengthFactorName("Oversized <escaped> & factor ", 3_100);
+    const factors = Array.from({ length: 21 }, (_, index) => ({
+      ...baseFactor,
+      factorId: index.toString(16).padStart(2, "0").repeat(32),
+      factorName: index < 5
+        ? exactLengthFactorName(`Long factor ${index + 1} <&> `, 310)
+        : index === 10
+          ? oversizedFactorName
+          : `Factor ${index + 1}`,
+      designNominal: index === 20 ? 0 : index % 3 === 0 ? index + 1 : -(index + 1),
+    }));
     const html = renderF7ReportPdfHtml({
       ...report,
-      factors: Array.from({ length: 20 }, (_, index) => ({
-        ...baseFactor,
-        factorId: index.toString(16).padStart(2, "0").repeat(32),
-        factorName: index === 4 ? longFactorName : `Factor ${index + 1}`,
-        designNominal: index === 19 ? 0 : index % 3 === 0 ? index + 1 : -(index + 1),
-      })),
+      factors,
     });
     const dimensionChainPages = [...html.matchAll(/<div data-dimension-chain-page[^>]*>[\s\S]*?<\/svg><\/div>/g)]
       .map((match) => match[0]);
@@ -346,23 +364,40 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("thead { display: table-header-group; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
-    expect(dimensionChainPages).toHaveLength(4);
-    expect(dimensionChainPages.map((page) => Number(page.match(/data-dimension-chain-page-index="(\d+)"/)?.[1]))).toEqual([1, 2, 3, 4]);
-    expect(dimensionChainPages.every((page) => page.includes('data-dimension-chain-page-count="4"'))).toBe(true);
-    expect(dimensionChainPages.every((page) => (page.match(/data-dimension-chain-segment/g)?.length ?? 0) <= 5)).toBe(true);
-    expect(dimensionChainPages.flatMap((page) => [...page.matchAll(/<title>(\d+)\. /g)].map((match) => Number(match[1])))).toEqual(
-      Array.from({ length: 20 }, (_, index) => index + 1),
+    expect(dimensionChainPages.length).toBeGreaterThan(5);
+    expect(dimensionChainPages.map((page) => Number(page.match(/data-dimension-chain-page-index="(\d+)"/)?.[1]))).toEqual(
+      Array.from({ length: dimensionChainPages.length }, (_, index) => index + 1),
     );
-    expect(dimensionChainPages.reduce((count, page) => count + (page.match(/data-dimension-chain-segment/g)?.length ?? 0), 0)).toBe(20);
+    expect(dimensionChainPages.every((page) => page.includes(`data-dimension-chain-page-count="${dimensionChainPages.length}"`))).toBe(true);
+    expect(dimensionChainPages.every((page) => (page.match(/data-dimension-chain-segment/g)?.length ?? 0) <= 5)).toBe(true);
+    expect(dimensionChainPages.reduce((count, page) => count + (page.match(/data-dimension-chain-segment/g)?.length ?? 0), 0)).toBe(factors.length);
+    const renderedFactorIndexes = [...html.matchAll(/data-dimension-chain-factor-part[^>]*data-factor-index="(\d+)"/g)]
+      .map((match) => Number(match[1]));
+    expect(renderedFactorIndexes).toEqual([...renderedFactorIndexes].sort((left, right) => left - right));
+    for (const [factorIndex, factor] of factors.entries()) {
+      const factorParts = [...html.matchAll(new RegExp(`<g data-dimension-chain-factor-part[^>]*data-factor-index="${factorIndex + 1}"[^>]*data-factor-id="${factor.factorId}"[^>]*>[\\s\\S]*?<\\/g>`, "g"))]
+        .map((match) => match[0]);
+      expect(factorParts.length, `factor ${factorIndex + 1} should be represented`).toBeGreaterThan(0);
+      expect(html.match(new RegExp(`data-dimension-chain-segment[^>]*data-factor-index="${factorIndex + 1}"`, "g")) ?? []).toHaveLength(1);
+      const recoveredName = factorParts
+        .flatMap((part) => [...part.matchAll(/data-label-chunk="([^"]*)"/g)].map((match) => decodeHtmlAttribute(match[1]!)))
+        .join("");
+      expect(recoveredName).toBe(factor.factorName);
+    }
     expect(dimensionChainPages.slice(1).every((page) => page.includes("Dimension Chain continued"))).toBe(true);
     expect(dimensionChainPages.every((page) => /<title id="dimension-chain-title-\d+">/.test(page))).toBe(true);
     expect(dimensionChainPages.every((page) => /<desc id="dimension-chain-description-\d+">/.test(page))).toBe(true);
     expect(dimensionChainPages.slice(0, -1).every((page) => !page.includes("data-dimension-chain-closure"))).toBe(true);
     expect(dimensionChainPages.at(-1)?.match(/data-dimension-chain-closure/g)).toHaveLength(1);
     expect(dimensionChainPages.at(-1)).toContain("Final closure to global datum");
-    expect(dimensionChainPages[0]).toContain("<title>5. Long &lt;escaped&gt; &amp; named factor with deterministic wrapping across every visible label word · -5 · Subtractive</title>");
-    expect(dimensionChainPages[0]).not.toContain(longFactorName);
-    expect(dimensionChainPages[0]?.match(/data-dimension-chain-name-line/g)?.length).toBeGreaterThan(5);
+
+    const oversizedParts = [...html.matchAll(/<g data-dimension-chain-factor-part[^>]*data-factor-index="11"[^>]*>[\s\S]*?<\/g>/g)].map((match) => match[0]);
+    expect(oversizedParts.length).toBeGreaterThan(1);
+    expect(oversizedParts.slice(1).every((part) => part.includes("Factor 11 label continued"))).toBe(true);
+    const recoveredOversizedName = oversizedParts
+      .flatMap((part) => [...part.matchAll(/data-label-chunk="([^"]*)"/g)].map((match) => decodeHtmlAttribute(match[1]!)))
+      .join("");
+    expect(recoveredOversizedName).toBe(oversizedFactorName);
 
     const viewBoxHeights = dimensionChainPages.map((page) => Number(page.match(/viewBox="0 0 800 ([^"]+)"/)?.[1]));
     const printableHeightMillimeters = 186;
