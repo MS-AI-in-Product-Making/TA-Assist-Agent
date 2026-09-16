@@ -48,6 +48,8 @@ import {
   f6OptimizationResultV2Schema,
   f6OptimizationResultV3Schema,
   f6OptimizationResultV4Schema,
+  f6ProcessCheckSchema,
+  f6ProcessChecksSchema,
   f6ReadableOptimizationResultSchema,
   f6OptimizationResultSchema as f6NewOptimizationResultSchema,
   f6OptimizationTargetsProposalSchema,
@@ -127,6 +129,53 @@ import type {
   CalculationFactorResult,
   CalculationMethod,
 } from "./index.js";
+
+describe("F6 process requirement check contracts", () => {
+  const completeCheck = {
+    checkId: "target-sigma" as const,
+    status: "COMPLETE" as const,
+    summary: "Target sigma matches governed recommendation.",
+    details: ["Gap worksheet uses recommended 3 sigma."],
+  };
+
+  it("accepts the governed check shape and fixed check collection", () => {
+    expect(f6ProcessCheckSchema.parse(completeCheck)).toEqual(completeCheck);
+    expect(f6ProcessChecksSchema.parse([
+      { ...completeCheck, checkId: "analysis-method" },
+      { ...completeCheck, checkId: "input-completeness" },
+      { ...completeCheck, checkId: "output-completeness" },
+      { ...completeCheck, checkId: "tolerance-validity" },
+      { ...completeCheck, checkId: "drawing-dim-governance" },
+      { ...completeCheck, checkId: "ado-traceability" },
+      completeCheck,
+    ]).map(({ checkId }) => checkId)).toEqual([
+      "analysis-method",
+      "input-completeness",
+      "output-completeness",
+      "tolerance-validity",
+      "drawing-dim-governance",
+      "ado-traceability",
+      "target-sigma",
+    ]);
+  });
+
+  it("rejects missing, duplicate, reordered, and partial check collections", () => {
+    const orderedChecks = [
+      { ...completeCheck, checkId: "analysis-method" },
+      { ...completeCheck, checkId: "input-completeness" },
+      { ...completeCheck, checkId: "output-completeness" },
+      { ...completeCheck, checkId: "tolerance-validity" },
+      { ...completeCheck, checkId: "drawing-dim-governance" },
+      { ...completeCheck, checkId: "ado-traceability" },
+      completeCheck,
+    ];
+
+    expect(f6ProcessCheckSchema.safeParse({ ...completeCheck, status: "BLOCKED" }).success).toBe(false);
+    expect(f6ProcessChecksSchema.safeParse(orderedChecks.slice(0, 6)).success).toBe(false);
+    expect(f6ProcessChecksSchema.safeParse([orderedChecks[1], orderedChecks[0], ...orderedChecks.slice(2)]).success).toBe(false);
+    expect(f6ProcessChecksSchema.safeParse([...orderedChecks.slice(0, 6), orderedChecks[5]]).success).toBe(false);
+  });
+});
 
 describe("F7 report narrative contracts", () => {
   it("accepts available report analysis with governed narrative and rejects extra fields", () => {

@@ -6968,6 +6968,47 @@ export const f6AnalysisContextSchema = z.discriminatedUnion("contextVersion", [
   validateAnalysisContextWorksheets(artifact, context);
 });
 
+export const f6ProcessCheckIdSchema = z.enum([
+  "analysis-method",
+  "input-completeness",
+  "output-completeness",
+  "tolerance-validity",
+  "drawing-dim-governance",
+  "ado-traceability",
+  "target-sigma",
+]);
+
+export const f6ProcessCheckStatusSchema = z.enum(["COMPLETE", "WARNING", "MISSING"]);
+
+export const f6ProcessCheckSchema = z.object({
+  checkId: f6ProcessCheckIdSchema,
+  status: f6ProcessCheckStatusSchema,
+  summary: z.string().min(1),
+  details: z.array(z.string().min(1)),
+}).strict();
+
+const f6ProcessCheckOrder = [
+  "analysis-method",
+  "input-completeness",
+  "output-completeness",
+  "tolerance-validity",
+  "drawing-dim-governance",
+  "ado-traceability",
+  "target-sigma",
+] as const;
+
+export const f6ProcessChecksSchema = z.array(f6ProcessCheckSchema).length(f6ProcessCheckOrder.length).superRefine((checks, context) => {
+  checks.forEach((check, index) => {
+    if (check.checkId !== f6ProcessCheckOrder[index]) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 process checks must use the governed fixed order", path: [index, "checkId"] });
+    }
+  });
+  const ids = checks.map(({ checkId }) => checkId);
+  if (new Set(ids).size !== ids.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 process check IDs must be unique" });
+  }
+});
+
 export const f6InputClarificationSchema = z.object({
   clarificationId: z.string().min(1),
   question: z.string().min(1),
@@ -9594,6 +9635,9 @@ export type F6OptimizationTargetsV2 = z.infer<typeof f6OptimizationTargetsV2Sche
 export type F6AnalysisContext = z.infer<typeof f6AnalysisContextSchema>;
 export type F6AnalysisContextV1 = z.infer<typeof f6AnalysisContextV1Schema>;
 export type F6AnalysisContextV2 = z.infer<typeof f6AnalysisContextV2Schema>;
+export type F6ProcessCheckId = z.infer<typeof f6ProcessCheckIdSchema>;
+export type F6ProcessCheckStatus = z.infer<typeof f6ProcessCheckStatusSchema>;
+export type F6ProcessCheck = z.infer<typeof f6ProcessCheckSchema>;
 export type F6InputClarification = z.infer<typeof f6InputClarificationSchema>;
 export type F6AnalysisContextProposal = z.infer<typeof f6AnalysisContextProposalSchema>;
 export type F6OptimizationTargetsProposal = z.infer<typeof f6OptimizationTargetsProposalSchema>;
