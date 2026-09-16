@@ -46,9 +46,10 @@ describe("workbench browser API", () => {
     expect(url).toContain("path=worksheets%2FAnalysis+A%5Cloop+image+%281%29.png");
   });
 
-  it("creates a session with a valid empty JSON request body", async () => {
+  it("creates a session with a governed web request body", async () => {
     vi.stubGlobal("location", { href: "http://127.0.0.1/" });
     vi.stubGlobal("history", { replaceState: vi.fn() });
+    vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(480);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(snapshot()), { status: 201 }))
@@ -57,7 +58,35 @@ describe("workbench browser API", () => {
 
     await createWorkbenchApi().bootstrap();
 
-    expect(fetchMock.mock.calls[1]).toEqual(["/api/sessions", expect.objectContaining({ method: "POST", body: "{}" })]);
+    expect(fetchMock.mock.calls[1]).toEqual([
+      "/api/sessions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ utcOffsetMinutes: -480, source: "web" }),
+      }),
+    ]);
+  });
+
+  it("sends requester UTC offset without a client instant", async () => {
+    vi.stubGlobal("location", { href: "http://127.0.0.1/" });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
+    vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(420);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot()), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ turns: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createWorkbenchApi().bootstrap();
+
+    expect(fetchMock.mock.calls[1]).toEqual([
+      "/api/sessions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ utcOffsetMinutes: -420, source: "web" }),
+      }),
+    ]);
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).not.toHaveProperty("requestedAt");
   });
 
   it("never replaces a requested session with a random new session when authentication fails", async () => {

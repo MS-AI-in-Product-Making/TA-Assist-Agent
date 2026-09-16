@@ -30,6 +30,7 @@ const REVIEW_CONTEXT = {
 };
 const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T15:30:12.000Z", utcOffsetMinutes: -420, source: "web" } as const;
 const MULTIMODAL_IMAGE_BYTES = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
 const MULTIMODAL_IMAGE_HASH = createHash("sha256").update(MULTIMODAL_IMAGE_BYTES).digest("hex");
 
@@ -1450,9 +1451,56 @@ describe("workbench server routes", () => {
         method: "POST",
         url: "/api/sessions",
         headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: { utcOffsetMinutes: -420, source: "web" },
       });
       expect(created.statusCode).toBe(201);
       expect(created.json()).toMatchObject({ interactionLanguage: ENGLISH_LOCK });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("server stamps the request instant and rejects a client instant", async () => {
+    const rootDir = testRoot("workbench-server-request-context");
+    const requestInstant = new Date("2026-09-16T15:30:12.000Z");
+    const server = await buildWorkbenchServer({
+      rootDir,
+      interactionLanguage: ENGLISH_LOCK,
+      now: () => requestInstant,
+    });
+    try {
+      const nonce = await server.bootstrap.issueBrowserBootstrap();
+      const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
+      const cookie = bootstrap.headers["set-cookie"];
+      const csrf = await server.inject({ method: "GET", url: "/api/csrf", headers: { host: "127.0.0.1:0", cookie } });
+
+      const created = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: { utcOffsetMinutes: -420, source: "web" },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      expect(created.json()).toMatchObject({
+        analysisRequestContext: {
+          requestedAt: "2026-09-16T15:30:12.000Z",
+          utcOffsetMinutes: -420,
+          source: "web",
+        },
+      });
+
+      const rejected = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: {
+          requestedAt: "2020-01-01T00:00:00.000Z",
+          utcOffsetMinutes: 0,
+          source: "web",
+        },
+      });
+      expect(rejected.statusCode, rejected.body).toBe(400);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2752,7 +2800,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-session-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "14141414-1414-4414-8414-141414141414";
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     try {
       await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "uploaded-book" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
     } finally {
@@ -2784,7 +2832,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-corrupt-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "16161616-1616-4616-8616-161616161616";
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     await store.close();
     const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"));
     try {
@@ -2813,7 +2861,7 @@ describe("workbench server routes", () => {
     const sessionId = "15151515-1515-4515-8515-151515151515";
     const artifactId = "replacement-book";
     const relativePath = `uploads/${sessionId}/workbook/${artifactId}-book.xlsx`;
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     try {
       const committed = await store.applyCommand({
         contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-replace", expectedRevision: 0, command: "replace_workbook",
