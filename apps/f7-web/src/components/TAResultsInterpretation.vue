@@ -49,6 +49,16 @@ const processGuidanceEntries = computed(() => (
     ? interpretation.value.processGuidance.entries
     : []
 ));
+const processPriorityDefinitions = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.priorityDefinitions
+    : []
+));
+const processPriorityRecommendation = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.priorityRecommendation
+    : undefined
+));
 const shouldRenderProcessGuidance = computed(() => (
   interpretation.value.processGuidance.status === "available"
   && interpretation.value.processGuidance.entries.length > 0
@@ -654,6 +664,10 @@ async function handleGeneratePdf(): Promise<void> {
     >
       <div class="process-guidance-heading">
         <h3>TA Process and Requirements</h3>
+        <span
+          class="process-guidance-version"
+          data-process-guidance-version
+        >V3</span>
       </div>
       <p
         class="process-guidance-context"
@@ -661,6 +675,30 @@ async function handleGeneratePdf(): Promise<void> {
       >
         {{ processGuidanceContext }}
       </p>
+      <div class="process-priority-guidance">
+        <div
+          v-if="processPriorityRecommendation"
+          class="process-priority-recommendation"
+          data-process-priority-recommendation
+        >
+          <strong>Recommended priority {{ processPriorityRecommendation.selectedPriority }}</strong>
+          <span data-process-priority-alignment>Final priority requires Microsoft ME/DM alignment.</span>
+        </div>
+        <div
+          class="process-priority-definitions"
+          aria-label="V3 priority definitions"
+        >
+          <p
+            v-for="definition in processPriorityDefinitions"
+            :key="definition.entryId"
+            data-process-priority-definition
+            :data-priority="definition.priority"
+          >
+            <strong>{{ definition.priority }}</strong>
+            <span>{{ definition.message }}</span>
+          </p>
+        </div>
+      </div>
       <ol class="process-guidance-list action-sequence">
         <li
           v-for="entry in processGuidanceEntries"
@@ -1148,6 +1186,58 @@ async function handleGeneratePdf(): Promise<void> {
   line-height: 1.4;
 }
 
+.process-guidance-version {
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  padding: 2px 7px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.process-priority-guidance {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.process-priority-recommendation {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.process-priority-recommendation span {
+  color: var(--ink-soft);
+}
+
+.process-priority-definitions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 16px;
+}
+
+.process-priority-definitions p {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.process-priority-definitions strong {
+  color: var(--ink);
+}
+
 .process-guidance-list {
   padding-left: 20px;
 }
@@ -1184,6 +1274,12 @@ async function handleGeneratePdf(): Promise<void> {
 
 .process-guidance-entry[data-guidance-state="warning"] {
   color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .process-priority-definitions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .interpretation-unavailable {

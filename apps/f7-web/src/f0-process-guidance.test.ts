@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeepReadonly } from "vue";
 import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
+import type { ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
@@ -28,6 +29,24 @@ function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSna
   } as unknown as DeepReadonly<F7SessionSnapshot>;
 }
 
+function snapshotWithCategories(
+  categories: readonly (ProcessRequirementComponentCategory | undefined)[],
+): DeepReadonly<F7SessionSnapshot> {
+  const snapshot = snapshotWithFactorCount(categories.length) as F7SessionSnapshot;
+  return {
+    ...snapshot,
+    factors: categories.map((componentCategory, index) => ({
+      factorCandidate: {
+        factorCandidateId: `candidate-${index + 1}`,
+        factorName: index === 0 ? "battery CTS free text must not be inferred" : `Factor ${index + 1}`,
+      },
+      ...(componentCategory === undefined ? {} : {
+        evidence: { componentCategory },
+      }),
+    })),
+  } as unknown as DeepReadonly<F7SessionSnapshot>;
+}
+
 function entryIds(result: ReturnType<typeof buildF0ProcessGuidance>): string[] {
   return result.entries.map(({ entryId }) => entryId);
 }
@@ -37,6 +56,91 @@ function entryState(result: ReturnType<typeof buildF0ProcessGuidance>, entryId: 
 }
 
 describe("buildF0ProcessGuidance", () => {
+  it("projects stable de-duplicated confirmed evidence categories into evaluator facts", () => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const evaluateProcessRequirements = vi.fn(actual.evaluateProcessRequirements);
+    const load: LoadDependency = vi.fn(() => ({
+      manifest: actual.manifest,
+      listProcessRequirements: actual.listProcessRequirements,
+      evaluateProcessRequirements,
+    }));
+
+    buildF0ProcessGuidance(snapshotWithCategories([
+      "cover-fit-and-function",
+      undefined,
+      "battery-cts",
+      "cover-fit-and-function",
+    ]), undefined, { load });
+
+    expect(evaluateProcessRequirements).toHaveBeenCalledWith({
+      actor: "all",
+      analysisMethod: "one-dimensional-rss",
+      toleranceCount: 4,
+      componentCategories: ["battery-cts", "cover-fit-and-function"],
+    });
+  });
+
+  it("does not infer component categories from factor names or pass an empty category fact", () => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const evaluateProcessRequirements = vi.fn(actual.evaluateProcessRequirements);
+    const load: LoadDependency = vi.fn(() => ({
+      manifest: actual.manifest,
+      listProcessRequirements: actual.listProcessRequirements,
+      evaluateProcessRequirements,
+    }));
+
+    const result = buildF0ProcessGuidance(snapshotWithCategories([undefined]), undefined, { load });
+
+    expect(evaluateProcessRequirements).toHaveBeenCalledWith({
+      actor: "all",
+      analysisMethod: "one-dimensional-rss",
+      toleranceCount: 1,
+    });
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("expected available process guidance");
+    expect(result.priorityRecommendation).toBeUndefined();
+    expect(result.priorityDefinitions.map(({ priority }) => priority)).toEqual(["P0", "P1", "P2", "P3"]);
+  });
+
+  it("uses evaluator precedence when P0 and P1 categories both match", () => {
+    const result = buildF0ProcessGuidance(snapshotWithCategories([
+      "cover-fit-and-function",
+      "battery-cts",
+    ]));
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("expected available process guidance");
+    expect(result.priorityRecommendation).toEqual({
+      selectedPriority: "P0",
+      matchedEntryIds: [
+        "priority-recommendation-battery-cts",
+        "priority-recommendation-cover-fit-and-function",
+      ],
+      requiresMeDmAlignment: true,
+    });
+  });
+
+  it("projects all four governed V3 priority definitions in strict priority order", () => {
+    const result = buildF0ProcessGuidance(snapshotWithCategories([]));
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("expected available process guidance");
+    expect(result.priorityDefinitions).toHaveLength(4);
+    expect(result.priorityDefinitions.map(({ entryId, priority, title, message, evidence }) => ({
+      entryId,
+      priority,
+      title,
+      message,
+      effectiveVersion: evidence.effectiveVersion,
+    }))).toEqual([
+      expect.objectContaining({ entryId: "definition-priority-p0-components", priority: "P0", effectiveVersion: VERSION }),
+      expect.objectContaining({ entryId: "definition-priority-p1-components", priority: "P1", effectiveVersion: VERSION }),
+      expect.objectContaining({ entryId: "definition-priority-p2-components", priority: "P2", effectiveVersion: VERSION }),
+      expect.objectContaining({ entryId: "definition-priority-p3-components", priority: "P3", effectiveVersion: VERSION }),
+    ]);
+    expect(result.priorityDefinitions.every(({ title, message }) => title.length > 0 && message.length > 0)).toBe(true);
+  });
+
   it("lists small- and complex-stack guidance and warns for complex stacks only above ten factors", () => {
     const three = buildF0ProcessGuidance(snapshotWithFactorCount(3));
     const seven = buildF0ProcessGuidance(snapshotWithFactorCount(7));
@@ -86,7 +190,7 @@ describe("buildF0ProcessGuidance", () => {
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
     expect(load).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: "unavailable", entries: [] });
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
   });
 
   it("fails closed when evaluation throws after a successful load", () => {
@@ -104,7 +208,7 @@ describe("buildF0ProcessGuidance", () => {
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
     expect(load).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: "unavailable", entries: [] });
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
   });
 
   it("fails closed when the loaded manifest version does not match", () => {
@@ -121,7 +225,7 @@ describe("buildF0ProcessGuidance", () => {
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
     expect(load).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: "unavailable", entries: [] });
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
   });
 
   it("fails closed when the evaluation version does not match the manifest", () => {
@@ -143,7 +247,7 @@ describe("buildF0ProcessGuidance", () => {
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
     expect(load).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: "unavailable", entries: [] });
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
   });
 
   it.each([
@@ -184,6 +288,26 @@ describe("buildF0ProcessGuidance", () => {
     const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
 
     expect(load).toHaveBeenCalledOnce();
-    expect(result).toEqual({ status: "unavailable", entries: [] });
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
+  });
+
+  it.each(["missing", "duplicate"] as const)("fails closed when a priority definition is %s", (mutation) => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const load: LoadDependency = vi.fn(() => ({
+      manifest: actual.manifest,
+      evaluateProcessRequirements: actual.evaluateProcessRequirements,
+      listProcessRequirements: (query: Parameters<typeof actual.listProcessRequirements>[0]) => {
+        const entries = actual.listProcessRequirements(query);
+        const target = entries.find(({ entryId }) => entryId === "definition-priority-p2-components");
+        if (target === undefined) throw new Error("expected P2 priority definition");
+        return mutation === "missing"
+          ? entries.filter(({ entryId }) => entryId !== target.entryId)
+          : [...entries, target];
+      },
+    }));
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(1), undefined, { load });
+
+    expect(result).toEqual({ status: "unavailable", entries: [], priorityDefinitions: [] });
   });
 });

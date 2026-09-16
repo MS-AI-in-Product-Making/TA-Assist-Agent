@@ -9,7 +9,7 @@ import type {
   F7NarrativeRootCauseItem,
 } from "@ai-assist/product-language/f7-engineering-narrative";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
-import type { F0ProcessGuidanceEntry } from "../f0-process-guidance";
+import type { F0ProcessGuidanceEntry, F0ProcessPriorityDefinition } from "../f0-process-guidance";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
 let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
@@ -212,6 +212,26 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
   ];
 }
 
+function priorityDefinitions(): readonly F0ProcessPriorityDefinition[] {
+  return ["P0", "P1", "P2", "P3"].map((priority) => ({
+    entryId: `definition-priority-${priority.toLowerCase()}-components`,
+    priority: priority as "P0" | "P1" | "P2" | "P3",
+    title: `${priority} component priority definition`,
+    message: `${priority} governed component definition.`,
+    evidence: {
+      sourceType: "approved-transcription",
+      sourceAlias: "approved-priority-guidance",
+      sourceContentHash: "f".repeat(64),
+      sourceRevision: "user-approved-2026-09-16",
+      section: `priority-definitions.${priority.toLowerCase()}`,
+      effectiveVersion: "process-requirements-v3",
+      owner: "Dimensional Management",
+      confidence: "reviewed",
+      changeSummary: `Add approved ${priority} component priority definition.`,
+    },
+  }));
+}
+
 function expectedEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
   const formattedValue = formatF7NarrativeEvidenceValue(value);
@@ -379,6 +399,12 @@ describe("TAResultsInterpretation", () => {
         status: "available" as const,
         version: "process-requirements-v3" as const,
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
+        priorityRecommendation: {
+          selectedPriority: "P0" as const,
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true as const,
+        },
       },
     };
     buildAssumptionResultsInterpretationSpy.mockReturnValue(projected);
@@ -746,6 +772,12 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
+        priorityRecommendation: {
+          selectedPriority: "P0",
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true,
+        },
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -876,10 +908,34 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.text()).not.toContain("F0 Process Guidance");
     expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
     expect(processGuidance.text()).not.toContain("Triggered by");
-    expect(processGuidance.find("[data-process-guidance-version]").exists()).toBe(false);
+    expect(processGuidance.get("[data-process-guidance-version]").text()).toBe("V3");
+    expect(processGuidance.get("[data-process-priority-recommendation]").text()).toContain("Recommended priority P0");
+    expect(processGuidance.get("[data-process-priority-alignment]").text()).toBe(
+      "Final priority requires Microsoft ME/DM alignment.",
+    );
+    expect(processGuidance.findAll("[data-process-priority-definition]")).toHaveLength(4);
+    expect(processGuidance.findAll("[data-process-priority-definition]").map((item) => item.attributes("data-priority"))).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(processGuidance.findAll("[data-process-priority-definition] strong").map((item) => item.text())).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(processGuidance.findAll("[data-process-priority-definition] span").map((item) => item.text())).toEqual([
+      "P0 governed component definition.",
+      "P1 governed component definition.",
+      "P2 governed component definition.",
+      "P3 governed component definition.",
+    ]);
     expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(6);
     expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
     expect(processGuidance.get("ol").classes()).toContain("action-sequence");
+    expect(processGuidance.get("ol").findAll("[data-process-priority-definition]")).toHaveLength(0);
     expect(processGuidance.findAll("[data-process-guidance-entry]").every((item) => (
       item.classes().includes("narrative-item")
     ))).toBe(true);
@@ -932,6 +988,7 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -1047,6 +1104,7 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: [],
+        priorityDefinitions: [],
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -1064,6 +1122,7 @@ describe("TAResultsInterpretation", () => {
       processGuidance: {
         status: "unavailable",
         entries: [],
+        priorityDefinitions: [],
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
