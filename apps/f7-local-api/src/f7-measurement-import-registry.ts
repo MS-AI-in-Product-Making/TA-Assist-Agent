@@ -1,0 +1,426 @@
+import {
+  createTypedError,
+  f7MeasurementImportAuthoritySchema,
+  f7MeasurementImportStoredBatchSchema,
+  type F7MeasurementImportAuthority,
+  type F7MeasurementImportStoredBatch,
+} from "@ai-assist/contracts";
+
+const INPUT_REFERENCE = "f7-measurement-import-registry";
+const OPAQUE_ID_PATTERN = /^(?:[a-f0-9]{32,}|[A-Za-z0-9_-]{22,})$/;
+
+export const F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS = 10 * 60 * 1000;
+export const MAX_F7_MEASUREMENT_IMPORT_PREVIEWS = 16;
+export const MAX_F7_MEASUREMENT_IMPORT_TEMPLATES = 16;
+
+interface SessionState {
+  generation: number;
+  previewGeneration: number;
+  currentTemplateId: string | undefined;
+  currentPreviewId: string | undefined;
+}
+
+interface TemplateRecord {
+  readonly templateId: string;
+  readonly sessionId: string;
+  readonly authority: F7MeasurementImportAuthority;
+  readonly sessionGeneration: number;
+  readonly insertedSequence: number;
+  readonly expiresAtMs: number;
+}
+
+interface PreviewRecord {
+  state: "available" | "consumed";
+  readonly previewId: string;
+  readonly templateId: string;
+  readonly sessionId: string;
+  readonly preview: F7MeasurementImportStoredBatch;
+  readonly sessionGeneration: number;
+  readonly previewGeneration: number;
+  readonly insertedSequence: number;
+  readonly expiresAtMs: number;
+}
+
+export type F7MeasurementImportTemplateResolution =
+  | {
+    readonly status: "available";
+    readonly templateId: string;
+    readonly authority: F7MeasurementImportAuthority;
+    readonly expiresAt: string;
+    readonly sessionGeneration: number;
+  }
+  | { readonly status: "not_found" | "expired" | "stale" | "session_mismatch" };
+
+export type F7MeasurementImportPreviewClaim =
+  | {
+    readonly status: "claimed";
+    readonly previewId: string;
+    readonly preview: F7MeasurementImportStoredBatch;
+    readonly expiresAt: string;
+    readonly sessionGeneration: number;
+    readonly previewGeneration: number;
+  }
+  | { readonly status: "not_found" | "expired" | "stale" | "consumed" | "session_mismatch" };
+
+export interface F7MeasurementImportRegistry {
+  registerTemplate(request: {
+    readonly sessionId: string;
+    readonly createAuthority: (input: {
+      readonly templateId: string;
+      readonly sessionGeneration: number;
+      readonly expiresAt: string;
+    }) => F7MeasurementImportAuthority;
+  }): {
+    readonly templateId: string;
+    readonly authority: F7MeasurementImportAuthority;
+    readonly expiresAt: string;
+    readonly sessionGeneration: number;
+  };
+  resolveTemplate(request: {
+    readonly sessionId: string;
+    readonly templateId: string;
+  }): F7MeasurementImportTemplateResolution;
+  storePreview(request: {
+    readonly sessionId: string;
+    readonly templateId: string;
+    readonly createStoredBatch: (input: {
+      readonly previewId: string;
+      readonly expiresAt: string;
+      readonly sessionGeneration: number;
+      readonly previewGeneration: number;
+    }) => F7MeasurementImportStoredBatch;
+  }): {
+    readonly previewId: string;
+    readonly storedBatch: F7MeasurementImportStoredBatch;
+    readonly expiresAt: string;
+    readonly sessionGeneration: number;
+    readonly previewGeneration: number;
+  };
+  claimPreview(request: {
+    readonly sessionId: string;
+    readonly previewId: string;
+  }): F7MeasurementImportPreviewClaim;
+}
+
+function fixedError(summary: string, details?: Record<string, unknown>): Error {
+  return createTypedError({
+    code: "validation_error",
+    summary,
+    suggestedAction: "Provide the current session-owned template or preview registration inputs and retry.",
+    affectedInputReferences: [INPUT_REFERENCE],
+    ...(details === undefined ? {} : { details }),
+  });
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested, seen);
+  return Object.freeze(value);
+}
+
+function cloneFrozen<T>(value: T): T {
+  return deepFreeze(structuredClone(value));
+}
+
+function validateSessionId(value: string, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw fixedError(`${name} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function validateOpaqueId(value: string, name: string): string {
+  if (typeof value !== "string" || !OPAQUE_ID_PATTERN.test(value)) {
+    throw fixedError(`${name} must be a CSPRNG-shaped opaque identifier.`);
+  }
+  return value;
+}
+
+function isoFromEpochMs(value: number): string {
+  return new Date(value).toISOString();
+}
+
+export function createF7MeasurementImportRegistry(dependencies: {
+  readonly now: () => number;
+  readonly createId: () => string;
+}): F7MeasurementImportRegistry {
+  if (typeof dependencies.now !== "function" || typeof dependencies.createId !== "function") {
+    throw fixedError("Registry dependencies are invalid.");
+  }
+
+  const sessions = new Map<string, SessionState>();
+  const templateRecords = new Map<string, TemplateRecord>();
+  const previewRecords = new Map<string, PreviewRecord>();
+  let sequence = 0;
+  let lastNow = -1;
+
+  const readNow = (): number => {
+    const value = dependencies.now();
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw fixedError("now() must return a finite non-negative epoch millisecond integer.");
+    }
+    if (value < lastNow) {
+      throw fixedError("now() must be monotonic for registry operations.");
+    }
+    lastNow = value;
+    return value;
+  };
+
+  const readSession = (sessionId: string): SessionState => {
+    const current = sessions.get(sessionId);
+    if (current) return current;
+    const created: SessionState = {
+      generation: 0,
+      previewGeneration: 0,
+      currentTemplateId: undefined,
+      currentPreviewId: undefined,
+    };
+    sessions.set(sessionId, created);
+    return created;
+  };
+
+  const deleteTemplateRecord = (record: TemplateRecord): void => {
+    templateRecords.delete(record.templateId);
+    const session = sessions.get(record.sessionId);
+    if (!session) return;
+    if (session.currentTemplateId === record.templateId) {
+      session.currentTemplateId = undefined;
+      session.currentPreviewId = undefined;
+    }
+  };
+
+  const deletePreviewRecord = (record: PreviewRecord): void => {
+    previewRecords.delete(record.previewId);
+    const session = sessions.get(record.sessionId);
+    if (!session) return;
+    if (session.currentPreviewId === record.previewId) {
+      session.currentPreviewId = undefined;
+    }
+  };
+
+  const pruneExpired = (nowMs: number): void => {
+    for (const record of templateRecords.values()) {
+      if (nowMs >= record.expiresAtMs) deleteTemplateRecord(record);
+    }
+    for (const record of previewRecords.values()) {
+      if (nowMs >= record.expiresAtMs) deletePreviewRecord(record);
+    }
+  };
+
+  const evictOldestTemplates = (): void => {
+    if (templateRecords.size <= MAX_F7_MEASUREMENT_IMPORT_TEMPLATES) return;
+    const records = [...templateRecords.values()].sort((left, right) => left.insertedSequence - right.insertedSequence);
+    while (templateRecords.size > MAX_F7_MEASUREMENT_IMPORT_TEMPLATES) {
+      const next = records.shift();
+      if (!next) break;
+      deleteTemplateRecord(next);
+    }
+  };
+
+  const evictOldestPreviews = (): void => {
+    if (previewRecords.size <= MAX_F7_MEASUREMENT_IMPORT_PREVIEWS) return;
+    const records = [...previewRecords.values()].sort((left, right) => left.insertedSequence - right.insertedSequence);
+    while (previewRecords.size > MAX_F7_MEASUREMENT_IMPORT_PREVIEWS) {
+      const next = records.shift();
+      if (!next) break;
+      deletePreviewRecord(next);
+    }
+  };
+
+  const nextOpaqueId = (name: string): string => {
+    const value = validateOpaqueId(dependencies.createId(), name);
+    if (templateRecords.has(value) || previewRecords.has(value)) {
+      throw fixedError(`${name} is duplicate and must be unique across active registry records.`);
+    }
+    return value;
+  };
+
+  const currentTemplateRecord = (sessionId: string, templateId: string, nowMs: number): TemplateRecord => {
+    const resolution = resolveTemplateInternal(sessionId, templateId, nowMs);
+    if (resolution.status === "available") return resolution.record;
+    throw fixedError(`Template ${templateId} is ${resolution.status}.`);
+  };
+
+  const resolveTemplateInternal = (
+    sessionId: string,
+    templateId: string,
+    nowMs: number,
+  ):
+    | { readonly status: "available"; readonly record: TemplateRecord }
+    | { readonly status: "not_found" | "expired" | "stale" | "session_mismatch" } => {
+    const record = templateRecords.get(templateId);
+    if (!record) return { status: "not_found" };
+    if (record.sessionId !== sessionId) return { status: "session_mismatch" };
+    if (nowMs >= record.expiresAtMs) return { status: "expired" };
+    const session = sessions.get(sessionId);
+    if (!session || session.currentTemplateId !== templateId || session.generation !== record.sessionGeneration) {
+      return { status: "stale" };
+    }
+    return { status: "available", record };
+  };
+
+  return {
+    registerTemplate(request) {
+      const nowMs = readNow();
+      pruneExpired(nowMs);
+      const sessionId = validateSessionId(request?.sessionId, "sessionId");
+      if (typeof request?.createAuthority !== "function") {
+        throw fixedError("createAuthority must be a function.");
+      }
+
+      const session = readSession(sessionId);
+      const templateId = nextOpaqueId("templateId");
+      const sessionGeneration = session.generation + 1;
+      const expiresAtMs = nowMs + F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS;
+      const expiresAt = isoFromEpochMs(expiresAtMs);
+      const authority = cloneFrozen(f7MeasurementImportAuthoritySchema.parse(request.createAuthority({
+        templateId,
+        sessionGeneration,
+        expiresAt,
+      })));
+
+      if (authority.sessionId !== sessionId) {
+        throw fixedError("Authority sessionId must match the owning session.");
+      }
+      if (authority.manifest.templateId !== templateId) {
+        throw fixedError("Authority templateId must match the generated template id.");
+      }
+
+      session.generation = sessionGeneration;
+      session.previewGeneration = 0;
+      session.currentTemplateId = templateId;
+      session.currentPreviewId = undefined;
+
+      templateRecords.set(templateId, {
+        templateId,
+        sessionId,
+        authority,
+        sessionGeneration,
+        insertedSequence: sequence++,
+        expiresAtMs,
+      });
+      evictOldestTemplates();
+
+      return {
+        templateId,
+        authority,
+        expiresAt,
+        sessionGeneration,
+      };
+    },
+
+    resolveTemplate(request) {
+      const nowMs = readNow();
+      const sessionId = validateSessionId(request?.sessionId, "sessionId");
+      const templateId = validateOpaqueId(request?.templateId, "templateId");
+      const resolved = resolveTemplateInternal(sessionId, templateId, nowMs);
+      if (resolved.status !== "available") return resolved;
+      return {
+        status: "available" as const,
+        templateId,
+        authority: resolved.record.authority,
+        expiresAt: isoFromEpochMs(resolved.record.expiresAtMs),
+        sessionGeneration: resolved.record.sessionGeneration,
+      };
+    },
+
+    storePreview(request) {
+      const nowMs = readNow();
+      pruneExpired(nowMs);
+      const sessionId = validateSessionId(request?.sessionId, "sessionId");
+      const templateId = validateOpaqueId(request?.templateId, "templateId");
+      if (typeof request?.createStoredBatch !== "function") {
+        throw fixedError("createStoredBatch must be a function.");
+      }
+
+      const template = currentTemplateRecord(sessionId, templateId, nowMs);
+      const session = readSession(sessionId);
+      const previewId = nextOpaqueId("previewId");
+      const previewGeneration = session.previewGeneration + 1;
+      const expiresAtMs = nowMs + F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS;
+      const expiresAt = isoFromEpochMs(expiresAtMs);
+      const storedBatch = cloneFrozen(f7MeasurementImportStoredBatchSchema.parse(request.createStoredBatch({
+        previewId,
+        expiresAt,
+        sessionGeneration: template.sessionGeneration,
+        previewGeneration,
+      })));
+
+      if (storedBatch.previewId !== previewId) {
+        throw fixedError("Preview batch previewId must match the generated preview id.");
+      }
+      if (storedBatch.expiresAt !== expiresAt) {
+        throw fixedError("Preview batch expiresAt must match the generated expiry.");
+      }
+      if (storedBatch.sessionId !== sessionId) {
+        throw fixedError("Preview batch sessionId must match the owning session.");
+      }
+      if (storedBatch.authority.sessionId !== sessionId) {
+        throw fixedError("Preview batch authority must match the owning session.");
+      }
+      if (storedBatch.authority.manifest.templateId !== templateId) {
+        throw fixedError("Preview batch authority must match the current template id.");
+      }
+      if (storedBatch.authority.authorityDigest !== template.authority.authorityDigest) {
+        throw fixedError("Preview batch authority must match the current authoritative template.");
+      }
+
+      session.previewGeneration = previewGeneration;
+      session.currentPreviewId = previewId;
+
+      previewRecords.set(previewId, {
+        state: "available",
+        previewId,
+        templateId,
+        sessionId,
+        preview: storedBatch,
+        sessionGeneration: template.sessionGeneration,
+        previewGeneration,
+        insertedSequence: sequence++,
+        expiresAtMs,
+      });
+      evictOldestPreviews();
+
+      return {
+        previewId,
+        storedBatch,
+        expiresAt,
+        sessionGeneration: template.sessionGeneration,
+        previewGeneration,
+      };
+    },
+
+    claimPreview(request) {
+      const nowMs = readNow();
+      const sessionId = validateSessionId(request?.sessionId, "sessionId");
+      const previewId = validateOpaqueId(request?.previewId, "previewId");
+      const record = previewRecords.get(previewId);
+      if (!record) return { status: "not_found" };
+      if (record.sessionId !== sessionId) return { status: "session_mismatch" };
+      if (nowMs >= record.expiresAtMs) return { status: "expired" };
+
+      const session = sessions.get(sessionId);
+      if (
+        !session
+        || session.currentTemplateId !== record.templateId
+        || session.generation !== record.sessionGeneration
+        || session.currentPreviewId !== previewId
+        || session.previewGeneration !== record.previewGeneration
+      ) {
+        return { status: "stale" };
+      }
+      if (record.state === "consumed") return { status: "consumed" };
+
+      record.state = "consumed";
+      return {
+        status: "claimed",
+        previewId,
+        preview: record.preview,
+        expiresAt: isoFromEpochMs(record.expiresAtMs),
+        sessionGeneration: record.sessionGeneration,
+        previewGeneration: record.previewGeneration,
+      };
+    },
+  };
+}
