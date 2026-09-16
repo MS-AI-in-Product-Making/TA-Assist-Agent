@@ -139,6 +139,21 @@ describe("createSurfaceHostClient", () => {
       .rejects.toThrow(/identity|target|mismatch/i);
   });
 
+  it("strictly compares explicit Surface response organization and project before returning readback identity", async () => {
+    const client = createSurfaceHostClient({
+      tools: [tool("mcp_surface_mcp_p_get_work_item"), tool("mcp_surface_mcp_p_list_work_item_comments"), tool("mcp_surface_mcp_p_update_work_item")],
+      invoke: vi.fn(async (name: string) => {
+        if (name.endsWith("p_get_work_item")) {
+          return { text: JSON.stringify({ id: 42, rev: 7, organization: "OTHERORG", project: "Other Project", fields: {} }) };
+        }
+        throw new Error(`Unexpected tool ${name}`);
+      }),
+    });
+
+    await expect(client.readWorkItem("https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42"))
+      .rejects.toThrow(/identity|target|mismatch/i);
+  });
+
   it("reconciles an interrupted write using read-only Surface calls without replay", async () => {
     const preview = [
       "# TA Drawing Traceability Review",

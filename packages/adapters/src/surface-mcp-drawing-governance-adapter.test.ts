@@ -144,6 +144,23 @@ describe("createSurfaceMcpDrawingGovernanceAdapter", () => {
     expect(fake.invocations).not.toContain("createWorkItem");
   });
 
+  it.each([
+    ["organization", { organization: "fabrikam", project: "Devices", workItemId: 1119604 }],
+    ["project", { organization: "contoso", project: "Other Project", workItemId: 1119604 }],
+    ["id", { organization: "contoso", project: "Devices", workItemId: 1119605 }],
+  ] as const)("blocks prepare when Surface readback identity differs by %s", async (_field, targetIdentity) => {
+    const adapter = createSurfaceMcpDrawingGovernanceAdapter(createClient({
+      ownerReference: "owner-ref",
+      targetIdentity,
+    }).client);
+
+    await expect(adapter.prepare(linkRequest())).resolves.toMatchObject({
+      status: "blocked",
+      reasonCode: "target_identity_mismatch",
+      workItemReference: "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604",
+    });
+  });
+
   it("prepares a version-bound line diff without writing", async () => {
     const fake = createClient({ ownerReference: "owner-ref" });
     const adapter = createSurfaceMcpDrawingGovernanceAdapter(fake.client);
