@@ -761,6 +761,9 @@ export function confirmF7FactorSetup(request: {
       ...(candidate.partNumber === undefined ? {} : { partNumber: candidate.partNumber }),
       ...(candidate.dimId === undefined ? {} : { dimId: candidate.dimId }),
       ...(candidate.userAdded === true ? { userAdded: true as const } : {}),
+      ...(confirmation.componentCategory === undefined
+        ? {}
+        : { componentCategory: confirmation.componentCategory }),
       unit,
       unitSource,
       designNominal: confirmation.designNominal,

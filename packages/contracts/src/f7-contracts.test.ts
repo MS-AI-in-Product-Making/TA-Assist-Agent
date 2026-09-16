@@ -955,6 +955,26 @@ describe("F7 phase 1 factor contracts", () => {
     }
   });
 
+  it("accepts only controlled optional component categories in factor confirmations", () => {
+    const confirmation = {
+      factorCandidateId: SHA256,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      confirmed: true,
+    } as const;
+
+    expect(f7FactorSetupConfirmationSchema.parse(confirmation)).toEqual(confirmation);
+    expect(f7FactorSetupConfirmationSchema.parse({
+      ...confirmation,
+      componentCategory: "battery-cts",
+    }).componentCategory).toBe("battery-cts");
+    expect(f7FactorSetupConfirmationSchema.safeParse({
+      ...confirmation,
+      componentCategory: "custom battery category",
+    }).success).toBe(false);
+  });
+
   it("requires confidential snapshot classification and rejects public", () => {
     const baseSnapshot = {
       contractId: "f7-analysis-result-v1",
@@ -1079,6 +1099,14 @@ describe("F7 phase 1 factor contracts", () => {
     } as const;
 
     expect(f7FactorEvidenceSchema.parse(valid)).toEqual(valid);
+    expect(f7FactorEvidenceSchema.parse({
+      ...valid,
+      componentCategory: "cover-fit-and-function",
+    }).componentCategory).toBe("cover-fit-and-function");
+    expect(f7FactorEvidenceSchema.safeParse({
+      ...valid,
+      componentCategory: "custom cover category",
+    }).success).toBe(false);
     expect(
       f7FactorEvidenceSchema.safeParse({
         ...valid,

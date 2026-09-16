@@ -8,6 +8,7 @@ import {
 import type {
   WorksheetSelectionConfirmation,
 } from "./contracts.js";
+import { processRequirementComponentCategorySchema } from "./process-requirements-contracts.js";
 
 const sha256LowerSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const finiteNumberSchema = z.number().finite();
@@ -292,6 +293,7 @@ export const f7FactorSetupConfirmationSchema = z
     factorCandidateId: sha256LowerSchema,
     factorName: z.string().trim().min(1).optional(),
     userAdded: z.literal(true).optional(),
+    componentCategory: processRequirementComponentCategorySchema.optional(),
     ...editableFactorSpecificationFields,
     longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor.optional(),
     sigmaLevel: f7FactorCalculationControlFields.sigmaLevel.optional(),
@@ -325,6 +327,7 @@ export const f7FactorEvidenceSchema = z
     partNumber: factorTraceabilitySchema.optional(),
     dimId: factorTraceabilitySchema.optional(),
     userAdded: z.literal(true).optional(),
+    componentCategory: processRequirementComponentCategorySchema.optional(),
     unit: z.string().trim().min(1),
     unitSource: f7UnitSourceSchema,
     ...editableFactorSpecificationFields,

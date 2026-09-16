@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { typedErrorSchema } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "./test-support.js";
 import { readOoxmlWorkbook } from "./ooxml-reader.js";
@@ -9,6 +9,8 @@ import {
   createF7WorkbookImport,
   extractF7FactorCandidates,
 } from "./f7-excel-adapter.js";
+
+vi.mock("@ai-assist/contracts", () => import("../../contracts/src/index.js"));
 
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const GOLDEN_CANDIDATE_IDS = [
@@ -657,6 +659,53 @@ describe("F7 interim excel adapter", () => {
       oneSigma: 0.015,
     });
     expect(result.factors[1]?.calculatedMean).toBeCloseTo(0.42, 12);
+  });
+
+  it("projects controlled component categories without changing factor identity", () => {
+    const workbookBytes = buildWorkbook();
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const existingConfirmation = confirmCandidates(extracted)[0]!;
+    const userFactorId = "b".repeat(64);
+    const userConfirmation = {
+      factorCandidateId: userFactorId,
+      factorName: "User stack gap",
+      userAdded: true as const,
+      designNominal: 0.4,
+      upperTolerance: 0.08,
+      lowerTolerance: -0.04,
+      componentCategory: "engagement-or-assembly-feature" as const,
+      confirmed: true as const,
+    };
+
+    const categorized = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: [{
+        ...existingConfirmation,
+        componentCategory: "battery-cts",
+      }, userConfirmation],
+    });
+    const recategorized = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: [{
+        ...existingConfirmation,
+        componentCategory: "cover-fit-and-function",
+      }],
+    });
+    const uncategorized = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: [existingConfirmation],
+    });
+
+    expect(categorized.factors[0]?.componentCategory).toBe("battery-cts");
+    expect(categorized.factors[1]?.componentCategory).toBe("engagement-or-assembly-feature");
+    expect(uncategorized.factors[0]).not.toHaveProperty("componentCategory");
+    expect(recategorized.factors[0]?.factorId).toBe(categorized.factors[0]?.factorId);
+    expect(uncategorized.factors[0]?.factorId).toBe(categorized.factors[0]?.factorId);
   });
 
   it("rejects duplicate and ungoverned unknown factor confirmations", () => {
