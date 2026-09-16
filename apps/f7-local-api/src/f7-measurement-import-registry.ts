@@ -123,6 +123,33 @@ function cloneFrozen<T>(value: T): T {
   return deepFreeze(structuredClone(value));
 }
 
+function structurallyEqualJsonLike(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null) return false;
+  if (typeof left !== "object" || typeof right !== "object") return false;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (!structurallyEqualJsonLike(left[index], right[index])) return false;
+    }
+    return true;
+  }
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (let index = 0; index < leftKeys.length; index += 1) {
+    const leftKey = leftKeys[index];
+    const rightKey = rightKeys[index];
+    if (leftKey !== rightKey) return false;
+    if (!structurallyEqualJsonLike(leftRecord[leftKey!], rightRecord[rightKey!])) return false;
+  }
+  return true;
+}
+
 function validateSessionId(value: string, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw fixedError(`${name} must be a non-empty string.`);
@@ -362,8 +389,14 @@ export function createF7MeasurementImportRegistry(dependencies: {
       if (storedBatch.authority.manifest.templateId !== templateId) {
         throw fixedError("Preview batch authority must match the current template id.");
       }
-      if (storedBatch.authority.authorityDigest !== template.authority.authorityDigest) {
-        throw fixedError("Preview batch authority must match the current authoritative template.");
+      if (storedBatch.sessionStateDigest !== template.authority.sessionStateDigest) {
+        throw fixedError("Preview batch sessionStateDigest must match the registered authority session state digest.");
+      }
+      if (storedBatch.factorSetDigest !== template.authority.manifest.factorSetDigest) {
+        throw fixedError("Preview batch factorSetDigest must match the registered authority factor set digest.");
+      }
+      if (!structurallyEqualJsonLike(storedBatch.authority, template.authority)) {
+        throw fixedError("Preview batch authority must exactly match the registered authoritative template.");
       }
 
       session.previewGeneration = previewGeneration;

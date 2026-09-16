@@ -91,6 +91,8 @@ function makeStoredBatch(input: {
   previewId: string;
   expiresAt: string;
   authority: F7MeasurementImportAuthority;
+  sessionStateDigest?: string;
+  factorSetDigest?: string;
   factorIds?: readonly string[];
 }): F7MeasurementImportStoredBatch {
   const factorIds = input.factorIds ?? input.authority.manifest.factors.slice(0, 1).map((factor) => factor.factorId);
@@ -140,8 +142,8 @@ function makeStoredBatch(input: {
     previewId: input.previewId,
     sessionId: input.sessionId ?? input.authority.sessionId,
     expiresAt: input.expiresAt,
-    sessionStateDigest: input.authority.sessionStateDigest,
-    factorSetDigest: input.authority.manifest.factorSetDigest,
+    sessionStateDigest: input.sessionStateDigest ?? input.authority.sessionStateDigest,
+    factorSetDigest: input.factorSetDigest ?? input.authority.manifest.factorSetDigest,
     authority: input.authority,
     replacementFactorIds: factorIds.slice(),
     factors,
@@ -525,5 +527,54 @@ describe("createF7MeasurementImportRegistry", () => {
         authority: template.authority,
       }),
     })).toThrow(/stale/i);
+  });
+
+  it("rejects forged preview authority payloads even when ids and authority digest are replayed", () => {
+    const registry = createF7MeasurementImportRegistry({
+      now: () => BASE_TIME,
+      createId: createIdSource(["1".repeat(32), "2".repeat(32), "3".repeat(32), "4".repeat(32)]),
+    });
+    const template = registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthority({ templateId }),
+    });
+
+    const forgedAuthority = structuredClone(template.authority);
+    forgedAuthority.manifest.factors[0]!.factorName = "Forged Factor Name";
+
+    expect(() => registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        previewId,
+        expiresAt,
+        authority: forgedAuthority,
+      }),
+    })).toThrow(/authorit/i);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "2".repeat(32) })).toEqual({ status: "not_found" });
+
+    expect(() => registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        previewId,
+        expiresAt,
+        authority: template.authority,
+        sessionStateDigest: "f".repeat(64),
+      }),
+    })).toThrow(/session.*digest/i);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "3".repeat(32) })).toEqual({ status: "not_found" });
+
+    expect(() => registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        previewId,
+        expiresAt,
+        authority: template.authority,
+        factorSetDigest: "e".repeat(64),
+      }),
+    })).toThrow(/factor.*digest/i);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: "4".repeat(32) })).toEqual({ status: "not_found" });
   });
 });
