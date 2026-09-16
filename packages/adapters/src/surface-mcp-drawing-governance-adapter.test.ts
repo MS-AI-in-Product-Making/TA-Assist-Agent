@@ -10,6 +10,7 @@ function createClient(options: {
   ownerReference?: string;
   requestByReference?: string;
   title?: string;
+  targetIdentity?: { readonly organization: string; readonly project: string; readonly workItemId: number };
 } = {}) {
   let commentVersion = "comment-v1";
   let commentContent = "Existing Comment 0";
@@ -21,12 +22,13 @@ function createClient(options: {
     },
     async createWorkItem() {
       invocations.push("createWorkItem");
-      return { workItemReference: "WI-created" };
+      return { workItemReference: "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604" };
     },
     async readWorkItem() {
       invocations.push("readWorkItem");
       return {
         version: "work-item-v1",
+        targetIdentity: options.targetIdentity ?? { organization: "contoso", project: "Devices", workItemId: 1119604 },
         title: options.title,
         ownerReference: options.ownerReference,
         requestByReference: options.requestByReference ?? "request-by-ref",
@@ -56,7 +58,7 @@ function createClient(options: {
 function linkRequest() {
   return {
     mode: "existing" as const,
-    workItemReference: "WI-1102392",
+    workItemReference: "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604",
     nextContent: "Existing Comment 0\n\n| Drawing | DIM ID |\n| --- | --- |\n| DRAW-A | 307 |",
     factorCount: 1,
   };
@@ -134,9 +136,10 @@ describe("createSurfaceMcpDrawingGovernanceAdapter", () => {
     const fake = createClient({ ownerReference: "sponsor@example.com", title: createRequest().title });
     const adapter = createSurfaceMcpDrawingGovernanceAdapter(fake.client);
 
-    await expect(adapter.prepare({ ...createRequest(), workItemReference: "WI-created" })).resolves.toMatchObject({
+    const workItemReference = "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604";
+    await expect(adapter.prepare({ ...createRequest(), workItemReference })).resolves.toMatchObject({
       status: "confirmation_required",
-      workItemReference: "WI-created",
+      workItemReference,
     });
     expect(fake.invocations).not.toContain("createWorkItem");
   });
@@ -149,7 +152,7 @@ describe("createSurfaceMcpDrawingGovernanceAdapter", () => {
 
     expect(prepared).toMatchObject({
       status: "confirmation_required",
-      workItemReference: "WI-1102392",
+      workItemReference: "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604",
       commentReference: "comment-0",
       expectedVersion: "comment-v1",
       beforeContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -190,13 +193,47 @@ describe("createSurfaceMcpDrawingGovernanceAdapter", () => {
     const receipt = await adapter.execute(prepared);
 
     expect(receipt).toEqual({
-      status: "updated",
-      workItemReference: "WI-1102392",
-      commentReference: "comment-0",
-      version: "comment-v2",
-      contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      operation: "updated",
+      targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+      verifiedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
     expect(fake.invocations.filter((name) => name === "updateCommentZero")).toHaveLength(1);
     expect(receipt).not.toHaveProperty("content");
+  });
+
+  it("returns structured readback identity without the validation URL", async () => {
+    const validatedTargetUrl = "https://dev.azure.com/contoso/Devices/_workitems/edit/1119604";
+    const fake = createClient({ ownerReference: "owner-ref" });
+    const adapter = createSurfaceMcpDrawingGovernanceAdapter(fake.client);
+    const prepared = await adapter.prepare({ ...linkRequest(), workItemReference: validatedTargetUrl });
+    if (prepared.status !== "confirmation_required") throw new Error("Expected confirmation payload.");
+
+    const receipt = await adapter.execute(prepared);
+
+    expect(receipt).toMatchObject({
+      operation: "updated",
+      targetIdentity: {
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+      verifiedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(receipt).not.toHaveProperty("url");
+    expect(receipt).not.toHaveProperty("workItemReference");
+  });
+
+  it("executes a confirmed write with a fresh adapter instance", async () => {
+    const fake = createClient({ ownerReference: "owner-ref" });
+    const prepared = await createSurfaceMcpDrawingGovernanceAdapter(fake.client).prepare(linkRequest());
+    if (prepared.status !== "confirmation_required") throw new Error("Expected confirmation payload.");
+
+    const receipt = await createSurfaceMcpDrawingGovernanceAdapter(fake.client).execute(prepared);
+
+    expect(receipt).toMatchObject({
+      operation: "updated",
+      targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+    });
+    expect(fake.invocations.filter((name) => name === "updateCommentZero")).toHaveLength(1);
   });
 });

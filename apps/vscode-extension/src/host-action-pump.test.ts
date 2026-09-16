@@ -38,7 +38,7 @@ describe("pumpOneHostAction", () => {
   it("executes a separately confirmed Surface write action", async () => {
     const confirmation = { status: "confirmation_required" as const, workItemReference: "WI-1", ownerReference: "owner", commentReference: "C0", expectedVersion: "1", beforeContentHash: "b".repeat(64), nextContent: "next", factorCount: 1, confirmationHash: "a".repeat(64), diff: [{ before: "before", after: "next", changed: true }] };
     const request = { contractVersion: "f8-host-action-request-v1" as const, actionId: "write-a", sessionId: SESSION_ID, expectedRevision: 2, expiresAt: "2026-08-25T01:00:00.000Z", kind: "surface_write" as const, validationActionId: "validate-a", confirmationHash: confirmation.confirmationHash, expectedTargetVersion: "ado-decision-v1", confirmation };
-    const execute = vi.fn(async () => ({ status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: "c".repeat(64) } } }));
+    const execute = vi.fn(async () => ({ status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { operation: "updated" as const, targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 }, verifiedAt: "2026-09-16T08:30:12.000Z" } } }));
     const submit = vi.fn(async () => undefined);
     await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: request.actionId }, { hostInstanceId: "vscode-host", claim: async () => ({ actionId: request.actionId, request, hostInstanceId: "vscode-host", leaseId: "lease-write" }), execute, submit })).resolves.toBe("submitted");
     expect(execute).toHaveBeenCalledOnce();

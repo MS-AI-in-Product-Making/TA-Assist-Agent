@@ -32,7 +32,11 @@ describe("createSurfaceHostClient", () => {
 
     const url = "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42";
     await expect(client.listCapabilities()).resolves.toEqual(["workItems.read", "workItems.comments.read", "workItems.comments.update"]);
-    await expect(client.readWorkItem(url)).resolves.toEqual({ version: "7", ownerReference: "owner@example.com" });
+    await expect(client.readWorkItem(url)).resolves.toEqual({
+      version: "7",
+      targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+      ownerReference: "owner@example.com",
+    });
     await expect(client.readCommentZero(url)).resolves.toEqual({ commentReference: "10", version: "1", content: "before" });
     await expect(client.updateCommentZero({ workItemReference: url, commentReference: "10", expectedVersion: "1", content: "after" })).resolves.toEqual({ version: "1" });
     expect(invoke).toHaveBeenCalledWith("mcp_surface_mcp_p_update_work_item", { organization: "MSFTDEVICES", work_item_id: 42, requestBody: [{ op: "add", path: "/fields/System.History", value: "after" }] });
@@ -85,7 +89,12 @@ describe("createSurfaceHostClient", () => {
     ]);
     const created = await client.createWorkItem({ title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx", sponsorEmail: "sponsor@example.com" });
     expect(created).toEqual({ workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42" });
-    await expect(client.readWorkItem(created.workItemReference)).resolves.toEqual({ version: "7", title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx", requestByReference: "requester@example.com" });
+    await expect(client.readWorkItem(created.workItemReference)).resolves.toEqual({
+      version: "7",
+      targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+      title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx",
+      requestByReference: "requester@example.com",
+    });
     await expect(client.updateCommentZero({ workItemReference: created.workItemReference, commentReference: "10", expectedVersion: "1", content: canonicalMarkdown })).resolves.toEqual({ version: "2" });
     expect(invoke).toHaveBeenCalledWith("mcp_surface_mcp_p_update_work_item", {
       organization: "MSFTDEVICES",
@@ -115,6 +124,19 @@ describe("createSurfaceHostClient", () => {
       invoke: vi.fn(),
     });
     await expect(withoutCreate.createWorkItem({ title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" })).rejects.toThrow(/unavailable|missing/i);
+  });
+
+  it("rejects a temporary validation URL whose identity differs from Surface readback", async () => {
+    const client = createSurfaceHostClient({
+      tools: [tool("mcp_surface_mcp_p_get_work_item"), tool("mcp_surface_mcp_p_list_work_item_comments"), tool("mcp_surface_mcp_p_update_work_item")],
+      invoke: vi.fn(async (name: string) => {
+        if (name.endsWith("p_get_work_item")) return { text: JSON.stringify({ id: 43, rev: 7, fields: {} }) };
+        throw new Error(`Unexpected tool ${name}`);
+      }),
+    });
+
+    await expect(client.readWorkItem("https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42"))
+      .rejects.toThrow(/identity|target|mismatch/i);
   });
 
   it("reconciles an interrupted write using read-only Surface calls without replay", async () => {

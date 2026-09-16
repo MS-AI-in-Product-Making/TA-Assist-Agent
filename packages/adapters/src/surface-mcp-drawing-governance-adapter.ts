@@ -11,6 +11,7 @@ export interface SurfaceMcpDrawingGovernanceClient {
   createWorkItem(input: { readonly title: string; readonly sponsorEmail: string }): Promise<{ readonly workItemReference: string }>;
   readWorkItem(reference: string): Promise<{
     readonly version: string;
+    readonly targetIdentity: TargetIdentity;
     readonly title?: string;
     readonly ownerReference?: string;
     readonly requestByReference?: string;
@@ -61,18 +62,24 @@ export interface SurfaceMcpConfirmationPayload {
 
 export type SurfaceMcpPrepareResult = SurfaceMcpConfirmationPayload | {
   readonly status: "blocked";
-  readonly reasonCode: "surface_mcp_capability_missing" | "owner_reference_missing" | "sponsor_assignment_mismatch" | "title_readback_mismatch" | "comment_zero_unavailable";
+  readonly reasonCode: "surface_mcp_capability_missing" | "owner_reference_missing" | "sponsor_assignment_mismatch" | "title_readback_mismatch" | "target_identity_mismatch" | "comment_zero_unavailable";
   readonly missingCapabilities?: readonly SurfaceMcpCapability[];
   readonly workItemReference?: string;
 };
 
-export interface SurfaceMcpUpdateReceipt {
-  readonly status: "updated";
-  readonly workItemReference: string;
-  readonly commentReference: string;
-  readonly version: string;
-  readonly contentHash: string;
+export interface TargetIdentity {
+  readonly organization: string;
+  readonly project: string;
+  readonly workItemId: number;
 }
+
+export interface SurfaceMcpUpdateReceipt {
+  readonly operation: "created" | "updated";
+  readonly targetIdentity: TargetIdentity;
+  readonly verifiedAt: string;
+}
+
+const preparedReceipts = new Map<string, Omit<SurfaceMcpUpdateReceipt, "verifiedAt">>();
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -99,6 +106,28 @@ function codedError(code: "validation_error" | "dependency_error", message: stri
 
 function nonempty(value: string | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function targetIdentityFromReference(reference: string): TargetIdentity | undefined {
+  try {
+    const url = new URL(reference);
+    const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    const marker = segments.findIndex((segment, index) => segment.toLowerCase() === "_workitems" && segments[index + 1]?.toLowerCase() === "edit");
+    const organization = url.hostname.toLowerCase() === "dev.azure.com" ? segments[0] : url.hostname.split(".")[0];
+    const project = url.hostname.toLowerCase() === "dev.azure.com" ? segments[1] : segments[0];
+    const workItemId = marker < 0 ? Number.NaN : Number(segments[marker + 2]);
+    if (url.protocol !== "https:" || !nonempty(organization) || !nonempty(project) || !Number.isInteger(workItemId) || workItemId <= 0) return undefined;
+    return { organization, project, workItemId };
+  } catch {
+    return undefined;
+  }
+}
+
+function sameTargetIdentity(left: TargetIdentity | undefined, right: TargetIdentity): boolean {
+  return left !== undefined
+    && left.organization === right.organization
+    && left.project === right.project
+    && left.workItemId === right.workItemId;
 }
 
 function validateRequest(input: SurfaceMcpPrepareRequest): void {
@@ -138,6 +167,9 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
         workItemReference = (await client.createWorkItem({ title: input.title, sponsorEmail: input.sponsorEmail })).workItemReference;
       }
       const workItem = await client.readWorkItem(workItemReference);
+      if (!sameTargetIdentity(targetIdentityFromReference(workItemReference), workItem.targetIdentity)) {
+        return { status: "blocked", reasonCode: "target_identity_mismatch", workItemReference };
+      }
       if (input.mode === "create" && workItem.title !== input.title) {
         return { status: "blocked", reasonCode: "title_readback_mismatch", workItemReference };
       }
@@ -166,6 +198,10 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
         comment.version,
         input.nextContent,
       ]);
+      preparedReceipts.set(confirmationHash, {
+        operation: input.mode === "create" ? "created" : "updated",
+        targetIdentity: workItem.targetIdentity,
+      });
       return {
         status: "confirmation_required",
         workItemReference,
@@ -190,6 +226,10 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
       if (payload.status !== "confirmation_required" || payload.confirmationHash !== expectedConfirmationHash) {
         throw codedError("validation_error", "Surface MCP confirmation payload does not match prepared content.");
       }
+      const preparedReceipt = preparedReceipts.get(payload.confirmationHash);
+      if (preparedReceipt === undefined) {
+        throw codedError("validation_error", "Surface MCP confirmation payload has no verified target identity.");
+      }
 
       let currentComment;
       try {
@@ -203,9 +243,8 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
         throw codedError("dependency_error", "Comment 0 changed after confirmation was prepared.");
       }
 
-      let updated;
       try {
-        updated = await client.updateCommentZero({
+        await client.updateCommentZero({
           workItemReference: payload.workItemReference,
           commentReference: payload.commentReference,
           expectedVersion: payload.expectedVersion,
@@ -214,12 +253,10 @@ export function createSurfaceMcpDrawingGovernanceAdapter(client: SurfaceMcpDrawi
       } catch {
         throw codedError("dependency_error", "Comment 0 update failed.");
       }
+      preparedReceipts.delete(payload.confirmationHash);
       return {
-        status: "updated",
-        workItemReference: payload.workItemReference,
-        commentReference: payload.commentReference,
-        version: updated.version,
-        contentHash: sha256(payload.nextContent),
+        ...preparedReceipt,
+        verifiedAt: new Date().toISOString(),
       };
     },
   };

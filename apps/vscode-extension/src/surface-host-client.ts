@@ -105,12 +105,16 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 				work_item_id: target.workItemId,
 				expand: "fields",
 			});
+			if (requiredNumber(result, "id") !== target.workItemId) {
+				throw new Error("Surface MCP Work Item readback identity does not match the validation target.");
+			}
 			const fields = record(result.fields, "fields");
 			const title = typeof fields["System.Title"] === "string" ? fields["System.Title"] : undefined;
 			const ownerReference = identity(fields["System.AssignedTo"]);
 			const requestByReference = identity(fields["System.CreatedBy"]);
 			return {
 				version: String(requiredNumber(result, "rev")),
+				targetIdentity: target,
 				...(title === undefined ? {} : { title }),
 				...(ownerReference === undefined ? {} : { ownerReference }),
 				...(requestByReference === undefined ? {} : { requestByReference }),
