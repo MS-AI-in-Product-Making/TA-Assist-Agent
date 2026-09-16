@@ -41,6 +41,13 @@ const REQUEST_CONTEXT = {
   utcOffsetMinutes: -420,
   source: "cli",
 };
+const UPDATED_ADO = {
+  status: "updated",
+  operation: "updated",
+  organization: "contoso",
+  project: "Devices",
+  workItemId: 1119604,
+};
 const interactionLanguage = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -386,6 +393,75 @@ describe("runF6FullValidation", () => {
       multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
       optimizationTargetsDecision: { outcome: "NOT_PROVIDED" },
     });
+  });
+
+  it("binds exact request context and structured ADO identity across report summary and manifest", () => {
+    const context = setup();
+    const updatedF3Report = { modelVersion: "drawing-governance-v3", ado: UPDATED_ADO };
+    context.deps.loadBundle.mockReturnValue({
+      ...context.deps.loadBundle(),
+      f3Report: updatedF3Report,
+    });
+    context.deps.createFinalReport = vi.fn((input) => ({
+      ...context.finalReport,
+      markdown: [
+        "# F6 final report",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        "| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |",
+        "",
+        `[Updated Work Item #${UPDATED_ADO.workItemId}](https://dev.azure.com/${UPDATED_ADO.organization}/${UPDATED_ADO.project}/_workitems/edit/${UPDATED_ADO.workItemId})`,
+        "",
+      ].join("\n"),
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    expect(readdirSync(context.runRoot).sort()).toEqual([
+      "Feature6-Optimization.json",
+      "Feature6-Report.md",
+      "Feature6-Report.pdf",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    expect(context.deps.createFinalReport).toHaveBeenCalledWith(expect.objectContaining({
+      f3Report: updatedF3Report,
+      analysisRequestContext: REQUEST_CONTEXT,
+    }), expect.anything());
+    const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    const markdown = readFileSync(path.join(context.runRoot, "Feature6-Report.md"), "utf8");
+    expect(summary.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    expect(manifest.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    expect(summary.adoTraceability).toEqual(UPDATED_ADO);
+    expect(manifest.adoTraceability).toEqual(UPDATED_ADO);
+    expect(markdown).toContain(`[Updated Work Item #${UPDATED_ADO.workItemId}](https://dev.azure.com/${UPDATED_ADO.organization}/${UPDATED_ADO.project}/_workitems/edit/${UPDATED_ADO.workItemId})`);
+  });
+
+  it("keeps not_requested ADO traceability unlinked in the report artifacts", () => {
+    const context = setup();
+    const f3Report = { modelVersion: "drawing-governance-v3", ado: { status: "not_requested" } };
+    context.deps.loadBundle.mockReturnValue({
+      ...context.deps.loadBundle(),
+      f3Report,
+    });
+    context.deps.createFinalReport = vi.fn(() => ({
+      ...context.finalReport,
+      markdown: "# F6 final report\n\nMISSING - ADO traceability was not initiated.\n",
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    const markdown = readFileSync(path.join(context.runRoot, "Feature6-Report.md"), "utf8");
+    expect(summary.adoTraceability).toEqual({ status: "not_requested" });
+    expect(manifest.adoTraceability).toEqual({ status: "not_requested" });
+    expect(markdown).toContain("MISSING - ADO traceability was not initiated.");
+    expect(markdown).not.toContain("/_workitems/edit/");
   });
 
   it("rejects a final report with a provenance display column before successful artifact writes", () => {

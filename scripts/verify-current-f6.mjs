@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import { f6ReadableOptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { worstDisposition } from "./f6-final-report.mjs";
 
@@ -108,6 +109,60 @@ function sameStringSet(left, right) {
 
 function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isCurrentArtifact(manifest, optimization) {
+  return manifest?.artifactSetVersion === "f6-artifact-set-v3"
+    && optimization?.optimizationVersion === "f6-optimization-v4";
+}
+
+function validateCurrentRequestContext(summary, manifest) {
+  const summaryContext = analysisRequestContextSchema.safeParse(summary?.analysisRequestContext);
+  const manifestContext = analysisRequestContextSchema.safeParse(manifest?.analysisRequestContext);
+  return summaryContext.success
+    && manifestContext.success
+    && sameJson(summaryContext.data, manifestContext.data);
+}
+
+function validateAdoTraceabilityShape(value) {
+  if (value === undefined) return true;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value).sort();
+  switch (value.status) {
+    case "not_requested":
+    case "draft_ready":
+    case "confirmation_required":
+      return sameStrings(keys, ["status"]);
+    case "updated":
+      return sameStrings(keys, ["operation", "organization", "project", "status", "workItemId"])
+        && (value.operation === "created" || value.operation === "updated")
+        && typeof value.organization === "string"
+        && value.organization.length > 0
+        && typeof value.project === "string"
+        && value.project.length > 0
+        && Number.isInteger(value.workItemId)
+        && value.workItemId > 0;
+    case "blocked":
+    case "failed":
+      return sameStrings(keys, value.reasonCode === undefined ? ["status"] : ["reasonCode", "status"])
+        && (value.reasonCode === undefined || (typeof value.reasonCode === "string" && value.reasonCode.length > 0));
+    default:
+      return false;
+  }
+}
+
+function adoTraceabilityLink(ado) {
+  const operation = ado.operation === "created" ? "Created" : "Updated";
+  return `[${operation} Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
+}
+
+function validateCurrentAdoTraceability(summary, manifest, finalReportMarkdown) {
+  const summaryAdo = summary?.adoTraceability;
+  const manifestAdo = manifest?.adoTraceability;
+  if (summaryAdo === undefined && manifestAdo === undefined) return true;
+  if (!sameJson(summaryAdo, manifestAdo) || !validateAdoTraceabilityShape(summaryAdo)) return false;
+  if (summaryAdo.status === "updated") return finalReportMarkdown.includes(adoTraceabilityLink(summaryAdo));
+  return !finalReportMarkdown.includes("/_workitems/edit/");
 }
 
 function sameSourceMap(left, right) {
@@ -405,6 +460,13 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");
     if (summary?.status !== expectedStatus || !validateRunSummary(summary, optimization)) return rejected("run_summary_invalid");
+    const finalReportMarkdownPath = path.join(runRoot, "Feature6-Report.md");
+    const finalReportMarkdown = readFileSync(finalReportMarkdownPath, "utf8");
+    if (isCurrentArtifact(manifest, optimization)
+      && (!validateCurrentRequestContext(summary, manifest)
+        || !validateCurrentAdoTraceability(summary, manifest, finalReportMarkdown))) {
+      return rejected("artifact_validation_failed");
+    }
     switch (optimization.optimizationVersion) {
       case "f6-optimization-v4":
         if (!validateV4SourcesAndLineage(optimization, summary)) return rejected("artifact_validation_failed");
@@ -421,7 +483,6 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
     if (!validateReportSummary(summary, optimization)) return rejected("report_summary_invalid");
     if (!validateInputDecisions(summary, manifest, optimization)) return rejected("input_decisions_invalid");
 
-    const finalReportMarkdownPath = path.join(runRoot, "Feature6-Report.md");
     return {
       status: "accepted",
       outputDirectory: runRoot,

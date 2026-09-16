@@ -255,7 +255,7 @@ function safeSources(sourceReferences: Record<string, { artifact: string; conten
   }]));
 }
 
-function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown, analysisRequestContext?: unknown, failureDetail?: F6OptimizationResult["failureDetail"]) {
+function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown, analysisRequestContext?: unknown, adoTraceability?: unknown, failureDetail?: F6OptimizationResult["failureDetail"]) {
   return {
     contractVersion: "v1",
     artifactSetVersion: layout.artifactSetVersion,
@@ -266,9 +266,14 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     ...(inputDecisions === undefined ? {} : { inputDecisions }),
     ...(interactionLanguage === undefined ? {} : { interactionLanguage }),
     ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
+    ...(adoTraceability === undefined ? {} : { adoTraceability }),
     ...(failureDetail === undefined ? {} : { failureDetail }),
     artifacts,
   };
+}
+
+function adoTraceability(f3Report: any): unknown | undefined {
+  return f3Report?.modelVersion === "drawing-governance-v3" ? f3Report.ado : undefined;
 }
 
 function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationResult["failureDetail"] | undefined {
@@ -305,7 +310,7 @@ function validInteractionLanguage(value: unknown): boolean {
 function failedResult(layout: F6Layout, paths: ReturnType<typeof outputPaths>, artifacts: Record<string, string>, reasonCode: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>, failureDetail?: F6OptimizationResult["failureDetail"]): F6OptimizationResult {
   try {
     assertBoundary(boundary, dependencies);
-    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode, undefined, undefined, undefined, failureDetail)), boundary, staging, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode, undefined, undefined, undefined, undefined, failureDetail)), boundary, staging, dependencies);
     return { featureId: "F6", status: "failed", reasonCode, ...(failureDetail === undefined ? {} : { failureDetail }), outputDirectory: layout.runRoot, manifestPath: paths.manifest };
   } catch {
     return { featureId: "F6", status: "failed", reasonCode: "workflow_output_failed", outputDirectory: layout.runRoot };
@@ -492,6 +497,7 @@ export function runF6Optimization(
       finalReportPdf,
     };
     const workflowStatus = optimization.runStatus.toLowerCase() as F6OptimizationResult["status"];
+    const structuredAdoTraceability = adoTraceability(loaded.f3Report);
     const summary = {
       contractVersion: "v1",
       artifactSetVersion: layout.artifactSetVersion,
@@ -501,6 +507,7 @@ export function runF6Optimization(
       inputDecisions,
       interactionLanguage: request.interactionLanguage,
       analysisRequestContext: parsedRequestContext.data,
+      ...(structuredAdoTraceability === undefined ? {} : { adoTraceability: structuredAdoTraceability }),
       counts: optimization.summary,
       hashes: Object.fromEntries(Object.entries(contents).map(([key, content]) => [`${key}Sha256`, sha256(content)])),
       reportSummary: finalReport.reportSummary,
@@ -514,7 +521,7 @@ export function runF6Optimization(
     }
     atomicWrite(paths.runSummary, json(summary), boundary, staging, writeDependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions, request.interactionLanguage, parsedRequestContext.data)), boundary, staging, writeDependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions, request.interactionLanguage, parsedRequestContext.data, structuredAdoTraceability)), boundary, staging, writeDependencies);
     context.emit({ kind: "artifact_written", featureId: "F6", stage: "report", timestamp: new Date().toISOString(), path: paths.optimizationJson });
     return {
       featureId: "F6",
