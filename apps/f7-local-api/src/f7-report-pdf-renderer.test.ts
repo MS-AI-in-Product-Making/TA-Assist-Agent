@@ -191,6 +191,9 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("<h2>TA interpretation and optimization report</h2><p class=\"subtle\">Design &lt;unsafe&gt; 装配.xlsx · TA / Result</p>");
 
     const orderedHeadings = [
+      "Engineering Inputs",
+      "Factor Setup",
+      "Dimension Chain",
       "Governed result",
       "Monte Carlo output distribution",
       "TA Comparison Matrix",
@@ -198,20 +201,31 @@ describe("F7 report PDF renderer", () => {
       "Factor Setup vs Monte Carlo TA",
       "Interpretation and optimization direction",
       "Governed assessment",
-      "Engineering Summary",
-      "Root Cause Analysis",
-      "Engineering Risk",
-      "Suggested Action Sequence",
-      "Validation Requirements",
-      "Evidence Disclosure",
-      "Reproducibility Evidence",
-      "Factor evidence",
     ];
     let previousIndex = -1;
     for (const heading of orderedHeadings) {
       const headingIndex = html.indexOf(heading);
       expect(headingIndex, `${heading} should follow the previous governed section`).toBeGreaterThan(previousIndex);
       previousIndex = headingIndex;
+    }
+
+    const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    expect(factorSetupTable).toBeDefined();
+    for (const heading of [
+      "Item",
+      "Factor",
+      "Design nominal",
+      "Upper tolerance",
+      "Lower tolerance",
+      "Long-term safety factor",
+      "Sigma level",
+      "Setup distribution",
+      "Source mode",
+    ]) {
+      expect(factorSetupTable).toContain(`<th>${heading}</th>`);
+    }
+    for (const value of ["<td>1</td>", "<td>Factor &lt;A&gt;</td>", "<td>0.2</td>", "<td>-0.2</td>", "<td>3</td>", "<td>Normal</td>", "<td>Baseline assumption</td>"]) {
+      expect(factorSetupTable).toContain(value);
     }
 
     expect(html).toContain("data-monte-carlo-chart");
@@ -266,14 +280,77 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("Applicability: one-dimensional");
     expect(html).toContain("Governed assessment");
     expect(html).toContain("This statistical assessment is not a design or production Release/Hold decision.");
-    expect(html).toContain("Root Cause Analysis");
-    expect(html).toContain("Engineering Risk");
-    expect(html).toContain("Suggested Action Sequence");
-    expect(html).toContain("Validation Requirements");
-    expect(html).toContain("Evidence Disclosure");
-    expect(html).toContain("Reproducibility Evidence");
+    for (const removed of [
+      "Governed engineering detail",
+      "Engineering Summary",
+      "Root Cause Analysis",
+      "Engineering Risk",
+      "Suggested Action Sequence",
+      "Validation Requirements",
+      "Evidence Disclosure",
+      "Reproducibility Evidence",
+      "Factor evidence",
+    ]) {
+      expect(html).not.toContain(removed);
+    }
     expect(html).not.toMatch(/(?:NaN|-?Infinity)/);
     expect(html).not.toMatch(/<script|https?:\/\//i);
+  });
+
+  it("renders mixed-sign factors in report order with one finite segment and one closure", () => {
+    const report = reportFixture();
+    const baseFactor = report.factors[0]!;
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: [
+        { ...baseFactor, factorId: "a".repeat(64), factorName: "Positive <A>", designNominal: 10 },
+        { ...baseFactor, factorId: "b".repeat(64), factorName: "Negative & B", designNominal: -5 },
+        { ...baseFactor, factorId: "c".repeat(64), factorName: "Zero > C", designNominal: 0 },
+      ],
+    });
+    const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
+
+    expect(dimensionChain).toBeDefined();
+    expect(dimensionChain?.match(/data-dimension-chain-segment/g)).toHaveLength(3);
+    expect(dimensionChain?.match(/data-direction="additive"/g)).toHaveLength(1);
+    expect(dimensionChain?.match(/data-direction="subtractive"/g)).toHaveLength(1);
+    expect(dimensionChain?.match(/data-direction="zero"/g)).toHaveLength(1);
+    expect(dimensionChain).toContain("Positive &lt;A&gt;");
+    expect(dimensionChain).toContain("Negative &amp; B");
+    expect(dimensionChain).toContain("Zero &gt; C");
+    expect(dimensionChain?.match(/data-dimension-chain-closure/g)).toHaveLength(1);
+    expect(dimensionChain?.indexOf("Positive &lt;A&gt;")).toBeLessThan(dimensionChain?.indexOf("Negative &amp; B") ?? -1);
+    expect(dimensionChain?.indexOf("Negative &amp; B")).toBeLessThan(dimensionChain?.indexOf("Zero &gt; C") ?? -1);
+  });
+
+  it("compresses the Dimension Chain when factor magnitudes differ by more than eight times", () => {
+    const report = reportFixture();
+    const baseFactor = report.factors[0]!;
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: [
+        { ...baseFactor, factorId: "a".repeat(64), designNominal: 1 },
+        { ...baseFactor, factorId: "b".repeat(64), designNominal: 1000 },
+      ],
+    });
+
+    expect(html).toContain("data-dimension-chain data-compressed=\"true\"");
+  });
+
+  it("keeps Dimension Chain SVG geometry finite for extreme finite factor values", () => {
+    const report = reportFixture();
+    const baseFactor = report.factors[0]!;
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: [
+        { ...baseFactor, factorId: "a".repeat(64), designNominal: Number.MAX_VALUE },
+        { ...baseFactor, factorId: "b".repeat(64), designNominal: -Number.MAX_VALUE },
+      ],
+    });
+    const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
+
+    expect(dimensionChain).toBeDefined();
+    expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
   });
 
   it("places Setup Mean on a new label row when it overlaps every reference row", () => {
@@ -570,24 +647,19 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("Complete governed evidence.");
     expect(html).toContain("Governed assessment");
     expect(html).toContain("This statistical assessment is not a design or production Release/Hold decision.");
-    const affectedHeadings = [
-      "TA Comparison Matrix",
-      "F0 analysis unavailable",
-      "Engineering Summary",
-      "Root Cause Analysis",
-      "Engineering Risk",
-      "Suggested Action Sequence",
-      "Validation Requirements",
-      "Evidence Disclosure",
-      "Reproducibility Evidence",
-    ];
     const escapedReason = "Governed F0 evidence &lt;not available&gt;.";
-    for (let index = 0; index < affectedHeadings.length - 1; index += 1) {
-      const sectionStart = html.indexOf(affectedHeadings[index]!);
-      const sectionEnd = html.indexOf(affectedHeadings[index + 1]!, sectionStart + 1);
+    for (const [startHeading, endHeading] of [
+      ["TA Comparison Matrix", "TA interpretation and optimization report"],
+      ["F0 analysis unavailable", "Governed assessment"],
+    ] as const) {
+      const sectionStart = html.indexOf(startHeading);
+      const sectionEnd = html.indexOf(endHeading, sectionStart + 1);
       expect(sectionStart).toBeGreaterThan(-1);
       expect(sectionEnd).toBeGreaterThan(sectionStart);
       expect(html.slice(sectionStart, sectionEnd)).toContain(escapedReason);
+    }
+    for (const removed of ["Engineering Summary", "Root Cause Analysis", "Reproducibility Evidence"]) {
+      expect(html).not.toContain(removed);
     }
     expect(html).not.toContain("data-factor-setup-fit");
     expect(html).not.toContain("data-report-ta-comparison");
@@ -606,7 +678,6 @@ describe("F7 report PDF renderer", () => {
     const affectedSections = [
       ["TA Comparison Matrix", "TA interpretation and optimization report"],
       ["F0 analysis unavailable", "Governed assessment"],
-      ["Engineering Summary", "Reproducibility Evidence"],
     ] as const;
 
     for (const [startHeading, endHeading] of affectedSections) {
@@ -616,6 +687,8 @@ describe("F7 report PDF renderer", () => {
       expect(sectionEnd).toBeGreaterThan(sectionStart);
       expect(html.slice(sectionStart, sectionEnd)).toContain(defaultReason);
     }
+    expect(html).not.toContain("Engineering Summary");
+    expect(html).not.toContain("Reproducibility Evidence");
     expect(html).not.toContain("Factor Setup comparison unavailable because governed evidence is incomplete; Monte Carlo outputs remain available.");
     expect(html).not.toContain("data-factor-setup-fit");
     expect(html).not.toContain("Factor Setup assumption and measured-data Monte Carlo comparison");
