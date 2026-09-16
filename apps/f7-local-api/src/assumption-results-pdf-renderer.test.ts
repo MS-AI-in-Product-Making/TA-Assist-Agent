@@ -2,6 +2,7 @@ import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   assumptionResultsPdfRouteRequestSchema,
   encodeRfc5987FileName,
@@ -18,6 +19,17 @@ import {
 
 const INJECTED_TEXT = `<img src=x onerror="alert('unsafe')"> & analysis`;
 const HASH_B = "b".repeat(64);
+
+function canonicalPriorityDefinitions() {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  return processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
+      title: entry.title,
+      message: entry.message,
+    }));
+}
 
 function validRequest(): AssumptionResultsPdfRouteRequest {
   return {
@@ -270,11 +282,7 @@ function representativeCurrentUiRequest(): AssumptionResultsPdfRouteRequest {
       selectedPriority: "P0",
       requiresMeDmAlignment: true,
     },
-    priorityDefinitions: ["P0", "P1", "P2", "P3"].map((priority) => ({
-      priority: priority as "P0" | "P1" | "P2" | "P3",
-      title: `${priority} component priority definition`,
-      message: `${priority} governed component definition.`,
-    })),
+    priorityDefinitions: canonicalPriorityDefinitions(),
   };
 }
 
@@ -745,10 +753,10 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(processSection).toContain("Recommended priority P0");
     expect(processSection).toContain("Final priority requires Microsoft ME/DM alignment.");
     expect(processSection.match(/component priority definition/g)).toHaveLength(4);
-    expect(processSection).toContain("P0 governed component definition.");
-    expect(processSection).toContain("P1 governed component definition.");
-    expect(processSection).toContain("P2 governed component definition.");
-    expect(processSection).toContain("P3 governed component definition.");
+    for (const definition of canonicalPriorityDefinitions()) {
+      expect(processSection).toContain(definition.title);
+      expect(processSection).toContain(definition.message);
+    }
     expect(processSection.indexOf("Recommended priority P0")).toBeLessThan(processSection.indexOf("Guidance"));
     expect(processSection.indexOf("P0 component priority definition")).toBeLessThan(processSection.indexOf("Guidance"));
   });
@@ -759,6 +767,19 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).toContain("TA Process and Requirements");
     expect(html).not.toContain("Recommended priority");
     expect(html).not.toContain("Microsoft ME/DM alignment");
+    expect(html).not.toContain("V3 priority definitions");
+    expect(html).not.toContain("V3 Process Requirements");
+  });
+
+  it("renders the V3 marker when canonical definitions exist without a recommendation", () => {
+    const html = renderAssumptionResultsPdfHtml({
+      ...validRequest(),
+      priorityDefinitions: canonicalPriorityDefinitions(),
+    });
+
+    expect(html).toContain("V3 priority definitions");
+    expect(html).toContain("P0 component priority definition");
+    expect(html).not.toContain("Recommended priority");
   });
 
   it("renders exactly three pages in strict evidence/decision/action order with explicit page breaks", () => {

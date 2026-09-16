@@ -1,10 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   assumptionResultsPdfRouteRequestSchema,
   type AssumptionResultsPdfRouteRequest,
 } from "./assumption-results-pdf-contract.js";
 
 const HASH_A = "a".repeat(64);
+
+function canonicalPriorityDefinitions() {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  return processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
+      title: entry.title,
+      message: entry.message,
+    }));
+}
+
+function canonicalPriorityRecommendation() {
+  return {
+    selectedPriority: "P0" as const,
+    requiresMeDmAlignment: true as const,
+  };
+}
 
 function validRequest(): AssumptionResultsPdfRouteRequest {
   return {
@@ -136,20 +155,18 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
 }
 
 describe("assumptionResultsPdfRouteRequestSchema priority guidance", () => {
-  it("accepts bounded strict optional V3 priority guidance fields and legacy requests without them", () => {
+  it("accepts canonical definitions-only, canonical recommendation with definitions, and legacy requests", () => {
+    const definitions = canonicalPriorityDefinitions();
+
     expect(assumptionResultsPdfRouteRequestSchema.safeParse(validRequest()).success).toBe(true);
     expect(assumptionResultsPdfRouteRequestSchema.safeParse({
       ...validRequest(),
-      priorityRecommendation: {
-        selectedPriority: "P0",
-        requiresMeDmAlignment: true,
-      },
-      priorityDefinitions: [
-        { priority: "P0", title: "P0 component priority definition", message: "Priority 0 covers safety-critical components." },
-        { priority: "P1", title: "P1 component priority definition", message: "Priority 1 covers key function-fit components." },
-        { priority: "P2", title: "P2 component priority definition", message: "Priority 2 covers secondary interfaces." },
-        { priority: "P3", title: "P3 component priority definition", message: "Priority 3 covers low-risk components." },
-      ],
+      priorityDefinitions: definitions,
+    }).success).toBe(true);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityRecommendation: canonicalPriorityRecommendation(),
+      priorityDefinitions: definitions,
     }).success).toBe(true);
   });
 
@@ -178,6 +195,54 @@ describe("assumptionResultsPdfRouteRequestSchema priority guidance", () => {
         message: "Priority 0 covers safety-critical components.",
         unknownField: "unexpected",
       }],
+    }).success).toBe(false);
+  });
+
+  it("rejects empty, partial, oversized, duplicate, or unordered priority definitions", () => {
+    const definitions = canonicalPriorityDefinitions();
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityDefinitions: [],
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityDefinitions: definitions.slice(0, 3),
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityDefinitions: [...definitions, definitions[0]!],
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityDefinitions: [definitions[0]!, definitions[1]!, definitions[1]!, definitions[3]!],
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityDefinitions: [definitions[1]!, definitions[0]!, definitions[2]!, definitions[3]!],
+    }).success).toBe(false);
+  });
+
+  it("rejects recommendation without complete definitions and rejects non-canonical title or message content", () => {
+    const definitions = canonicalPriorityDefinitions();
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityRecommendation: canonicalPriorityRecommendation(),
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityRecommendation: canonicalPriorityRecommendation(),
+      priorityDefinitions: definitions.map((definition, index) => index === 0
+        ? { ...definition, title: "Tampered title" }
+        : definition),
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      priorityRecommendation: canonicalPriorityRecommendation(),
+      priorityDefinitions: definitions.map((definition, index) => index === 1
+        ? { ...definition, message: "Tampered message" }
+        : definition),
     }).success).toBe(false);
   });
 });

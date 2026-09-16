@@ -1,3 +1,4 @@
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import { z } from "zod";
 
 const shortText = z.string().min(1).max(300);
@@ -150,6 +151,35 @@ const priorityDefinitionSchema = z.object({
   message: narrativeText,
 }).strict();
 
+const PRIORITY_SEQUENCE = ["P0", "P1", "P2", "P3"] as const;
+const canonicalPriorityDefinitions = (() => {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  const definitions = processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2),
+      title: entry.title,
+      message: entry.message,
+    }));
+
+  if (definitions.length !== PRIORITY_SEQUENCE.length) {
+    throw new Error("Canonical process-requirements-v3 priority definitions are incomplete.");
+  }
+
+  for (const [index, definition] of definitions.entries()) {
+    const priority = PRIORITY_SEQUENCE[index];
+    if (!priority || definition?.priority !== priority) {
+      throw new Error("Canonical process-requirements-v3 priority definitions are out of order.");
+    }
+  }
+
+  return definitions as ReadonlyArray<{
+    readonly priority: "P0" | "P1" | "P2" | "P3";
+    readonly title: string;
+    readonly message: string;
+  }>;
+})();
+
 const engineeringEvidenceFactorRowSchema = z.object({
   itemNumber: nonNegativeInteger,
   factorName: shortText,
@@ -299,6 +329,58 @@ export const assumptionResultsPdfRouteRequestSchema = z.object({
   processGuidance: z.array(guidanceSchema).max(50),
   engineeringEvidence: engineeringEvidenceSchema,
 }).strict().superRefine((request, context) => {
+  const definitions = request.priorityDefinitions;
+  if (definitions !== undefined) {
+    if (definitions.length !== PRIORITY_SEQUENCE.length) {
+      context.addIssue({
+        code: "custom",
+        message: "priorityDefinitions must include exactly four canonical P0-P3 entries.",
+        path: ["priorityDefinitions"],
+      });
+    } else {
+      for (const [index, definition] of definitions.entries()) {
+        const canonical = canonicalPriorityDefinitions[index];
+        if (!canonical) {
+          context.addIssue({
+            code: "custom",
+            message: "priorityDefinitions must include exactly four canonical P0-P3 entries.",
+            path: ["priorityDefinitions", index],
+          });
+          continue;
+        }
+        if (definition.priority !== canonical.priority) {
+          context.addIssue({
+            code: "custom",
+            message: "priorityDefinitions must be unique and ordered as P0, P1, P2, P3.",
+            path: ["priorityDefinitions", index, "priority"],
+          });
+        }
+        if (definition.title !== canonical.title) {
+          context.addIssue({
+            code: "custom",
+            message: "priorityDefinitions title must match the canonical process requirements content.",
+            path: ["priorityDefinitions", index, "title"],
+          });
+        }
+        if (definition.message !== canonical.message) {
+          context.addIssue({
+            code: "custom",
+            message: "priorityDefinitions message must match the canonical process requirements content.",
+            path: ["priorityDefinitions", index, "message"],
+          });
+        }
+      }
+    }
+  }
+
+  if (request.priorityRecommendation !== undefined && definitions === undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "priorityRecommendation requires complete canonical priorityDefinitions.",
+      path: ["priorityRecommendation"],
+    });
+  }
+
   for (let index = 1; index < request.contributors.length; index += 1) {
     const previous = request.contributors[index - 1];
     const current = request.contributors[index];

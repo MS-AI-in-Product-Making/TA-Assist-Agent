@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { Socket } from "node:net";
 import { strToU8, zipSync } from "fflate";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   createTypedError,
   f7AnalysisResultSchema,
@@ -46,6 +47,17 @@ const DISTRIBUTION_BY_LABEL = {
   Elliptical: "elliptical",
   Beta: "beta",
 } as const;
+
+function canonicalPriorityDefinitions() {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  return processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
+      title: entry.title,
+      message: entry.message,
+    }));
+}
 
 type ServerOptions = Parameters<typeof createProductionF7LocalServer>[0];
 

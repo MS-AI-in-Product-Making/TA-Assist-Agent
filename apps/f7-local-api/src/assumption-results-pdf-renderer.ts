@@ -182,6 +182,8 @@ function renderPriorityGuidance(request: AssumptionResultsPdfRouteRequest): stri
 
 export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteRequest): string {
   const request = assumptionResultsPdfRouteRequestSchema.parse(input);
+  const hasV3PriorityGuidance = request.priorityRecommendation !== undefined
+    || (request.priorityDefinitions?.length ?? 0) > 0;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -336,7 +338,7 @@ ${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence)}
     <div class="report-page report-page--action">
       <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
       <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
-      <section><h2>TA Process and Requirements</h2><p>V3</p><p>${escapeHtml(request.processGuidanceContext)}</p>${renderPriorityGuidance(request)}${renderGuidance(request.processGuidance)}</section>
+      <section><h2>TA Process and Requirements</h2>${hasV3PriorityGuidance ? "<p>V3</p>" : ""}<p>${escapeHtml(request.processGuidanceContext)}</p>${renderPriorityGuidance(request)}${renderGuidance(request.processGuidance)}</section>
     </div>
   </main>
 </body>
