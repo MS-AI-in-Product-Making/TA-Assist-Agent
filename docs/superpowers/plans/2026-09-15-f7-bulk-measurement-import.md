@@ -657,7 +657,7 @@ git commit -m "feat(f7): manage measurement import lifecycle"
 - Modify: `apps/f7-web/src/App.test.ts`
 - Modify: `apps/f7-web/src/style.css`
 
-- [ ] **Step 1: Write failing component and App tests**
+- [x] **Step 1: Write failing component and App tests**
 
 Assert a keyboard-accessible `Import Data` / `Enter Individually` segmented control, default import mode only when no measured dataset exists, worksheet identity and Factor count, icon buttons with accessible names, `.xlsx` file restriction, busy states, review focus, all Factor rows, sample/structure/readiness, cross-zero text plus red styling, cell diagnostics, disabled confirmation for blocked preview, replacement count copy, cancel, success message, and unchanged canonical `Open workspace` actions after commit. In Import Data mode, assert FactorInputTable shows `MEASURED` or `BASELINE_ASSUMPTION` as text and has no Source Mode radios; in Enter Individually mode, assert the current radios and workspace button remain available.
 
@@ -667,7 +667,7 @@ expect(wrapper.get("[data-import-warning='cross-zero']").text()).toContain("LSL 
 expect(wrapper.get("[data-confirm-measurement-import]").attributes("disabled")).toBeDefined();
 ```
 
-- [ ] **Step 2: Run component tests and verify RED**
+- [x] **Step 2: Run component tests and verify RED**
 
 Run:
 
@@ -677,7 +677,7 @@ npx.cmd vitest run --project f7-web apps/f7-web/src/components/MeasurementImport
 
 Expected: FAIL because the component and App wiring do not exist.
 
-- [ ] **Step 3: Implement the dedicated import component**
+- [x] **Step 3: Implement the dedicated import component**
 
 Use Lucide `Download`, `Upload`, `FileSpreadsheet`, `TriangleAlert`, and `CheckCircle2`. Emit `download`, `upload`, `confirm`, `cancel`, and `mode-change`; keep file input reset local. Render review as an unframed section, not nested cards. Associate each diagnostic with Factor name and cell; use text/icon plus red, never color alone. Focus the review heading after preview changes.
 
@@ -691,11 +691,11 @@ const emit = defineEmits<{
 }>();
 ```
 
-- [ ] **Step 4: Wire App and preserve canonical Factor ownership**
+- [x] **Step 4: Wire App and preserve canonical Factor ownership**
 
 Render `MeasurementImportPanel` at measurement-entry level and keep `FactorInputTable` as the only Source Mode/Readiness/Open workspace table. Add a typed `measurementEntryMode: "import" | "individual"` prop to FactorInputTable. The Source Mode cell renders read-only mode text in `import` mode and the existing fieldset/radios in `individual` mode; `Open workspace` remains visible for measured Factors in both modes. App owns only view mode, transient success text, and event forwarding to the store. Switching mode never calls a mutation. After bulk commit, the refreshed existing snapshot drives `MEASURED`, `Ready`, sample count, and workspace access.
 
-- [ ] **Step 5: Run focused Web tests and production build**
+- [x] **Step 5: Run focused Web tests and production build**
 
 Run:
 
@@ -706,7 +706,7 @@ npm.cmd run build:f7:web
 
 Expected: all tests pass and Vite build succeeds without new warnings.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/f7-web/src/components/MeasurementImportPanel.vue apps/f7-web/src/components/MeasurementImportPanel.test.ts apps/f7-web/src/components/FactorInputTable.vue apps/f7-web/src/components/FactorInputTable.test.ts apps/f7-web/src/App.vue apps/f7-web/src/App.test.ts apps/f7-web/src/style.css
