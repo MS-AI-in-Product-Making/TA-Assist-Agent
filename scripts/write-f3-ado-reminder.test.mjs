@@ -74,6 +74,30 @@ function setupF3Root(report = acceptedReport()) {
 }
 
 describe("writeF3AdoReminder", () => {
+  it("publishes structured Surface readback as current v3 without a URL", () => {
+    const root = setupF3Root();
+    const result = writeF3AdoReminder({
+      f3OutputRoot: root,
+      receipt: {
+        operation: "updated",
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        verifiedAt: "2026-09-16T08:30:12.000Z",
+      },
+    });
+
+    expect(result.report).toMatchObject({
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "updated",
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+    });
+    expect(JSON.stringify(result.report)).not.toContain("dev.azure.com");
+  });
+
   it("writes reminder markdown and persists not_requested outcome", () => {
     const root = setupF3Root();
     const initialHref = path.relative(

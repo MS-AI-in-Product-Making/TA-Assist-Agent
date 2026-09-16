@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/contracts.js";
+import { persistF3AdoTraceability } from "../packages/workflow-runners/dist/index.js";
 import { renderF3AdoHistoryHtml, renderF3AdoReminder } from "./f3-ado-reminder.mjs";
 import { renderF3Report } from "./f3-report.mjs";
 
@@ -312,6 +313,7 @@ function persistArtifactsAtomically(artifacts, fsOps, options = {}) {
 export function writeF3AdoReminder({
   f3OutputRoot,
   adoOutcome,
+  receipt,
   __internalFsOps,
   __internalFailPromotionAt,
   __internalFailWithPath,
@@ -325,6 +327,17 @@ export function writeF3AdoReminder({
 
   const transactionLock = acquireTransactionLock(resolvedRoot, fsOps);
   try {
+    if (receipt !== undefined) {
+      if (__internalFsOps !== undefined) {
+        throw new Error("Structured ADO persistence does not accept injected filesystem operations.");
+      }
+      const report = persistF3AdoTraceability({ f3Root: resolvedRoot, receipt });
+      return {
+        reminderPath: path.join(resolvedRoot, "Feature3-ADO-Reminder.md"),
+        historyHtmlPath: path.join(resolvedRoot, "Feature3-ADO-History.html"),
+        report,
+      };
+    }
     const loaded = loadReportFromOutputRoot(resolvedRoot, fsOps);
     const nextAdo = validateAdoOutcome(adoOutcome);
     const report = drawingGovernanceResultV2Schema.parse({
