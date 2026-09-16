@@ -23,7 +23,7 @@ const REPORT = `# Tolerance Analysis Engineering Report
 
 | Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |
 |---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| A | Frame Post Location <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> | Frame | Part | MISSING | DIM-1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | N/A | N/A | N/A | Controlled guidance |
+| A | Frame Post Location <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="14" hidden aria-hidden="true"></span> | Frame | Part | MISSING | 1 | 0 mm | 0.2 mm | -0.2 mm | 1 | 4 | N/A | N/A | N/A | Controlled guidance |
 | B | Top Enclosure Height | Enclosure | Part | DWG-2 | DIM-2 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.040 mm | Controlled guidance |
 
 ## Tolerance Path Image
@@ -127,6 +127,9 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("class=\"worksheet-section slide slide-worksheet\"");
     expect(html).toContain("class=\"factor-table factor-table--complete\"");
     expect(html).toContain("data-f6-marker=\"required-missing\"");
+    expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain('<strong class="dim-id-review">1</strong>');
+    expect(html).not.toContain('<strong class="dim-id-review">DIM-2</strong>');
     expect(html).toMatch(/<tr class="[^"]*missing[^"]*">\s*<td>A<\/td>\s*<td>Frame Post Location <span class="f6-inline-marker"/u);
     expect(html).not.toContain("class=\"drawing-health\"");
     expect(html).toContain("class=\"analysis-grid\"");

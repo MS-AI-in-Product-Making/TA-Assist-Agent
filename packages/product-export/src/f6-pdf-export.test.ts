@@ -206,7 +206,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("break-after:page");
     expect(html).toContain("Stardos Stencil");
     expect(html).toContain("Barlow Condensed");
-    expect(html).toContain("--st-bone:#e2dcc9");
+    expect(html).toContain("--p-gray-242:#F2F2F2");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
     expect(html).toContain("grid-template-columns:.72fr 1.15fr .95fr");
@@ -319,14 +319,15 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word;");
     expect(html).toContain('class="comment comment--fail">Fail</span>');
     expect(html).toContain('analysis-panel--process');
-    expect(html).toContain('class="range-bound range-bound--lower"');
-    expect(html).toContain('class="range-bound range-bound--upper"');
+    expect(html).toContain('class="range-spec-line range-spec-line--lower"');
+    expect(html).toContain('class="range-spec-line range-spec-line--upper"');
     expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
-    expect(html.match(/class="range-bound range-bound--lower" style=/gu)).toHaveLength(1);
-    expect(html.match(/class="range-bound range-bound--upper" style=/gu)).toHaveLength(1);
-    expect(html.match(/class="range-bound range-bound--lower" aria-hidden="true"/gu)).toHaveLength(4);
-    expect(html.match(/class="range-bound range-bound--upper" aria-hidden="true"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-label range-spec-label--lower" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-spec-label range-spec-label--upper" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-spec-line range-spec-line--lower" aria-hidden="true"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper" aria-hidden="true"/gu)).toHaveLength(4);
     expect(html).toContain('<small class="range-values">-0.100 to 0.0400');
+    expect(html).not.toContain("Margin");
     expect(html).toContain('data-worst-case-result="FAIL"');
     expect(html).toContain('data-evaluation-level="4 sigma"');
     expect(html).toContain("Capability against target <strong>4 sigma · 1.33</strong>");
@@ -340,8 +341,8 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="spec-value spec-value--current"');
     expect(html).toContain('class="spec-value spec-value--proposed"');
     expect(html).toContain("Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800]");
-    expect(html).toContain("--signal-red:#c43135");
-    expect(html).toContain("--signal-green:#198754");
+    expect(html).toContain("--signal-red:var(--p-dark-red)");
+    expect(html).toContain("--signal-green:var(--p-green)");
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
@@ -374,10 +375,73 @@ describe("renderF6PdfSync", () => {
 
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
-    expect(html).toMatch(/class="range-bound range-bound--lower" style="left:14\.2857142857142\d%">LSL -0\.150<\/b>/u);
-    expect(html).toMatch(/class="range-bound range-bound--upper" style="left:71\.42857142857143%">USL 0\.0500<\/b>/u);
-    expect(html.match(/class="range-bound range-bound--lower" aria-hidden="true" style="left:14\.2857142857142\d%"/gu)).toHaveLength(4);
-    expect(html.match(/class="range-bound range-bound--upper" aria-hidden="true" style="left:71\.42857142857143%"/gu)).toHaveLength(4);
+    expect(html).toMatch(/class="range-spec-label range-spec-label--lower" style="left:14\.2857142857142\d%">LSL -0\.150<\/b>/u);
+    expect(html).toMatch(/class="range-spec-label range-spec-label--upper" style="left:71\.42857142857143%">USL 0\.0500<\/b>/u);
+    expect(html.match(/class="range-spec-line range-spec-line--lower" aria-hidden="true" style="left:14\.2857142857142\d%"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper" aria-hidden="true" style="left:71\.42857142857143%"/gu)).toHaveLength(4);
+  });
+
+  it("renders MISSING status, DIM ID review, range row spec lines, image3 palette, and 60/40 image split", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | MISSING | 1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | MISSING | MISSING | N/A | Controlled guidance |",
+      "| B | Factor B | Part B | CNC | DWG-2 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
+      "| C | Factor C | Part C | CNC | DWG-3 | 12 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
+      "",
+      "## Tolerance Path Image",
+      "",
+      "![Tolerance stack](evidence/stack.png)",
+      "",
+      "Reviewed by model. *Model output is advisory.*",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | -0.0294 mm | 0.409 mm | -0.359 mm | PASS |",
+      "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
+      "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({
+      markdown,
+      sourceHash: createHash("sha256").update(markdown).digest("hex"),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+
+    expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain('<strong class="dim-id-review">1</strong>');
+    expect(html).not.toContain('<strong class="dim-id-review">DIM-1</strong>');
+    expect(html).not.toContain('<strong class="dim-id-review">12</strong>');
+    expect(html.match(/class="range-spec-line range-spec-line--lower"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
+    expect(html).toContain('<small class="range-values">-0.0294 to 0.409</small>');
+    expect(html).not.toContain("Margin");
+    expect(html).toContain("grid-template-columns:60% 40%");
+    expect(html).toContain("object-fit:contain");
+    for (const color of [
+      "#000000", "#FFFFFF", "#F2F2F2", "#D2D2D2", "#505050",
+      "#FF9349", "#FEF000", "#9BF00B", "#30E5D0", "#50E6FF",
+      "#D59DFF", "#A72929",
+    ]) expect(html).toContain(color);
+    expect(html).not.toMatch(/#e2dcc9|#c73b7a|#ee7a2e|#2d7e73|#3f73b7|#d8a93b/iu);
   });
 
   it("keeps the target-only capability caption when evaluation level is missing", () => {
