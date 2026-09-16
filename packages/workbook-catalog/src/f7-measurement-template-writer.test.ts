@@ -158,11 +158,14 @@ describe("generateF7MeasurementTemplate", () => {
     expect(sheet1).toContain('<c r="B14" t="inlineStr" s="1"><is><t>RANGE_D2</t></is></c>');
     expect(sheet1).toContain('<row r="15"/>');
     expect(sheet1).toContain('<row r="514"/>');
-    expect(sheet1).toContain('<protectedRange name="MeasurementsInput" sqref="B15:B514"/>');
+    expect(sheet1).toContain('<protectedRange name="MeasurementsInput" sqref="B13:B13 B15:B514"/>');
     expect(sheet1).toContain('<c r="B3" t="inlineStr" s="0"><is><t></t></is></c>');
     expect(sheet1).toContain('<c r="B4" t="inlineStr" s="0"><is><t></t></is></c>');
     expect(sheet1).not.toContain('<col min="2" max="2" width="12" style="1"');
     expect(sheet1).not.toContain("<mergeCells");
+    expect(sheet1.indexOf("<sheetProtection")).toBeLessThan(sheet1.indexOf("<protectedRanges>"));
+    expect(sheet1.indexOf("<protectedRanges>")).toBeLessThan(sheet1.indexOf("<dataValidations"));
+    expect(sheet1).not.toContain('showDropDown="1"');
     expect(styles).toContain('<protection locked="0"/>');
     expect(styles).toContain('<protection locked="1"/>');
     expect(styles).toContain('<alignment horizontal="center"/><protection locked="0"/>');
@@ -196,6 +199,10 @@ describe("generateF7MeasurementTemplate", () => {
 
     const parts = readSafeZip(archive);
     expect(parts.size).toBe(7);
+    const sheet1 = new TextDecoder().decode(parts.get("xl/worksheets/sheet1.xml")!);
+    expect(sheet1).toContain('sqref="B13:CW13 B15:CW514"');
+    expect(sheet1).toContain('sqref="B12:CW12"');
+    expect(sheet1).toContain('sqref="B14:CW14"');
     const workbook = readOoxmlWorkbook(archive);
     expect(workbook.worksheets.get("Measurements")?.cells).toEqual(expect.arrayContaining([
       { reference: "CW2", value: "Factor 100" },
