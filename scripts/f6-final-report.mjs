@@ -1441,13 +1441,14 @@ function reportTimestamp(value, utcOffsetMinutes) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return NOT_PROVIDED;
   const pad = (part) => String(part).padStart(2, "0");
-  const offsetMinutes = Number.isInteger(utcOffsetMinutes) ? utcOffsetMinutes : -date.getTimezoneOffset();
+  if (!Number.isInteger(utcOffsetMinutes)) failInvalid("analysis request context utcOffsetMinutes");
+  const offsetMinutes = utcOffsetMinutes;
   const offsetSign = offsetMinutes >= 0 ? "+" : "-";
   const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
   const offsetRemainder = Math.abs(offsetMinutes) % 60;
   const offset = `${offsetSign}${offsetHours}${offsetRemainder === 0 ? "" : `:${pad(offsetRemainder)}`}`;
   const shifted = new Date(date.getTime() + offsetMinutes * 60 * 1000);
-  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} (UTC${offset})`;
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} (UTC ${offset})`;
 }
 
 function requestTimestamp(analysisRequestContext) {

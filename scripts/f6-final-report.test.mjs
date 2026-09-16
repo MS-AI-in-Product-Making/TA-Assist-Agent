@@ -1566,7 +1566,7 @@ describe("createF6FinalReportProjection v3", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC-7) |");
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
     expect(report.markdown).toContain("| Need Review | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
@@ -1585,8 +1585,46 @@ describe("createF6FinalReportProjection v3", () => {
 
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 08:30:12 (UTC-7) |");
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 08:30:12 (UTC -7) |");
     expect(report.markdown).not.toContain("Report Generated At");
+  });
+
+  it("formats half-hour offsets with a spaced UTC label", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: 330,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 21:00:12 (UTC +5:30) |");
+  });
+
+  it("formats negative half-hour offsets with a spaced UTC label", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: -330,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 10:00:12 (UTC -5:30) |");
+  });
+
+  it("rejects missing utcOffsetMinutes instead of using the machine timezone", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      source: "web",
+    };
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(
+      "Invalid F6 final report input: analysisRequestContext.",
+    );
   });
 
   it("renders process checks from governed inputs", () => {
