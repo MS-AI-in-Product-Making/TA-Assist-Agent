@@ -10,6 +10,8 @@ import {
   type ProcessRequirementFactReference,
   type ProcessRequirementListRequest,
   type ProcessRequirementMatchedEntry,
+  type ProcessRequirementSeedPackage,
+  type ProcessRequirementVersion,
 } from "@ai-assist/contracts";
 import { createReviewedProcessRequirementsV1SeedPackage } from "./data/process-requirements-v1.js";
 import { createReviewedProcessRequirementsV2SeedPackage } from "./data/process-requirements-v2.js";
@@ -18,6 +20,10 @@ import { createProcessRequirementSnapshot } from "./validation.js";
 
 const LIST_REFERENCE = "process-requirements-list-request";
 const EVALUATION_REFERENCE = "process-requirements-evaluation-request";
+const SEED_PACKAGE_FACTORIES = {
+  "process-requirements-v1": createReviewedProcessRequirementsV1SeedPackage,
+  "process-requirements-v2": createReviewedProcessRequirementsV2SeedPackage,
+} satisfies Record<ProcessRequirementVersion, () => ProcessRequirementSeedPackage>;
 const SEVERITY_ORDER = new Map([
   ["escalation", 0],
   ["warning", 1],
@@ -41,9 +47,7 @@ export function loadProcessRequirements(request: unknown): ProcessRequirements {
     request,
     "process-requirements-load-request",
   );
-  const seed = version === "process-requirements-v1"
-    ? createReviewedProcessRequirementsV1SeedPackage()
-    : createReviewedProcessRequirementsV2SeedPackage();
+  const seed = SEED_PACKAGE_FACTORIES[version]();
   const snapshot = createProcessRequirementSnapshot(seed);
 
   return {

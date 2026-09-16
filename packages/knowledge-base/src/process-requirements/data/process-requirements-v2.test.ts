@@ -9,11 +9,25 @@ const SOURCE_HASH = "44c8249abca1638af5803e0bddc0de2a468fae64093b3e8f0648862923d
 const EXPECTED_SOURCES_HASH = "469a1e0169212a51fb2194cc6b81feca9b0439e16868f40144b74ea06ae2cae0";
 const EXPECTED_ENTRIES_HASH = "915f5692fe0c125811b4e7884a7562c8353afd0d8a8f69f9a6d314d804d9549a";
 const EXPECTED_CONTENT_HASH = "fd6dee4527d3f1bab13845a4c81574eeb13441d0bb4ccdc3a7c0233fc4603f8c";
+const COMPLEX_STACK_ENTRY_ID = "method-escalation-complex-stack";
+const SMALL_STACK_ENTRY_ID = "instruction-consider-worst-case-small-stack";
 
 function entryById(entries: readonly ProcessRequirementEntry[], entryId: string): ProcessRequirementEntry {
   const entry = entries.find((candidate) => candidate.entryId === entryId);
   expect(entry, `missing entry ${entryId}`).toBeDefined();
   return entry!;
+}
+
+function normalizeVersionedEntry(entry: ProcessRequirementEntry): ProcessRequirementEntry {
+  return {
+    ...entry,
+    message: entry.entryId === COMPLEX_STACK_ENTRY_ID ? "<version-specific message>" : entry.message,
+    provenance: {
+      ...entry.provenance,
+      effectiveVersion: "process-requirements-v1",
+      changeSummary: "<version-specific change summary>",
+    },
+  };
 }
 
 describe("reviewed process-requirements-v2 seed", () => {
@@ -94,17 +108,28 @@ describe("reviewed process-requirements-v2 seed", () => {
   it("updates only the reviewed complex-stack message semantics", () => {
     const v1Entry = entryById(
       createReviewedProcessRequirementsV1SeedPackage().entries,
-      "method-escalation-complex-stack",
+      COMPLEX_STACK_ENTRY_ID,
     );
     const v2Entry = entryById(
       createReviewedProcessRequirementsV2SeedPackage().entries,
-      "method-escalation-complex-stack",
+      COMPLEX_STACK_ENTRY_ID,
     );
 
     expect(v2Entry.message).toBe(
       "Consult Dimensional Management and consider 3D Variation Analysis software when a one-dimensional stack has more than 10 tolerances.",
     );
     expect({ ...v2Entry, message: v1Entry.message, provenance: v1Entry.provenance }).toEqual(v1Entry);
+  });
+
+  it("keeps every inherited entry equivalent to v1 after normalizing v2-only changes", () => {
+    const v1Entries = createReviewedProcessRequirementsV1SeedPackage().entries;
+    const inheritedV2Entries = createReviewedProcessRequirementsV2SeedPackage().entries.filter(
+      ({ entryId }) => entryId !== SMALL_STACK_ENTRY_ID,
+    );
+
+    expect(inheritedV2Entries.map(normalizeVersionedEntry)).toEqual(
+      v1Entries.map(normalizeVersionedEntry),
+    );
   });
 
   it("uses v2 provenance for every entry without mutating fresh v1 seeds", () => {

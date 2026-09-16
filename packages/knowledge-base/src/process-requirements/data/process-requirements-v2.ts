@@ -7,6 +7,8 @@ import { contentHash } from "../../validation.js";
 import { createReviewedProcessRequirementsV1SeedPackage } from "./process-requirements-v1.js";
 
 const VERSION = "process-requirements-v2";
+const SOURCE_ALIAS = "controlled-ta-template-beta";
+const COMPLEX_STACK_ENTRY_ID = "method-escalation-complex-stack";
 const ENTRY_TYPES = [
   "requirement",
   "warning",
@@ -18,7 +20,10 @@ const ENTRY_TYPES = [
 
 export function createReviewedProcessRequirementsV2SeedPackage(): ProcessRequirementSeedPackage {
   const seed = structuredClone(createReviewedProcessRequirementsV1SeedPackage());
-  const source = seed.sources[0]!;
+  const source = seed.sources.find(({ sourceAlias }) => sourceAlias === SOURCE_ALIAS);
+  if (source === undefined) {
+    throw new Error(`Process requirements v2 seed invariant failed: missing source ${SOURCE_ALIAS}.`);
+  }
   source.reviewedAt = "2026-09-16T00:00:00.000Z";
 
   for (const entry of seed.entries) {
@@ -26,10 +31,11 @@ export function createReviewedProcessRequirementsV2SeedPackage(): ProcessRequire
     entry.provenance.changeSummary = "Reissue reviewed guidance for process requirements v2.";
   }
 
-  const complexStackIndex = seed.entries.findIndex(({ entryId }) => (
-    entryId === "method-escalation-complex-stack"
-  ));
-  const complexStack = seed.entries[complexStackIndex]!;
+  const complexStackIndex = seed.entries.findIndex(({ entryId }) => entryId === COMPLEX_STACK_ENTRY_ID);
+  const complexStack = seed.entries[complexStackIndex];
+  if (complexStack === undefined) {
+    throw new Error(`Process requirements v2 seed invariant failed: missing entry ${COMPLEX_STACK_ENTRY_ID}.`);
+  }
   complexStack.message = "Consult Dimensional Management and consider 3D Variation Analysis software when a one-dimensional stack has more than 10 tolerances.";
   complexStack.provenance.changeSummary = "Clarify reviewed complex-stack escalation guidance.";
 
