@@ -599,7 +599,7 @@ git commit -m "feat(f7): commit measurement imports once"
 - Modify: `apps/f7-web/src/state/f7-session.ts`
 - Modify: `apps/f7-web/src/state/f7-session.test.ts`
 
-- [ ] **Step 1: Write failing client and store tests**
+- [x] **Step 1: Write failing client and store tests**
 
 Assert exact paths/bodies, binary MIME validation and filename extraction, file-to-canonical-base64 preview, strict response parsing, and commit mapping. Store tests cover default null preview, busy actions, success, blocked preview retention, cancellation, upload failure clearing, session-changing mutation clearing, refresh clearing, commit snapshot replacement, and old session preservation on failure.
 
@@ -610,7 +610,7 @@ await store.commitMeasurementImport();
 expect(store.session.value?.factors[0]?.sourceMode).toBe("MEASURED");
 ```
 
-- [ ] **Step 2: Run Web tests and verify RED**
+- [x] **Step 2: Run Web tests and verify RED**
 
 Run:
 
@@ -620,7 +620,7 @@ npx.cmd vitest run --project f7-web apps/f7-web/src/api/f7-client.test.ts apps/f
 
 Expected: FAIL because client/store methods do not exist.
 
-- [ ] **Step 3: Implement client methods and preview state**
+- [x] **Step 3: Implement client methods and preview state**
 
 Add `downloadMeasurementTemplate`, `previewMeasurementImport`, and `commitMeasurementImport`. Validate XLSX content type and download bytes; use existing `fileToBase64()` for preview; parse JSON with shared schemas. Add three `BusyAction` values and a readonly preview ref. Only commit calls `commitMutationSnapshot`; preview never changes `session`.
 
@@ -633,13 +633,13 @@ async function previewMeasurementImport(request: {
 
 Clear preview after cancel, successful commit, workbook/worksheet/Factor confirmation changes, individual paste/disposition, and refresh. Preserve a blocked preview for review; clear stale preview before a new upload begins.
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/f7-web/src/api/f7-client.ts apps/f7-web/src/api/f7-client.test.ts apps/f7-web/src/state/f7-session.ts apps/f7-web/src/state/f7-session.test.ts
