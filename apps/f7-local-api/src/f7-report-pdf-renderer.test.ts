@@ -326,37 +326,51 @@ describe("F7 report PDF renderer", () => {
     expect(dimensionChain?.indexOf("Negative &amp; B")).toBeLessThan(dimensionChain?.indexOf("Zero &gt; C") ?? -1);
   });
 
-  it("keeps a ten-factor Dimension Chain readable without CSS shrinking or clipped wrapped labels", () => {
+  it("paginates twenty Dimension Chain factors into bounded independently printable blocks", () => {
     const report = reportFixture();
     const baseFactor = report.factors[0]!;
     const longFactorName = "Long <escaped> & named factor with deterministic wrapping across every visible label word";
     const html = renderF7ReportPdfHtml({
       ...report,
-      factors: Array.from({ length: 10 }, (_, index) => ({
+      factors: Array.from({ length: 20 }, (_, index) => ({
         ...baseFactor,
-        factorId: String(index).repeat(64),
+        factorId: index.toString(16).padStart(2, "0").repeat(32),
         factorName: index === 4 ? longFactorName : `Factor ${index + 1}`,
-        designNominal: index % 3 === 0 ? index + 1 : -(index + 1),
+        designNominal: index === 19 ? 0 : index % 3 === 0 ? index + 1 : -(index + 1),
       })),
     });
-    const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
+    const dimensionChainPages = [...html.matchAll(/<div data-dimension-chain-page[^>]*>[\s\S]*?<\/svg><\/div>/g)]
+      .map((match) => match[0]);
 
     expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
-    expect(dimensionChain).toMatch(/^<svg data-dimension-chain[^>]*class="dimension-chain-svg"/);
-    expect(dimensionChain?.match(/data-dimension-chain-segment/g)).toHaveLength(10);
-    expect(dimensionChain).toContain("<title>5. Long &lt;escaped&gt; &amp; named factor with deterministic wrapping across every visible label word · -5 · Subtractive</title>");
-    expect(dimensionChain).not.toContain(longFactorName);
-    expect(dimensionChain?.match(/data-dimension-chain-name-line/g)?.length).toBeGreaterThan(1);
+    expect(html).toContain("thead { display: table-header-group; }");
+    expect(html).toContain(".engineering-inputs .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
+    expect(html).toContain(".engineering-inputs .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
+    expect(dimensionChainPages).toHaveLength(4);
+    expect(dimensionChainPages.map((page) => Number(page.match(/data-dimension-chain-page-index="(\d+)"/)?.[1]))).toEqual([1, 2, 3, 4]);
+    expect(dimensionChainPages.every((page) => page.includes('data-dimension-chain-page-count="4"'))).toBe(true);
+    expect(dimensionChainPages.every((page) => (page.match(/data-dimension-chain-segment/g)?.length ?? 0) <= 5)).toBe(true);
+    expect(dimensionChainPages.flatMap((page) => [...page.matchAll(/<title>(\d+)\. /g)].map((match) => Number(match[1])))).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+    );
+    expect(dimensionChainPages.reduce((count, page) => count + (page.match(/data-dimension-chain-segment/g)?.length ?? 0), 0)).toBe(20);
+    expect(dimensionChainPages.slice(1).every((page) => page.includes("Dimension Chain continued"))).toBe(true);
+    expect(dimensionChainPages.every((page) => /<title id="dimension-chain-title-\d+">/.test(page))).toBe(true);
+    expect(dimensionChainPages.every((page) => /<desc id="dimension-chain-description-\d+">/.test(page))).toBe(true);
+    expect(dimensionChainPages.slice(0, -1).every((page) => !page.includes("data-dimension-chain-closure"))).toBe(true);
+    expect(dimensionChainPages.at(-1)?.match(/data-dimension-chain-closure/g)).toHaveLength(1);
+    expect(dimensionChainPages.at(-1)).toContain("Final closure to global datum");
+    expect(dimensionChainPages[0]).toContain("<title>5. Long &lt;escaped&gt; &amp; named factor with deterministic wrapping across every visible label word · -5 · Subtractive</title>");
+    expect(dimensionChainPages[0]).not.toContain(longFactorName);
+    expect(dimensionChainPages[0]?.match(/data-dimension-chain-name-line/g)?.length).toBeGreaterThan(5);
 
-    const rowCoordinates = [...(dimensionChain?.matchAll(/data-row-y="([^"]+)"/g) ?? [])]
-      .map((match) => Number(match[1]));
-    expect(rowCoordinates).toHaveLength(10);
-    expect(rowCoordinates.every(Number.isFinite)).toBe(true);
-    expect(rowCoordinates.every((value, index) => index === 0 || value > rowCoordinates[index - 1]!)).toBe(true);
-
-    const viewBoxHeight = Number(dimensionChain?.match(/viewBox="0 0 800 ([^"]+)"/)?.[1]);
-    expect(viewBoxHeight).toBeGreaterThan(rowCoordinates.at(-1)!);
-    expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
+    const viewBoxHeights = dimensionChainPages.map((page) => Number(page.match(/viewBox="0 0 800 ([^"]+)"/)?.[1]));
+    const printableHeightMillimeters = 186;
+    const printableWidthMillimeters = 297 - 2 * 12;
+    expect(viewBoxHeights.every(Number.isFinite)).toBe(true);
+    expect(viewBoxHeights.every((height) => height <= 500)).toBe(true);
+    expect(viewBoxHeights.every((height) => height / 800 * printableWidthMillimeters < printableHeightMillimeters)).toBe(true);
+    expect(dimensionChainPages.join("")).not.toMatch(/(?:NaN|-?Infinity)/);
   });
 
   it("compresses the Dimension Chain when factor magnitudes differ by more than eight times", () => {
