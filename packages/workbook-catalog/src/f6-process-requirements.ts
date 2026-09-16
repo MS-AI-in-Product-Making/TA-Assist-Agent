@@ -95,6 +95,18 @@ function rowsByOrdinal<Row>(rows: readonly Row[], sourceRow: (row: Row) => numbe
   });
 }
 
+function rowOrdinalSortKey(row: { readonly factorOrdinal?: { readonly value?: string } | undefined } | undefined, sourceRow: number): readonly [number, number, string] {
+  const value = row?.factorOrdinal?.value;
+  const numeric = Number(value);
+  return [Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY, sourceRow, value ?? ""];
+}
+
+function compareRowOrdinal(left: readonly [number, number, string], right: readonly [number, number, string]): number {
+  if (left[0] !== right[0]) return left[0] - right[0];
+  if (left[1] !== right[1]) return left[1] - right[1];
+  return left[2].localeCompare(right[2]);
+}
+
 function hasToken(text: string, token: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${token.replace(/ /g, "\\s+")}([^a-z0-9]|$)`, "iu").test(text);
 }
@@ -188,9 +200,19 @@ function createToleranceValidityCheck(worksheet: F2Worksheet): F6ProcessCheck {
   for (const field of ["lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"] as const) {
     if (specification[field]?.status !== "available") details.push(`System specification missing ${field}.`);
   }
-  for (const issue of worksheet.f4CalculabilityIssues) {
+  const rowsBySourceRow = new Map(worksheet.rows.map((row) => [row.sourceRow, row]));
+  const sortedIssues = [...worksheet.f4CalculabilityIssues].sort((left, right) => {
+    const leftSourceRow = left.sourceRow ?? Number.POSITIVE_INFINITY;
+    const rightSourceRow = right.sourceRow ?? Number.POSITIVE_INFINITY;
+    return compareRowOrdinal(rowOrdinalSortKey(rowsBySourceRow.get(leftSourceRow), leftSourceRow), rowOrdinalSortKey(rowsBySourceRow.get(rightSourceRow), rightSourceRow));
+  });
+  for (const issue of sortedIssues) {
     if (issue.reasonCode === "factor_tolerance_range_invalid") {
-      details.push(`Factor row ${issue.sourceRow ?? "unknown"} has invalid tolerance range.`);
+      const sourceRow = issue.sourceRow ?? Number.POSITIVE_INFINITY;
+      const row = rowsBySourceRow.get(sourceRow);
+      details.push(row === undefined
+        ? `Factor row ${issue.sourceRow ?? "unknown"} has invalid tolerance range.`
+        : `Factor ${ordinal(row, sourceRow)} row ${sourceRow} has invalid tolerance range.`);
     }
   }
   const guidanceWarnings = rowsByOrdinal(worksheet.rows, (row) => row.sourceRow)
@@ -210,6 +232,13 @@ function createDrawingGovernanceCheck(worksheet: F3Worksheet): F6ProcessCheck {
       ...(row.dimId === null ? ["dimCharacteristicId"] : []),
     ];
     if (missing.length > 0) rowDetails.push(`Factor ${ordinal(row, sourceRow)} row ${sourceRow} missing identifiers: ${missing.join(", ")}.`);
+    if (row.dimIdStatus === "suspected_invalid") {
+      rowDetails.push(`Factor ${ordinal(row, sourceRow)} row ${sourceRow} DIM ID suspected invalid: single-digit DIM ID ${row.dimId ?? "unknown"}; quality signals: ${row.qualitySignals.join(", ") || "none"}.`);
+    } else if (row.dimIdStatus !== "valid" && missing.length === 0) {
+      rowDetails.push(`Factor ${ordinal(row, sourceRow)} row ${sourceRow} DIM ID status: ${row.dimIdStatus}; quality signals: ${row.qualitySignals.join(", ") || "none"}.`);
+    } else if (row.qualitySignals.length > 0 && missing.length === 0) {
+      rowDetails.push(`Factor ${ordinal(row, sourceRow)} row ${sourceRow} quality signals: ${row.qualitySignals.join(", ")}.`);
+    }
     if (row.governanceStatus !== "complete") rowDetails.push(`Factor ${ordinal(row, sourceRow)} row ${sourceRow} governance status: ${row.governanceStatus}.`);
     return rowDetails;
   });
@@ -257,7 +286,10 @@ function createTargetSigmaCheck(input: ProcessInput): F6ProcessCheck {
     return check("target-sigma", "WARNING", `Target sigma is ambiguous; recommended ${recommended} sigma cannot be compared to mixed factor sigma levels.`, details);
   }
   if (domain.kind === "ambiguous") {
-    return check("target-sigma", "WARNING", `Worksheet domain is ambiguous; recommended ${recommended} sigma default requires engineering confirmation.`, details);
+    return check("target-sigma", "WARNING", `Worksheet classification evidence missing; default recommendation is ${recommended} sigma and requires engineering confirmation.`, details);
+  }
+  if (domain.source === "default") {
+    return check("target-sigma", "WARNING", `Worksheet classification evidence missing; default recommendation is ${recommended} sigma for Other worksheets and requires engineering confirmation.`, details);
   }
   if (current !== recommended) {
     return check("target-sigma", "WARNING", `Current ${current} sigma differs from recommended ${recommended} sigma for ${domain.kind} worksheets.`, details);

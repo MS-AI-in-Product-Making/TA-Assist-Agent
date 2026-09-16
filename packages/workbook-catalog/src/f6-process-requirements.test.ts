@@ -23,6 +23,13 @@ interface FixtureOverrides {
   readonly missingIdentifiers?: readonly ("dimCharacteristicId" | "drawingNumber" | "partNumber")[];
   readonly f4CalculabilityIssues?: readonly { readonly reasonCode: "factor_tolerance_range_invalid"; readonly sourceRow: number }[];
   readonly f3GovernanceStatus?: "complete" | "needs_governance" | "blocked_for_reminder";
+  readonly f3RowOverrides?: readonly {
+    readonly sourceRow: number;
+    readonly dimId?: string | null;
+    readonly dimIdStatus?: "missing" | "suspected_invalid" | "valid" | "needs_confirmation";
+    readonly qualitySignals?: readonly ("drawing_number_missing" | "dim_id_missing" | "dim_id_suspected_invalid" | "dim_id_needs_confirmation" | "duplicate_conflict")[];
+    readonly governanceStatus?: "complete" | "needs_governance" | "blocked_for_reminder";
+  }[];
   readonly f3Ado?: AdoTraceabilityV3;
   readonly analysisObjectKind?: "GAP" | "STEP" | "FUNCTIONAL_DIMENSION";
   readonly includeAnalysisContext?: boolean;
@@ -151,15 +158,15 @@ function f3Worksheet(overrides: FixtureOverrides = {}): F3Worksheet {
     partCategory: "Gap bracket",
     partSubsystem: "Display",
     drawingNumber: row.missingIdentifiers.includes("drawingNumber") ? null : `DWG-${row.sourceRow}`,
-    dimId: row.missingIdentifiers.includes("dimCharacteristicId") ? null : `DIM-${row.sourceRow}`,
+    dimId: row.missingIdentifiers.includes("dimCharacteristicId") ? null : overrides.f3RowOverrides?.find((candidate) => candidate.sourceRow === row.sourceRow)?.dimId ?? `DIM-${row.sourceRow}`,
     factorDescription: `Factor ${row.sourceRow}`,
     nominal: 10,
     upperTolerance: 0.1,
     lowerTolerance: -0.1,
     sigmaLevel: 4,
-    dimIdStatus: row.missingIdentifiers.includes("dimCharacteristicId") ? "missing" as const : "valid" as const,
-    qualitySignals: row.missingIdentifiers.includes("drawingNumber") ? ["drawing_number_missing" as const] : [],
-    governanceStatus: index === 0 ? overrides.f3GovernanceStatus ?? "complete" as const : "complete" as const,
+    dimIdStatus: row.missingIdentifiers.includes("dimCharacteristicId") ? "missing" as const : overrides.f3RowOverrides?.find((candidate) => candidate.sourceRow === row.sourceRow)?.dimIdStatus ?? "valid" as const,
+    qualitySignals: row.missingIdentifiers.includes("drawingNumber") ? ["drawing_number_missing" as const] : [...(overrides.f3RowOverrides?.find((candidate) => candidate.sourceRow === row.sourceRow)?.qualitySignals ?? [])],
+    governanceStatus: overrides.f3RowOverrides?.find((candidate) => candidate.sourceRow === row.sourceRow)?.governanceStatus ?? (index === 0 ? overrides.f3GovernanceStatus ?? "complete" as const : "complete" as const),
     imageReference: row.imageReference!,
     source: { worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, sourceCells: row.sourceCells },
   }));
@@ -341,14 +348,14 @@ describe("createF6ProcessChecks", () => {
       "System specification missing lowerSpecLimit.",
       "System specification missing upperSpecLimit.",
       "System specification missing targetSigmaLevel.",
-      "Factor row 2 has invalid tolerance range.",
+      "Factor 1 row 2 has invalid tolerance range.",
     ]);
   });
 
   it("reports process guidance gaps as warning without overriding missing evidence", () => {
     const check = findCheck(createF6ProcessChecks(fixture({ worksheetName: "Interface", toleranceLoopDescription: "Interface", includeAnalysisContext: false })), "target-sigma");
     expect(check).toMatchObject({ status: "WARNING" });
-    expect(check.summary).toContain("ambiguous");
+    expect(check.summary).toContain("classification evidence missing");
   });
 
   it("gives Battery precedence over Gap", () => {
@@ -364,8 +371,49 @@ describe("createF6ProcessChecks", () => {
   it("maps Gap to 3 sigma, Step to 3 sigma, Other to 4 sigma, and ambiguous to warning", () => {
     expect(targetSigmaCheck(fixture({ worksheetName: "Cover_gap", currentSigma: 3 })).status).toBe("COMPLETE");
     expect(targetSigmaCheck(fixture({ worksheetName: "Cover_step", currentSigma: 3 })).status).toBe("COMPLETE");
-    expect(targetSigmaCheck(fixture({ worksheetName: "Bracket_width", toleranceLoopDescription: "Bracket width", currentSigma: 4 })).status).toBe("COMPLETE");
+    expect(targetSigmaCheck(fixture({ worksheetName: "Bracket_width", toleranceLoopDescription: "Bracket width", currentSigma: 4 })).status).toBe("WARNING");
     expect(targetSigmaCheck(fixture({ worksheetName: "Interface", toleranceLoopDescription: "Interface", currentSigma: 4, includeAnalysisContext: false })).status).toBe("WARNING");
+  });
+
+  it("warns for default Other and ambiguous classifications even when current sigma is 4", () => {
+    const defaultOther = targetSigmaCheck(fixture({ worksheetName: "Bracket_width", toleranceLoopDescription: "Bracket width", currentSigma: 4 }));
+    expect(defaultOther).toMatchObject({ status: "WARNING" });
+    expect(defaultOther.summary).toMatch(/classification evidence missing|default recommendation/iu);
+
+    const ambiguous = targetSigmaCheck(fixture({ worksheetName: "Interface", toleranceLoopDescription: "Interface", currentSigma: 4, includeAnalysisContext: false }));
+    expect(ambiguous).toMatchObject({ status: "WARNING" });
+    expect(ambiguous.summary).toMatch(/classification evidence missing|default recommendation/iu);
+
+    expect(targetSigmaCheck(fixture({ worksheetName: "Cover_gap", currentSigma: 3 })).status).toBe("COMPLETE");
+    expect(targetSigmaCheck(fixture({ worksheetName: "Cover_step", currentSigma: 3 })).status).toBe("COMPLETE");
+    expect(targetSigmaCheck(fixture({ worksheetName: "generic", toleranceLoopDescription: "generic", analysisObjectKind: "FUNCTIONAL_DIMENSION", currentSigma: 4 })).status).toBe("COMPLETE");
+  });
+
+  it("uses F3 DIM ID status and quality signals for drawing governance warnings", () => {
+    const check = findCheck(createF6ProcessChecks(fixture({
+      f3RowOverrides: [
+        { sourceRow: 4, dimId: "7", dimIdStatus: "suspected_invalid", qualitySignals: ["dim_id_suspected_invalid"], governanceStatus: "complete" },
+        { sourceRow: 2, dimIdStatus: "needs_confirmation", qualitySignals: ["dim_id_needs_confirmation"], governanceStatus: "complete" },
+      ],
+    })), "drawing-dim-governance");
+    expect(check).toMatchObject({ status: "WARNING" });
+    expect(check.details).toEqual([
+      "Factor 1 row 2 DIM ID status: needs_confirmation; quality signals: dim_id_needs_confirmation.",
+      "Factor 3 row 4 DIM ID suspected invalid: single-digit DIM ID 7; quality signals: dim_id_suspected_invalid.",
+    ]);
+  });
+
+  it("sorts F4 calculability issues by corresponding Factor ordinal and source row", () => {
+    const check = findCheck(createF6ProcessChecks(fixture({
+      f4CalculabilityIssues: [
+        { reasonCode: "factor_tolerance_range_invalid", sourceRow: 5 },
+        { reasonCode: "factor_tolerance_range_invalid", sourceRow: 3 },
+      ],
+    })), "tolerance-validity");
+    expect(check.details).toEqual([
+      "Factor 2 row 3 has invalid tolerance range.",
+      "Factor 4 row 5 has invalid tolerance range.",
+    ]);
   });
 
   it("summarizes ADO traceability outcomes without constructing links", () => {
