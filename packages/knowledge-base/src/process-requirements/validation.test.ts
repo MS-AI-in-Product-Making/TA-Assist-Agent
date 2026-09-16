@@ -38,6 +38,37 @@ function expectValidationError(seed: unknown): void {
   });
 }
 
+function useApprovedTranscription(seed: ProcessRequirementSeedPackage): void {
+  const hash = "c".repeat(64);
+  seed.manifest.version = "process-requirements-v3";
+  seed.sources.push({
+    sourceType: "approved-transcription",
+    sourceAlias: "approved-priority-guidance",
+    hash,
+    revision: "user-approved-2026-09-16",
+    section: "priority-definitions",
+    sourceClassification: "confidential",
+    releasedClassification: "internal",
+    owner: "Dimensional Management",
+    reviewedAt: "2026-09-16T00:00:00.000Z",
+  });
+  seed.entries[0]!.provenance = {
+    sourceType: "approved-transcription",
+    sourceAlias: "approved-priority-guidance",
+    sourceContentHash: hash,
+    sourceRevision: "user-approved-2026-09-16",
+    section: "priority-definitions.p0",
+    effectiveVersion: "process-requirements-v3",
+    owner: "Dimensional Management",
+    confidence: "reviewed",
+    changeSummary: "Add approved P0 priority guidance.",
+  };
+  for (const entry of seed.entries.slice(1)) {
+    entry.provenance.effectiveVersion = "process-requirements-v3";
+  }
+  refreshProcessRequirementManifest(seed);
+}
+
 describe("F0 process requirement snapshots", () => {
   it("creates a defensive recursively frozen DeepReadonly clone", () => {
     expectTypeOf<ProcessRequirementSnapshot>()
@@ -221,6 +252,73 @@ describe("F0 process requirement snapshots", () => {
     refreshProcessRequirementManifest(seed);
 
     expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
+  it("maps the component category predicate to the componentCategories required fact", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      componentCategory: "battery-cts",
+      requiredFacts: ["priority"],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
+  it("rejects a recommended priority without a governed component category predicate", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.topic = "priority";
+    seed.entries[0]!.recommendedPriority = "P0";
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
+  it("rejects duplicate priority mappings for the same component category", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.manifest.version = "process-requirements-v3";
+    for (const entry of seed.entries) entry.provenance.effectiveVersion = "process-requirements-v3";
+    seed.entries[0]!.topic = "priority";
+    seed.entries[0]!.recommendedPriority = "P0";
+    seed.entries[0]!.applicability = {
+      componentCategory: "battery-cts",
+      requiredFacts: ["componentCategories"],
+    };
+    const duplicate = structuredClone(seed.entries[0]!);
+    duplicate.entryId = "duplicate-priority-mapping";
+    duplicate.recommendedPriority = "P1";
+    duplicate.relatedEntryIds = [];
+    seed.entries.push(duplicate);
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
+  it("accepts approved-transcription provenance contained by its registered section", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    useApprovedTranscription(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
+  it.each([
+    ["content hash", (seed: ProcessRequirementSeedPackage) => {
+      if (seed.entries[0]!.provenance.sourceType === "approved-transcription") {
+        seed.entries[0]!.provenance.sourceContentHash = "d".repeat(64);
+      }
+    }],
+    ["section", (seed: ProcessRequirementSeedPackage) => {
+      if (seed.entries[0]!.provenance.sourceType === "approved-transcription") {
+        seed.entries[0]!.provenance.section = "other-guidance.p0";
+      }
+    }],
+  ])("rejects approved-transcription provenance with mismatched %s", (_description, mutate) => {
+    const seed = createValidProcessRequirementSeedPackage();
+    useApprovedTranscription(seed);
+    mutate(seed);
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
   });
 
   it.each([

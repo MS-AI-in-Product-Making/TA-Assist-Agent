@@ -97,7 +97,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Escalations!A2",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for escalation coverage.",
@@ -118,7 +118,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Beta",
         sheetName: "TA Process and Requirements",
         sourceRange: "B19:R19",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "Dimensional Management",
         confidence: "reviewed",
         changeSummary: "Add reviewed worst-case guidance for tolerance stacks with fewer than four factors.",
@@ -139,7 +139,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Warnings!A3",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for warning coverage.",
@@ -160,7 +160,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Requirements!A4",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for requirement coverage.",
@@ -181,7 +181,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Milestones!A5",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for milestone coverage.",
@@ -202,7 +202,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Instructions!A6",
-        effectiveVersion: "process-requirements-v2",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for instruction coverage.",
@@ -282,7 +282,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available" as const,
-        version: "process-requirements-v2" as const,
+        version: "process-requirements-v3" as const,
         entries: processGuidanceEntries(),
       },
     };
@@ -598,7 +598,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v2",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -784,7 +784,7 @@ describe("TAResultsInterpretation", () => {
       ...unavailable,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v2",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -899,7 +899,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v2",
+        version: "process-requirements-v3",
         entries: [],
       },
     });

@@ -43,6 +43,7 @@ const APPLICABILITY_FACT_BY_PREDICATE = {
   minimumToleranceCountExclusive: "toleranceCount",
   maximumToleranceCountExclusive: "toleranceCount",
   hasThreeDimensionalSensitivity: "hasThreeDimensionalSensitivity",
+  componentCategory: "componentCategories",
 } as const satisfies Record<ApplicabilityPredicate, ProcessRequirementFactReference>;
 
 export function createProcessRequirementSnapshot(input: unknown): ProcessRequirementSnapshot {
@@ -81,15 +82,33 @@ function validateProvenance(seed: ProcessRequirementSeedPackage): void {
   for (const entry of seed.entries) {
     const source = sourcesByAlias.get(entry.provenance.sourceAlias);
     if (source === undefined
-      || entry.provenance.sourceFileHash !== source.hash
-      || entry.provenance.sourceRevision !== source.revision
-      || entry.provenance.sheetName !== source.sheet
-      || !isContainedRange(entry.provenance.sourceRange, source.range)
-      || entry.provenance.owner !== source.owner
+      || !provenanceMatchesSource(entry.provenance, source)
       || entry.provenance.effectiveVersion !== seed.manifest.version) {
       throw validationError([ENTRIES_REFERENCE]);
     }
   }
+}
+
+function provenanceMatchesSource(
+  provenance: ProcessRequirementEntry["provenance"],
+  source: ProcessRequirementSeedPackage["sources"][number],
+): boolean {
+  if (provenance.owner !== source.owner || provenance.sourceRevision !== source.revision) return false;
+  if ("sourceType" in provenance || "sourceType" in source) {
+    return "sourceType" in provenance
+      && "sourceType" in source
+      && provenance.sourceType === "approved-transcription"
+      && source.sourceType === "approved-transcription"
+      && provenance.sourceContentHash === source.hash
+      && isContainedSection(provenance.section, source.section);
+  }
+  return provenance.sourceFileHash === source.hash
+    && provenance.sheetName === source.sheet
+    && isContainedRange(provenance.sourceRange, source.range);
+}
+
+function isContainedSection(candidate: string, container: string): boolean {
+  return candidate === container || candidate.startsWith(`${container}.`);
 }
 
 function isContainedRange(candidateValue: string, containerValue: string): boolean {
@@ -153,6 +172,7 @@ function validateManifest(seed: ProcessRequirementSeedPackage): void {
 }
 
 function validateApplicability(entries: readonly ProcessRequirementEntry[]): void {
+  const mappedComponentCategories = new Set<string>();
   for (const entry of entries) {
     const { requiredFacts, ...predicates } = entry.applicability;
     const predicateReferences = Object.keys(predicates).map((predicate) => (
@@ -160,6 +180,17 @@ function validateApplicability(entries: readonly ProcessRequirementEntry[]): voi
     ));
     if (predicateReferences.some((reference) => !requiredFacts.includes(reference))) {
       throw validationError([ENTRIES_REFERENCE]);
+    }
+    if (entry.recommendedPriority !== undefined
+      && (entry.topic !== "priority"
+        || entry.applicability.componentCategory === undefined
+        || !requiredFacts.includes("componentCategories"))) {
+      throw validationError([ENTRIES_REFERENCE]);
+    }
+    if (entry.recommendedPriority !== undefined) {
+      const category = entry.applicability.componentCategory!;
+      if (mappedComponentCategories.has(category)) throw validationError([ENTRIES_REFERENCE]);
+      mappedComponentCategories.add(category);
     }
     if (entry.applicability.minimumToleranceCountExclusive !== undefined
       && entry.applicability.maximumToleranceCountExclusive !== undefined

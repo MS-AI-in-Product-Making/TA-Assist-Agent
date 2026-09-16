@@ -4,7 +4,7 @@ import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requi
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
-const VERSION = "process-requirements-v2" as const;
+const VERSION = "process-requirements-v3" as const;
 type LoadDependency = NonNullable<NonNullable<Parameters<typeof buildF0ProcessGuidance>[2]>["load"]>;
 
 function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSnapshot> {

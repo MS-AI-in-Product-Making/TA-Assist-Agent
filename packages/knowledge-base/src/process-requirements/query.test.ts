@@ -21,14 +21,91 @@ function captureTypedError(invoke: () => unknown) {
 }
 
 describe("process requirement queries", () => {
-  it("loads v1 and v2 exactly and evaluates with the selected snapshot version", () => {
+  it("loads v1, v2, and v3 exactly and evaluates with the selected snapshot version", () => {
     const v1 = loadProcessRequirements({ version: "process-requirements-v1" });
     const v2 = loadProcessRequirements({ version: "process-requirements-v2" });
+    const v3 = loadProcessRequirements({ version: "process-requirements-v3" });
 
     expect(v1.manifest.version).toBe("process-requirements-v1");
     expect(v2.manifest.version).toBe("process-requirements-v2");
+    expect(v3.manifest.version).toBe("process-requirements-v3");
     expect(v1.evaluateProcessRequirements({ actor: "all" }).version).toBe("process-requirements-v1");
     expect(v2.evaluateProcessRequirements({ actor: "all" }).version).toBe("process-requirements-v2");
+    expect(v3.evaluateProcessRequirements({ actor: "all" }).version).toBe("process-requirements-v3");
+  });
+
+  it.each([
+    ["battery-cts", "P0"],
+    ["cover-fit-and-function", "P1"],
+    ["pcb-component-or-fastener", "P2"],
+    ["foam-or-gasket-sealing-cushioning-or-nvh", "P3"],
+  ] as const)("recommends %s as %s from controlled v3 facts", (componentCategory, selectedPriority) => {
+    const result = loadProcessRequirements({ version: "process-requirements-v3" })
+      .evaluateProcessRequirements({ componentCategories: [componentCategory] });
+
+    expect(result.status).toBe("matched");
+    expect(result.priorityRecommendation).toEqual({
+      selectedPriority,
+      matchedEntryIds: [`priority-recommendation-${componentCategory}`],
+      requiresMeDmAlignment: true,
+    });
+    expect(entryIds(result)).toContain(`priority-recommendation-${componentCategory}`);
+  });
+
+  it("selects the highest criticality while retaining all matched category evidence", () => {
+    const result = loadProcessRequirements({ version: "process-requirements-v3" })
+      .evaluateProcessRequirements({
+        componentCategories: [
+          "foam-or-gasket-sealing-cushioning-or-nvh",
+          "cover-fit-and-function",
+          "battery-cts",
+        ],
+      });
+
+    expect(result.priorityRecommendation).toEqual({
+      selectedPriority: "P0",
+      matchedEntryIds: [
+        "priority-recommendation-battery-cts",
+        "priority-recommendation-cover-fit-and-function",
+        "priority-recommendation-foam-or-gasket-sealing-cushioning-or-nvh",
+      ],
+      requiresMeDmAlignment: true,
+    });
+    expect(entryIds(result).filter((entryId) => entryId.startsWith("priority-recommendation-")))
+      .toEqual(result.priorityRecommendation?.matchedEntryIds);
+    expect(result.matchedEntries.every(({ evidence }) => (
+      evidence.effectiveVersion === "process-requirements-v3"
+    ))).toBe(true);
+  });
+
+  it.each([
+    [["cover-fit-and-function", "pcb-component-or-fastener"], "P1"],
+    [["pcb-component-or-fastener", "foam-or-gasket-sealing-cushioning-or-nvh"], "P2"],
+    [[
+      "battery-cts",
+      "cover-fit-and-function",
+      "pcb-component-or-fastener",
+      "foam-or-gasket-sealing-cushioning-or-nvh",
+    ], "P0"],
+  ] as const)("selects %s precedence as %s and retains every recommendation entry", (
+    componentCategories,
+    selectedPriority,
+  ) => {
+    const result = loadProcessRequirements({ version: "process-requirements-v3" })
+      .evaluateProcessRequirements({ componentCategories: [...componentCategories] });
+
+    expect(result.priorityRecommendation?.selectedPriority).toBe(selectedPriority);
+    expect(result.priorityRecommendation?.matchedEntryIds).toHaveLength(componentCategories.length);
+    expect(entryIds(result).filter((entryId) => entryId.startsWith("priority-recommendation-")))
+      .toEqual(result.priorityRecommendation?.matchedEntryIds);
+  });
+
+  it("does not invent a priority recommendation without component categories", () => {
+    const result = loadProcessRequirements({ version: "process-requirements-v3" })
+      .evaluateProcessRequirements({});
+
+    expect(result.status).toBe("not-applicable");
+    expect(result.priorityRecommendation).toBeUndefined();
   });
 
   it("matches v2 small stacks only below the exclusive maximum", () => {

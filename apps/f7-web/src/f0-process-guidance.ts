@@ -3,7 +3,7 @@ import type { ProcessRequirementEntry, ProcessRequirementMatchedEntry } from "@a
 import type { DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "./api/f7-client";
 
-const VERSION = "process-requirements-v2" as const;
+const VERSION = "process-requirements-v3" as const;
 type ProcessRequirementEvaluator = ReturnType<typeof loadProcessRequirements>["evaluateProcessRequirements"];
 type ProcessRequirementLister = ReturnType<typeof loadProcessRequirements>["listProcessRequirements"];
 

@@ -10,11 +10,13 @@ import {
   type ProcessRequirementFactReference,
   type ProcessRequirementListRequest,
   type ProcessRequirementMatchedEntry,
+  type ProcessRequirementPriorityRecommendation,
   type ProcessRequirementSeedPackage,
   type ProcessRequirementVersion,
 } from "@ai-assist/contracts";
 import { createReviewedProcessRequirementsV1SeedPackage } from "./data/process-requirements-v1.js";
 import { createReviewedProcessRequirementsV2SeedPackage } from "./data/process-requirements-v2.js";
+import { createReviewedProcessRequirementsV3SeedPackage } from "./data/process-requirements-v3.js";
 import type { DeepReadonly, ProcessRequirementSnapshot } from "./types.js";
 import { createProcessRequirementSnapshot } from "./validation.js";
 
@@ -23,6 +25,7 @@ const EVALUATION_REFERENCE = "process-requirements-evaluation-request";
 const SEED_PACKAGE_FACTORIES = {
   "process-requirements-v1": createReviewedProcessRequirementsV1SeedPackage,
   "process-requirements-v2": createReviewedProcessRequirementsV2SeedPackage,
+  "process-requirements-v3": createReviewedProcessRequirementsV3SeedPackage,
 } satisfies Record<ProcessRequirementVersion, () => ProcessRequirementSeedPackage>;
 const SEVERITY_ORDER = new Map([
   ["escalation", 0],
@@ -86,6 +89,7 @@ function evaluate(
   )));
 
   if (matchedEntries.length > 0) {
+    const priorityRecommendation = resolvePriorityRecommendation(matchedEntries);
     return immutableEvaluation({
       version: snapshot.manifest.version,
       status: "matched",
@@ -95,6 +99,7 @@ function evaluate(
       ))),
       matchedEntries: matchedEntries.map(toMatchedEntry),
       missingFacts,
+      ...(priorityRecommendation === undefined ? {} : { priorityRecommendation }),
     });
   }
 
@@ -153,6 +158,10 @@ function predicatesMatch(
             || actual > applicability.minimumToleranceCountExclusive)
           && (applicability.maximumToleranceCountExclusive === undefined
             || actual < applicability.maximumToleranceCountExclusive);
+      case "componentCategories":
+        return Array.isArray(actual)
+          && applicability.componentCategory !== undefined
+          && actual.includes(applicability.componentCategory);
       default: {
         const expected = applicability[reference];
         return expected === undefined || expected === "all" || actual === expected;
@@ -162,10 +171,14 @@ function predicatesMatch(
 }
 
 function hasPredicate(entry: SnapshotEntry, reference: ProcessRequirementFactReference): boolean {
-  return reference === "toleranceCount"
-    ? entry.applicability.minimumToleranceCountExclusive !== undefined
-      || entry.applicability.maximumToleranceCountExclusive !== undefined
-    : entry.applicability[reference] !== undefined;
+  if (reference === "toleranceCount") {
+    return entry.applicability.minimumToleranceCountExclusive !== undefined
+      || entry.applicability.maximumToleranceCountExclusive !== undefined;
+  }
+  if (reference === "componentCategories") {
+    return entry.applicability.componentCategory !== undefined;
+  }
+  return entry.applicability[reference] !== undefined;
 }
 
 function hasFact(facts: ProcessRequirementEvaluationFacts, reference: ProcessRequirementFactReference): boolean {
@@ -248,4 +261,22 @@ function uniqueSorted<Value extends string>(values: readonly Value[]): Value[] {
 
 function compareAscii(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function resolvePriorityRecommendation(
+  entries: readonly SnapshotEntry[],
+): ProcessRequirementPriorityRecommendation | undefined {
+  const recommendationEntries = entries.filter((entry) => entry.recommendedPriority !== undefined);
+  if (recommendationEntries.length === 0) return undefined;
+  const priorityOrder = { P0: 0, P1: 1, P2: 2, P3: 3 } as const;
+  const selectedPriority = recommendationEntries.reduce((selected, entry) => (
+    priorityOrder[entry.recommendedPriority!] < priorityOrder[selected]
+      ? entry.recommendedPriority!
+      : selected
+  ), recommendationEntries[0]!.recommendedPriority!);
+  return {
+    selectedPriority,
+    matchedEntryIds: recommendationEntries.map(({ entryId }) => entryId),
+    requiresMeDmAlignment: true,
+  };
 }
