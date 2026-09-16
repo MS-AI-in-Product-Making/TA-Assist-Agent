@@ -243,6 +243,98 @@ describe("parseF7MeasurementTemplate", () => {
     expect("datasets" in result).toBe(false);
   });
 
+  it("blocks a spoofed worksheet row number when the cell reference points at a valid measurement row", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      const populated = withTwentySamplesForColumns(sheet, ["B"]);
+      return populated.replace(
+        /<row r="15"[^>]*>[\s\S]*?<\/row>/,
+        `<row r="999">${numberCell("B15", 1, 1)}</row>`,
+      );
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content", sheetCell: "Measurements!B15" }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
+  it("blocks same-namespace nested wrapper content inside a controlled measurement cell", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      let edited = withTwentySamplesForColumns(sheet, ["B"]);
+      edited = replaceCell(
+        edited,
+        "B15",
+        '<c r="B15" s="1"><foo xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><v>1</v></foo></c>',
+      );
+      return edited;
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content", sheetCell: "Measurements!B15", rowNumber: 15 }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
+  it.each(["0", "-15", "+15", "015", "15.0", " 15", "15 "])(
+    "blocks non-canonical visible worksheet row reference %s",
+    (rowReference) => {
+      const authority = makeSingleFactorAuthority();
+      const bytes = editTemplate(authority, (sheet) => {
+        const populated = withTwentySamplesForColumns(sheet, ["B"]);
+        return populated.replace(/<row r="15"/g, `<row r="${rowReference}"`);
+      });
+
+      const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+      expect(result).toMatchObject({
+        status: "blocked",
+        diagnostics: [{ reason: "unsupported_workbook_content", rowNumber: 15 }],
+      });
+      expect("datasets" in result).toBe(false);
+    },
+  );
+
+  it("blocks duplicate visible worksheet row references even when cell references are unique", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      const populated = withTwentySamplesForColumns(sheet, ["B"]);
+      return populated.replace("</sheetData>", '<row r="15"/></sheetData>');
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content", rowNumber: 15 }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
+  it("blocks direct child cells whose row coordinate does not match the enclosing row", () => {
+    const authority = makeSingleFactorAuthority();
+    const bytes = editTemplate(authority, (sheet) => {
+      let edited = withTwentySamplesForColumns(sheet, ["B"]);
+      edited = replaceCell(edited, "B15", "");
+      return insertSyntheticCell(edited, 16, numberCell("B15", 1, 1));
+    });
+
+    const result = parseF7MeasurementTemplate(bytes, authority, IMPORTED_AT);
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "unsupported_workbook_content", sheetCell: "Measurements!B15" }],
+    });
+    expect("datasets" in result).toBe(false);
+  });
+
   it("blocks nonblank content outside the reserved 500-row measurement area", () => {
     const authority = makeAuthority();
     const bytes = editTemplate(authority, (sheet) => sheet.replace("</sheetData>", `<row r="515">${numberCell("B515", 1, 1)}</row></sheetData>`));

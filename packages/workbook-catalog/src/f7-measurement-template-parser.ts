@@ -29,6 +29,11 @@ const ESTIMATORS = new Set(["RANGE_D2", "S_C4"]);
 const NUMERIC_LITERAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 const XML_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const MAX_RAW_DOM_NODES = 250_000;
+const CANONICAL_POSITIVE_INTEGER = /^[1-9]\d*$/;
+const ALLOWED_CELL_TYPES = new Set([undefined, "n", "str", "s", "inlineStr", "b", "e", "d"]);
+const ALLOWED_INLINE_STRING_CHILDREN = new Set(["t", "r"]);
+const ALLOWED_INLINE_RUN_CHILDREN = new Set(["rPr", "t"]);
+const ALLOWED_RICH_TEXT_RUN_PROPERTIES = new Set(["rFont", "charset", "family", "b", "i", "strike", "outline", "shadow", "condense", "extend", "color", "sz", "u", "vertAlign", "scheme"]);
 
 type ParsedAuthority = ReturnType<typeof f7MeasurementImportAuthoritySchema.parse>;
 type Structure = "UNORDERED_SAMPLE" | "ORDERED_INDIVIDUALS" | "RATIONAL_SUBGROUP";
@@ -581,6 +586,7 @@ function inspectRawWorksheet(
     }
   }
   const result = new Map<string, RawCell>();
+  const seenRows = new Set<number>();
   const sheetData = directChildElement(root, "sheetData");
   if (!sheetData) throw new Error("Worksheet is missing sheetData");
   for (let childIndex = 0; childIndex < sheetData.childNodes.length; childIndex += 1) {
@@ -592,8 +598,14 @@ function inspectRawWorksheet(
       continue;
     }
     const rowReference = rowElement.getAttribute("r") ?? "";
-    if (kind === "manifest" && !isAllowedManifestRow(authority, Number(rowReference ?? 0))) {
-      addUnsupportedWorksheetContent(add, authority, kind, "", rowReference || undefined);
+    const rowNumber = parseCanonicalPositiveInteger(rowReference);
+    if (rowNumber === undefined || seenRows.has(rowNumber)) {
+      addUnsupportedWorksheetContent(add, authority, kind, firstDirectCellReference(rowElement), rowReference || undefined);
+      continue;
+    }
+    seenRows.add(rowNumber);
+    if (kind === "manifest" && !isAllowedManifestRow(authority, rowNumber)) {
+      addUnsupportedWorksheetContent(add, authority, kind, firstDirectCellReference(rowElement), rowReference || undefined);
       continue;
     }
     for (let cellIndex = 0; cellIndex < rowElement.childNodes.length; cellIndex += 1) {
@@ -605,12 +617,18 @@ function inspectRawWorksheet(
         addUnsupportedWorksheetContent(add, authority, kind, reference, rowElement.getAttribute("r") ?? undefined);
         continue;
       }
-      if (!reference || result.has(reference)) throw new Error("Invalid or duplicate cell reference");
-      if (kind === "visible" && hasForeignNamespaceDescendant(cellElement)) {
+      const location = splitReference(reference);
+      if (!reference || !location.column || location.row === 0 || location.row !== rowNumber || result.has(reference)) {
         addUnsupportedWorksheetContent(add, authority, kind, reference);
         continue;
       }
-      const cell = parseRawCell(cellElement);
+      let cell: RawCell;
+      try {
+        cell = parseRawCell(cellElement);
+      } catch {
+        addUnsupportedWorksheetContent(add, authority, kind, reference, rowReference);
+        continue;
+      }
       result.set(reference, cell);
       if (kind === "visible" && !isAllowedVisibleCellReference(authority, reference) && isUnauthorizedRawCell(cell)) {
         addUnsupportedWorksheetContent(add, authority, kind, reference);
@@ -634,33 +652,122 @@ function directChildElement(parent: Element, localName: string): Element | undef
   return undefined;
 }
 
-function hasForeignNamespaceDescendant(element: Element): boolean {
-  const pending: Element[] = [element];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    for (let index = 0; index < current.childNodes.length; index += 1) {
-      const child = current.childNodes.item(index);
-      if (!child || child.nodeType !== 1) continue;
-      const childElement = child as Element;
-      if (childElement.namespaceURI !== XML_NAMESPACE) return true;
-      pending.push(childElement);
-    }
-  }
-  return false;
-}
-
 function parseRawCell(cell: Element): RawCell {
   const reference = cell.getAttribute("r");
-  if (!reference) throw new Error("Missing cell reference");
-  const formula = cell.getElementsByTagNameNS(XML_NAMESPACE, "f");
-  const values = cell.getElementsByTagNameNS(XML_NAMESPACE, "v");
-  const texts = cell.getElementsByTagNameNS(XML_NAMESPACE, "t");
+  if (!reference || !hasOnlyAllowedAttributes(cell, new Set(["r", "s", "t"]))) throw new Error("Missing or invalid cell reference");
+  const type = cell.getAttribute("t") ?? undefined;
+  if (!ALLOWED_CELL_TYPES.has(type)) throw new Error("Unsupported cell type");
+  const children = directElementChildren(cell);
+  if (children.some((child) => child.namespaceURI !== XML_NAMESPACE || !child.localName || !["f", "v", "is"].includes(child.localName))) {
+    throw new Error("Unsupported cell child");
+  }
+  const formulaNodes = children.filter((child) => child.localName === "f");
+  const valueNodes = children.filter((child) => child.localName === "v");
+  const inlineStringNodes = children.filter((child) => child.localName === "is");
+  if (formulaNodes.length > 1 || valueNodes.length > 1 || inlineStringNodes.length > 1) throw new Error("Duplicate cell payload");
+  const formulaNode = formulaNodes[0];
+  const valueNode = valueNodes[0];
+  const inlineStringNode = inlineStringNodes[0];
+  if (formulaNode) {
+    if (type === "s" || type === "inlineStr" || inlineStringNode) throw new Error("Unsupported formula cell shape");
+    if (!hasOnlyAllowedAttributes(formulaNode, new Set())) throw new Error("Unsupported formula attributes");
+  }
+  if (valueNode && !hasOnlyAllowedAttributes(valueNode, new Set())) throw new Error("Unsupported value attributes");
+  if (inlineStringNode && !hasOnlyAllowedAttributes(inlineStringNode, new Set())) throw new Error("Unsupported inline string attributes");
+  if (inlineStringNode) {
+    if (type !== "inlineStr" || valueNode) throw new Error("Unsupported inline string cell shape");
+  } else if (type === "inlineStr") {
+    throw new Error("Missing inline string payload");
+  }
+  if (!formulaNode && !inlineStringNode && !valueNode) {
+    if (type !== undefined) throw new Error("Unsupported empty typed cell");
+    return {
+      reference,
+      hasFormula: false,
+      value: "",
+    };
+  }
   return {
     reference,
-    ...(cell.getAttribute("t") ? { type: cell.getAttribute("t")! } : {}),
-    hasFormula: formula.length > 0,
-    value: texts.item(0)?.textContent ?? values.item(0)?.textContent ?? "",
+    ...(type ? { type } : {}),
+    hasFormula: formulaNode !== undefined,
+    value: inlineStringNode ? parseInlineString(inlineStringNode) : directTextValue(valueNode),
   };
+}
+
+function parseInlineString(inlineString: Element): string {
+  const children = directElementChildren(inlineString);
+  if (children.some((child) => child.namespaceURI !== XML_NAMESPACE || !child.localName || !ALLOWED_INLINE_STRING_CHILDREN.has(child.localName))) {
+    throw new Error("Unsupported inline string child");
+  }
+  const textNodes = children.filter((child) => child.localName === "t");
+  const runNodes = children.filter((child) => child.localName === "r");
+  if (textNodes.length > 1) throw new Error("Duplicate inline string text");
+  if (textNodes.length === 1) {
+    if (runNodes.length > 0) throw new Error("Unsupported mixed inline string payload");
+    return directTextValue(textNodes[0]);
+  }
+  if (runNodes.length === 0) throw new Error("Missing inline string payload");
+  return runNodes.map((run) => parseInlineStringRun(run)).join("");
+}
+
+function parseInlineStringRun(run: Element): string {
+  if (!hasOnlyAllowedAttributes(run, new Set())) throw new Error("Unsupported inline run attributes");
+  const children = directElementChildren(run);
+  if (children.some((child) => child.namespaceURI !== XML_NAMESPACE || !child.localName || !ALLOWED_INLINE_RUN_CHILDREN.has(child.localName))) {
+    throw new Error("Unsupported inline run child");
+  }
+  const textNodes = children.filter((child) => child.localName === "t");
+  const propertyNodes = children.filter((child) => child.localName === "rPr");
+  if (textNodes.length !== 1 || propertyNodes.length > 1) throw new Error("Invalid inline run shape");
+  if (propertyNodes[0]) validateRichTextRunProperties(propertyNodes[0]);
+  return directTextValue(textNodes[0]);
+}
+
+function validateRichTextRunProperties(properties: Element): void {
+  if (!hasOnlyAllowedAttributes(properties, new Set())) throw new Error("Unsupported rich text properties");
+  const children = directElementChildren(properties);
+  if (children.some((child) => child.namespaceURI !== XML_NAMESPACE || !child.localName || !ALLOWED_RICH_TEXT_RUN_PROPERTIES.has(child.localName))) {
+    throw new Error("Unsupported rich text property child");
+  }
+}
+
+function directElementChildren(parent: Element): Element[] {
+  const children: Element[] = [];
+  for (let index = 0; index < parent.childNodes.length; index += 1) {
+    const child = parent.childNodes.item(index);
+    if (child?.nodeType === 1) children.push(child as Element);
+  }
+  return children;
+}
+
+function hasOnlyAllowedAttributes(element: Element, allowed: ReadonlySet<string>): boolean {
+  for (let index = 0; index < (element.attributes?.length ?? 0); index += 1) {
+    const attribute = element.attributes.item(index);
+    if (!attribute) continue;
+    const name = attribute.name ?? "";
+    if (name === "xmlns" || name.startsWith("xmlns:")) continue;
+    if (!allowed.has(name)) return false;
+  }
+  return true;
+}
+
+function directTextValue(element: Element | undefined): string {
+  if (!element) return "";
+  if (!hasOnlyAllowedAttributes(element, new Set(["xml:space"]))) throw new Error("Unsupported text attributes");
+  if (directElementChildren(element).length > 0) throw new Error("Nested value content is not supported");
+  return element.textContent ?? "";
+}
+
+function firstDirectCellReference(row: Element): string {
+  for (let index = 0; index < row.childNodes.length; index += 1) {
+    const child = row.childNodes.item(index);
+    if (child?.nodeType !== 1) continue;
+    const element = child as Element;
+    const reference = element.getAttribute("r");
+    if (reference) return reference;
+  }
+  return "";
 }
 
 function addUnsupportedWorksheetContent(
@@ -671,7 +778,7 @@ function addUnsupportedWorksheetContent(
   fallbackRow?: string,
 ): void {
   const location = splitReference(reference);
-  const rowNumber = location.row || Number(fallbackRow ?? 0) || undefined;
+  const rowNumber = location.row || parseDisplayRowNumber(fallbackRow);
   const factorIndex = location.column ? factorIndexForColumn(authority, location.column) : undefined;
   const sheetName = kind === "visible"
     ? F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName
@@ -726,6 +833,17 @@ function isAllowedManifestCellReference(authority: ParsedAuthority, reference: s
 function splitReference(reference: string): { column: string; row: number } {
   const match = /^([A-Z]+)([1-9]\d*)$/.exec(reference);
   return { column: match?.[1] ?? "", row: Number(match?.[2] ?? 0) };
+}
+
+function parseCanonicalPositiveInteger(value: string): number | undefined {
+  if (!CANONICAL_POSITIVE_INTEGER.test(value)) return undefined;
+  return Number(value);
+}
+
+function parseDisplayRowNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
 function columnIndex(column: string): number {
