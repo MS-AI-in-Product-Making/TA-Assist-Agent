@@ -35,6 +35,8 @@ const DIMENSION_CHAIN_MAX_FACTORS_PER_PAGE = 5;
 const DIMENSION_CHAIN_MAX_PAGE_HEIGHT = 500;
 const DIMENSION_CHAIN_PAGE_TOP = 24;
 const DIMENSION_CHAIN_FINAL_RESERVE = 70;
+const MAX_FORMATTED_NUMBER_LENGTH = 16;
+const SCIENTIFIC_NOTATION_ABSOLUTE_THRESHOLD = 1e21;
 
 export interface F7ReportPdfRenderer {
   render(request: F7ReportPdfRouteRequest): Promise<Buffer>;
@@ -76,7 +78,11 @@ function formatScientific(value: number, fractionDigits = 2): string {
 function formatNumber(value: number, digits = 4): string {
   if (!Number.isFinite(value)) return "N/A";
   if (value !== 0 && Math.abs(value) < 0.000001) return formatScientific(value);
-  return value.toLocaleString("en-US", { maximumFractionDigits: digits });
+  const formatted = value.toLocaleString("en-US", { maximumFractionDigits: digits });
+  return Math.abs(value) >= SCIENTIFIC_NOTATION_ABSOLUTE_THRESHOLD
+    || formatted.length > MAX_FORMATTED_NUMBER_LENGTH
+    ? formatScientific(value)
+    : formatted;
 }
 
 function formatChartTick(value: number): string {

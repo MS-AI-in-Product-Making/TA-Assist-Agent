@@ -422,7 +422,7 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("data-dimension-chain data-compressed=\"true\"");
   });
 
-  it("keeps Dimension Chain SVG geometry finite for extreme finite factor values", () => {
+  it("keeps extreme finite nominal labels and Factor Setup numeric cells compact", () => {
     const report = reportFixture();
     const baseFactor = report.factors[0]!;
     const html = renderF7ReportPdfHtml({
@@ -433,9 +433,23 @@ describe("F7 report PDF renderer", () => {
       ],
     });
     const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
+    const nominalLabels = [...(dimensionChain ?? "").matchAll(/<text class="dimension-chain-metadata"[^>]*><tspan>Item \d+<\/tspan><tspan dx="10">([^<]+)<\/tspan>/g)]
+      .map((match) => match[1] ?? "");
+    const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
+      .flatMap((row) => [...row[1]!.matchAll(/<td>([^<]+)<\/td>/g)].map((cell) => cell[1] ?? ""))
+      .filter((_, index) => index % 9 === 0 || index % 9 >= 2 && index % 9 <= 6);
 
     expect(dimensionChain).toBeDefined();
     expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
+    expect(nominalLabels).toHaveLength(2);
+    expect(nominalLabels.every((label) => label.length <= 16)).toBe(true);
+    expect(nominalLabels[0]).toMatch(/^\+[1-9](?:\.\d+)?e308$/);
+    expect(nominalLabels[1]).toMatch(/^-[1-9](?:\.\d+)?e308$/);
+    expect(factorSetupNumericCells).toHaveLength(12);
+    expect(factorSetupNumericCells.every((value) => value.length <= 16)).toBe(true);
+    expect(factorSetupNumericCells).toContain("1.8e308");
+    expect(factorSetupNumericCells).toContain("-1.8e308");
   });
 
   it("places Setup Mean on a new label row when it overlaps every reference row", () => {
