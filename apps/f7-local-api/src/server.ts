@@ -26,6 +26,12 @@ import {
   AssumptionResultsPdfQueueFullError,
   type AssumptionResultsPdfRenderer,
 } from "./assumption-results-pdf-renderer.js";
+import { f7ReportPdfRouteRequestSchema } from "./f7-report-pdf-contract.js";
+import {
+  safeF7ReportPdfFileName,
+  safeUnicodeF7ReportPdfFileName,
+  type F7ReportPdfRenderer,
+} from "./f7-report-pdf-renderer.js";
 import { F7_SESSION_NOT_FOUND_REASON_CODE } from "./f7-session-service.js";
 
 const REQUEST_SUMMARY = "F7 request is invalid.";
@@ -47,6 +53,7 @@ const ROUTE_KIND_DISTRIBUTION_FIT = "f7.factors.distribution-fit";
 const ROUTE_KIND_DISTRIBUTION_APPROVAL = "f7.factors.distribution-approval";
 const ROUTE_KIND_MONTE_CARLO = "f7.monte-carlo.run";
 const ROUTE_KIND_REPORT = "f7.report.generate";
+const ROUTE_KIND_REPORT_PDF = "f7.report.pdf";
 const ROUTE_KIND_ASSUMPTION_RESULTS_PDF = "f7.assumption-results.pdf";
 const ROUTE_KIND_SESSION_GET = "f7.session.get";
 const ROUTE_KIND_DIMENSION_CHAIN_IMAGE_GET = "f7.session.dimension-chain-image.get";
@@ -145,6 +152,7 @@ function isBodyPostRoute(method: string, pathname: string): boolean {
   if (FACTOR_DISTRIBUTION_APPROVAL_PATH.test(pathname)) return true;
   if (pathname === "/f7/monte-carlo") return true;
   if (pathname === "/f7/report") return true;
+  if (pathname === "/f7/report/pdf") return true;
   if (pathname === "/f7/assumption-results/pdf") return true;
   return false;
 }
@@ -384,6 +392,7 @@ async function handleRequest(
   response: ServerResponse,
   service: F7SessionService,
   assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer,
+  reportPdfRenderer: F7ReportPdfRenderer,
 ): Promise<{ kind: string; status: number } | undefined> {
   const method = request.method ?? "";
   const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -540,6 +549,39 @@ async function handleRequest(
     return { kind: ROUTE_KIND_REPORT, status: 200 };
   }
 
+  if (method === "POST" && pathname === "/f7/report/pdf") {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const routeRequest = f7ReportPdfRouteRequestSchema.safeParse(body);
+    if (!routeRequest.success) rejectBadRequest();
+    try {
+      service.getSession(routeRequest.data.sessionId);
+    } catch (error) {
+      const parsedError = typedErrorSchema.safeParse(error);
+      const reasonCode = error && typeof error === "object" && "reasonCode" in error
+        ? error.reasonCode
+        : undefined;
+      if (parsedError.success && parsedError.data.code === "validation_error" && reasonCode === F7_SESSION_NOT_FOUND_REASON_CODE) {
+        throw new HttpRouteError(404, toErrorEnvelope(parsedError.data));
+      }
+      throw error;
+    }
+    const authoritativeReport = service.generateReport({ sessionId: routeRequest.data.sessionId });
+    const pdfBytes = await reportPdfRenderer.render({
+      sessionId: routeRequest.data.sessionId,
+      report: authoritativeReport,
+    });
+    if (pdfBytes.length === 0 || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
+      throw new Error("Report renderer returned invalid PDF bytes.");
+    }
+    writePdf(
+      response,
+      pdfBytes,
+      safeF7ReportPdfFileName(authoritativeReport.workbook.fileName, authoritativeReport.workbook.worksheetName),
+      safeUnicodeF7ReportPdfFileName(authoritativeReport.workbook.fileName, authoritativeReport.workbook.worksheetName),
+    );
+    return { kind: ROUTE_KIND_REPORT_PDF, status: 200 };
+  }
+
   if (method === "POST" && pathname === "/f7/assumption-results/pdf") {
     const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
     const routeRequest = assumptionResultsPdfRouteRequestSchema.safeParse(body);
@@ -606,6 +648,7 @@ async function handleRequest(
 export function createF7LocalServer(options: {
   readonly service: F7SessionService;
   readonly assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer;
+  readonly reportPdfRenderer: F7ReportPdfRenderer;
   readonly onEvent?: (event: { readonly kind: string; readonly status: number }) => void;
 }): Server {
   const server = createServer(async (request, response) => {
@@ -618,6 +661,8 @@ export function createF7LocalServer(options: {
       const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       if (method === "POST" && parsedUrl.pathname === "/f7/assumption-results/pdf") {
         eventKind = ROUTE_KIND_ASSUMPTION_RESULTS_PDF;
+      } else if (method === "POST" && parsedUrl.pathname === "/f7/report/pdf") {
+        eventKind = ROUTE_KIND_REPORT_PDF;
       }
       validateRequestFraming(request, method, parsedUrl.pathname);
       const handled = await handleRequest(
@@ -625,6 +670,7 @@ export function createF7LocalServer(options: {
         response,
         options.service,
         options.assumptionResultsPdfRenderer,
+        options.reportPdfRenderer,
       );
       if (handled) {
         eventKind = handled.kind;

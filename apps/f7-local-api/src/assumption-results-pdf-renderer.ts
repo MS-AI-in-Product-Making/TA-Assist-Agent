@@ -262,7 +262,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
 </html>`;
 }
 
-async function findInstalledBrowsers(): Promise<readonly string[]> {
+export async function findInstalledBrowsers(): Promise<readonly string[]> {
   const installed: string[] = [];
   for (const candidate of CONTROLLED_BROWSER_CANDIDATES) {
     try {

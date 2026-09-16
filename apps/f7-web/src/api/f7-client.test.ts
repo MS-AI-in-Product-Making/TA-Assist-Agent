@@ -397,6 +397,46 @@ describe("createF7Client", () => {
     });
   });
 
+  it("generates a governed report PDF through the exact route and body", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([37, 80, 68, 70, 45]), {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    }));
+
+    const pdf = await createF7Client("http://localhost:3017").generateReportPdf({
+      sessionId: "session-01",
+      report: validReport,
+    });
+
+    expect(pdf.size).toBe(5);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3017/f7/report/pdf");
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-01", report: validReport }),
+    });
+  });
+
+  it.each([
+    ["an unexpected media type", "text/plain", new Uint8Array([37, 80, 68, 70, 45])],
+    ["an invalid PDF signature", "application/pdf", new TextEncoder().encode("not a pdf")],
+  ])("rejects report PDF responses with %s", async (_caseName, contentType, body) => {
+    fetchMock.mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "content-type": contentType },
+    }));
+
+    await expect(createF7Client().generateReportPdf({
+      sessionId: "session-01",
+      report: validReport,
+    })).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
   it("generates a report through the exact JSON route, method, and body", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify(validReport), {
       status: 200,

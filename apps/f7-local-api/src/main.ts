@@ -5,6 +5,7 @@ import {
   type AssumptionResultsPdfRenderer,
 } from "./assumption-results-pdf-renderer.js";
 import { createF7SessionService } from "./f7-session-service.js";
+import { createF7ReportPdfRenderer, type F7ReportPdfRenderer } from "./f7-report-pdf-renderer.js";
 import { createF7LocalServer, listenF7LocalServer } from "./server.js";
 
 interface ProcessSignalsTarget {
@@ -19,6 +20,7 @@ export interface StartF7LocalApplicationOptions {
   readonly port?: number;
   readonly processTarget?: ProcessSignalsTarget;
   readonly assumptionResultsPdfRenderer?: AssumptionResultsPdfRenderer;
+  readonly reportPdfRenderer?: F7ReportPdfRenderer;
 }
 
 export interface F7LocalApplicationHandle {
@@ -35,7 +37,8 @@ export async function startF7LocalApplication(options: StartF7LocalApplicationOp
   });
   const assumptionResultsPdfRenderer = options.assumptionResultsPdfRenderer
     ?? createAssumptionResultsPdfRenderer();
-  const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+  const reportPdfRenderer = options.reportPdfRenderer ?? createF7ReportPdfRenderer();
+  const server = createF7LocalServer({ service, assumptionResultsPdfRenderer, reportPdfRenderer });
 
   let closingPromise: Promise<void> | undefined;
   const cleanupSignalListeners = (): void => {
