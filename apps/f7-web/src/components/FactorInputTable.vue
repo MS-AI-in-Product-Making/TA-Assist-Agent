@@ -3,6 +3,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
 import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
+import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
 import type { Distribution, ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
 import {
@@ -27,23 +28,25 @@ const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Beta",
 ];
 
-const COMPONENT_CATEGORY_OPTIONS: ReadonlyArray<{
-  readonly value: ProcessRequirementComponentCategory;
-  readonly label: string;
-}> = [
-  { value: "battery-cts", label: "Battery CTS" },
-  { value: "z-axis-or-around-xy-clearance", label: "Z-axis or around-XY clearance" },
-  { value: "glass-tdm-gap-or-z-step", label: "Glass/TDM gap or Z-step" },
-  { value: "thermal-module-critical-path", label: "Thermal module critical path" },
-  { value: "pcb-critical-clearance-or-alignment", label: "PCB critical clearance or alignment" },
-  { value: "cover-fit-and-function", label: "Cover fit and function" },
-  { value: "hinge-trackpad-button-or-sensor", label: "Hinge, trackpad, button, or sensor" },
-  { value: "cable-routing", label: "Cable routing" },
-  { value: "external-port-kickstand-logo-or-ssd", label: "External port, kickstand, logo, or SSD" },
-  { value: "pcb-component-or-fastener", label: "PCB component or fastener" },
-  { value: "engagement-or-assembly-feature", label: "Engagement or assembly feature" },
-  { value: "foam-or-gasket-sealing-cushioning-or-nvh", label: "Foam or gasket sealing, cushioning, or NVH" },
-];
+const COMPONENT_CATEGORY_LABELS = {
+  "battery-cts": "Battery CTS",
+  "z-axis-or-around-xy-clearance": "Z-axis or around-XY clearance",
+  "glass-tdm-gap-or-z-step": "Glass/TDM gap or Z-step",
+  "thermal-module-critical-path": "Thermal module critical path",
+  "pcb-critical-clearance-or-alignment": "PCB critical clearance or alignment",
+  "cover-fit-and-function": "Cover fit and function",
+  "hinge-trackpad-button-or-sensor": "Hinge, trackpad, button, or sensor",
+  "cable-routing": "Cable routing",
+  "external-port-kickstand-logo-or-ssd": "External port, kickstand, logo, or SSD",
+  "pcb-component-or-fastener": "PCB component or fastener",
+  "engagement-or-assembly-feature": "Engagement or assembly feature",
+  "foam-or-gasket-sealing-cushioning-or-nvh": "Foam or gasket sealing, cushioning, or NVH",
+} satisfies Readonly<Record<ProcessRequirementComponentCategory, string>>;
+
+const COMPONENT_CATEGORY_OPTIONS = processRequirementComponentCategorySchema.options.map((value) => ({
+  value,
+  label: COMPONENT_CATEGORY_LABELS[value],
+}));
 
 const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>> = {
   Normal: "normal",
@@ -300,8 +303,10 @@ function draftFor(
   return setupDraft[candidateId]!;
 }
 
-function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): FactorSpecificationDraft {
-  return draftFor(factor.factorCandidate.factorCandidateId, {
+function initialDraftFor(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+): FactorSpecificationDraft {
+  return {
     designNominal: factor.setup?.designNominal ?? factor.factorCandidate.designNominal,
     upperTolerance: factor.setup?.upperTolerance ?? factor.factorCandidate.upperTolerance,
     lowerTolerance: factor.setup?.lowerTolerance ?? factor.factorCandidate.lowerTolerance,
@@ -309,7 +314,11 @@ function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number
     sigmaLevel: factor.setup?.sigmaLevel ?? factor.evidence?.sigmaLevel ?? factor.factorCandidate.sigmaLevel ?? 4,
     distribution: factor.setup?.distribution ?? factor.evidence?.distribution ?? factor.factorCandidate.distribution,
     componentCategory: factor.setup?.componentCategory ?? factor.evidence?.componentCategory ?? "",
-  });
+  };
+}
+
+function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): FactorSpecificationDraft {
+  return draftFor(factor.factorCandidate.factorCandidateId, initialDraftFor(factor));
 }
 
 interface FactorEditSnapshot {
@@ -326,6 +335,20 @@ function cloneValue<T>(value: T): T {
 }
 
 for (const factor of props.session.factors) candidateDraft(factor);
+
+function currentSessionEditSnapshot(): FactorEditSnapshot {
+  return {
+    order: props.session.factors.map((factor) => factor.factorCandidate.factorCandidateId),
+    removedFactorIds: [],
+    addedFactors: [],
+    drafts: Object.fromEntries(props.session.factors.map((factor) => [
+      factor.factorCandidate.factorCandidateId,
+      initialDraftFor(factor),
+    ])),
+    names: {},
+    systemSpecification: importedSystemSpecificationDraft(),
+  };
+}
 
 function captureEditSnapshot(): FactorEditSnapshot {
   return cloneValue({
@@ -770,14 +793,21 @@ const currentSessionProjection = computed<DimensionChainReportProjection | undef
 
 watch(currentSessionKey, (nextKey, previousKey) => {
   if (previousKey === undefined || previousKey === nextKey) return;
+  applyingHistory = true;
+  restoreEditSnapshot(currentSessionEditSnapshot());
+  undoStack.value = [];
+  redoStack.value = [];
+  addedFactorSequence = 0;
   latestDimensionChainProjection.value = undefined;
   dimensionChainResetRevision.value += 1;
-  Object.assign(systemSpecificationDraft, importedSystemSpecificationDraft());
   const importedShift = props.session.systemSpecification?.status === "available"
     && props.session.systemSpecification.additionalMeanShift.status === "available"
     ? props.session.systemSpecification.additionalMeanShift.actualValue
     : 0;
   additionalMeanShift.value = Number.isFinite(importedShift) ? importedShift : 0;
+  void nextTick(() => {
+    applyingHistory = false;
+  });
 });
 
 const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {

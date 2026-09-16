@@ -1057,6 +1057,25 @@ describe("FactorInputTable component category", () => {
     ]);
   });
 
+  it("resets category drafts when a new session reuses the same candidate ID", async () => {
+    const wrapper = mountWithFastStubs({
+      session: editableSession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
+
+    const replacementSession = editableSession("evidence");
+    replacementSession.sessionId = "session-02";
+    await wrapper.setProps({ session: replacementSession });
+
+    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("cable-routing");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+    expect(wrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
+      expect.objectContaining({ componentCategory: "cable-routing" }),
+    ]);
+  });
+
   it("defaults user-added factors to blank and reset clears a manually selected category", async () => {
     const wrapper = mountWithFastStubs({
       session: editableSession("blank"),

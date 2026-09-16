@@ -1173,7 +1173,7 @@ describe("F7 workbench shell", () => {
     expect(headers).toContain("% Cont. to σ");
     expect(wrapper.find("[data-factor-advanced-toggle]").exists()).toBe(false);
     expect(wrapper.get(".factor-table").classes()).not.toContain("show-advanced-columns");
-    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1360px");
+    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1500px");
     const expectHeaderLines = (key: string, lines: readonly string[]) => {
       const header = wrapper.get(`th[data-column-key='${key}']`);
       expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
@@ -1797,6 +1797,7 @@ describe("F7 workbench shell", () => {
       "width: 96px;",
       "width: 58px;",
       "width: 88px;",
+      "width: 140px;",
       "width: 68px;",
       "width: 72px;",
       "width: 60px;",
