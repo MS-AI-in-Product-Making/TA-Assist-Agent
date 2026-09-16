@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as contractExports from "./index.js";
 import {
+  processRequirementApplicabilitySchema,
   processRequirementEntrySchema,
   processRequirementEvaluationRequestSchema,
   processRequirementEvaluationSchema,
@@ -9,6 +10,7 @@ import {
   processRequirementManifestSchema,
   processRequirementSeedPackageSchema,
   processRequirementSourceMetadataSchema,
+  processRequirementVersionSchema,
 } from "./process-requirements-contracts.js";
 
 const hash = "a".repeat(64);
@@ -98,6 +100,29 @@ const validMatchedEntry = () => ({
 describe("F0 process requirement contracts", () => {
   it("exports the process requirements contracts from the package entry point", () => {
     expect(contractExports.processRequirementEntrySchema).toBe(processRequirementEntrySchema);
+  });
+
+  it.each(["process-requirements-v1", "process-requirements-v2"] as const)(
+    "accepts the %s version",
+    (version) => {
+      expect(processRequirementVersionSchema.parse(version)).toBe(version);
+    },
+  );
+
+  it("accepts a non-negative integer maximum tolerance count", () => {
+    const applicability = {
+      maximumToleranceCountExclusive: 4,
+      requiredFacts: ["toleranceCount"],
+    } as const;
+
+    expect(processRequirementApplicabilitySchema.parse(applicability)).toEqual(applicability);
+  });
+
+  it.each([-1, 3.5])("rejects maximum tolerance count %s", (maximumToleranceCountExclusive) => {
+    expect(processRequirementApplicabilitySchema.safeParse({
+      maximumToleranceCountExclusive,
+      requiredFacts: ["toleranceCount"],
+    }).success).toBe(false);
   });
 
   it.each(["requirement", "warning", "escalation", "milestone", "instruction", "definition"] as const)(

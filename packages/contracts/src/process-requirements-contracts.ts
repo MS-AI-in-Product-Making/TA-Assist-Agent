@@ -3,7 +3,10 @@ import { z } from "zod";
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonEmptyStringSchema = z.string().min(1);
 
-export const processRequirementVersionSchema = z.literal("process-requirements-v1");
+export const processRequirementVersionSchema = z.enum([
+  "process-requirements-v1",
+  "process-requirements-v2",
+]);
 export const processRequirementEntryTypeSchema = z.enum([
   "requirement",
   "warning",
@@ -87,6 +90,7 @@ export const processRequirementApplicabilitySchema = z
     requirementGapPresent: z.boolean().optional(),
     workbookArea: processRequirementWorkbookAreaSchema.optional(),
     minimumToleranceCountExclusive: z.number().int().nonnegative().optional(),
+    maximumToleranceCountExclusive: z.number().int().nonnegative().optional(),
     hasThreeDimensionalSensitivity: z.boolean().optional(),
     requiredFacts: z.array(processRequirementFactReferenceSchema),
   })

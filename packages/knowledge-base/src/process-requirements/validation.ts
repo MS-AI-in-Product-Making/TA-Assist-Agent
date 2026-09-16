@@ -41,6 +41,7 @@ const APPLICABILITY_FACT_BY_PREDICATE = {
   requirementGapPresent: "requirementGapPresent",
   workbookArea: "workbookArea",
   minimumToleranceCountExclusive: "toleranceCount",
+  maximumToleranceCountExclusive: "toleranceCount",
   hasThreeDimensionalSensitivity: "hasThreeDimensionalSensitivity",
 } as const satisfies Record<ApplicabilityPredicate, ProcessRequirementFactReference>;
 
@@ -158,6 +159,12 @@ function validateApplicability(entries: readonly ProcessRequirementEntry[]): voi
       APPLICABILITY_FACT_BY_PREDICATE[predicate as ApplicabilityPredicate]
     ));
     if (predicateReferences.some((reference) => !requiredFacts.includes(reference))) {
+      throw validationError([ENTRIES_REFERENCE]);
+    }
+    if (entry.applicability.minimumToleranceCountExclusive !== undefined
+      && entry.applicability.maximumToleranceCountExclusive !== undefined
+      && entry.applicability.minimumToleranceCountExclusive + 1
+        >= entry.applicability.maximumToleranceCountExclusive) {
       throw validationError([ENTRIES_REFERENCE]);
     }
   }

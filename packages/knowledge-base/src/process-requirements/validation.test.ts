@@ -201,6 +201,47 @@ describe("F0 process requirement snapshots", () => {
     expectValidationError(seed);
   });
 
+  it("maps the maximum tolerance predicate to the toleranceCount required fact", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      maximumToleranceCountExclusive: 4,
+      requiredFacts: ["priority"],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    expectValidationError(seed);
+  });
+
+  it("accepts the maximum tolerance predicate with the toleranceCount required fact", () => {
+    const seed = createValidProcessRequirementSeedPackage();
+    seed.entries[0]!.applicability = {
+      maximumToleranceCountExclusive: 4,
+      requiredFacts: ["toleranceCount"],
+    };
+    refreshProcessRequirementManifest(seed);
+
+    expect(() => createProcessRequirementSnapshot(seed)).not.toThrow();
+  });
+
+  it.each([
+    [3, 4],
+    [4, 4],
+    [5, 4],
+  ])(
+    "rejects minimum tolerance count %s with maximum tolerance count %s",
+    (minimumToleranceCountExclusive, maximumToleranceCountExclusive) => {
+      const seed = createValidProcessRequirementSeedPackage();
+      seed.entries[0]!.applicability = {
+        minimumToleranceCountExclusive,
+        maximumToleranceCountExclusive,
+        requiredFacts: ["toleranceCount"],
+      };
+      refreshProcessRequirementManifest(seed);
+
+      expectValidationError(seed);
+    },
+  );
+
   it("accepts an unconditional informational definition without required facts", () => {
     const seed = createValidProcessRequirementSeedPackage();
     seed.entries[1]!.entryType = "definition";
