@@ -185,26 +185,50 @@ function safeArtifactReference(reference: any): { artifact: string; contentHash:
 }
 
 function expectedSources(optimization: any) {
-  if (optimization.optimizationVersion === "f6-optimization-v3") {
-    return {
-      f2: safeArtifactReference(optimization.provenance?.f2Reference),
-      f3: safeArtifactReference(optimization.provenance?.f3Reference),
-      f4: safeArtifactReference(optimization.provenance?.f4Reference),
-      f5: safeArtifactReference(optimization.provenance?.f5Reference),
-      modelInterpretation: safeArtifactReference(optimization.provenance?.multimodalReference),
-    };
+  switch (optimization.optimizationVersion) {
+    case "f6-optimization-v4": {
+      const base = {
+        f2: safeArtifactReference(optimization.provenance?.f2Reference),
+        f3: safeArtifactReference(optimization.provenance?.f3Reference),
+        f4: safeArtifactReference(optimization.provenance?.f4Reference),
+        f5: safeArtifactReference(optimization.provenance?.f5Reference),
+        modelInterpretation: safeArtifactReference(optimization.provenance?.multimodalReference),
+      };
+      const optional = Object.entries(SOURCE_PROVENANCE_FIELDS)
+        .map(([sourceKey, provenanceKey]) => [sourceKey, safeArtifactReference(optimization.provenance?.[provenanceKey])])
+        .filter(([, reference]) => reference !== undefined);
+      const governedInputs = [
+        ["analysisContext", safeArtifactReference(optimization.provenance?.analysisContextReference)],
+        ["optimizationTargets", safeArtifactReference(optimization.provenance?.optimizationTargetsReference)],
+      ].filter(([, reference]) => reference !== undefined);
+      return Object.fromEntries([
+        ...Object.entries(base).filter(([, reference]) => reference !== undefined),
+        ...optional,
+        ...governedInputs,
+      ]);
+    }
+    case "f6-optimization-v3":
+      return {
+        f2: safeArtifactReference(optimization.provenance?.f2Reference),
+        f3: safeArtifactReference(optimization.provenance?.f3Reference),
+        f4: safeArtifactReference(optimization.provenance?.f4Reference),
+        f5: safeArtifactReference(optimization.provenance?.f5Reference),
+        modelInterpretation: safeArtifactReference(optimization.provenance?.multimodalReference),
+      };
+    default: {
+      const directSources = Object.entries(SOURCE_PROVENANCE_FIELDS)
+        .map(([sourceKey, provenanceKey]) => [sourceKey, safeArtifactReference(optimization.provenance?.[provenanceKey])])
+        .filter(([, reference]) => reference !== undefined);
+      const decisionSources = Object.entries(SOURCE_DECISION_FIELDS)
+        .map(([sourceKey, provenanceKey]) => {
+          const decision = optimization.provenance?.[provenanceKey];
+          const reference = decision?.outcome === "CALLER_AUTHORIZED" ? safeArtifactReference(decision.artifactReference) : undefined;
+          return [sourceKey, reference];
+        })
+        .filter(([, reference]) => reference !== undefined);
+      return Object.fromEntries([...directSources, ...decisionSources]);
+    }
   }
-  const directSources = Object.entries(SOURCE_PROVENANCE_FIELDS)
-    .map(([sourceKey, provenanceKey]) => [sourceKey, safeArtifactReference(optimization.provenance?.[provenanceKey])])
-    .filter(([, reference]) => reference !== undefined);
-  const decisionSources = Object.entries(SOURCE_DECISION_FIELDS)
-    .map(([sourceKey, provenanceKey]) => {
-      const decision = optimization.provenance?.[provenanceKey];
-      const reference = decision?.outcome === "CALLER_AUTHORIZED" ? safeArtifactReference(decision.artifactReference) : undefined;
-      return [sourceKey, reference];
-    })
-    .filter(([, reference]) => reference !== undefined);
-  return Object.fromEntries([...directSources, ...decisionSources]);
 }
 
 function validateHashes(runRoot: string, summary: any, hashedArtifacts: readonly (readonly string[])[]): boolean {
@@ -250,6 +274,10 @@ function validateInputDecisions(summary: any, manifest: any, optimization: any):
   const decisions = summary?.inputDecisions;
   if (decisions === undefined || manifest?.inputDecisions === undefined) return false;
   if (!sameJson(manifest.inputDecisions, decisions)) return false;
+  if (optimization.optimizationVersion === "f6-optimization-v4") {
+    return decisions.modelInterpretation?.outcome === "CALLER_AUTHORIZED"
+      && sameJson(decisions.modelInterpretation.artifactReference, optimization.provenance.multimodalReference);
+  }
   if (optimization.optimizationVersion === "f6-optimization-v3") {
     return decisions.modelInterpretation?.outcome === "CALLER_AUTHORIZED"
       && sameJson(decisions.modelInterpretation.artifactReference, optimization.provenance.multimodalReference);
@@ -274,6 +302,85 @@ function validateRunSummary(summary: any, optimization: any): boolean {
   return sameJson(summary?.counts, optimization.summary) && sameJson(summary?.sources, expected);
 }
 
+function resultSnapshot(step: any): any | undefined {
+  return step?.status === "COMPLETED_TARGET_MET" || step?.status === "COMPLETED_TARGET_NOT_MET"
+    ? step.result
+    : undefined;
+}
+
+function completedStepCapabilityMatches(step: any): boolean {
+  if (step?.status === "COMPLETED_TARGET_MET") return step?.result?.capability?.status === "PASS";
+  if (step?.status === "COMPLETED_TARGET_NOT_MET") return step?.result?.capability?.status === "FAIL";
+  return true;
+}
+
+function validateV4WorksheetLineage(worksheet: any, f4Reference: any): boolean {
+  const step1 = worksheet?.steps?.[0];
+  const step2 = worksheet?.steps?.[1];
+  const step3 = worksheet?.steps?.[2];
+  const baseline = worksheet?.baselineResult;
+  const selected = worksheet?.selectedResult?.snapshot;
+  if (!baseline || !selected || step1 === undefined || step2 === undefined || step3 === undefined) return false;
+
+  const step1Snapshot = resultSnapshot(step1);
+  const step2Snapshot = resultSnapshot(step2);
+  const step3Snapshot = resultSnapshot(step3);
+
+  if (!completedStepCapabilityMatches(step1)
+    || !completedStepCapabilityMatches(step2)
+    || !completedStepCapabilityMatches(step3)) {
+    return false;
+  }
+
+  const snapshots = [baseline, step1Snapshot, step2Snapshot, step3Snapshot, selected].filter((snapshot) => snapshot !== undefined);
+  if (snapshots.some((snapshot) => snapshot.calculationReference?.artifact !== f4Reference?.artifact
+    || snapshot.calculationReference?.contentHash !== f4Reference?.contentHash)) {
+    return false;
+  }
+
+  if (step1Snapshot !== undefined && step1Snapshot.inputScenarioId !== baseline.scenarioId) return false;
+  const step2ExpectedParent = step1Snapshot?.scenarioId ?? baseline.scenarioId;
+  if (step2Snapshot !== undefined && step2Snapshot.inputScenarioId !== step2ExpectedParent) return false;
+  const step3ExpectedParent = step2Snapshot?.scenarioId ?? step1Snapshot?.scenarioId ?? baseline.scenarioId;
+  if (step3Snapshot !== undefined && step3Snapshot.inputScenarioId !== step3ExpectedParent) return false;
+
+  switch (worksheet?.selectedResult?.status) {
+    case "baseline_meets_target":
+      return sameJson(selected, baseline);
+    case "step1_centered":
+      return step1?.status === "COMPLETED_TARGET_MET"
+        && step1Snapshot !== undefined
+        && step1Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step1Snapshot);
+    case "step2_tolerance_optimized":
+      return step2?.status === "COMPLETED_TARGET_MET"
+        && step2Snapshot !== undefined
+        && step2Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step2Snapshot);
+    case "step3_specification_relaxed_pending_approval":
+      return step3?.status === "COMPLETED_TARGET_MET"
+        && step3Snapshot !== undefined
+        && step3Snapshot.capability?.status === "PASS"
+        && selected.capability?.status === "PASS"
+        && sameJson(selected, step3Snapshot);
+    case "no_validated_optimized_result":
+      return [baseline, step1Snapshot, step2Snapshot, step3Snapshot]
+        .filter((snapshot) => snapshot !== undefined)
+        .some((snapshot) => sameJson(selected, snapshot));
+    default:
+      return false;
+  }
+}
+
+function validateV4SourcesAndLineage(optimization: any, summary: any): boolean {
+  if (safeArtifactReference(optimization?.provenance?.multimodalReference) === undefined) return false;
+  if (!Array.isArray(optimization?.worksheets) || optimization.worksheets.length === 0) return false;
+  if (!sameJson(summary?.counts, optimization.summary)) return false;
+  return optimization.worksheets.every((worksheet: any) => validateV4WorksheetLineage(worksheet, optimization.provenance?.f4Reference));
+}
+
 export function validateExistingF6(entryPath: string, request: ExistingF6ValidationRequest): ExistingF6ValidationResult {
   if (request.publishRoot === undefined) return rejected("artifact_publish_root_required");
   try {
@@ -289,6 +396,16 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");
     if (summary?.status !== expectedStatus || !validateRunSummary(summary, optimization)) return rejected("run_summary_invalid");
+    switch (optimization.optimizationVersion) {
+      case "f6-optimization-v4":
+        if (!validateV4SourcesAndLineage(optimization, summary)) return rejected("artifact_validation_failed");
+        break;
+      case "f6-optimization-v3":
+      case "f6-optimization-v2":
+        break;
+      default:
+        return rejected("artifact_validation_failed");
+    }
 
     if (!validateHashes(runRoot, summary, contract.hashes)) return rejected("artifact_hash_mismatch");
     if (contract.pdf && !hasPdfSignature(path.join(runRoot, "Feature6-Report.pdf"))) return rejected("artifact_validation_failed");

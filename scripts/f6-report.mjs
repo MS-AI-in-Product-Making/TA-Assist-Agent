@@ -271,6 +271,75 @@ function v2AdjustedLabel(option) {
   }).join("; ");
 }
 
+function v4FactorIdentityKey(factor) {
+  return JSON.stringify([
+    factor.factor.worksheetName,
+    factor.factor.tableId,
+    factor.factor.sourceRow,
+    factor.factor.factorName,
+    factor.factor.unit,
+  ]);
+}
+
+function nearlyEqual(left, right) {
+  return Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
+}
+
+function v4SnapshotUnit(snapshot) {
+  const units = [...new Set(snapshot.factors.map((factor) => factor.factor.unit).filter((unit) => typeof unit === "string" && unit.length > 0))];
+  if (units.length !== 1) throw new Error("Invalid F6 result.");
+  return units[0];
+}
+
+function v4ComparisonUnit(baselineSnapshot, selectedSnapshot) {
+  const baselineUnit = v4SnapshotUnit(baselineSnapshot);
+  const selectedUnit = v4SnapshotUnit(selectedSnapshot);
+  if (baselineUnit !== selectedUnit) throw new Error("Invalid F6 result.");
+  return baselineUnit;
+}
+
+function v4EngineeringText(value, unit) {
+  return formatEngineering(value, unit, 6)
+    .replace(/\.(\d*?[1-9])0+(?=\s)/, ".$1")
+    .replace(/\.0+(?=\s)/, "");
+}
+
+function v4ChangedFactors(baseline, selected) {
+  const baselineByKey = new Map(baseline.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
+  const overrideByKey = new Map(selected.factorOverrides.map((override) => [v4FactorIdentityKey({ factor: override.factor }), override]));
+  return selected.factors.filter((factor) => {
+    const key = v4FactorIdentityKey(factor);
+    const raw = baselineByKey.get(v4FactorIdentityKey(factor));
+    if (raw === undefined) return true;
+    const differsFromBaseline = !nearlyEqual(raw.nominalValue, factor.nominalValue)
+      || !nearlyEqual(raw.lowerTolerance, factor.lowerTolerance)
+      || !nearlyEqual(raw.upperTolerance, factor.upperTolerance);
+    if (!differsFromBaseline) return false;
+
+    const override = overrideByKey.get(key);
+    if (override === undefined) return true;
+
+    const expectedNominal = override.nominalValue ?? raw.nominalValue;
+    const expectedLower = override.lowerTolerance ?? raw.lowerTolerance;
+    const expectedUpper = override.upperTolerance ?? raw.upperTolerance;
+    return !nearlyEqual(expectedNominal, factor.nominalValue)
+      || !nearlyEqual(expectedLower, factor.lowerTolerance)
+      || !nearlyEqual(expectedUpper, factor.upperTolerance);
+  });
+}
+
+function v4FactorChangeCells(raw, optimized, changedBy) {
+  const unit = optimized.factor.unit;
+  if (raw === undefined) return ["N/A", "N/A", "N/A", "N/A", changedBy];
+  return [
+    `${v4EngineeringText(raw.nominalValue, unit)} -> ${v4EngineeringText(optimized.nominalValue, unit)}`,
+    `${v4EngineeringText(raw.lowerTolerance, unit)} / ${v4EngineeringText(raw.upperTolerance, unit)} -> ${v4EngineeringText(optimized.lowerTolerance, unit)} / ${v4EngineeringText(optimized.upperTolerance, unit)}`,
+    `${v4EngineeringText(raw.sigma, unit)} -> ${v4EngineeringText(optimized.sigma, unit)}`,
+    `${formatPercent(raw.contribution * 100, 2)} -> ${formatPercent(optimized.contribution * 100, 2)}`,
+    changedBy,
+  ];
+}
+
 export function renderF6Report(result, options = {}) {
   void options;
   let parsed;
@@ -278,6 +347,87 @@ export function renderF6Report(result, options = {}) {
     parsed = f6ReadableOptimizationResultSchema.parse(result);
   } catch {
     throw new Error("Invalid F6 result.");
+  }
+  if (parsed.optimizationVersion === "f6-optimization-v4") {
+    const lines = [
+      "# Feature 6 Sequential Optimization Report V4",
+      "",
+      `- Run status: ${cell(parsed.runStatus)}`,
+      `- Workbook: ${cell(parsed.workbook.fileName)}`,
+    ];
+
+    for (const worksheet of parsed.worksheets) {
+      lines.push("", `## ${cell(worksheet.worksheetName)}`);
+      if (worksheet.selectedResult.status === "baseline_meets_target") {
+        lines.push("", "- Baseline meets target; optimization comparison not required.");
+        continue;
+      }
+      const baseline = worksheet.baselineResult;
+      const comparisonUnit = v4ComparisonUnit(baseline, worksheet.selectedResult.snapshot);
+      const hasValidatedOptimizedResult = worksheet.selectedResult.status !== "no_validated_optimized_result";
+      const optimized = hasValidatedOptimizedResult ? worksheet.selectedResult.snapshot : undefined;
+      const changed = v4ChangedFactors(baseline, worksheet.selectedResult.snapshot);
+      const baselineByKey = new Map(baseline.factors.map((factor) => [v4FactorIdentityKey(factor), factor]));
+
+      lines.push(
+        "",
+        "<!-- f6-optimization-comparison -->",
+        "## Optimization Comparison",
+        "",
+        `- Selected result: ${cell(worksheet.selectedResult.status)}`,
+      );
+      if (!hasValidatedOptimizedResult) lines.push("- No validated optimized result");
+      lines.push(
+        "",
+        "| Metric | Raw Data | Optimized Data |",
+        "|---|---:|---:|",
+        `| Design Nominal | ${v4EngineeringText(baseline.system.designNominal, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.designNominal, comparisonUnit)} |`,
+        `| Mean Response | ${v4EngineeringText(baseline.system.mean, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.mean, comparisonUnit)} |`,
+        `| Mean-to-Spec-Center Offset | ${v4EngineeringText(baseline.system.meanOffset, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.meanOffset, comparisonUnit)} |`,
+        `| Mean Shift | ${v4EngineeringText(baseline.system.additionalMeanShift, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.additionalMeanShift, comparisonUnit)} |`,
+        `| RSS One Sigma | ${v4EngineeringText(baseline.system.rssSigma, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.rssSigma, comparisonUnit)} |`,
+        `| LSL | ${v4EngineeringText(baseline.capability.lowerSpecLimit, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.capability.lowerSpecLimit, comparisonUnit)} |`,
+        `| USL | ${v4EngineeringText(baseline.capability.upperSpecLimit, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.capability.upperSpecLimit, comparisonUnit)} |`,
+        `| Predictive Cpk | ${baseline.capability.cpk.toFixed(6)} | ${optimized === undefined ? "N/A" : optimized.capability.cpk.toFixed(6)} |`,
+        `| Predictive CpkL | ${String(baseline.capability.lowerCpk)} | ${optimized === undefined ? "N/A" : String(optimized.capability.lowerCpk)} |`,
+        `| Predictive CpkU | ${String(baseline.capability.upperCpk)} | ${optimized === undefined ? "N/A" : String(optimized.capability.upperCpk)} |`,
+        `| Predicted Yield | ${formatPercent(baseline.capability.yield * 100, 2)} | ${optimized === undefined ? "N/A" : formatPercent(optimized.capability.yield * 100, 2)} |`,
+        `| Predicted DPM | ${String(baseline.capability.totalDpm)} | ${optimized === undefined ? "N/A" : String(optimized.capability.totalDpm)} |`,
+        `| Worst-Case Lower | ${v4EngineeringText(baseline.system.worstCaseLower, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.worstCaseLower, comparisonUnit)} |`,
+        `| Worst-Case Upper | ${v4EngineeringText(baseline.system.worstCaseUpper, comparisonUnit)} | ${optimized === undefined ? "N/A" : v4EngineeringText(optimized.system.worstCaseUpper, comparisonUnit)} |`,
+        `| Capability Status | ${baseline.capability.status} | ${optimized === undefined ? "N/A" : optimized.capability.status} |`,
+        "",
+        "| Step | Status | Action | Result |",
+        "|---|---|---|---|",
+      );
+      for (const step of worksheet.steps) {
+        const action = step.step === "meanResponseCentering"
+          ? "Center mean response"
+          : step.step === "toleranceReverseSolve"
+            ? "Reverse-solve tolerance"
+            : "Relax specification when needed";
+        const resultText = "result" in step
+          ? (step.step === "specificationRelaxation"
+            ? `Scenario ${step.result.scenarioId}; Requirement change - engineering approval required`
+            : `Scenario ${step.result.scenarioId}`)
+          : ("reasonCode" in step ? step.reasonCode : "N/A");
+        lines.push(`| ${step.step} | ${step.status} | ${cell(action)} | ${cell(resultText)} |`);
+      }
+      lines.push(
+        "",
+        "| Factor | Table / Row | Nominal Raw -> Optimized | Tolerance Raw -> Optimized | Sigma Raw -> Optimized | Contribution Raw -> Optimized | Changed By |",
+        "|---|---|---|---|---|---|---|",
+      );
+      if (changed.length === 0) {
+        lines.push("| None | N/A | N/A | N/A | N/A | N/A | N/A |");
+      } else {
+        for (const factor of changed) {
+          const raw = baselineByKey.get(v4FactorIdentityKey(factor));
+          lines.push(`| ${cell(factor.factor.factorName)} | ${cell(`${factor.factor.tableId} / ${factor.factor.sourceRow}`)} | ${v4FactorChangeCells(raw, factor, worksheet.selectedResult.snapshot.sourceStep).map(cell).join(" | ")} |`);
+        }
+      }
+    }
+    return `${lines.join("\n").trimEnd()}\n`;
   }
   if (parsed.optimizationVersion === "f6-optimization-v3") {
     const language = parsed.interactionLanguage.uiCatalogLanguage;

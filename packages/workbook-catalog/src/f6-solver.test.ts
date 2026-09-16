@@ -9,6 +9,7 @@ import {
   F6SolverError,
   scaleToleranceBandAroundCenter,
   selectTopContributors,
+  solveGuardedTargetRssSigma,
   solveOneSidedSpecificationLimits,
   solveCenteringShift,
   solveSingleFactorTolerance,
@@ -334,6 +335,43 @@ describe("F6 deterministic solver primitives", () => {
       upperSpecLimit: 2,
       targetCpk: 1.33333333333333,
     })).toBeCloseTo(0.25, 12);
+  });
+
+  it("applies a fixed machine guard below the raw target RSS sigma", () => {
+    const raw = solveTargetRssSigma({
+      mean: 1,
+      lowerSpecLimit: 0,
+      upperSpecLimit: 2,
+      targetCpk: 1.33333333333333,
+    });
+
+    expect(solveGuardedTargetRssSigma({
+      mean: 1,
+      lowerSpecLimit: 0,
+      upperSpecLimit: 2,
+      targetCpk: 1.33333333333333,
+    })).toBe(raw * (1 - 64 * Number.EPSILON));
+  });
+
+  it("keeps the guarded sigma finite and positive for representable inputs", () => {
+    const guarded = solveGuardedTargetRssSigma({
+      mean: 0,
+      LSL: -1e308,
+      USL: 1e308,
+      targetCpk: 1e308,
+    });
+
+    expect(Number.isFinite(guarded)).toBe(true);
+    expect(guarded).toBeGreaterThan(0);
+  });
+
+  it("throws target_unreachable when guard collapses to a non-positive value", () => {
+    expect(() => solveGuardedTargetRssSigma({
+      mean: 0,
+      lowerSpecLimit: -Number.MIN_VALUE,
+      upperSpecLimit: Number.MIN_VALUE,
+      targetCpk: 1,
+    })).toThrowError(/target_unreachable/);
   });
 
   it("avoids target Cpk denominator overflow for representable extreme ratios", () => {

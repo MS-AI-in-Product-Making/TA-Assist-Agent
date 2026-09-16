@@ -10,6 +10,7 @@ import {
   installRequiredMultimodalV3,
   installF6V2Evidence,
 } from "./f6-artifact-test-fixture.mjs";
+import { createF6OptimizationV4 } from "../packages/workbook-catalog/dist/index.js";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { validateExistingF6Artifact } from "./verify-current-f6.mjs";
 
@@ -289,7 +290,15 @@ function installAllOptionalInputs(bundle) {
   };
 }
 
-function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], optionalInputs = false, currentObservation = false, currentV3Blocked = false } = {}) {
+function createVerifiedRun({
+  worksheetNames = ["Analysis-A"],
+  blockedWorksheetNames = [],
+  optionalInputs = false,
+  currentObservation = false,
+  currentV3Blocked = false,
+  createOptimization,
+  createFinalReport,
+} = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames: currentV3Blocked ? blockedWorksheetNames : [] });
   const optionalArtifacts = optionalInputs ? installAllOptionalInputs(bundle) : {};
   if (currentObservation) installF5CurrentObservationLedger(bundle);
@@ -321,6 +330,11 @@ function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNa
       manifestName: "manifest.json",
     }),
     renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
+    ...(createOptimization === undefined ? {} : { createOptimization }),
+    createFinalReport: createFinalReport ?? (() => createV4FinalReportStub({
+      worksheetNames,
+      blockedWorksheetNames: currentV3Blocked ? blockedWorksheetNames : [],
+    })),
   });
 
   expect(result.status, JSON.stringify(result, null, 2)).toBe("completed");
@@ -328,7 +342,235 @@ function createVerifiedRun({ worksheetNames = ["Analysis-A"], blockedWorksheetNa
   return { runRoot, bundle };
 }
 
+function recomputeOptimizationHash(runRoot) {
+  const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+  const summary = readJson(summaryPath);
+  summary.hashes.optimizationJsonSha256 = fixtureFileSha256(path.join(runRoot, "Feature6-Optimization.json"));
+  writeJson(summaryPath, summary);
+}
+
+function syncSummaryCounts(runRoot, optimization) {
+  const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+  const summary = readJson(summaryPath);
+  summary.counts = optimization.summary;
+  writeJson(summaryPath, summary);
+}
+
+function createV4FinalReportStub({ worksheetNames, blockedWorksheetNames = [] }) {
+  const worksheetDispositions = [
+    ...worksheetNames.map((worksheetName) => ({ worksheetName, disposition: "CONDITIONAL_PASS" })),
+    ...blockedWorksheetNames.map((worksheetName) => ({ worksheetName, disposition: "FAIL" })),
+  ];
+  const workbookDisposition = blockedWorksheetNames.length > 0 ? "FAIL" : "CONDITIONAL_PASS";
+
+  return {
+    markdown: "# F6 final report\n",
+    reportSummary: {
+      workbookDisposition,
+      worksheetDispositions,
+    },
+    projection: {
+      schemaVersion: "ta-engineering-report-projection-v1",
+      title: "F6 final report",
+      workbookDisposition,
+      worksheetDispositions,
+      workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+      worksheets: worksheetDispositions.map(({ worksheetName, disposition }) => ({
+        worksheetName,
+        toleranceLoopDescription: `${worksheetName} loop`,
+        disposition,
+        requiredAction: disposition === "FAIL" ? "Blocked" : "Review",
+        findings: ["Stub report content for v4 validation tests."],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: ["F4:Analysis-A", "F5-multimodal:Analysis-A"],
+      })),
+    },
+  };
+}
+
 describe("validateExistingF6Artifact", () => {
+  it("accepts a valid current v4 run with unchanged f6-artifact-set-v3", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(optimization.optimizationVersion).toBe("f6-optimization-v4");
+    expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
+    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("rejects v4 selected-result snapshot identity tampering even when hashes are recomputed", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
+    const optimization = readJson(optimizationPath);
+    optimization.worksheets[0].selectedResult.snapshot.scenarioId = "tampered:selected-result";
+    writeJson(optimizationPath, optimization);
+    recomputeOptimizationHash(runRoot);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects v4 met-status mismatches and step3 pending from FAIL even when hashes are recomputed", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
+    const optimization = readJson(optimizationPath);
+    const worksheet = optimization.worksheets[0];
+
+    worksheet.baselineResult.capability.status = "FAIL";
+    worksheet.steps[0] = {
+      step: "meanResponseCentering",
+      status: "COMPLETED_TARGET_MET",
+      result: {
+        ...worksheet.baselineResult,
+        scenarioId: `${worksheet.baselineResult.scenarioId}:step1`,
+        sourceStep: "meanResponseCentering",
+        inputScenarioId: worksheet.baselineResult.scenarioId,
+        capability: { ...worksheet.baselineResult.capability, status: "FAIL" },
+      },
+    };
+    worksheet.steps[1] = {
+      step: "toleranceReverseSolve",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.selectedResult = {
+      status: "step1_centered",
+      snapshot: worksheet.steps[0].result,
+    };
+    optimization.summary = {
+      ...optimization.summary,
+      baselineMeetsTargetWorksheetCount: 0,
+      optimizedWorksheetCount: 1,
+      noValidatedResultWorksheetCount: 0,
+      clarificationRequiredWorksheetCount: 0,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+
+    worksheet.steps[0] = {
+      step: "meanResponseCentering",
+      status: "COMPLETED_TARGET_NOT_MET",
+      result: {
+        ...worksheet.steps[0].result,
+        capability: { ...worksheet.steps[0].result.capability, status: "PASS" },
+      },
+    };
+    worksheet.steps[1] = {
+      step: "toleranceReverseSolve",
+      status: "COMPLETED_TARGET_NOT_MET",
+      result: {
+        ...worksheet.steps[0].result,
+        scenarioId: `${worksheet.steps[0].result.scenarioId}:step2`,
+        sourceStep: "toleranceReverseSolve",
+        inputScenarioId: worksheet.steps[0].result.scenarioId,
+        capability: { ...worksheet.steps[0].result.capability, status: "FAIL" },
+      },
+    };
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.selectedResult = {
+      status: "step2_tolerance_optimized",
+      snapshot: worksheet.steps[1].result,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "COMPLETED_TARGET_NOT_MET",
+      changeClass: "requirement_change",
+      approvalRequired: true,
+      capabilityImprovementClaim: false,
+      result: {
+        ...worksheet.steps[1].result,
+        scenarioId: `${worksheet.steps[1].result.scenarioId}:step3`,
+        sourceStep: "specificationRelaxation",
+        inputScenarioId: worksheet.steps[1].result.scenarioId,
+        capability: { ...worksheet.steps[1].result.capability, status: "FAIL" },
+      },
+    };
+    worksheet.selectedResult = {
+      status: "step3_specification_relaxed_pending_approval",
+      snapshot: worksheet.steps[2].result,
+    };
+    optimization.summary = {
+      ...optimization.summary,
+      baselineMeetsTargetWorksheetCount: 0,
+      optimizedWorksheetCount: 1,
+      noValidatedResultWorksheetCount: 0,
+      clarificationRequiredWorksheetCount: 0,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects v4 step lineage tampering even when hashes are recomputed", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
+    const optimization = readJson(optimizationPath);
+    const worksheet = optimization.worksheets[0];
+    const lineageStep = worksheet.steps.find((step) => step?.result !== undefined);
+    if (lineageStep?.result !== undefined) {
+      lineageStep.result.inputScenarioId = "tampered:lineage";
+    } else {
+      const baseline = worksheet.baselineResult;
+      worksheet.steps[1] = {
+        step: "toleranceReverseSolve",
+        status: "COMPLETED_TARGET_NOT_MET",
+        result: {
+          ...baseline,
+          sourceStep: "toleranceReverseSolve",
+          scenarioId: `${baseline.scenarioId}:tampered`,
+          inputScenarioId: "tampered:lineage",
+        },
+      };
+    }
+    writeJson(optimizationPath, optimization);
+    recomputeOptimizationHash(runRoot);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
   it("reads an untouched historical v2 bundle without adding model interpretation or rewriting files", () => {
     const { runRoot, bundle } = createVerifiedRun();
     rewriteAsHistoricalV2(runRoot);
@@ -380,14 +622,13 @@ describe("validateExistingF6Artifact", () => {
     });
   });
 
-  it("accepts a current v3 run with an auto-inherited F5 image-observation source", () => {
+  it("accepts a governed current imageObservation source on current v4 run summaries", () => {
     const { runRoot, bundle } = createVerifiedRun({ currentObservation: true });
     const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
 
     expect(summary.sources.imageObservation).toBeDefined();
     const result = validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot });
-    expect(result.status, JSON.stringify(result)).toBe("accepted");
-    expect(result.outputDirectory).toBe(runRoot);
+    expect(result).toMatchObject({ status: "accepted" });
   });
 
   it("accepts a current v3 report with a governed blocked FAIL worksheet", () => {

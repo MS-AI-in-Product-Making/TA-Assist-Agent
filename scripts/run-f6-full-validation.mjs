@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runF6Optimization } from "../packages/workflow-runners/dist/index.js";
 import { createTypedError } from "../packages/contracts/dist/index.js";
-import { createF6OptimizationV3 } from "../packages/workbook-catalog/dist/index.js";
+import { createF6OptimizationV4 } from "../packages/workbook-catalog/dist/index.js";
 import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
@@ -69,7 +69,7 @@ function normalizeDependencies(overrides = {}) {
       process.env.AI_TVA_F6_PUBLISH_ROOT,
     )),
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
-    createOptimization: overrides.createOptimization ?? createF6OptimizationV3,
+    createOptimization: overrides.createOptimization ?? createF6OptimizationV4,
     createFinalReport: overrides.createFinalReport ?? createF6FinalReportProjection,
     renderFinalReportPdf: overrides.renderFinalReportPdf,
     mkdir: overrides.mkdir ?? mkdirSync,
@@ -114,7 +114,11 @@ function isUnsafeFailureOutput(result) {
 
 function normalizeF6Result(result) {
   if (result?.status !== "failed" || !isUnsafeFailureOutput(result)) return result;
-  return { status: "failed", reasonCode: result.reasonCode };
+  return {
+    status: "failed",
+    reasonCode: result.reasonCode,
+    ...(result.failureDetail === undefined ? {} : { failureDetail: result.failureDetail }),
+  };
 }
 
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
@@ -216,7 +220,11 @@ export function runF6Cli(options = {}, dependencyOverrides = {}, io = {}) {
           : "invalid_arguments_or_output_root",
     };
   }
-  log(json(result.status === "failed" ? { status: result.status, reasonCode: result.reasonCode } : result).trimEnd());
+  log(json(result.status === "failed" ? {
+    status: result.status,
+    reasonCode: result.reasonCode,
+    ...(result.failureDetail === undefined ? {} : { failureDetail: result.failureDetail }),
+  } : result).trimEnd());
   return result.status === "failed" ? 1 : 0;
 }
 

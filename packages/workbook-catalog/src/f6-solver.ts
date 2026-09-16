@@ -617,6 +617,18 @@ export function solveTargetRssSigma(input: TargetRssSigmaInput): number {
   );
 }
 
+const TARGET_RSS_SIGMA_GUARD_FACTOR = 1 - 64 * Number.EPSILON;
+
+export function solveGuardedTargetRssSigma(input: TargetRssSigmaInput): number {
+  const targetRssSigma = solveTargetRssSigma(input);
+  const guardedTargetRssSigma = targetRssSigma * TARGET_RSS_SIGMA_GUARD_FACTOR;
+  if (!(guardedTargetRssSigma > 0) || !Number.isFinite(guardedTargetRssSigma)
+    || !(guardedTargetRssSigma < targetRssSigma)) {
+    fail("target_unreachable", "guarded target RSS sigma must be finite, positive, and below the raw target");
+  }
+  return guardedTargetRssSigma;
+}
+
 export function solveSingleFactorTolerance(input: SingleFactorSolveInput): F6ToleranceChange {
   assertTargetRssSigma(input.targetRssSigma);
   const factorMap = buildFactorMap(input.factors);

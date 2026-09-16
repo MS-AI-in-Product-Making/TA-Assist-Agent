@@ -45,6 +45,7 @@ import {
   f6OptimizationRequestSchema,
   f6OptimizationResultV2Schema,
   f6OptimizationResultV3Schema,
+  f6OptimizationResultV4Schema,
   f6ReadableOptimizationResultSchema,
   f6OptimizationResultSchema as f6NewOptimizationResultSchema,
   f6OptimizationTargetsProposalSchema,
@@ -5388,7 +5389,7 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultV2Schema.parse(resultV2)).toEqual(resultV2);
         expect(f6ReadableOptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
         expect(f6OptimizationResultV3Schema.parse(resultV3)).toEqual(resultV3);
-        expect(f6NewOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6NewOptimizationResultSchema.safeParse(resultV3).success).toBe(false);
         expect(f6NewOptimizationResultSchema.safeParse(resultV2).success).toBe(false);
         expect(f6ReadableOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
         expect(f6OptimizationResultV3Schema.safeParse(resultV2).success).toBe(false);
@@ -5652,6 +5653,710 @@ describe("F5.1 objective interpretation contracts", () => {
             ...resultV2.worksheets[0],
             recommendations: [{ recommendationId: "recommend-candidate", optionId: candidate.optionId, text: "Apply candidate.", evidenceReferences: [] }],
           }],
+        }).success).toBe(false);
+      });
+    });
+
+    describe("F6 optimization result v4", () => {
+      const artifactReference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
+      const workbook = { fileName: "Demo.xlsx", contentHash: "b".repeat(64) };
+      const interactionLanguage = {
+        languageTag: "en-US",
+        uiCatalogLanguage: "en" as const,
+        lockedAtTurnId: "turn-1",
+        source: "workflow_start" as const,
+        fallbackUsed: false,
+      };
+      const baselineIdentity = {
+        calculationVersion: "excel-ta-v1" as const,
+        projectReference: "project-a",
+        runReference: "run-a",
+        workbookContentHash: workbook.contentHash,
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+      };
+      const factor = {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 14,
+        factorName: "Factor A",
+        unit: "mm",
+      };
+      const v3Provenance = {
+        f2Reference: artifactReference("Feature2-Report.json"),
+        f3Reference: artifactReference("Feature3-Report.json"),
+        f4Reference: artifactReference("Feature4-Calculation.json"),
+        f5Reference: artifactReference("Feature5-Report.json"),
+        multimodalReference: artifactReference("Feature5-Multimodal.json"),
+        reportScope: { worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] },
+      };
+      const trigger = {
+        lowerCpk: 1,
+        upperCpk: 1,
+        targetCpk: 1,
+        failedSides: [] as const,
+      };
+      const snapshotFor = (
+        scenarioId: string,
+        sourceStep: "baseline" | "meanResponseCentering" | "toleranceReverseSolve" | "specificationRelaxation",
+        inputScenarioId: string | null,
+      ) => {
+        const lowerSpecLimit = -0.3;
+        const upperSpecLimit = 0.3;
+        const mean = 0;
+        const specificationMidpoint = lowerSpecLimit / 2 + upperSpecLimit / 2;
+        return {
+        scenarioId,
+        sourceStep,
+        inputScenarioId,
+        calculationVersion: "excel-ta-v1" as const,
+        calculationReference: v3Provenance.f4Reference,
+        baselineIdentity,
+        system: {
+          designNominal: 0,
+          mean,
+          specificationMidpoint,
+          meanOffset: mean - specificationMidpoint,
+          additionalMeanShift: 0,
+          rssSigma: 0.1,
+          worstCaseLower: -0.3,
+          worstCaseUpper: 0.3,
+        },
+        capability: {
+          lowerSpecLimit,
+          upperSpecLimit,
+          targetCpk: 1,
+          lowerCpk: 1,
+          upperCpk: 1,
+          cpk: 1,
+          yield: 0.99,
+          totalDpm: 10000,
+          status: "PASS" as const,
+        },
+        factors: [{
+          factor,
+          nominalValue: 0,
+          lowerTolerance: -0.1,
+          upperTolerance: 0.1,
+          mean: 0,
+          sigma: 0.1,
+          contribution: 0.7,
+        }],
+        factorOverrides: [],
+        formulaReferences: [],
+      };
+      };
+
+      const baselineSnapshot = snapshotFor("baseline", "baseline", null);
+      const step1Snapshot = snapshotFor("step1-centered", "meanResponseCentering", "baseline");
+      const step2Snapshot = snapshotFor("step2-optimized", "toleranceReverseSolve", "step1-centered");
+      const step3Snapshot = snapshotFor("step3-relaxed", "specificationRelaxation", "step2-optimized");
+
+      const sensitivityScenarios = [
+        {
+          optionCode: "OP1" as const,
+          status: "completed" as const,
+          reductionRatios: [0.25, 0.1, 0.1],
+          reductions: [{
+            factor,
+            rank: 1,
+            reductionRatio: 0.25,
+            scale: 0.75,
+            baselineLowerTolerance: -0.1,
+            baselineUpperTolerance: 0.1,
+          }],
+          baselineMetrics: {
+            mean: 0,
+            rssSigma: 0.1,
+            worstCaseLower: -0.3,
+            worstCaseUpper: 0.3,
+            cp: 1,
+            cpk: 1,
+            yield: 0.99,
+            dpm: 10000,
+          },
+          resultMetrics: {
+            mean: 0,
+            rssSigma: 0.09,
+            worstCaseLower: -0.27,
+            worstCaseUpper: 0.27,
+            cp: 1.1,
+            cpk: 1.1,
+            yield: 0.995,
+            dpm: 5000,
+          },
+          scenarioEvidence: {
+            targetId: "f6-top3-tolerance-policy-v1:OP1",
+            baselineIdentity,
+            factorOverrides: [{
+              factor,
+              lowerTolerance: -0.075,
+              upperTolerance: 0.075,
+            }],
+            calculationReference: v3Provenance.f4Reference,
+            formulaReferences: [],
+          },
+        },
+        {
+          optionCode: "OP2" as const,
+          status: "calculation_failed" as const,
+          reductionRatios: [0.2, 0.15, 0.15],
+          reductions: [{
+            factor,
+            rank: 1,
+            reductionRatio: 0.2,
+            scale: 0.8,
+            baselineLowerTolerance: -0.1,
+            baselineUpperTolerance: 0.1,
+          }],
+          reasonCode: "f4_failed",
+          baselineMetrics: {
+            mean: 0,
+            rssSigma: 0.1,
+            worstCaseLower: -0.3,
+            worstCaseUpper: 0.3,
+            cp: 1,
+            cpk: 1,
+            yield: 0.99,
+            dpm: 10000,
+          },
+          calculationReference: v3Provenance.f4Reference,
+        },
+        {
+          optionCode: "OP3" as const,
+          status: "calculation_failed" as const,
+          reductionRatios: [0.4, 0.05, 0.05],
+          reductions: [{
+            factor,
+            rank: 1,
+            reductionRatio: 0.4,
+            scale: 0.6,
+            baselineLowerTolerance: -0.1,
+            baselineUpperTolerance: 0.1,
+          }],
+          reasonCode: "f4_failed",
+          baselineMetrics: {
+            mean: 0,
+            rssSigma: 0.1,
+            worstCaseLower: -0.3,
+            worstCaseUpper: 0.3,
+            cp: 1,
+            cpk: 1,
+            yield: 0.99,
+            dpm: 10000,
+          },
+          calculationReference: v3Provenance.f4Reference,
+        },
+      ];
+
+      const v4Worksheet = {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        runStatus: "COMPLETED" as const,
+        baselineIdentity,
+        baselineResult: baselineSnapshot,
+        trigger,
+        steps: [
+          {
+            step: "meanResponseCentering" as const,
+            status: "NOT_NEEDED" as const,
+          },
+          {
+            step: "toleranceReverseSolve" as const,
+            status: "NOT_NEEDED" as const,
+          },
+          {
+            step: "specificationRelaxation" as const,
+            status: "NOT_NEEDED" as const,
+          },
+        ],
+        selectedResult: {
+          status: "baseline_meets_target" as const,
+          snapshot: baselineSnapshot,
+        },
+        sensitivityScenarios,
+      };
+
+      const resultV4 = {
+        contractVersion: "v1" as const,
+        outputClassification: "confidential" as const,
+        featureId: "F6" as const,
+        optimizationVersion: "f6-optimization-v4" as const,
+        sequentialPolicyId: "f6-sequential-optimization-policy-v2" as const,
+        interactionLanguage,
+        runStatus: "COMPLETED" as const,
+        workbook,
+        worksheets: [v4Worksheet],
+        summary: {
+          worksheetCount: 1,
+          baselineMeetsTargetWorksheetCount: 1,
+          optimizedWorksheetCount: 0,
+          noValidatedResultWorksheetCount: 0,
+          clarificationRequiredWorksheetCount: 0,
+        },
+        provenance: v3Provenance,
+      };
+
+      const resultV3 = {
+        contractVersion: "v1" as const,
+        outputClassification: "confidential" as const,
+        featureId: "F6" as const,
+        optimizationVersion: "f6-optimization-v3" as const,
+        sequentialPolicyId: "f6-sequential-optimization-policy-v1" as const,
+        interactionLanguage,
+        runStatus: "COMPLETED" as const,
+        workbook,
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          runStatus: "COMPLETED" as const,
+          baselineIdentity,
+          baselineCapability: { lowerCpk: 1, upperCpk: 1, targetCpk: 1 },
+          steps: [
+            { step: "centerAssessment" as const, status: "aligned" as const, adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
+            { step: "contributorPriorities" as const, priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" as const }] },
+            { step: "specificationChanges" as const, proposals: [], clarifications: [] },
+            { step: "toleranceOptimization" as const, policyId: "f6-top3-tolerance-policy-v1" as const, trigger, options: [] },
+          ],
+        }],
+        summary: {
+          worksheetCount: 1,
+          completedWorksheetCount: 1,
+          clarificationRequiredWorksheetCount: 0,
+          candidateOptionCount: 0 as const,
+          completedOptionCount: 0,
+          calculationFailedOptionCount: 0,
+        },
+        provenance: v3Provenance,
+      };
+
+      it("accepts V4 and keeps readable/new-writer version boundaries", () => {
+        expect(f6OptimizationResultV4Schema.parse(resultV4)).toEqual(resultV4);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV4)).toEqual(resultV4);
+        expect(f6OptimizationResultV3Schema.safeParse(resultV4).success).toBe(false);
+        expect(f6NewOptimizationResultSchema.safeParse(resultV3).success).toBe(false);
+      });
+
+      it("rejects V4 scenario snapshots missing required midpoint or mean-offset fields", () => {
+        const missingMidpoint = structuredClone(resultV4);
+        delete missingMidpoint.worksheets[0].baselineResult.system.specificationMidpoint;
+        expect(f6OptimizationResultV4Schema.safeParse(missingMidpoint).success).toBe(false);
+
+        const missingMeanOffset = structuredClone(resultV4);
+        delete missingMeanOffset.worksheets[0].selectedResult.snapshot.system.meanOffset;
+        expect(f6OptimizationResultV4Schema.safeParse(missingMeanOffset).success).toBe(false);
+      });
+
+      it("rejects invalid V4 sequence and tamper cases", () => {
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            selectedResult: { status: "step1_centered", snapshot: step1Snapshot },
+          }],
+          summary: {
+            ...resultV4.summary,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: {
+                ...baselineSnapshot,
+                capability: { ...baselineSnapshot.capability, cpk: baselineSnapshot.capability.cpk + 0.1 },
+              },
+            },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step2Snapshot,
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+            ],
+            selectedResult: { status: "step1_centered", snapshot: step1Snapshot },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: { ...step2Snapshot, inputScenarioId: "wrong-source" },
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_failed_sides",
+              },
+            ],
+            selectedResult: { status: "no_validated_optimized_result", snapshot: baselineSnapshot },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step2Snapshot,
+              },
+              {
+                step: "specificationRelaxation",
+                status: "COMPLETED_TARGET_NOT_MET",
+                changeClass: "requirement_change",
+                approvalRequired: true,
+                capabilityImprovementClaim: false,
+                result: { ...step3Snapshot, inputScenarioId: "wrong-step2-source" },
+              },
+            ],
+            selectedResult: { status: "step2_tolerance_optimized", snapshot: step2Snapshot },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_MET",
+                result: step2Snapshot,
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+            ],
+            selectedResult: { status: "step2_tolerance_optimized", snapshot: step1Snapshot },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step2Snapshot,
+              },
+              {
+                step: "specificationRelaxation",
+                status: "COMPLETED_TARGET_MET",
+                changeClass: "baseline_change",
+                approvalRequired: true,
+                capabilityImprovementClaim: false,
+                result: step3Snapshot,
+              },
+            ],
+            selectedResult: {
+              status: "step3_specification_relaxed_pending_approval",
+              snapshot: step3Snapshot,
+            },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              baselineIdentity: {
+                ...baselineIdentity,
+                runReference: "run-b",
+              },
+            },
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            sensitivityScenarios: [{
+              ...sensitivityScenarios[0],
+              scenarioEvidence: {
+                ...sensitivityScenarios[0].scenarioEvidence,
+                targetId: "f6-top3-tolerance-policy-v2:OP1",
+              },
+            }, sensitivityScenarios[1], sensitivityScenarios[2]],
+          }],
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            selectedResult: {
+              status: "step2_tolerance_optimized",
+              snapshot: {
+                ...step2Snapshot,
+                scenarioId: "f6-top3-tolerance-policy-v1:OP1",
+              },
+            },
+          }],
+          summary: {
+            ...resultV4.summary,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: step1Snapshot,
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step2Snapshot,
+                  scenarioId: "f6-top3-tolerance-policy-v1:OP1",
+                },
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+            ],
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: {
+                ...step2Snapshot,
+                scenarioId: "f6-top3-tolerance-policy-v1:OP1",
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 0,
+            noValidatedResultWorksheetCount: 1,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+              },
+            ],
+            selectedResult: {
+              status: "step1_centered",
+              snapshot: {
+                ...step1Snapshot,
+                capability: { ...step1Snapshot.capability, status: "FAIL" },
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+            noValidatedResultWorksheetCount: 0,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "PASS" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+              {
+                step: "specificationRelaxation",
+                status: "NOT_FEASIBLE",
+                reasonCode: "no_validated_path",
+              },
+            ],
+            selectedResult: {
+              status: "no_validated_optimized_result",
+              snapshot: baselineSnapshot,
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 0,
+            noValidatedResultWorksheetCount: 1,
+            clarificationRequiredWorksheetCount: 0,
+          },
+        }).success).toBe(false);
+
+        expect(f6OptimizationResultV4Schema.safeParse({
+          ...resultV4,
+          worksheets: [{
+            ...v4Worksheet,
+            baselineResult: {
+              ...baselineSnapshot,
+              capability: { ...baselineSnapshot.capability, status: "FAIL" },
+            },
+            steps: [
+              {
+                step: "meanResponseCentering",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step1Snapshot,
+                  capability: { ...step1Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "toleranceReverseSolve",
+                status: "COMPLETED_TARGET_NOT_MET",
+                result: {
+                  ...step2Snapshot,
+                  capability: { ...step2Snapshot.capability, status: "FAIL" },
+                },
+              },
+              {
+                step: "specificationRelaxation",
+                status: "COMPLETED_TARGET_NOT_MET",
+                changeClass: "requirement_change",
+                approvalRequired: true,
+                capabilityImprovementClaim: false,
+                result: {
+                  ...step3Snapshot,
+                  capability: { ...step3Snapshot.capability, status: "FAIL" },
+                },
+              },
+            ],
+            selectedResult: {
+              status: "step3_specification_relaxed_pending_approval",
+              snapshot: {
+                ...step3Snapshot,
+                capability: { ...step3Snapshot.capability, status: "FAIL" },
+              },
+            },
+          }],
+          summary: {
+            worksheetCount: 1,
+            baselineMeetsTargetWorksheetCount: 0,
+            optimizedWorksheetCount: 1,
+            noValidatedResultWorksheetCount: 0,
+            clarificationRequiredWorksheetCount: 0,
+          },
         }).success).toBe(false);
       });
     });
