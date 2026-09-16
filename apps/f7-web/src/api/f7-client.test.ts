@@ -637,7 +637,7 @@ describe("createF7Client", () => {
       factorId: "factor id/1",
     });
 
-    await client.getSession("session id/01");
+    await client.getSession("session-01");
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
 
@@ -664,8 +664,19 @@ describe("createF7Client", () => {
     expect((fetchMock.mock.calls[5]?.[1] as RequestInit).method).toBe("POST");
     expect(JSON.parse(((fetchMock.mock.calls[5]?.[1] as RequestInit).body as string))).toEqual({ sessionId: "s-1" });
 
-    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://localhost:3017/f7/session/session%20id%2F01");
+    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://localhost:3017/f7/session/session-01");
     expect(fetchMock.mock.calls[6]?.[1]).toBeUndefined();
+  });
+
+  it("rejects a valid session snapshot for a different requested session", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(validSnapshot), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().getSession("different-session")).rejects.toMatchObject({
+      code: "request_failed",
+    });
   });
 
   it("maps non-2xx JSON error envelope to controlled F7UiError fields", async () => {

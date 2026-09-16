@@ -274,6 +274,15 @@ describe("createF7SessionStore measurement import lifecycle", () => {
     resolvePreview(measurementImportPreview);
     await pending;
     expect(store.measurementImportPreview.value).toBeNull();
+
+    let rejectPreview!: (error: unknown) => void;
+    client.previewMeasurementImport = vi.fn(() => new Promise<F7MeasurementImportPreviewResponse>((_resolve, reject) => { rejectPreview = reject; }));
+    const lateFailure = store.previewMeasurementImport(new File([], "late-failure.xlsx"));
+    store.cancelMeasurementImport();
+    expect(store.busyAction.value).toBeNull();
+    rejectPreview(new Error("late failure"));
+    await expect(lateFailure).resolves.toBeUndefined();
+    expect(store.error.value).toBeNull();
   });
 
   it("clears preview after every authority-changing mutation and refresh", async () => {
@@ -367,7 +376,10 @@ describe("createF7SessionStore measurement import lifecycle", () => {
     await store.importWorkbook(new File([], "demo.xlsx"));
     await store.previewMeasurementImport(new File([], "measurements.xlsx"));
 
-    await expect(store.commitMeasurementImport()).rejects.toMatchObject({ code: "request_failed" });
+    await expect(store.commitMeasurementImport()).rejects.toMatchObject({
+      code: "commit_result_reconciled",
+      suggestedAction: expect.stringContaining("upload the workbook again"),
+    });
 
     expect(client.getSession).toHaveBeenCalledWith("session-01");
     expect(store.session.value).toEqual(reconciledSnapshot);

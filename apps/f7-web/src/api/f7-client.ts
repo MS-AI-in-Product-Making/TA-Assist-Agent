@@ -629,7 +629,7 @@ export function createF7Client(baseUrl = ""): F7Client {
       const payload = await parseJsonResponse(response);
       if (!response.ok) throw mapErrorEnvelope(payload);
       const snapshot = parseSnapshot(payload);
-      if (!snapshot) throw toGenericError();
+      if (!snapshot || snapshot.sessionId !== sessionId) throw toGenericError();
       return snapshot;
     },
   };

@@ -134,9 +134,19 @@ export function createF7SessionStore(client: F7Client) {
       });
     },
     async previewMeasurementImport(file: File): Promise<void> {
-      await runAction("previewMeasurementImport", async () => {
-        const generation = ++measurementImportPreviewGeneration;
-        measurementImportPreview.value = null;
+      if (busyAction.value !== null) {
+        throw {
+          code: "busy",
+          summary: "Another F7 action is already running.",
+          suggestedAction: "Wait for the current action to complete.",
+          affectedInputReferences: ["f7-web-session"],
+        } satisfies F7UiError;
+      }
+      const generation = ++measurementImportPreviewGeneration;
+      busyAction.value = "previewMeasurementImport";
+      error.value = null;
+      measurementImportPreview.value = null;
+      try {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
         const preview = await client.previewMeasurementImport({
@@ -146,7 +156,16 @@ export function createF7SessionStore(client: F7Client) {
         if (generation === measurementImportPreviewGeneration) {
           measurementImportPreview.value = preview;
         }
-      });
+      } catch (caught) {
+        if (generation !== measurementImportPreviewGeneration) return;
+        const uiError = toUiError(caught);
+        error.value = uiError;
+        throw uiError;
+      } finally {
+        if (generation === measurementImportPreviewGeneration) {
+          busyAction.value = null;
+        }
+      }
     },
     async commitMeasurementImport(): Promise<void> {
       await runAction("commitMeasurementImport", async () => {
@@ -167,10 +186,20 @@ export function createF7SessionStore(client: F7Client) {
           });
         } catch (caught) {
           if (toUiError(caught).code === "request_failed") {
+            let reconciled = false;
             try {
               commitMutationSnapshot(await client.getSession(current.sessionId));
+              reconciled = true;
             } catch {
-              // Preserve the last known session when reconciliation is unavailable.
+              reconciled = false;
+            }
+            if (reconciled) {
+              throw {
+                code: "commit_result_reconciled",
+                summary: "The commit response was interrupted, and the current session has been refreshed.",
+                suggestedAction: "Review the current factor measurements. If the import is absent, upload the workbook again.",
+                affectedInputReferences: [current.sessionId, preview.previewId],
+              } satisfies F7UiError;
             }
           }
           throw caught;
@@ -181,6 +210,9 @@ export function createF7SessionStore(client: F7Client) {
     cancelMeasurementImport(): void {
       measurementImportPreviewGeneration += 1;
       measurementImportPreview.value = null;
+      if (busyAction.value === "previewMeasurementImport") {
+        busyAction.value = null;
+      }
     },
     async confirmWorksheet(selectedWorksheetName: string): Promise<void> {
       await runAction("confirmWorksheet", async () => {
