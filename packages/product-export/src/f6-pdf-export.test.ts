@@ -322,8 +322,10 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="range-bound range-bound--lower"');
     expect(html).toContain('class="range-bound range-bound--upper"');
     expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
-    expect(html.match(/class="range-bound range-bound--lower"/gu)).toHaveLength(1);
-    expect(html.match(/class="range-bound range-bound--upper"/gu)).toHaveLength(1);
+    expect(html.match(/class="range-bound range-bound--lower" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-bound range-bound--upper" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-bound range-bound--lower" aria-hidden="true"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-bound range-bound--upper" aria-hidden="true"/gu)).toHaveLength(4);
     expect(html).toContain('<small class="range-values">-0.100 to 0.0400');
     expect(html).toContain('data-worst-case-result="FAIL"');
     expect(html).toContain('data-evaluation-level="4 sigma"');
@@ -344,6 +346,69 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
     expect(html).not.toMatch(/class="[^"]*slide-optimization/u);
+  });
+
+  it("positions specification labels by graph domain and repeats unlabeled row markers", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | -0.100 mm | 0.040 mm | 0.010 mm | PASS |",
+      "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
+      "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toMatch(/class="range-bound range-bound--lower" style="left:14\.2857142857142\d%">LSL -0\.150<\/b>/u);
+    expect(html).toMatch(/class="range-bound range-bound--upper" style="left:71\.42857142857143%">USL 0\.0500<\/b>/u);
+    expect(html.match(/class="range-bound range-bound--lower" aria-hidden="true" style="left:14\.2857142857142\d%"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-bound range-bound--upper" aria-hidden="true" style="left:71\.42857142857143%"/gu)).toHaveLength(4);
+  });
+
+  it("keeps the target-only capability caption when evaluation level is missing", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level |  |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive Cp | 0.794 | FAIL |",
+      "| Predictive CpkL | 0.794 | FAIL |",
+      "| Predictive CpkU | 0.794 | FAIL |",
+      "| Predictive Cpk | 0.794 | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("Capability against target <strong>1.33</strong>");
+    expect(html).not.toContain("N/A · 1.33");
+    expect(html).not.toContain("data-evaluation-level=");
   });
 
   it("keeps optimization comparison inline between worksheet slides", () => {

@@ -1846,6 +1846,27 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     }
   });
 
+  it("normalizes disclosure variants out of interpretation text and preserves a single italic disclosure", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    inputs.modelInterpretation.worksheets[0].result.imageTableInterpretation = [
+      "  Process review remains required.  ",
+      "",
+      "Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
+      "",
+      "Model interpretation may contain hallucinations,\nlabel mismatches, or omissions and must be reviewed by ME.",
+      "",
+      "  Contributors remain visible.  ",
+    ].join("\n\n");
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const markdown = report.markdown;
+
+    expect(markdown).toContain("Process review remains required.");
+    expect(markdown).toContain("Contributors remain visible.");
+    expect(markdown.match(/Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME\./gu)).toHaveLength(1);
+    expect(markdown).toContain("*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*");
+  });
+
   it("renders all contributor priorities without optimization continuation slides", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
     configureV4Outcome(inputs, "step2_tolerance_optimized", { totalFactorRows: 20, changedFactorRows: 14 });

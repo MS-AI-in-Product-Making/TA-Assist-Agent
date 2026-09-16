@@ -31,6 +31,7 @@ const NOT_PROVIDED = "NOT_PROVIDED";
 const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
 const MODEL_RISK_DISCLOSURE = "Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.";
+const MODEL_RISK_DISCLOSURE_PATTERN = /Model interpretation may contain hallucinations,\s*label mismatches,\s*or omissions and must be reviewed by ME\./giu;
 const RECOMMENDATION_CLASS_ORDER = [
   "factor_nominal",
   "system_mean_shift",
@@ -239,6 +240,19 @@ function blockedMissingIdentifier(row, identifier) {
 
 function blockedFactorDescription(value, sourceRow) {
   return `${value} <span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${sourceRow}" hidden aria-hidden="true"></span>`;
+}
+
+function evaluationLevelText(value, suffix = " sigma") {
+  return Number.isFinite(value) ? `${numberText(value)}${suffix}` : "";
+}
+
+function normalizeInterpretationText(value, fallback = NA) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const normalized = String(value)
+    .replace(MODEL_RISK_DISCLOSURE_PATTERN, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return normalized === "" ? fallback : safeText(normalized);
 }
 
 function renderCompleteFactorTable(rows) {
@@ -455,9 +469,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
-  const interpretationText = paragraph(interpretation.imageTableInterpretation)
-    .replace(MODEL_RISK_DISCLOSURE, "")
-    .trim() || NA;
+  const interpretationText = normalizeInterpretationText(interpretation.imageTableInterpretation);
   const lines = [
     `<a id="worksheet-${ordinal}"></a>`, "",
     `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`, "",
@@ -473,7 +485,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     row(["LSL", engineeringText(calculation.capability.lowerSpecLimit, unit)]),
     row(["USL", engineeringText(calculation.capability.upperSpecLimit, unit)]),
     row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
-    row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
+    row(["Evaluation Level", evaluationLevelText(calculation.capability.targetSigmaLevel)]),
     "", "| Metric | Lower | Upper | Minimum Margin | Result |", "|---|---:|---:|---:|---|",
     ...statisticalRangeRows(projection, calculation, unit),
     "", "| Capability Metric | Value | Result |", "|---|---:|---|",
@@ -621,7 +633,7 @@ function v4SelectedStatusText(status) {
 }
 
 function reportInterpretationText(value) {
-  return clean(value, NA).replaceAll(MODEL_RISK_DISCLOSURE, "").trim() || NA;
+  return normalizeInterpretationText(value, NA);
 }
 
 function specificationRangeText(lower, upper, unit) {
@@ -752,7 +764,7 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     row(["LSL", engineeringText(calculation.capability.lowerSpecLimit, unit)]),
     row(["USL", engineeringText(calculation.capability.upperSpecLimit, unit)]),
     row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
-    row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
+    row(["Evaluation Level", evaluationLevelText(calculation.capability.targetSigmaLevel)]),
     "",
     "| Metric | Lower | Upper | Minimum Margin | Result |",
     "|---|---:|---:|---:|---|",
@@ -1453,7 +1465,7 @@ function renderRequirements(worksheet) {
     row(["LSL", engineeringText(specValue(specification, "lowerSpecLimit"), unit), `F2 ${sourceCell(specification, "lowerSpecLimit")}`]),
     row(["USL", engineeringText(specValue(specification, "upperSpecLimit"), unit), `F2 ${sourceCell(specification, "upperSpecLimit")}`]),
     row(["Target Cpk", numberText(calculation?.capability?.targetCpk), "F2/F4 capability.targetCpk"]),
-    row(["Evaluation Level", `${numberText(calculation?.capability?.targetSigmaLevel)}σ`, "F2/F4 capability.targetSigmaLevel"]),
+    row(["Evaluation Level", evaluationLevelText(calculation?.capability?.targetSigmaLevel, "σ"), "F2/F4 capability.targetSigmaLevel"]),
   ];
 }
 
