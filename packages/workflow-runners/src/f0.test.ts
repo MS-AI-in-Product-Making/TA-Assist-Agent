@@ -19,7 +19,7 @@ function validDependencies(): Required<F0Dependencies> {
     loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
     loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
     loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
-    loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v1" } })),
+    loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v2" } })),
   };
 }
 
@@ -28,7 +28,7 @@ describe("validateF0Capabilities", () => {
     expect(validateF0Capabilities(context())).toEqual({
       featureId: "F0",
       status: "completed",
-      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v2"],
       artifactRoot: undefined,
     });
   });
@@ -41,7 +41,7 @@ describe("validateF0Capabilities", () => {
     expect(dependencies.loadKnowledgeBase).toHaveBeenCalledExactlyOnceWith({ version: "v1" });
     expect(dependencies.loadInternalToleranceGuidance).toHaveBeenCalledExactlyOnceWith({ version: "internal-v1" });
     expect(dependencies.loadInterpretationRules).toHaveBeenCalledExactlyOnceWith({ version: "interpretation-rules-v2" });
-    expect(dependencies.loadProcessRequirements).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v1" });
+    expect(dependencies.loadProcessRequirements).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v2" });
     expect(dependencies.loadKnowledgeBase.mock.invocationCallOrder[0]).toBeLessThan(
       dependencies.loadInternalToleranceGuidance.mock.invocationCallOrder[0]!,
     );
@@ -54,7 +54,7 @@ describe("validateF0Capabilities", () => {
     expect(result).toEqual({
       status: "completed",
       featureId: "F0",
-      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v2"],
       artifactRoot: undefined,
     });
     expect(runnerContext.emit.mock.calls.map(([event]) => event.kind)).toEqual([
@@ -65,7 +65,7 @@ describe("validateF0Capabilities", () => {
 
   it("reads an injected loader dependency exactly once before validating its result", () => {
     const runnerContext = context();
-    const injectedLoader = vi.fn(() => ({ manifest: { version: "wrong" } }));
+    const injectedLoader = vi.fn(() => ({ manifest: { version: "process-requirements-v1" } }));
     let getterReads = 0;
     const dependencies = validDependencies();
     Object.defineProperty(dependencies, "loadProcessRequirements", {
@@ -82,7 +82,7 @@ describe("validateF0Capabilities", () => {
       retryable: false,
     }));
     expect(getterReads).toBe(1);
-    expect(injectedLoader).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v1" });
+    expect(injectedLoader).toHaveBeenCalledExactlyOnceWith({ version: "process-requirements-v2" });
     expect(runnerContext.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_completed" }));
   });
 
@@ -142,7 +142,7 @@ describe("validateF0Capabilities", () => {
       loadKnowledgeBase: vi.fn(() => ({ manifest: { effectiveVersion: "v1" } })),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
       loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
-      loadProcessRequirements: vi.fn(() => { throw new Error("Cannot find module 'process-requirements-v1'."); }),
+      loadProcessRequirements: vi.fn(() => { throw new Error("Cannot find module 'process-requirements-v2'."); }),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "dependency_error",
@@ -158,7 +158,7 @@ describe("validateF0Capabilities", () => {
       loadKnowledgeBase: vi.fn(() => { throw "secret-token=abc"; }),
       loadInternalToleranceGuidance: vi.fn(() => ({ manifest: { effectiveVersion: "internal-v1" } })),
       loadInterpretationRules: vi.fn(() => ({ manifest: { effectiveVersion: "interpretation-rules-v2" } })),
-      loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v1" } })),
+      loadProcessRequirements: vi.fn(() => ({ manifest: { version: "process-requirements-v2" } })),
     })).toThrow(expect.objectContaining({
       name: "Error",
       code: "internal_error",

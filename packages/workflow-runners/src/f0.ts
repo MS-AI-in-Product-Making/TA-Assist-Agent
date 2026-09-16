@@ -12,10 +12,10 @@ export interface F0Dependencies {
   readonly loadKnowledgeBase?: (request: { version: "v1" }) => unknown;
   readonly loadInternalToleranceGuidance?: (request: { version: "internal-v1" }) => unknown;
   readonly loadInterpretationRules?: (request: { version: "interpretation-rules-v2" }) => unknown;
-  readonly loadProcessRequirements?: (request: { version: "process-requirements-v1" }) => unknown;
+  readonly loadProcessRequirements?: (request: { version: "process-requirements-v2" }) => unknown;
 }
 
-const DEFAULT_VERSIONS = ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"] as const;
+const DEFAULT_VERSIONS = ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v2"] as const;
 type ManifestVersionField = "effectiveVersion" | "version";
 type InjectedLoaders = {
   readonly [Loader in keyof Required<F0Dependencies>]: F0Dependencies[Loader];
@@ -74,11 +74,11 @@ export function validateF0Capabilities(context: RunContext, dependencies: F0Depe
     const knowledgeBase = (injectedKnowledgeBaseLoader ?? loadKnowledgeBase)({ version: "v1" });
     const internal = (injectedInternalGuidanceLoader ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
     const interpretation = (injectedInterpretationRulesLoader ?? loadInterpretationRules)({ version: "interpretation-rules-v2" });
-    const processRequirements = (injectedProcessRequirementsLoader ?? loadProcessRequirements)({ version: "process-requirements-v1" });
+    const processRequirements = (injectedProcessRequirementsLoader ?? loadProcessRequirements)({ version: "process-requirements-v2" });
     if (injectedKnowledgeBaseLoader !== undefined) validateExactVersion(knowledgeBase, "v1", "knowledge base", "effectiveVersion");
     if (injectedInternalGuidanceLoader !== undefined) validateExactVersion(internal, "internal-v1", "internal guidance", "effectiveVersion");
     if (injectedInterpretationRulesLoader !== undefined) validateExactVersion(interpretation, "interpretation-rules-v2", "interpretation rules", "effectiveVersion");
-    if (injectedProcessRequirementsLoader !== undefined) validateExactVersion(processRequirements, "process-requirements-v1", "process requirements", "version");
+    if (injectedProcessRequirementsLoader !== undefined) validateExactVersion(processRequirements, "process-requirements-v2", "process requirements", "version");
     throwIfAborted(context, stage);
     const result: F0ValidationResult = {
       featureId: "F0",
