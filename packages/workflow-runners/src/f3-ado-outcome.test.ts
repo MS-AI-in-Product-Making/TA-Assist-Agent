@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { persistF3AdoTraceability } from "./index.js";
+import { persistF3AdoTraceability, publishF3AdoTraceabilityArtifacts } from "./index.js";
 
 const roots: string[] = [];
 
@@ -24,6 +24,28 @@ function acceptedV2Report() {
     ado: { status: "not_requested" },
     summary: { worksheetCount: 0, factorCount: 0, completeCount: 0, governanceRequiredCount: 0, duplicateConflictCount: 0 },
   } as const;
+}
+
+function updatedV3Report(workItemId = 1119604) {
+  return {
+    ...acceptedV2Report(),
+    modelVersion: "drawing-governance-v3",
+    ado: {
+      status: "updated",
+      operation: "updated",
+      organization: "contoso",
+      project: "Devices",
+      workItemId,
+    },
+  } as const;
+}
+
+function receipt(workItemId = 1119604) {
+  return {
+    operation: "updated" as const,
+    targetIdentity: { organization: "contoso", project: "Devices", workItemId },
+    verifiedAt: "2026-09-16T08:30:12.000Z",
+  };
 }
 
 describe("persistF3AdoTraceability", () => {
@@ -93,5 +115,64 @@ describe("persistF3AdoTraceability", () => {
     expect(report.modelVersion).toBe("drawing-governance-v3");
     expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
     expect(() => readFileSync(path.join(f3Root, "Feature3-Report.json"), "utf8")).toThrow();
+  });
+
+  it("publishes structured Surface readback to all synchronized F3 artifacts", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "current-host-action.json");
+    writeFileSync(reportPath, `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+
+    const result = publishF3AdoTraceabilityArtifacts({
+      f3Root,
+      reportPath,
+      receipt: receipt(),
+    });
+
+    expect(JSON.parse(readFileSync(reportPath, "utf8"))).toEqual(result.report);
+    expect(readFileSync(result.reminderPath, "utf8")).toContain("F3 DIM ID / Drawing Governance Reminder");
+    expect(readFileSync(result.historyHtmlPath, "utf8")).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
+    const reportMarkdown = readFileSync(path.join(f3Root, "Feature3-Report.md"), "utf8");
+    expect(reportMarkdown).toContain("ADO 状态：`updated`");
+    expect(reportMarkdown).toContain("ADO Work Item：`1119604`");
+    expect(JSON.stringify(result.report)).not.toContain("dev.azure.com");
+  });
+
+  it("fails closed without partial artifacts when the current report path escapes the F3 root", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const outsideRoot = mkdtempSync(path.join(tmpdir(), "f3-ado-outside-"));
+    roots.push(outsideRoot);
+    const outsideReportPath = path.join(outsideRoot, "Feature3-Report.json");
+    writeFileSync(outsideReportPath, `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+
+    expect(() => publishF3AdoTraceabilityArtifacts({
+      f3Root,
+      reportPath: outsideReportPath,
+      receipt: receipt(),
+    })).toThrow(/outside/i);
+
+    expect(existsSync(path.join(f3Root, "Feature3-ADO-Reminder.md"))).toBe(false);
+    expect(existsSync(path.join(f3Root, "Feature3-ADO-History.html"))).toBe(false);
+    expect(existsSync(path.join(f3Root, "Feature3-Report.md"))).toBe(false);
+  });
+
+  it("fails closed when an existing v3 identity conflicts with the Surface receipt", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "Feature3-Report.json");
+    const original = `${JSON.stringify(updatedV3Report(1119604), null, 2)}\n`;
+    writeFileSync(reportPath, original, "utf8");
+
+    expect(() => publishF3AdoTraceabilityArtifacts({
+      f3Root,
+      reportPath,
+      receipt: receipt(2222222),
+    })).toThrow(/does not match/i);
+
+    expect(readFileSync(reportPath, "utf8")).toBe(original);
+    expect(existsSync(path.join(f3Root, "Feature3-ADO-Reminder.md"))).toBe(false);
+    expect(existsSync(path.join(f3Root, "Feature3-ADO-History.html"))).toBe(false);
+    expect(existsSync(path.join(f3Root, "Feature3-Report.md"))).toBe(false);
   });
 });

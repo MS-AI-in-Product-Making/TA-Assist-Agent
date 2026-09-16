@@ -1,6 +1,7 @@
 import { conversationTurnSchema, f5MultimodalWorksheetPairV3Schema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { projectProductCapabilityReferences } from "@ai-assist/product-language";
 import { openSessionStore, reduceSessionCommand, selectCompleteReviewContext, type F8SessionSnapshot, type ReviewContextIdentity } from "@ai-assist/workbench";
+import { publishF3AdoTraceabilityArtifacts } from "@ai-assist/workflow-runners";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
@@ -312,37 +313,12 @@ function readHostInstanceId(body: unknown): string {
   return typeof candidate === "string" && candidate.length > 0 ? candidate : "host";
 }
 
-type SurfaceWriteReceipt = {
-  readonly operation: "created" | "updated";
-  readonly targetIdentity: {
-    readonly organization: string;
-    readonly project: string;
-    readonly workItemId: number;
-  };
-  readonly verifiedAt: string;
-};
-
-let writeF3AdoReminder:
-  | ((input: {
-    readonly f3OutputRoot: string;
-    readonly reportPath: string;
-    readonly receipt: SurfaceWriteReceipt;
-  }) => unknown)
-  | undefined;
-
-async function persistCurrentF3AdoTraceability(input: {
+function persistCurrentF3AdoTraceability(input: {
   readonly reportPath: string;
-  readonly receipt: SurfaceWriteReceipt;
-}): Promise<void> {
-  if (writeF3AdoReminder === undefined) {
-    // @ts-expect-error Repository script module has no declaration file.
-    const module = await import("../../../../scripts/write-f3-ado-reminder.mjs");
-    writeF3AdoReminder = module.writeF3AdoReminder;
-  }
-  const persist = writeF3AdoReminder;
-  if (persist === undefined) throw new Error("Feature 3 ADO persistence helper is unavailable.");
-  persist({
-    f3OutputRoot: dirname(input.reportPath),
+  readonly receipt: Parameters<typeof publishF3AdoTraceabilityArtifacts>[0]["receipt"];
+}): void {
+  publishF3AdoTraceabilityArtifacts({
+    f3Root: dirname(input.reportPath),
     reportPath: input.reportPath,
     receipt: input.receipt,
   });

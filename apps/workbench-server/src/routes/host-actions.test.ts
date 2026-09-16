@@ -63,14 +63,14 @@ function confirmation() {
   };
 }
 
-function writeResult() {
+function writeResult(options: { readonly workItemId?: number } = {}) {
   const payload = {
     status: "completed" as const,
     outcome: {
       kind: "surface_write" as const,
       receipt: {
         operation: "updated" as const,
-        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: options.workItemId ?? 1119604 },
         verifiedAt: "2026-09-16T08:30:12.000Z",
       },
     },
@@ -88,12 +88,19 @@ function writeResult() {
 
 async function createHarness(options: {
   readonly withReport: boolean;
-  readonly sideTable?: "matching" | "missing" | "hash_mismatch";
+  readonly sideTable?: "matching" | "missing" | "hash_mismatch" | "outside_root";
+  readonly report?: Record<string, unknown>;
 }) {
   const rootDir = mkdtempSync(path.join(tmpdir(), "host-actions-f3-"));
   roots.push(rootDir);
-  const relativePath = "managed/f3/Feature3-Report.json";
-  const reportBytes = `${JSON.stringify(acceptedV2Report(), null, 2)}\n`;
+  const outsideRoot = options.sideTable === "outside_root"
+    ? mkdtempSync(path.join(tmpdir(), "host-actions-f3-outside-"))
+    : undefined;
+  if (outsideRoot !== undefined) roots.push(outsideRoot);
+  const relativePath = options.sideTable === "outside_root"
+    ? path.relative(rootDir, path.join(outsideRoot!, "Feature3-Report.json"))
+    : "managed/f3/Feature3-Report.json";
+  const reportBytes = `${JSON.stringify(options.report ?? acceptedV2Report(), null, 2)}\n`;
   const reportHash = createHash("sha256").update(reportBytes).digest("hex");
   if (options.withReport) {
     mkdirSync(path.dirname(path.join(rootDir, relativePath)), { recursive: true });
@@ -245,6 +252,57 @@ describe("surface write host action persistence", () => {
 
   it("fails closed when the side-table hash does not match the current F3 bytes", async () => {
     const harness = await createHarness({ withReport: true, sideTable: "hash_mismatch" });
+    try {
+      const response = await harness.app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/${encodeURIComponent(ACTION_ID)}/result`,
+        headers: { authorization: `Bearer ${harness.token}` },
+        payload: writeResult(),
+      });
+
+      expect(response.statusCode, response.body).toBe(409);
+      expect(response.json()).toEqual({ error: "f3_ado_traceability_persistence_failed" });
+      expect((await harness.readPersisted()).snapshot.state).toBe("ado_action_pending");
+      expect(harness.enqueueActiveAttempt).not.toHaveBeenCalled();
+    } finally {
+      await harness.app.close();
+    }
+  });
+
+  it("fails closed when side-table evidence points outside the managed root", async () => {
+    const harness = await createHarness({ withReport: true, sideTable: "outside_root" });
+    try {
+      const response = await harness.app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/${encodeURIComponent(ACTION_ID)}/result`,
+        headers: { authorization: `Bearer ${harness.token}` },
+        payload: writeResult(),
+      });
+
+      expect(response.statusCode, response.body).toBe(409);
+      expect(response.json()).toEqual({ error: "f3_ado_traceability_persistence_failed" });
+      expect((await harness.readPersisted()).snapshot.state).toBe("ado_action_pending");
+      expect(harness.enqueueActiveAttempt).not.toHaveBeenCalled();
+    } finally {
+      await harness.app.close();
+    }
+  });
+
+  it("fails closed when existing v3 traceability conflicts with the Surface receipt", async () => {
+    const harness = await createHarness({
+      withReport: true,
+      report: {
+        ...acceptedV2Report(),
+        modelVersion: "drawing-governance-v3",
+        ado: {
+          status: "updated",
+          operation: "updated",
+          organization: "contoso",
+          project: "Devices",
+          workItemId: 2222222,
+        },
+      },
+    });
     try {
       const response = await harness.app.inject({
         method: "POST",
