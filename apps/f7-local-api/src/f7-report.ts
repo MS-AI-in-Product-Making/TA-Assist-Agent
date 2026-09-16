@@ -528,6 +528,12 @@ export function createF7ReportProjection(
     return {
       factorId: evidence.factorId,
       factorName: evidence.factorName,
+      designNominal: evidence.designNominal,
+      upperTolerance: evidence.upperTolerance,
+      lowerTolerance: evidence.lowerTolerance,
+      longTermSafetyFactor: evidence.longTermSafetyFactor,
+      sigmaLevel: evidence.sigmaLevel,
+      setupDistribution: evidence.distribution,
       loopCoefficient: evidence.loopCoefficient,
       sourceMode,
       approvedDistribution,

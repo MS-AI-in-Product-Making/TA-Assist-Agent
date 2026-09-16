@@ -80,6 +80,12 @@ function reportFixture(): F7ReportProjection {
     factors: [{
       factorId: HASH,
       factorName: "Factor <A>",
+      designNominal: 1,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.2,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 3,
+      setupDistribution: "Normal",
       loopCoefficient: 1,
       sourceMode: "BASELINE_ASSUMPTION",
       approvedDistribution: "normal",
