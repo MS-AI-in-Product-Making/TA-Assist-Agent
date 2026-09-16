@@ -321,6 +321,27 @@ const assumptionResultsPdfRequest = {
     cumulativePercent: 100,
   }],
   processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+  priorityRecommendation: {
+    selectedPriority: "P0",
+    requiresMeDmAlignment: true,
+  },
+  priorityDefinitions: [{
+    priority: "P0",
+    title: "P0 component priority definition",
+    message: "Priority 0 covers safety-critical components.",
+  }, {
+    priority: "P1",
+    title: "P1 component priority definition",
+    message: "Priority 1 covers key function-fit components.",
+  }, {
+    priority: "P2",
+    title: "P2 component priority definition",
+    message: "Priority 2 covers secondary interfaces.",
+  }, {
+    priority: "P3",
+    title: "P3 component priority definition",
+    message: "Priority 3 covers low-risk components.",
+  }],
   processGuidance: [{ state: "guidance", title: "Next step", message: "Collect measurements." }],
   engineeringEvidence: {
     factorSetup: {
@@ -430,6 +451,12 @@ describe("createF7Client", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(assumptionResultsPdfRequest),
     });
+    const sentBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(sentBody.priorityRecommendation).toEqual({
+      selectedPriority: "P0",
+      requiresMeDmAlignment: true,
+    });
+    expect(sentBody.priorityDefinitions.map(({ priority }: { priority: string }) => priority)).toEqual(["P0", "P1", "P2", "P3"]);
   });
 
   it("maps assumptions-results PDF API JSON errors to the typed server error", async () => {

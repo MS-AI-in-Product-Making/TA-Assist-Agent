@@ -137,6 +137,19 @@ const guidanceSchema = z.object({
   message: narrativeText,
 }).strict();
 
+const priorityValueSchema = z.enum(["P0", "P1", "P2", "P3"]);
+
+const priorityRecommendationSchema = z.object({
+  selectedPriority: priorityValueSchema,
+  requiresMeDmAlignment: z.literal(true),
+}).strict();
+
+const priorityDefinitionSchema = z.object({
+  priority: priorityValueSchema,
+  title: shortText,
+  message: narrativeText,
+}).strict();
+
 const engineeringEvidenceFactorRowSchema = z.object({
   itemNumber: nonNegativeInteger,
   factorName: shortText,
@@ -281,6 +294,8 @@ export const assumptionResultsPdfRouteRequestSchema = z.object({
   actionItems: z.array(actionItemSchema).max(30),
   contributors: z.array(contributorSchema).max(100),
   processGuidanceContext: displayText,
+  priorityRecommendation: priorityRecommendationSchema.optional(),
+  priorityDefinitions: z.array(priorityDefinitionSchema).max(4).optional(),
   processGuidance: z.array(guidanceSchema).max(50),
   engineeringEvidence: engineeringEvidenceSchema,
 }).strict().superRefine((request, context) => {

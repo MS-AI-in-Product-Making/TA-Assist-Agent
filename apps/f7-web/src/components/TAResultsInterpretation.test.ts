@@ -498,6 +498,15 @@ describe("TAResultsInterpretation", () => {
         cumulativePercent: item.cumulativePercent,
       })),
       processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+      priorityRecommendation: {
+        selectedPriority: "P0",
+        requiresMeDmAlignment: true,
+      },
+      priorityDefinitions: priorityDefinitions().map(({ priority, title, message }) => ({
+        priority,
+        title,
+        message,
+      })),
       processGuidance: processGuidanceEntries().map(({ state, title, message }) => ({ state, title, message })),
       engineeringEvidence: engineeringEvidenceFixture(),
     });

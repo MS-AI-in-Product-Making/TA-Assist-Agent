@@ -228,6 +228,15 @@ export type AssumptionResultsPdfRequest = {
     readonly cumulativePercent: number;
   }[];
   readonly processGuidanceContext: string;
+  readonly priorityRecommendation?: {
+    readonly selectedPriority: "P0" | "P1" | "P2" | "P3";
+    readonly requiresMeDmAlignment: true;
+  };
+  readonly priorityDefinitions?: readonly {
+    readonly priority: "P0" | "P1" | "P2" | "P3";
+    readonly title: string;
+    readonly message: string;
+  }[];
   readonly processGuidance: readonly {
     readonly state: "guidance" | "warning";
     readonly title: string;

@@ -162,6 +162,24 @@ function renderGuidance(items: AssumptionResultsPdfRouteRequest["processGuidance
         </ol>`;
 }
 
+function renderPriorityGuidance(request: AssumptionResultsPdfRouteRequest): string {
+  const definitions = request.priorityDefinitions ?? [];
+  const recommendation = request.priorityRecommendation;
+  if (recommendation === undefined && definitions.length === 0) return "";
+  return `<div class="process-priority-guidance">${recommendation === undefined ? "" : `
+        <div class="process-priority-recommendation">
+          <strong>Recommended priority ${escapeHtml(recommendation.selectedPriority)}</strong>
+          <span>Final priority requires Microsoft ME/DM alignment.</span>
+        </div>`}
+        <dl class="process-priority-definitions" aria-label="V3 priority definitions">${definitions.map((definition) => `
+          <div data-priority="${escapeHtml(definition.priority)}">
+            <dt><strong>${escapeHtml(definition.priority)}</strong> ${escapeHtml(definition.title)}</dt>
+            <dd>${escapeHtml(definition.message)}</dd>
+          </div>`).join("")}
+        </dl>
+      </div>`;
+}
+
 export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteRequest): string {
   const request = assumptionResultsPdfRouteRequestSchema.parse(input);
   return `<!doctype html>
@@ -286,6 +304,12 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .priority-table th:nth-child(1) { width: 9%; }
     .priority-table th:nth-child(2) { width: 17%; }
     .priority-table th:nth-child(3) { width: 16%; }
+    .process-priority-guidance { margin-top: 2mm; }
+    .process-priority-recommendation { align-items: baseline; display: flex; flex-wrap: wrap; gap: 1.5mm 4mm; margin-bottom: 1.5mm; }
+    .process-priority-recommendation span { color: #52616b; }
+    .process-priority-definitions { display: grid; gap: 1.5mm 3mm; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 2mm; }
+    .process-priority-definitions dt { color: #123c47; }
+    .process-priority-definitions dd { margin: .5mm 0 0; }
     .guidance-grid { display: grid; gap: 2mm 4mm; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .guidance-grid > li { margin-bottom: 0; }
   </style>
@@ -312,7 +336,7 @@ ${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence)}
     <div class="report-page report-page--action">
       <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
       <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
-      <section><h2>TA Process and Requirements</h2><p>${escapeHtml(request.processGuidanceContext)}</p>${renderGuidance(request.processGuidance)}</section>
+      <section><h2>TA Process and Requirements</h2><p>V3</p><p>${escapeHtml(request.processGuidanceContext)}</p>${renderPriorityGuidance(request)}${renderGuidance(request.processGuidance)}</section>
     </div>
   </main>
 </body>

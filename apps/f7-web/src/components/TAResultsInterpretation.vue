@@ -212,6 +212,23 @@ function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
       cumulativePercent: item.cumulativePercent,
     })),
     processGuidanceContext,
+    ...(current.processGuidance.status === "available" && current.processGuidance.priorityRecommendation
+      ? {
+        priorityRecommendation: {
+          selectedPriority: current.processGuidance.priorityRecommendation.selectedPriority,
+          requiresMeDmAlignment: true as const,
+        },
+      }
+      : {}),
+    ...(current.processGuidance.status === "available"
+      ? {
+        priorityDefinitions: current.processGuidance.priorityDefinitions.map(({ priority, title, message }) => ({
+          priority,
+          title,
+          message,
+        })),
+      }
+      : {}),
     processGuidance: current.processGuidance.status === "available"
       ? current.processGuidance.entries.map(({ state, title, message }) => ({ state, title, message }))
       : [],

@@ -266,6 +266,15 @@ function representativeCurrentUiRequest(): AssumptionResultsPdfRouteRequest {
         message: "Document the approved response and evidence in the governed engineering record.",
       },
     ],
+    priorityRecommendation: {
+      selectedPriority: "P0",
+      requiresMeDmAlignment: true,
+    },
+    priorityDefinitions: ["P0", "P1", "P2", "P3"].map((priority) => ({
+      priority: priority as "P0" | "P1" | "P2" | "P3",
+      title: `${priority} component priority definition`,
+      message: `${priority} governed component definition.`,
+    })),
   };
 }
 
@@ -726,6 +735,32 @@ describe("assumption results PDF contract", () => {
 });
 
 describe("renderAssumptionResultsPdfHtml", () => {
+  it("renders V3 priority recommendation, ME-DM alignment, and four definitions before process actions", () => {
+    const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+    const processSectionMatch = html.match(/<section><h2>TA Process and Requirements<\/h2>([\s\S]*?)<\/section>/);
+    expect(processSectionMatch).not.toBeNull();
+    const processSection = processSectionMatch?.[1] ?? "";
+
+    expect(processSection).toContain("V3");
+    expect(processSection).toContain("Recommended priority P0");
+    expect(processSection).toContain("Final priority requires Microsoft ME/DM alignment.");
+    expect(processSection.match(/component priority definition/g)).toHaveLength(4);
+    expect(processSection).toContain("P0 governed component definition.");
+    expect(processSection).toContain("P1 governed component definition.");
+    expect(processSection).toContain("P2 governed component definition.");
+    expect(processSection).toContain("P3 governed component definition.");
+    expect(processSection.indexOf("Recommended priority P0")).toBeLessThan(processSection.indexOf("Guidance"));
+    expect(processSection.indexOf("P0 component priority definition")).toBeLessThan(processSection.indexOf("Guidance"));
+  });
+
+  it("keeps rendering legacy requests without priority guidance fields", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    expect(html).toContain("TA Process and Requirements");
+    expect(html).not.toContain("Recommended priority");
+    expect(html).not.toContain("Microsoft ME/DM alignment");
+  });
+
   it("renders exactly three pages in strict evidence/decision/action order with explicit page breaks", () => {
     const html = renderAssumptionResultsPdfHtml(validRequest());
 
