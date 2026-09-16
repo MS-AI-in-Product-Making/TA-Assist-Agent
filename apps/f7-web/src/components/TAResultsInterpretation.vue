@@ -237,7 +237,7 @@ async function handleGeneratePdf(): Promise<void> {
 
   const sessionId = request.sessionId;
   const downloadFileName = pdfFileName(request.workbookName, request.worksheetName);
-  const startedAt = performance.now();
+  const startedAt = globalThis.performance.now();
   const currentToken = ++generationToken;
   const isCurrentGeneration = (): boolean => (
     !disposed
@@ -260,7 +260,7 @@ async function handleGeneratePdf(): Promise<void> {
     anchor.hidden = true;
     globalThis.document.body.append(anchor);
     anchor.click();
-    const elapsedSeconds = (performance.now() - startedAt) / 1_000;
+    const elapsedSeconds = (globalThis.performance.now() - startedAt) / 1_000;
     pdfStatus.value = `PDF downloaded in ${elapsedSeconds.toFixed(1)} seconds.`;
   } catch (error) {
     if (isCurrentGeneration()) pdfError.value = exportErrorMessage(error);
