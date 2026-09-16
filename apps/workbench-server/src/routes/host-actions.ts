@@ -176,7 +176,8 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     if (action?.kind === "surface_write" && submittedOutcome?.kind === "surface_write") {
       const expectedTargetIdentity = targetIdentityFromWorkItemReference(action.confirmation.workItemReference);
       const actualTargetIdentity = submittedOutcome.receipt.targetIdentity;
-      if (actualTargetIdentity.organization !== expectedTargetIdentity.organization
+      if (expectedTargetIdentity === undefined
+        || actualTargetIdentity.organization !== expectedTargetIdentity.organization
         || actualTargetIdentity.project !== expectedTargetIdentity.project
         || actualTargetIdentity.workItemId !== expectedTargetIdentity.workItemId) {
         return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
@@ -276,24 +277,32 @@ function targetIdentityFromWorkItemReference(workItemReference: string): {
   readonly organization: string;
   readonly project: string;
   readonly workItemId: number;
-} {
-  let organization = "unknown-organization";
-  let project = "unknown-project";
-  let workItemId = 1;
+} | undefined {
   try {
     const url = new URL(workItemReference);
+    if (url.protocol !== "https:") return undefined;
     const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     const markerIndex = segments.findIndex((segment, index) => segment.toLowerCase() === "_workitems" && segments[index + 1]?.toLowerCase() === "edit");
     const parsedId = markerIndex < 0 ? Number.NaN : Number(segments[markerIndex + 2]);
     const parsedOrganization = url.hostname.toLowerCase() === "dev.azure.com" ? segments[0] : url.hostname.split(".")[0];
     const parsedProject = url.hostname.toLowerCase() === "dev.azure.com" ? segments[1] : segments[0];
-    organization = typeof parsedOrganization === "string" && parsedOrganization.length > 0 ? parsedOrganization : organization;
-    project = typeof parsedProject === "string" && parsedProject.length > 0 ? parsedProject : project;
-    workItemId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : workItemId;
+    if ((url.hostname.toLowerCase() !== "dev.azure.com" && !url.hostname.toLowerCase().endsWith(".visualstudio.com"))
+      || typeof parsedOrganization !== "string"
+      || parsedOrganization.length === 0
+      || typeof parsedProject !== "string"
+      || parsedProject.length === 0
+      || !Number.isInteger(parsedId)
+      || parsedId <= 0) {
+      return undefined;
+    }
+    return {
+      organization: parsedOrganization,
+      project: parsedProject,
+      workItemId: parsedId,
+    };
   } catch {
-    // Non-URL references are allowed in fixtures; keep a deterministic fallback identity.
+    return undefined;
   }
-  return { organization, project, workItemId };
 }
 
 function selectCanonicalReportReference(snapshot: F8SessionSnapshot): { readonly artifactId: string; readonly label: "Feature6-Report.md"; readonly action: { readonly type: "open_report"; readonly target: "/report/current"; readonly label: "打开当前报告" } } | undefined {
