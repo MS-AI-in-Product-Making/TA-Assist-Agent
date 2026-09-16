@@ -136,6 +136,8 @@ describe("renderF6PdfHtml", () => {
     expect(html).toContain("analysis-panel--image");
     expect(html).toContain("analysis-panel--results");
     expect(html).toContain("analysis-panel--contributors");
+    expect(html).toContain("grid-template-columns:minmax(0,3fr) minmax(0,2fr)");
+    expect(html).toContain("min-width:0");
     expect(html).toContain("class=\"spec-range-graph\"");
     expect(html).toContain("class=\"capability-spectrum\"");
     expect(html).toContain("class=\"mean-offset-graph\"");

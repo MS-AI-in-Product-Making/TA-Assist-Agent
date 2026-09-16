@@ -434,7 +434,13 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
     expect(html).toContain('<small class="range-values">-0.0294 to 0.409</small>');
     expect(html).not.toContain("Margin");
-    expect(html).toContain("grid-template-columns:60% 40%");
+    expect(html).not.toContain("grid-template-columns:60% 40%");
+    expect(html).toContain("grid-template-columns:minmax(0,3fr) minmax(0,2fr)");
+    expect((html.match(/grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/gu) ?? [])).toHaveLength(2);
+    expect(html).toContain(".analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr);");
+    expect(html).toContain(".analysis-panel--image>.stack-image { display:block; min-width:0; grid-column:1; grid-row:2/span 4; width:100%; margin:0;");
+    expect(html).toContain(".analysis-panel--image .stack-image img { width:100%; height:248px; max-height:248px; object-fit:contain;");
+    expect(html).toContain(".analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28;");
     expect(html).toContain("object-fit:contain");
     for (const color of [
       "#000000", "#FFFFFF", "#F2F2F2", "#D2D2D2", "#505050",

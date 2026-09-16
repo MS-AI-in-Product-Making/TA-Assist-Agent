@@ -350,7 +350,7 @@ class F6PdfRenderer extends Renderer {
   override list(token: Tokens.List): string {
     const items = token.items.map((item) => item.text.replace(/<[^>]*>/gu, "").trim());
     if (this.inOptimizationSection()) {
-      const list = token.ordered ? "ol" : "ul";
+            const list = token.ordered ? "ol" : "ul";
       const rows = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
       return `<section class="optimization-decision"><h2>Decision Summary</h2><${list}>${rows}</${list}></section>`;
     }
@@ -505,7 +505,7 @@ const PRINT_CSS = `
   .factor-table tbody tr.missing td { background:var(--p-gray-242); }
   .status-missing { color:var(--p-dark-red); font-weight:800; } .status-warning { color:var(--p-orange); font-weight:800; } .status-complete { color:var(--p-black); font-weight:800; } .dim-id-review { color:var(--p-black); background:var(--p-yellow); font-weight:800; }
   .drawing-health { display:flex; align-items:center; justify-content:space-between; gap:4mm; margin:0 0 1.5mm; padding:1.4mm 2mm; border:1px solid var(--line); background:var(--p-gray-242); } .health-copy { display:flex; align-items:baseline; gap:3mm; } .health-copy h2,.health-copy p { margin:0; } .health-copy h2 { font-size:10pt; } .health-copy p { color:var(--muted); font-size:7.5pt; } .health-measures { display:flex; gap:5mm; font-size:7.5pt; } .health-measures span { white-space:nowrap; } .health-measures strong { margin-right:1mm; color:var(--fail); font-size:11pt; }
-  .analysis-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-template-rows:auto auto; gap:0; align-items:stretch; border:1px solid var(--line); } .analysis-panel { min-width:0; padding:1.5mm 2mm; background:var(--paper); break-inside:avoid; } .analysis-panel+.analysis-panel { border-left:1px solid var(--line); } .analysis-panel h2 { margin-bottom:1mm; } .analysis-panel--image { display:grid; grid-template-columns:60% 40%; column-gap:3mm; grid-column:span 5; } .analysis-panel--image h2 { grid-column:1/-1; } .analysis-panel--image>.stack-image { grid-column:1; grid-row:2/span 3; } .analysis-panel--image>p { grid-column:2; margin:.5mm 0; font-size:7.5pt; line-height:1.3; } .analysis-panel--results { display:grid; grid-template-columns:1fr 1fr; gap:2mm; grid-column:span 7; } .analysis-panel--results>h2,.analysis-panel--results>.system-summary { grid-column:1/-1; } .analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm; border-top:1px solid var(--line); } .analysis-panel--center { grid-column:span 3; } .analysis-panel--contributors { grid-column:span 6; } .analysis-panel--specifications { grid-column:span 3; }
+  .analysis-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-template-rows:auto auto; gap:0; align-items:stretch; border:1px solid var(--line); } .analysis-panel { min-width:0; padding:1.5mm 2mm; background:var(--paper); break-inside:avoid; } .analysis-panel+.analysis-panel { border-left:1px solid var(--line); } .analysis-panel h2 { margin-bottom:1mm; } .analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:3mm; grid-column:span 5; } .analysis-panel--image h2 { grid-column:1/-1; } .analysis-panel--image>.stack-image { min-width:0; grid-column:1; grid-row:2/span 3; } .analysis-panel--image>p { min-width:0; grid-column:2; margin:.5mm 0; font-size:7.5pt; line-height:1.3; } .analysis-panel--results { display:grid; grid-template-columns:1fr 1fr; gap:2mm; grid-column:span 7; } .analysis-panel--results>h2,.analysis-panel--results>.system-summary { grid-column:1/-1; } .analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm; border-top:1px solid var(--line); } .analysis-panel--center { grid-column:span 3; } .analysis-panel--contributors { grid-column:span 6; } .analysis-panel--specifications { grid-column:span 3; }
   .stack-image { margin:0; text-align:center; break-inside:avoid; } .stack-image img { width:100%; max-height:62mm; object-fit:contain; }
   figure { margin:0; } figcaption { margin-bottom:1.2mm; color:var(--ink); font-size:8pt; font-weight:650; }
   .spec-range-graph,.capability-spectrum,.mean-offset-graph,.spec-change-graph { min-width:0; }
@@ -582,15 +582,15 @@ const PRINT_CSS = `
   .analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-orange); }
   .analysis-panel--process ul { margin:0; padding-left:20px; font-size:14px; line-height:1.25; }
   .analysis-panel--process li { margin:6px 0; color:var(--p-black); }
-  .analysis-panel--image { display:grid; grid-template-columns:60% 40%; column-gap:18px; grid-column:2; grid-row:1; background:var(--p-white); }
+  .analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:18px; grid-column:2; grid-row:1; background:var(--p-white); }
   .analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-yellow); }
   .analysis-panel--center { grid-column:1; grid-row:2; min-height:0; border:0; background:var(--p-cyan); color:var(--p-black); }
   .analysis-panel--contributors { grid-column:2; grid-row:2; min-height:0; border:0; background:var(--p-aqua); color:var(--p-black); }
   .analysis-panel--specifications { grid-column:3; grid-row:2; min-height:0; border:0; background:var(--p-purple); color:var(--p-black); }
   .analysis-panel--image>h2 { grid-column:1/-1; }
-  .analysis-panel--image>.stack-image { display:block; grid-column:1; grid-row:2/span 4; width:100%; margin:0; }
+  .analysis-panel--image>.stack-image { display:block; min-width:0; grid-column:1; grid-row:2/span 4; width:100%; margin:0; }
   .analysis-panel--image .stack-image img { width:100%; height:248px; max-height:248px; object-fit:contain; }
-  .analysis-panel--image>p { grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28; }
+  .analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28; }
   .analysis-panel--results .spec-range-graph,.analysis-panel--results .capability-spectrum { width:49%; }
   .analysis-panel--results .spec-range-graph { float:left; }
   .analysis-panel--results .capability-spectrum { float:right; }
