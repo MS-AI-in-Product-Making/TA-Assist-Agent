@@ -370,6 +370,27 @@ describe("Drawing Governance skill contract", () => {
     expect(reference).toContain("fail closed before any Surface write");
   });
 
+  it("uses structured Surface readback for current persistence and keeps URL flags historical", () => {
+    const skill = readUtf8(skillPath);
+    const reference = readUtf8(referencePath);
+
+    for (const document of [skill, reference]) {
+      const normalized = document.toLowerCase();
+      expect(normalized).toContain("operation/targetidentity/verifiedat");
+      expect(normalized).toContain("current writable flow");
+      expect(normalized).toContain("historical v2 compatibility");
+      expect(normalized).toContain("must not persist or pass the validation url to the cli");
+      expect(normalized).toContain("construct report links only from the verified organization/project/workitemid identity");
+      expect(normalized).toContain("session artifact side table");
+      expect(normalized).toContain("relativepath/contenthash");
+      expect(normalized).toContain("snapshot display ref");
+      expect(normalized).toContain("missing or mismatched");
+      expect(normalized).toContain("fail closed");
+    }
+    expect(skill).toContain("`--work-item-reference <id>` is historical compatibility only");
+    expect(reference).toContain("`--work-item-reference` is historical compatibility only");
+  });
+
   it("requires explicit Question call 1 marker before entity-call boundary", () => {
     const skill = readUtf8(skillPath);
     const question1Marker = "Question call 1 - publishing mode: vscode_askQuestions";

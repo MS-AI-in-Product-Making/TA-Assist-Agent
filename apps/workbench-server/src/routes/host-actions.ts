@@ -1,7 +1,9 @@
 import { conversationTurnSchema, f5MultimodalWorksheetPairV3Schema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { projectProductCapabilityReferences } from "@ai-assist/product-language";
-import { selectCompleteReviewContext, type F8SessionSnapshot } from "@ai-assist/workbench";
+import { openSessionStore, reduceSessionCommand, selectCompleteReviewContext, type F8SessionSnapshot, type ReviewContextIdentity } from "@ai-assist/workbench";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { FastifyPluginAsync } from "fastify";
 
@@ -202,14 +204,55 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
         if (snapshot?.state !== "ado_action_pending" || snapshot.revision !== action.expectedRevision) {
           return reply.code(409).send({ error: "host_action_session_stale" });
         }
-        const next = await context.sessions.applyCommand({
-          contractVersion: "f8-session-command-v1",
-          sessionId,
-          commandId: `host-result:${actionId}`,
-          expectedRevision: snapshot.revision,
-          command: "accept_surface_write",
-          payload: { actionId },
-        });
+        let next;
+        try {
+          const currentF3References = snapshot.artifactRefs?.filter((reference) =>
+            reference.kind === "f3_report"
+            && reference.revision === snapshot.inputRevision
+            && reference.validated) ?? [];
+          if (currentF3References.length !== 1) throw new Error("Current F3 report reference is unavailable.");
+          const store = await openSessionStore({ rootDir: context.rootDir, sessionId });
+          try {
+            const persisted = await store.readArtifactReference(currentF3References[0]!.artifactId);
+            if (persisted === undefined
+              || persisted.sessionId !== sessionId
+              || persisted.inputRevision !== snapshot.inputRevision
+              || persisted.kind !== "f3_report"
+              || persisted.contentHash === undefined) {
+              throw new Error("Current F3 report side-table evidence is unavailable.");
+            }
+            const reportPath = resolve(context.rootDir, persisted.relativePath);
+            const reportRelativePath = relative(resolve(context.rootDir), reportPath);
+            if (reportRelativePath.startsWith("..") || isAbsolute(reportRelativePath)) {
+              throw new Error("Current F3 report artifact is outside the managed root.");
+            }
+            const sourceHash = createHash("sha256").update(readFileSync(reportPath)).digest("hex");
+            if (sourceHash !== persisted.contentHash) {
+              throw new Error("Current F3 report artifact does not match side-table evidence.");
+            }
+            await persistCurrentF3AdoTraceability({ reportPath, receipt: outcome.receipt });
+            const publishedHash = createHash("sha256").update(readFileSync(reportPath)).digest("hex");
+            const reviewContext = readReviewContext(persisted.metadata);
+            const acceptCommand = {
+              contractVersion: "f8-session-command-v1" as const,
+              sessionId,
+              commandId: `host-result:${actionId}`,
+              expectedRevision: snapshot.revision,
+              command: "accept_surface_write" as const,
+              payload: { actionId },
+            };
+            next = await store.applyCommand(acceptCommand, (current, command) => ({
+              snapshot: reduceSessionCommand(current, command),
+              artifactReferenceOps: {
+                upsert: [{ ...persisted, contentHash: publishedHash, reviewContext }],
+              },
+            }));
+          } finally {
+            await store.close();
+          }
+        } catch {
+          return reply.code(409).send({ error: "f3_ado_traceability_persistence_failed" });
+        }
         await context.enqueueActiveAttempt(next);
       }
       if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
@@ -269,8 +312,60 @@ function readHostInstanceId(body: unknown): string {
   return typeof candidate === "string" && candidate.length > 0 ? candidate : "host";
 }
 
+type SurfaceWriteReceipt = {
+  readonly operation: "created" | "updated";
+  readonly targetIdentity: {
+    readonly organization: string;
+    readonly project: string;
+    readonly workItemId: number;
+  };
+  readonly verifiedAt: string;
+};
+
+let writeF3AdoReminder:
+  | ((input: {
+    readonly f3OutputRoot: string;
+    readonly reportPath: string;
+    readonly receipt: SurfaceWriteReceipt;
+  }) => unknown)
+  | undefined;
+
+async function persistCurrentF3AdoTraceability(input: {
+  readonly reportPath: string;
+  readonly receipt: SurfaceWriteReceipt;
+}): Promise<void> {
+  if (writeF3AdoReminder === undefined) {
+    // @ts-expect-error Repository script module has no declaration file.
+    const module = await import("../../../../scripts/write-f3-ado-reminder.mjs");
+    writeF3AdoReminder = module.writeF3AdoReminder;
+  }
+  const persist = writeF3AdoReminder;
+  if (persist === undefined) throw new Error("Feature 3 ADO persistence helper is unavailable.");
+  persist({
+    f3OutputRoot: dirname(input.reportPath),
+    reportPath: input.reportPath,
+    receipt: input.receipt,
+  });
+}
+
 function nextConversationSequence(turns: readonly { readonly sequence: number }[]): number {
   return Math.max(0, ...turns.map((turn) => turn.sequence)) + 1;
+}
+
+function readReviewContext(metadata: Record<string, unknown> | undefined): ReviewContextIdentity {
+  const candidate = metadata?.reviewContext;
+  if (typeof candidate !== "object" || candidate === null) throw new Error("Current F3 review context is unavailable.");
+  const record = candidate as Record<string, unknown>;
+  if (typeof record.workbookHash !== "string"
+    || typeof record.downstreamSelectionHash !== "string"
+    || typeof record.baselineRunReference !== "string") {
+    throw new Error("Current F3 review context is invalid.");
+  }
+  return {
+    workbookHash: record.workbookHash,
+    downstreamSelectionHash: record.downstreamSelectionHash,
+    baselineRunReference: record.baselineRunReference,
+  };
 }
 
 function targetIdentityFromWorkItemReference(workItemReference: string): {
