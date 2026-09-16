@@ -214,6 +214,31 @@ function loadReportFromOutputRoot(f3OutputRoot, fsOps = createFsOps()) {
   };
 }
 
+function resolveExplicitCurrentReportPath(resolvedRoot, reportPath, fsOps) {
+  if (typeof reportPath !== "string" || reportPath.trim().length === 0) {
+    throw new Error("Feature 3 current report path is required for structured ADO receipt persistence.");
+  }
+  const resolvedReportPath = path.resolve(ensureSafePathInput(reportPath, "Feature 3 current report path"));
+  const reportRelativePath = path.relative(resolvedRoot, resolvedReportPath);
+  if (reportRelativePath.startsWith("..") || path.isAbsolute(reportRelativePath)) {
+    throw new Error("Feature 3 current report path is outside the current writable root.");
+  }
+  if (!fsOps.existsSync(resolvedReportPath)) throw new Error("Feature 3 current report path is missing.");
+  return resolvedReportPath;
+}
+
+function toLegacyAdoRenderingReport(report) {
+  if (report.modelVersion !== "drawing-governance-v3") return report;
+  return {
+    ...report,
+    modelVersion: "drawing-governance-v2",
+    ado: {
+      status: report.ado.status,
+      workItemReference: String(report.ado.workItemId),
+    },
+  };
+}
+
 function persistArtifactsAtomically(artifacts, fsOps, options = {}) {
   const token = options.token ?? `${process.pid}.${randomUUID()}`;
   const backedUpPaths = [];
@@ -313,6 +338,7 @@ function persistArtifactsAtomically(artifacts, fsOps, options = {}) {
 export function writeF3AdoReminder({
   f3OutputRoot,
   adoOutcome,
+  reportPath,
   receipt,
   __internalFsOps,
   __internalFailPromotionAt,
@@ -328,15 +354,29 @@ export function writeF3AdoReminder({
   const transactionLock = acquireTransactionLock(resolvedRoot, fsOps);
   try {
     if (receipt !== undefined) {
-      if (__internalFsOps !== undefined) {
-        throw new Error("Structured ADO persistence does not accept injected filesystem operations.");
-      }
-      const report = persistF3AdoTraceability({ f3Root: resolvedRoot, receipt });
-      return {
-        reminderPath: path.join(resolvedRoot, "Feature3-ADO-Reminder.md"),
-        historyHtmlPath: path.join(resolvedRoot, "Feature3-ADO-History.html"),
-        report,
-      };
+      const reportJsonPath = resolveExplicitCurrentReportPath(resolvedRoot, reportPath, fsOps);
+      const report = persistF3AdoTraceability({ f3Root: resolvedRoot, reportPath: reportJsonPath, receipt });
+      const reminderPath = path.join(resolvedRoot, "Feature3-ADO-Reminder.md");
+      const historyHtmlPath = path.join(resolvedRoot, "Feature3-ADO-History.html");
+      const reportMdPath = path.join(resolvedRoot, "Feature3-Report.md");
+      const renderingReport = toLegacyAdoRenderingReport(report);
+      const reminderMd = renderF3AdoReminder(renderingReport);
+      const historyHtml = renderF3AdoHistoryHtml(renderingReport);
+      const reportMd = renderF3Report(renderingReport, { outputRoot: resolvedRoot });
+
+      persistArtifactsAtomically([
+        { targetPath: reminderPath, content: reminderMd },
+        { targetPath: historyHtmlPath, content: historyHtml },
+        { targetPath: reportJsonPath, content: `${JSON.stringify(report, null, 2)}\n` },
+        { targetPath: reportMdPath, content: reportMd },
+      ], fsOps, {
+        ...(Number.isInteger(__internalFailPromotionAt) ? { failPromotionAt: __internalFailPromotionAt } : {}),
+        ...(typeof __internalFailWithPath === "string" && __internalFailWithPath.length > 0
+          ? { failWithPath: __internalFailWithPath }
+          : {}),
+      });
+
+      return { reminderPath, historyHtmlPath, report };
     }
     const loaded = loadReportFromOutputRoot(resolvedRoot, fsOps);
     const nextAdo = validateAdoOutcome(adoOutcome);

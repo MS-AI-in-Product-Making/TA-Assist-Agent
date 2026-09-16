@@ -27,17 +27,39 @@ function acceptedV2Report() {
 }
 
 describe("persistF3AdoTraceability", () => {
-  it("persists structured readback before advancing review", () => {
+  it("fails closed without an explicit current report path and leaves legacy v2 unchanged", () => {
     const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
     roots.push(f3Root);
-    writeFileSync(path.join(f3Root, "Feature3-Report.json"), `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+    const historicalPath = path.join(f3Root, "Feature3-Report.json");
+    const legacyContent = `${JSON.stringify(acceptedV2Report(), null, 2)}\n`;
+    writeFileSync(historicalPath, legacyContent, "utf8");
     const receipt = {
       operation: "updated" as const,
       targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
       verifiedAt: "2026-09-16T08:30:12.000Z",
     };
 
-    const report = persistF3AdoTraceability({ f3Root, receipt });
+
+    expect(() => persistF3AdoTraceability({ f3Root, receipt })).toThrow(/report path/i);
+    expect(readFileSync(historicalPath, "utf8")).toBe(legacyContent);
+  });
+
+  it("returns structured readback for the explicit current report path without overwriting it", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "current-host-action.json");
+    const legacyContent = `${JSON.stringify(acceptedV2Report(), null, 2)}\n`;
+    writeFileSync(reportPath, legacyContent, "utf8");
+
+    const report = persistF3AdoTraceability({
+      f3Root,
+      reportPath,
+      receipt: {
+        operation: "updated",
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        verifiedAt: "2026-09-16T08:30:12.000Z",
+      },
+    });
 
     expect(report.modelVersion).toBe("drawing-governance-v3");
     expect(report.ado).toEqual({
@@ -47,7 +69,7 @@ describe("persistF3AdoTraceability", () => {
       project: "Devices",
       workItemId: 1119604,
     });
-    expect(JSON.parse(readFileSync(path.join(f3Root, "Feature3-Report.json"), "utf8"))).toEqual(report);
+    expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
     expect(JSON.stringify(report)).not.toContain("dev.azure.com");
   });
 
@@ -55,7 +77,8 @@ describe("persistF3AdoTraceability", () => {
     const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
     roots.push(f3Root);
     const reportPath = path.join(f3Root, "current-host-action.json");
-    writeFileSync(reportPath, `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+    const legacyContent = `${JSON.stringify(acceptedV2Report(), null, 2)}\n`;
+    writeFileSync(reportPath, legacyContent, "utf8");
 
     const report = persistF3AdoTraceability({
       f3Root,
@@ -68,7 +91,7 @@ describe("persistF3AdoTraceability", () => {
     });
 
     expect(report.modelVersion).toBe("drawing-governance-v3");
-    expect(JSON.parse(readFileSync(reportPath, "utf8"))).toEqual(report);
+    expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
     expect(() => readFileSync(path.join(f3Root, "Feature3-Report.json"), "utf8")).toThrow();
   });
 });

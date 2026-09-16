@@ -1,4 +1,4 @@
-import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -22,10 +22,11 @@ export interface PersistF3AdoTraceabilityInput {
 }
 
 export function persistF3AdoTraceability(input: PersistF3AdoTraceabilityInput): DrawingGovernanceResultV3 {
+  if (input.reportPath === undefined || input.reportPath.trim().length === 0) {
+    throw new Error("Feature 3 current report path is required for structured ADO receipt persistence.");
+  }
   const f3Root = path.resolve(input.f3Root);
-  const reportPath = input.reportPath === undefined
-    ? path.join(f3Root, "Feature3-Report.json")
-    : path.resolve(input.reportPath);
+  const reportPath = path.resolve(input.reportPath);
   const reportRelativePath = path.relative(f3Root, reportPath);
   if (reportRelativePath.startsWith("..") || path.isAbsolute(reportRelativePath)) {
     throw new Error("Feature 3 report path is outside the current writable root.");
@@ -56,13 +57,6 @@ export function persistF3AdoTraceability(input: PersistF3AdoTraceabilityInput): 
       workItemId: input.receipt.targetIdentity.workItemId,
     },
   });
-  const temporaryPath = `${reportPath}.${process.pid}.tmp`;
-  try {
-    writeFileSync(temporaryPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-    renameSync(temporaryPath, reportPath);
-  } finally {
-    rmSync(temporaryPath, { force: true });
-  }
   return report;
 }
 
