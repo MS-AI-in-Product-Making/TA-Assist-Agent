@@ -620,6 +620,14 @@ function v4SelectedStatusText(status) {
   return "No validated optimized result";
 }
 
+function reportInterpretationText(value) {
+  return clean(value, NA).replaceAll(MODEL_RISK_DISCLOSURE, "").trim() || NA;
+}
+
+function specificationRangeText(lower, upper, unit) {
+  return `[${fixedEngineering(lower, unit)}, ${fixedEngineering(upper, unit)}]`;
+}
+
 function renderV4OptimizationModules(worksheet, unit, catalog) {
   const baseline = worksheet.f6Worksheet.baselineResult;
   const selected = worksheet.f6Worksheet.selectedResult.snapshot;
@@ -658,21 +666,49 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
       ? ["upper", baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit]
       : undefined,
   ].filter(Boolean);
-  if (failedSides.length > 0) {
+  if (baseline.capability.status === "FAIL") {
     lines.push(
       "",
       `## ${catalog.specifications}`,
       "",
-      `| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`,
-      "|---|---:|---:|---:|---|",
-      ...failedSides.map(([side, currentLimit, proposedLimit]) => row([
-        side,
-        numberText(currentLimit),
-        numberText(proposedLimit),
-        numberText(baseline.capability.targetCpk),
-        catalog.approvalRequired,
-      ])),
     );
+    const currentRange = specificationRangeText(
+      baseline.capability.lowerSpecLimit,
+      baseline.capability.upperSpecLimit,
+      unit,
+    );
+    if (failedSides.length > 0) {
+      const proposedRange = specificationRangeText(
+        selected.capability.lowerSpecLimit,
+        selected.capability.upperSpecLimit,
+        unit,
+      );
+      lines.push(
+        `| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`,
+        "|---|---:|---:|---:|---|",
+        ...failedSides.map(([side, currentLimit, proposedLimit]) => row([
+          side,
+          numberText(currentLimit),
+          numberText(proposedLimit),
+          numberText(baseline.capability.targetCpk),
+          catalog.approvalRequired,
+        ])),
+        "",
+        `- Summary: Adjust the specification range from ${currentRange} to ${proposedRange}, subject to ME and requirement-owner approval.`,
+      );
+    } else if (["step1_centered", "step2_tolerance_optimized"].includes(worksheet.f6Worksheet.selectedResult.status)) {
+      lines.push(
+        `- Current Range: ${currentRange}`,
+        "- Proposed Range: No change proposed",
+        `- Summary: Retain the current specification range ${currentRange}; ${v4SelectedStatusText(worksheet.f6Worksheet.selectedResult.status)} meets Target Cpk without a requirement change.`,
+      );
+    } else {
+      lines.push(
+        `- Current Range: ${currentRange}`,
+        "- Proposed Range: No validated specification proposal",
+        "- Summary: No validated specification change is available; resolve the optimization blocker before changing the requirement.",
+      );
+    }
   }
   return lines;
 }
@@ -704,7 +740,7 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     "",
     imageLink,
     "",
-    clean(interpretation?.imageTableInterpretation, NA),
+    reportInterpretationText(interpretation?.imageTableInterpretation),
     "",
     `*${MODEL_RISK_DISCLOSURE}*`,
     "",

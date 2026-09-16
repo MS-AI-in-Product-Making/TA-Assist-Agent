@@ -151,13 +151,14 @@ function specificationRangeGraph(requirements: ReadonlyMap<string, string>, rows
   const domain = [lowerSpec, upperSpec, nominal, ...ranges.flatMap(({ lower, upper }) => [lower!, upper!])];
   const minimum = Math.min(...domain);
   const maximum = Math.max(...domain);
-  const rangeRows = ranges.map(({ label, lower, upper, margin, result }) => `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><b class="range-bound range-bound--lower" style="left:${graphPosition(lowerSpec, minimum, maximum)}%"><span>LSL ${threeSignificantFigures(lowerSpec)}</span></b><b class="range-bound range-bound--upper" style="left:${graphPosition(upperSpec, minimum, maximum)}%"><span>USL ${threeSignificantFigures(upperSpec)}</span></b><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em></span><strong>${result.display}</strong><small>${threeSignificantFigures(lower!)} to ${threeSignificantFigures(upper!)} · Margin ${escapeHtml(margin)}</small></div>`).join("");
+  const rangeRows = ranges.map(({ label, lower, upper, margin, result }) => `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em></span><strong>${result.display}</strong><small class="range-values">${threeSignificantFigures(lower!)} to ${threeSignificantFigures(upper!)} · Margin ${escapeHtml(margin)}</small></div>`).join("");
   const worstCaseResult = ranges.find(({ label }) => label === "Worst-Case Range")?.result.display ?? "N/A";
-  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
+  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption><div class="range-spec-labels"><b class="range-bound range-bound--lower">LSL ${threeSignificantFigures(lowerSpec)}</b><b class="range-bound range-bound--upper">USL ${threeSignificantFigures(upperSpec)}</b></div>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
 }
 
 function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: readonly Tokens.TableCell[][]): string {
   const target = numericValue(requirements.get("Target Cpk") ?? "");
+  const evaluationLevel = requirements.get("Evaluation Level")?.trim() ?? "N/A";
   const entries = rows.flatMap((row) => {
     const label = cellText(row[0]!);
     const value = numericValue(cellText(row[1]!));
@@ -168,7 +169,7 @@ function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: rea
   const bars = entries.map(({ label, value, result }) => `<div class="capability-row capability-row--${result.className}"><span>${escapeHtml(label.replace("Predictive ", ""))}</span><span class="capability-track"><i style="width:${Math.max(0, Math.min(100, (value / maximum) * 100))}%"></i><b style="left:${Math.min(100, (target / maximum) * 100)}%"></b></span><strong>${threeSignificantFigures(value)}</strong></div>`).join("");
   const yieldRow = rows.find((row) => cellText(row[0]!) === "Predicted Yield");
   const dpmRow = rows.find((row) => cellText(row[0]!) === "Predicted DPM");
-  return `<figure class="capability-spectrum" data-target-cpk="${target.toFixed(3)}"><figcaption>Capability against target <strong>${threeSignificantFigures(target)}</strong></figcaption>${bars}<p>${yieldRow === undefined ? "" : `Yield ${escapeHtml(cellText(yieldRow[1]!))}`} ${dpmRow === undefined ? "" : `· DPM ${escapeHtml(cellText(dpmRow[1]!))}`}</p></figure>`;
+  return `<figure class="capability-spectrum" data-target-cpk="${target.toFixed(3)}" data-evaluation-level="${escapeHtml(evaluationLevel)}"><figcaption>Capability against target <strong>${escapeHtml(evaluationLevel)} · ${threeSignificantFigures(target)}</strong></figcaption>${bars}<p>${yieldRow === undefined ? "" : `Yield ${escapeHtml(cellText(yieldRow[1]!))}`} ${dpmRow === undefined ? "" : `· DPM ${escapeHtml(cellText(dpmRow[1]!))}`}</p></figure>`;
 }
 
 function meanOffsetGraph(items: readonly string[]): string {
@@ -181,7 +182,7 @@ function meanOffsetGraph(items: readonly string[]): string {
     return unavailableGraph("mean-offset-graph", "Mean-center alignment");
   }
   const magnitude = Math.min(45, Math.abs(offset) * 500);
-  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--nominal"><span>Design nominal</span></i><b class="mean-marker mean-marker--adjusted" style="left:calc(50% + ${offset < 0 ? -magnitude : magnitude}%)"><span>Adjusted mean</span></b></div><p>Design nominal ${escapeHtml(designNominal)} · Adjusted mean ${escapeHtml(adjustedMean)} · Offset ${escapeHtml(offsetText)}</p></figure>`;
+  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--nominal"><span>Design nominal</span></i><b class="mean-marker mean-marker--adjusted" style="left:calc(50% + ${offset < 0 ? -magnitude : magnitude}%)"><span>Adjusted mean</span></b></div><p><span class="mean-value mean-value--nominal">Design nominal ${escapeHtml(designNominal)}</span> · <span class="mean-value mean-value--adjusted">Adjusted mean ${escapeHtml(adjustedMean)}</span> · Offset ${escapeHtml(offsetText)}</p></figure>`;
 }
 
 function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
@@ -192,8 +193,17 @@ function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
   const domain = entries.flatMap(({ current, proposed }) => [current!, proposed!]);
   const minimum = Math.min(...domain);
   const maximum = Math.max(...domain);
-  const graphRows = entries.map(({ side, current, proposed }) => `<div class="change-row"><span>${escapeHtml(side)}</span><span class="change-track"><i class="spec-marker spec-marker--current" style="left:${graphPosition(current!, minimum, maximum)}%"></i><b class="spec-marker spec-marker--proposed" style="left:${graphPosition(proposed!, minimum, maximum)}%"></b></span><small>${threeSignificantFigures(current!)} → ${threeSignificantFigures(proposed!)}</small></div>`).join("");
-  return `<figure class="spec-change-graph"><figcaption>Specification proposal</figcaption>${graphRows}<p>Engineering approval required.</p></figure>`;
+  const graphRows = entries.map(({ side, current, proposed }) => `<div class="change-row"><span>${escapeHtml(side)}</span><span class="change-track"><i class="spec-marker spec-marker--current" style="left:${graphPosition(current!, minimum, maximum)}%"></i><b class="spec-marker spec-marker--proposed" style="left:${graphPosition(proposed!, minimum, maximum)}%"></b></span><small><span class="spec-value spec-value--current">${threeSignificantFigures(current!)}</span> → <span class="spec-value spec-value--proposed">${threeSignificantFigures(proposed!)}</span></small></div>`).join("");
+  return `<figure class="spec-change-graph"><figcaption>Specification proposal</figcaption><div class="spec-change-legend"><span class="spec-value spec-value--current">Current</span><span class="spec-value spec-value--proposed">Proposed</span></div>${graphRows}<p>Engineering approval required.</p></figure>`;
+}
+
+function specificationGuidance(items: readonly string[]): string {
+  const value = (label: string) => items.map((item) => new RegExp(`^${label}:\\s*(.+)$`, "iu").exec(item)?.[1]).find(Boolean);
+  const current = value("Current Range");
+  const proposed = value("Proposed Range");
+  const summary = value("Summary");
+  const values = current === undefined && proposed === undefined ? "" : `<p class="spec-guidance-values">${current === undefined ? "" : `<span class="spec-value spec-value--current">Current ${escapeHtml(current)}</span>`}${current !== undefined && proposed !== undefined ? " · " : ""}${proposed === undefined ? "" : `<span class="spec-value spec-value--proposed">Proposed ${escapeHtml(proposed)}</span>`}</p>`;
+  return `<section class="specification-guidance">${values}${summary === undefined ? "" : `<p class="spec-range-summary">${escapeHtml(summary)}</p>`}</section>`;
 }
 
 class F6PdfRenderer extends Renderer {
@@ -318,6 +328,7 @@ class F6PdfRenderer extends Renderer {
       return `<section class="optimization-decision"><h2>Decision Summary</h2><${list}>${rows}</${list}></section>`;
     }
     if (this.analysisPanelType === "center") return meanOffsetGraph(items);
+    if (this.analysisPanelType === "specifications") return specificationGuidance(items);
     if (this.analysisPanelType === "results") {
       return `<p class="system-summary">${items.map(escapeHtml).join(" · ")}</p>`;
     }
@@ -464,11 +475,11 @@ const PRINT_CSS = `
   .stack-image { margin:0; text-align:center; break-inside:avoid; } .stack-image img { width:78mm; max-height:62mm; object-fit:contain; }
   figure { margin:0; } figcaption { margin-bottom:1.2mm; color:var(--ink); font-size:8pt; font-weight:650; }
   .spec-range-graph,.capability-spectrum,.mean-offset-graph,.spec-change-graph { min-width:0; }
-  .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--muted); } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:#e7edf3; } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track .range-bound { position:absolute; top:-1mm; width:2px; height:6mm; background:var(--signal-red); z-index:3; } .range-bound>span { position:absolute; top:-4mm; color:var(--signal-red); font-size:5.5pt; white-space:nowrap; } .range-bound--lower>span { left:0; } .range-bound--upper>span { right:0; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
+  .range-spec-labels { display:flex; justify-content:space-between; gap:8mm; margin:0 12% 1mm; color:var(--signal-red); font-size:6.5pt; } .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--muted); } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:#e7edf3; } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
   .capability-spectrum figcaption strong { color:var(--blue); } .capability-row { display:grid; grid-template-columns:12mm 1fr 14mm; gap:1mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .capability-track i { display:block; height:100%; background:#64748b; } .capability-row--pass .capability-track i { background:var(--pass); } .capability-row--fail .capability-track i { background:var(--fail); } .capability-track b { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); } .capability-spectrum>p,.system-summary { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
-  .offset-track { margin:3mm 0 2mm; background:#e7edf3; } .offset-track .mean-marker--nominal { position:absolute; left:50%; top:-1mm; width:2px; height:6mm; background:var(--signal-red); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
+  .offset-track { margin:3mm 0 2mm; background:#e7edf3; } .offset-track .mean-marker--nominal { position:absolute; left:50%; top:-1mm; width:2px; height:6mm; background:var(--signal-red); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-value--nominal,.spec-value--current { color:var(--signal-red); font-weight:700; } .mean-value--adjusted,.spec-value--proposed { color:var(--signal-green); font-weight:700; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:#dbe4ee; } .contribution-fill { display:block; height:100%; background:#64748b; } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:normal; word-break:normal; }
-  .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track .spec-marker--current { background:var(--signal-red); } .change-track .spec-marker--proposed { background:var(--signal-green); }
+  .spec-change-legend { display:flex; gap:3mm; margin-bottom:1mm; font-size:6.5pt; } .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track .spec-marker--current { background:var(--signal-red); } .change-track .spec-marker--proposed { background:var(--signal-green); } .spec-guidance-values,.spec-range-summary { margin:4px 0 0; font-size:11px; line-height:1.2; }
   @media print { html,body { background:#fff; } body { max-width:none; } }
 
   :root { --st-bone:#e2dcc9; --st-black:#000; --st-ink:#0a0a0a; --st-paper:#f4efe0; --st-magenta:#c73b7a; --st-orange:#ee7a2e; --st-teal:#2d7e73; --st-blue:#3f73b7; --st-mustard:#d8a93b; --st-display:"Stardos Stencil","Rockwell Extra Bold",Rockwell,serif; --st-meta:"Barlow Condensed","Arial Narrow",sans-serif; --st-body:Aptos,"Segoe UI",sans-serif; }
@@ -549,13 +560,14 @@ const PRINT_CSS = `
   .analysis-panel--results .spec-range-graph { float:left; }
   .analysis-panel--results .capability-spectrum { float:right; }
   .analysis-panel figcaption { margin-bottom:12px; color:inherit; font:800 17px/1 var(--st-meta); letter-spacing:.05em; text-transform:uppercase; }
-  .range-row { grid-template-columns:62px 1fr 42px; min-height:30px; margin:0; gap:8px; font-size:12px; }
-  .range-row>small { display:none; }
+  .range-spec-labels { margin:0 12px 4px 70px; font-size:11px; }
+  .range-row { grid-template-columns:62px 1fr 42px; min-height:39px; margin:0; gap:8px; font-size:12px; }
+  .range-row>small { display:block; grid-column:2; margin-top:-5px; font-size:9px; line-height:1; }
   .range-axis { font-size:12px; }
   .capability-row { grid-template-columns:38px 1fr 45px; min-height:28px; margin:0; gap:8px; font-size:12px; }
   .capability-row>strong,.range-row>strong { color:var(--st-ink); }
   .analysis-panel--center .mean-offset-graph p { color:var(--st-bone); font-size:17px; }
-  .analysis-panel--center .offset-track { margin-top:74px; background:rgba(226,220,201,.35); }
+  .analysis-panel--center .offset-track { margin-top:34px; background:rgba(226,220,201,.35); }
   .analysis-panel--contributors .contribution-chart { display:grid; margin:0; grid-template-columns:1fr; }
   .analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }
   .analysis-panel--contributors figcaption,.analysis-panel--specifications figcaption { display:none; }
@@ -568,6 +580,9 @@ const PRINT_CSS = `
   .analysis-panel--specifications .change-track .spec-marker--current { background:var(--signal-red); }
   .analysis-panel--specifications .change-track .spec-marker--proposed { background:var(--signal-green); }
   .analysis-panel--specifications .spec-change-graph p,.analysis-panel--specifications .change-row small { color:var(--st-bone); }
+  .analysis-panel--specifications .spec-value--current { color:#ffb4b7; }
+  .analysis-panel--specifications .spec-value--proposed { color:#9ee6b8; }
+  .analysis-panel--specifications .spec-range-summary,.analysis-panel--specifications .spec-guidance-values { color:var(--st-bone); }
   .analysis-panel--specifications .spec-change-graph p { margin:4px 0 0; font-size:11px; }
   .optimization-inline { display:grid; grid-template-columns:1fr 1fr; gap:8px; min-height:0; overflow:hidden; }
   .optimization-inline>h2 { grid-column:1/-1; margin:0; font:700 18px/1 var(--st-display); text-transform:uppercase; }

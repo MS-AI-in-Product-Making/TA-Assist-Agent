@@ -269,6 +269,7 @@ describe("renderF6PdfSync", () => {
       "| LSL | -0.150 mm |",
       "| USL | 0.050 mm |",
       "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
       "",
       "| Metric | Lower | Upper | Minimum Margin | Result |",
       "|---|---:|---:|---:|---|",
@@ -276,6 +277,13 @@ describe("renderF6PdfSync", () => {
       "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
       "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
       "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive Cp | 0.794 | FAIL |",
+      "| Predictive CpkL | 0.794 | FAIL |",
+      "| Predictive CpkU | 0.794 | FAIL |",
+      "| Predictive Cpk | 0.794 | FAIL |",
       "",
       "## Adjusted Mean to Spec Center Shift",
       "",
@@ -294,6 +302,9 @@ describe("renderF6PdfSync", () => {
       "| Side | Current Limit | Proposed Limit | Target Cpk | Approval |",
       "|---|---:|---:|---:|---|",
       "| lower | -0.150 | -0.180 | 1.333 | Engineering approval required |",
+      "| upper | 0.050 | 0.080 | 1.333 | Engineering approval required |",
+      "",
+      "- Summary: Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800], subject to ME and requirement-owner approval.",
       "",
       "<!-- f6-optimization-comparison -->",
       "## Optimization Comparison",
@@ -310,11 +321,23 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-bound range-bound--lower"');
     expect(html).toContain('class="range-bound range-bound--upper"');
+    expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
+    expect(html.match(/class="range-bound range-bound--lower"/gu)).toHaveLength(1);
+    expect(html.match(/class="range-bound range-bound--upper"/gu)).toHaveLength(1);
+    expect(html).toContain('<small class="range-values">-0.100 to 0.0400');
     expect(html).toContain('data-worst-case-result="FAIL"');
+    expect(html).toContain('data-evaluation-level="4 sigma"');
+    expect(html).toContain("Capability against target <strong>4 sigma · 1.33</strong>");
     expect(html).toContain('class="mean-marker mean-marker--nominal"');
     expect(html).toContain('class="mean-marker mean-marker--adjusted"');
+    expect(html).toContain('class="mean-value mean-value--nominal">Design nominal');
+    expect(html).toContain('class="mean-value mean-value--adjusted">Adjusted mean');
     expect(html).toContain('class="spec-marker spec-marker--current"');
     expect(html).toContain('class="spec-marker spec-marker--proposed"');
+    expect(html).toContain('<div class="spec-change-legend"><span class="spec-value spec-value--current">Current</span><span class="spec-value spec-value--proposed">Proposed</span></div>');
+    expect(html).toContain('class="spec-value spec-value--current"');
+    expect(html).toContain('class="spec-value spec-value--proposed"');
+    expect(html).toContain("Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800]");
     expect(html).toContain("--signal-red:#c43135");
     expect(html).toContain("--signal-green:#198754");
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
@@ -512,9 +535,9 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain('class="drawing-health"');
     expect(html).toContain('class="capability-spectrum"');
     expect(html).toContain('data-target-cpk="1.333"');
-    expect(html).toContain("Capability against target <strong>1.33</strong>");
+    expect(html).toContain("Capability against target <strong>3 sigma · 1.33</strong>");
     expect(html).toContain("<strong>1.48</strong>");
-    expect(html).toContain("<small>-0.150 → -0.180</small>");
+    expect(html).toContain('<span class="spec-value spec-value--current">-0.150</span> → <span class="spec-value spec-value--proposed">-0.180</span>');
     expect(html).toContain('class="spec-range-graph"');
     expect(html).toContain('data-statistical-result="PASS"');
     expect(html).toContain('data-worst-case-result="FAIL"');

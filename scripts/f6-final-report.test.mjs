@@ -1792,6 +1792,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
 
     expect(report.markdown).not.toContain("## Optimization Comparison");
     expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
+    expect(report.markdown).not.toContain("## Specification Changes");
   });
 
   it("fails schema validation when a V4 snapshot misses midpoint or mean-offset fields", () => {
@@ -1823,11 +1824,22 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(markdown).toContain("## Contributor Priorities");
     expect(markdown).toContain("| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |");
 
+    const disclosure = "*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*";
+    expect(markdown.match(/Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME\./gu)).toHaveLength(1);
+    expect(markdown).toContain(disclosure);
+
     if (selectedStatus === "step3_specification_relaxed_pending_approval") {
       expect(markdown).toContain("## Specification Changes");
       expect(markdown).toContain("Engineering approval required");
+      expect(markdown).toContain("Adjust the specification range from");
+      expect(markdown).toContain("subject to ME and requirement-owner approval");
+    } else if (selectedStatus === "step1_centered" || selectedStatus === "step2_tolerance_optimized") {
+      expect(markdown).toContain("## Specification Changes");
+      expect(markdown).toContain("Proposed Range: No change proposed");
+      expect(markdown).toContain("Retain the current specification range");
     } else {
-      expect(markdown).not.toContain("## Specification Changes");
+      expect(markdown).toContain("## Specification Changes");
+      expect(markdown).toContain("Proposed Range: No validated specification proposal");
     }
     if (selectedStatus === "no_validated_optimized_result") {
       expect(markdown).toContain("Selected Result: No validated optimized result");
