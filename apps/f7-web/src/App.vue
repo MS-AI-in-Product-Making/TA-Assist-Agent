@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LoaderCircle } from "lucide-vue-next";
 import { computed, nextTick, ref } from "vue";
-import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
+import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
@@ -14,7 +14,8 @@ const props = defineProps<{
   readonly client?: F7Client;
 }>();
 
-const store = createF7SessionStore(props.client ?? createF7Client());
+const client = props.client ?? createF7Client();
+const store = createF7SessionStore(client);
 const activeMeasurementFactorId = ref("");
 const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
@@ -25,12 +26,16 @@ const pendingWorkbookFile = ref<File>();
 const importingWorkbookFileName = ref("");
 const restartConfirmationVisible = ref(false);
 const restartConfirmationMode = ref<"replaceWorkbook" | "openPicker">();
-const restartCancelButton = ref<HTMLButtonElement>();
-const restartContinueButton = ref<HTMLButtonElement>();
-let restartDialogOpener: HTMLElement | undefined;
+const restartCancelButton = ref<globalThis.HTMLButtonElement>();
+const restartContinueButton = ref<globalThis.HTMLButtonElement>();
+let restartDialogOpener: globalThis.HTMLElement | undefined;
 let restartConfirmationPending = false;
 let workbookReplacementAuthorized = false;
 let reportRequestToken = 0;
+
+function generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<globalThis.Blob> {
+  return client.generateAssumptionResultsPdf(request);
+}
 
 const workbookImportBusy = computed(() => store.busyAction.value === "importWorkbook");
 const workbookReplacementBusy = computed(() => workbookImportBusy.value && pendingWorkbookFile.value !== undefined);
@@ -90,8 +95,8 @@ const statusText = computed(() => {
   return store.session.value.status;
 });
 
-function asFocusableElement(candidate: unknown): HTMLElement | undefined {
-  return candidate instanceof HTMLElement ? candidate : undefined;
+function asFocusableElement(candidate: unknown): globalThis.HTMLElement | undefined {
+  return candidate instanceof globalThis.HTMLElement ? candidate : undefined;
 }
 
 function captureRestartDialogOpener(fallback: unknown): void {
@@ -526,6 +531,7 @@ async function openReport(): Promise<void> {
         <TAResultsInterpretation
           v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
+          :generate-pdf="generateAssumptionResultsPdf"
         />
 
         <section

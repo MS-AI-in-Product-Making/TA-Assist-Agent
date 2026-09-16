@@ -16,6 +16,17 @@ import {
   type F7SessionService,
   type TypedError,
 } from "@ai-assist/contracts";
+import {
+  assumptionResultsPdfRouteRequestSchema,
+  encodeRfc5987FileName,
+  safePdfDownloadFileName,
+  safeUnicodePdfDownloadFileName,
+} from "./assumption-results-pdf-contract.js";
+import {
+  AssumptionResultsPdfQueueFullError,
+  type AssumptionResultsPdfRenderer,
+} from "./assumption-results-pdf-renderer.js";
+import { F7_SESSION_NOT_FOUND_REASON_CODE } from "./f7-session-service.js";
 
 const REQUEST_SUMMARY = "F7 request is invalid.";
 const INTERNAL_SUMMARY = "F7 local API request failed.";
@@ -36,6 +47,7 @@ const ROUTE_KIND_DISTRIBUTION_FIT = "f7.factors.distribution-fit";
 const ROUTE_KIND_DISTRIBUTION_APPROVAL = "f7.factors.distribution-approval";
 const ROUTE_KIND_MONTE_CARLO = "f7.monte-carlo.run";
 const ROUTE_KIND_REPORT = "f7.report.generate";
+const ROUTE_KIND_ASSUMPTION_RESULTS_PDF = "f7.assumption-results.pdf";
 const ROUTE_KIND_SESSION_GET = "f7.session.get";
 const ROUTE_KIND_DIMENSION_CHAIN_IMAGE_GET = "f7.session.dimension-chain-image.get";
 
@@ -66,6 +78,13 @@ const INTERNAL_ENVELOPE: ErrorEnvelope = Object.freeze({
   summary: INTERNAL_SUMMARY,
   suggestedAction: "Retry the request. If the problem persists, restart the local API.",
   affectedInputReferences: [INTERNAL_REFERENCE],
+});
+
+const PDF_RENDERER_BUSY_ENVELOPE: ErrorEnvelope = Object.freeze({
+  code: "pdf_renderer_busy",
+  summary: "The local PDF renderer is at capacity.",
+  suggestedAction: "Wait for an active PDF generation to finish, then retry.",
+  affectedInputReferences: ["f7-assumption-results-pdf"],
 });
 
 class HttpRouteError extends Error {
@@ -126,6 +145,7 @@ function isBodyPostRoute(method: string, pathname: string): boolean {
   if (FACTOR_DISTRIBUTION_APPROVAL_PATH.test(pathname)) return true;
   if (pathname === "/f7/monte-carlo") return true;
   if (pathname === "/f7/report") return true;
+  if (pathname === "/f7/assumption-results/pdf") return true;
   return false;
 }
 
@@ -313,10 +333,34 @@ function writeImage(response: ServerResponse, mediaType: "image/png" | "image/jp
   response.end(bytes);
 }
 
+function writePdf(
+  response: ServerResponse,
+  bytes: Buffer,
+  fallbackFileName: string,
+  unicodeFileName: string,
+): void {
+  if (response.writableEnded || response.destroyed) return;
+  response.statusCode = 200;
+  response.setHeader("content-type", "application/pdf");
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("content-length", bytes.byteLength);
+  response.setHeader(
+    "content-disposition",
+    `attachment; filename="${fallbackFileName}"; filename*=UTF-8''${encodeRfc5987FileName(unicodeFileName)}`,
+  );
+  response.end(bytes);
+}
+
 function writeFailure(response: ServerResponse, error: unknown): number {
   if (error instanceof HttpRouteError) {
     writeJson(response, error.status, error.envelope);
     return error.status;
+  }
+
+  if (error instanceof AssumptionResultsPdfQueueFullError) {
+    writeJson(response, 503, PDF_RENDERER_BUSY_ENVELOPE);
+    return 503;
   }
 
   const parsed = typedErrorSchema.safeParse(error);
@@ -339,6 +383,7 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
   service: F7SessionService,
+  assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer,
 ): Promise<{ kind: string; status: number } | undefined> {
   const method = request.method ?? "";
   const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -495,6 +540,42 @@ async function handleRequest(
     return { kind: ROUTE_KIND_REPORT, status: 200 };
   }
 
+  if (method === "POST" && pathname === "/f7/assumption-results/pdf") {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const routeRequest = assumptionResultsPdfRouteRequestSchema.safeParse(body);
+    if (!routeRequest.success) rejectBadRequest();
+    try {
+      service.getSession(routeRequest.data.sessionId);
+    } catch (error) {
+      const parsedError = typedErrorSchema.safeParse(error);
+      const reasonCode = error && typeof error === "object" && "reasonCode" in error
+        ? error.reasonCode
+        : undefined;
+      if (
+        parsedError.success
+        && parsedError.data.code === "validation_error"
+        && reasonCode === F7_SESSION_NOT_FOUND_REASON_CODE
+      ) {
+        throw new HttpRouteError(404, toErrorEnvelope(parsedError.data));
+      }
+      throw error;
+    }
+    const pdfBytes = await assumptionResultsPdfRenderer.render(routeRequest.data);
+    if (pdfBytes.length === 0 || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
+      throw new Error("Assumption-results renderer returned invalid PDF bytes.");
+    }
+    const fallbackFileName = safePdfDownloadFileName(
+      routeRequest.data.workbookName,
+      routeRequest.data.worksheetName,
+    );
+    const unicodeFileName = safeUnicodePdfDownloadFileName(
+      routeRequest.data.workbookName,
+      routeRequest.data.worksheetName,
+    );
+    writePdf(response, pdfBytes, fallbackFileName, unicodeFileName);
+    return { kind: ROUTE_KIND_ASSUMPTION_RESULTS_PDF, status: 200 };
+  }
+
   const dimensionChainImagePathMatch = DIMENSION_CHAIN_IMAGE_PATH.exec(pathname);
   if (method === "GET" && dimensionChainImagePathMatch) {
     if (parsedUrl.search.length > 0) rejectBadRequest();
@@ -524,6 +605,7 @@ async function handleRequest(
 
 export function createF7LocalServer(options: {
   readonly service: F7SessionService;
+  readonly assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer;
   readonly onEvent?: (event: { readonly kind: string; readonly status: number }) => void;
 }): Server {
   const server = createServer(async (request, response) => {
@@ -534,8 +616,16 @@ export function createF7LocalServer(options: {
     try {
       const method = request.method ?? "";
       const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (method === "POST" && parsedUrl.pathname === "/f7/assumption-results/pdf") {
+        eventKind = ROUTE_KIND_ASSUMPTION_RESULTS_PDF;
+      }
       validateRequestFraming(request, method, parsedUrl.pathname);
-      const handled = await handleRequest(request, response, options.service);
+      const handled = await handleRequest(
+        request,
+        response,
+        options.service,
+        options.assumptionResultsPdfRenderer,
+      );
       if (handled) {
         eventKind = handled.kind;
         eventStatus = handled.status;

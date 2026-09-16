@@ -49,6 +49,8 @@ export {
 } from "./knowledge-base.js";
 export { createProcessRequirementSnapshot } from "./process-requirements/validation.js";
 export { createReviewedProcessRequirementsV1SeedPackage } from "./process-requirements/data/process-requirements-v1.js";
+export { createReviewedProcessRequirementsV2SeedPackage } from "./process-requirements/data/process-requirements-v2.js";
+export { createReviewedProcessRequirementsV3SeedPackage } from "./process-requirements/data/process-requirements-v3.js";
 export {
 	loadProcessRequirements,
 	type ProcessRequirements,
