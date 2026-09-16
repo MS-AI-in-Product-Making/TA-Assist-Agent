@@ -373,7 +373,7 @@ git commit -m "feat(f7): parse measurement import templates"
 - Modify: `apps/f7-local-api/src/f7-session-service.ts`
 - Modify: `apps/f7-local-api/src/f7-session-service.test.ts`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Assert initial authority revision `0`; worksheet confirmation, Factor confirmation, individual paste, disposition, and successful bulk commit increment it; distribution fit/approval and Monte Carlo do not. Assert a two-Factor candidate is applied in one operation. Revision mismatch, duplicate/missing Factor, blocked validation, injected synchronous failure, and stale Factor set must preserve `JSON.stringify(previousSnapshot)` exactly.
 
@@ -387,13 +387,13 @@ expect(() => service.commitMeasurementImport({
 expect(service.getSession(sessionId)).toEqual(before);
 ```
 
-- [ ] **Step 2: Run the service test and verify RED**
+- [x] **Step 2: Run the service test and verify RED**
 
 Run: `npx.cmd vitest run --project node apps/f7-local-api/src/f7-session-service.test.ts`
 
 Expected: FAIL because authority and batch commit methods do not exist.
 
-- [ ] **Step 3: Extend the service contract and internal session**
+- [x] **Step 3: Extend the service contract and internal session**
 
 Add service request types and methods:
 
@@ -410,7 +410,7 @@ export interface F7SessionService {
 
 Add `measurementImportRevision: number` to private `InternalSession`, never to `F7SessionSnapshot`. Preserve it in `writeSession()` calls and increment only for authority/dataset-changing mutations.
 
-- [ ] **Step 4: Implement synchronous compare-and-swap commit**
+- [x] **Step 4: Implement synchronous compare-and-swap commit**
 
 Construct and validate a complete cloned candidate snapshot before one `sessions.set()` call. Require exactly the current confirmed Factor set, ready validation, matching units and IDs, and exact replacement metadata. Populate `input.mode`, `input.dataset`, `measurementPasteResult`, and `datasetValidation` so existing `readyForPhaseOne()` and `FactorInputTable` work without special bulk state.
 
@@ -426,7 +426,7 @@ writeSession(request.sessionId, {
 });
 ```
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run the Step 2 command.
 
