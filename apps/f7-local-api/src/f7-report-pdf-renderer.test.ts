@@ -315,12 +315,48 @@ describe("F7 report PDF renderer", () => {
     expect(dimensionChain?.match(/data-direction="additive"/g)).toHaveLength(1);
     expect(dimensionChain?.match(/data-direction="subtractive"/g)).toHaveLength(1);
     expect(dimensionChain?.match(/data-direction="zero"/g)).toHaveLength(1);
+    expect(dimensionChain).toMatch(/<tspan[^>]*>Additive<\/tspan>/);
+    expect(dimensionChain).toMatch(/<tspan[^>]*>Subtractive<\/tspan>/);
+    expect(dimensionChain).toMatch(/<tspan[^>]*>Zero<\/tspan>/);
     expect(dimensionChain).toContain("Positive &lt;A&gt;");
     expect(dimensionChain).toContain("Negative &amp; B");
     expect(dimensionChain).toContain("Zero &gt; C");
     expect(dimensionChain?.match(/data-dimension-chain-closure/g)).toHaveLength(1);
     expect(dimensionChain?.indexOf("Positive &lt;A&gt;")).toBeLessThan(dimensionChain?.indexOf("Negative &amp; B") ?? -1);
     expect(dimensionChain?.indexOf("Negative &amp; B")).toBeLessThan(dimensionChain?.indexOf("Zero &gt; C") ?? -1);
+  });
+
+  it("keeps a ten-factor Dimension Chain readable without CSS shrinking or clipped wrapped labels", () => {
+    const report = reportFixture();
+    const baseFactor = report.factors[0]!;
+    const longFactorName = "Long <escaped> & named factor with deterministic wrapping across every visible label word";
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: Array.from({ length: 10 }, (_, index) => ({
+        ...baseFactor,
+        factorId: String(index).repeat(64),
+        factorName: index === 4 ? longFactorName : `Factor ${index + 1}`,
+        designNominal: index % 3 === 0 ? index + 1 : -(index + 1),
+      })),
+    });
+    const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
+
+    expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
+    expect(dimensionChain).toMatch(/^<svg data-dimension-chain[^>]*class="dimension-chain-svg"/);
+    expect(dimensionChain?.match(/data-dimension-chain-segment/g)).toHaveLength(10);
+    expect(dimensionChain).toContain("<title>5. Long &lt;escaped&gt; &amp; named factor with deterministic wrapping across every visible label word · -5 · Subtractive</title>");
+    expect(dimensionChain).not.toContain(longFactorName);
+    expect(dimensionChain?.match(/data-dimension-chain-name-line/g)?.length).toBeGreaterThan(1);
+
+    const rowCoordinates = [...(dimensionChain?.matchAll(/data-row-y="([^"]+)"/g) ?? [])]
+      .map((match) => Number(match[1]));
+    expect(rowCoordinates).toHaveLength(10);
+    expect(rowCoordinates.every(Number.isFinite)).toBe(true);
+    expect(rowCoordinates.every((value, index) => index === 0 || value > rowCoordinates[index - 1]!)).toBe(true);
+
+    const viewBoxHeight = Number(dimensionChain?.match(/viewBox="0 0 800 ([^"]+)"/)?.[1]);
+    expect(viewBoxHeight).toBeGreaterThan(rowCoordinates.at(-1)!);
+    expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
   });
 
   it("compresses the Dimension Chain when factor magnitudes differ by more than eight times", () => {

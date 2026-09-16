@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { F7ReportProjection } from "@ai-assist/contracts";
+import type { F7ReportFactor, F7ReportProjection } from "@ai-assist/contracts";
 import {
   AssumptionResultsPdfQueueFullError,
   executePdfBrowser,
@@ -28,7 +28,9 @@ const DIMENSION_CHAIN_COMPRESSION_RATIO = 8;
 const DIMENSION_CHAIN_WIDTH = 800;
 const DIMENSION_CHAIN_PLOT_LEFT = 54;
 const DIMENSION_CHAIN_PLOT_RIGHT = 746;
-const DIMENSION_CHAIN_ROW_HEIGHT = 58;
+const DIMENSION_CHAIN_LABEL_LINE_HEIGHT = 13;
+const DIMENSION_CHAIN_LABEL_MAX_CHARACTERS = 62;
+const DIMENSION_CHAIN_ROW_GAP = 14;
 
 export interface F7ReportPdfRenderer {
   render(request: F7ReportPdfRouteRequest): Promise<Buffer>;
@@ -41,19 +43,6 @@ export interface F7ReportPdfRenderDependencies {
     path: string,
     options: typeof TEMPORARY_DIRECTORY_REMOVE_OPTIONS,
   ) => Promise<void>;
-}
-
-type GovernedReportFactor = F7ReportProjection["factors"][number] & {
-  readonly designNominal: number;
-  readonly upperTolerance: number;
-  readonly lowerTolerance: number;
-  readonly longTermSafetyFactor: number;
-  readonly sigmaLevel: number;
-  readonly setupDistribution: string;
-};
-
-function governedReportFactors(report: F7ReportProjection): readonly GovernedReportFactor[] {
-  return report.factors as unknown as readonly GovernedReportFactor[];
 }
 
 function cleanFileNamePart(value: string, asciiOnly: boolean): string {
@@ -149,8 +138,30 @@ function signedEngineeringNumber(value: number): string {
   return `${value > 0 ? "+" : "-"}${formatNumber(Math.abs(value))}`;
 }
 
+function wrapDimensionChainName(value: F7ReportFactor["factorName"]): readonly string[] {
+  const words = value.trim().split(/\s+/u);
+  const lines: string[] = [];
+  let currentLine = "";
+  for (const word of words) {
+    const chunks = Array.from({ length: Math.ceil(word.length / DIMENSION_CHAIN_LABEL_MAX_CHARACTERS) }, (_, index) => (
+      word.slice(index * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS, (index + 1) * DIMENSION_CHAIN_LABEL_MAX_CHARACTERS)
+    ));
+    for (const chunk of chunks) {
+      const candidate = currentLine.length === 0 ? chunk : `${currentLine} ${chunk}`;
+      if (candidate.length <= DIMENSION_CHAIN_LABEL_MAX_CHARACTERS) {
+        currentLine = candidate;
+      } else {
+        lines.push(currentLine);
+        currentLine = chunk;
+      }
+    }
+  }
+  if (currentLine.length > 0) lines.push(currentLine);
+  return lines.length > 0 ? lines : [value];
+}
+
 function renderDimensionChain(report: F7ReportProjection): string {
-  const factors = governedReportFactors(report);
+  const factors = report.factors;
   let maximumMagnitude = 0;
   let minimumNonZeroMagnitude = Number.POSITIVE_INFINITY;
   for (const factor of factors) {
@@ -168,7 +179,8 @@ function renderDimensionChain(report: F7ReportProjection): string {
     const signedLength = dimensionChainLength(magnitude, maximumMagnitude, compressed)
       * (direction === "subtractive" ? -1 : direction === "additive" ? 1 : 0);
     accumulated = finiteSum(accumulated, signedLength);
-    return { factor, index, direction, start, end: accumulated };
+    const directionLabel = direction === "additive" ? "Additive" : direction === "subtractive" ? "Subtractive" : "Zero";
+    return { factor, index, direction, directionLabel, labelLines: wrapDimensionChainName(factor.factorName), start, end: accumulated };
   });
   const closureStart = accumulated;
   let minimumCoordinate = 0;
@@ -186,32 +198,40 @@ function renderDimensionChain(report: F7ReportProjection): string {
     return Number.isFinite(coordinate) ? Math.min(DIMENSION_CHAIN_PLOT_RIGHT, Math.max(DIMENSION_CHAIN_PLOT_LEFT, coordinate)) : DIMENSION_CHAIN_WIDTH / 2;
   };
   const coordinate = (value: number): string => Number.isFinite(value) ? value.toFixed(2) : "0.00";
-  const firstRowY = 58;
-  const closureY = firstRowY + segments.length * DIMENSION_CHAIN_ROW_HEIGHT;
+  let nextLabelY = 24;
+  const rows = segments.map((segment) => {
+    const labelY = nextLabelY;
+    const metadataY = labelY + segment.labelLines.length * DIMENSION_CHAIN_LABEL_LINE_HEIGHT;
+    const rowY = metadataY + DIMENSION_CHAIN_ROW_GAP;
+    nextLabelY = rowY + DIMENSION_CHAIN_ROW_GAP;
+    return { ...segment, labelY, metadataY, rowY };
+  });
+  const closureY = (rows.at(-1)?.rowY ?? 44) + 42;
   const viewBoxHeight = Math.max(132, closureY + 42);
   const zeroX = displayX(0);
 
-  return `<svg data-dimension-chain data-compressed="${compressed}" viewBox="0 0 ${DIMENSION_CHAIN_WIDTH} ${viewBoxHeight}" role="img" aria-labelledby="dimension-chain-title dimension-chain-description">
+  return `<svg data-dimension-chain data-compressed="${compressed}" class="dimension-chain-svg" viewBox="0 0 ${DIMENSION_CHAIN_WIDTH} ${viewBoxHeight}" role="img" aria-labelledby="dimension-chain-title dimension-chain-description">
     <title id="dimension-chain-title">Dimension Chain</title>
     <desc id="dimension-chain-description">Horizontal signed dimension chain reconstructed from governed Factor Setup inputs in report order.</desc>
     <defs><marker id="dimension-chain-arrow-additive" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker><marker id="dimension-chain-arrow-subtractive" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker><marker id="dimension-chain-arrow-closure" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
     <line class="dimension-chain-zero-axis" x1="${coordinate(zeroX)}" x2="${coordinate(zeroX)}" y1="22" y2="${coordinate(closureY + 12)}"/>
-    ${segments.map((segment) => {
+    ${rows.map((segment) => {
       const startX = displayX(segment.start);
       const endX = displayX(segment.end);
-      const rowY = firstRowY + segment.index * DIMENSION_CHAIN_ROW_HEIGHT;
-      const label = `${segment.index + 1}. ${segment.factor.factorName} · ${signedEngineeringNumber(segment.factor.designNominal)}`;
+      const fullLabel = `${segment.index + 1}. ${segment.factor.factorName} · ${signedEngineeringNumber(segment.factor.designNominal)} · ${segment.directionLabel}`;
+      const nameLines = segment.labelLines.map((line, lineIndex) => `<tspan data-dimension-chain-name-line x="54" dy="${lineIndex === 0 ? "0" : DIMENSION_CHAIN_LABEL_LINE_HEIGHT}">${escapeHtml(lineIndex === 0 ? `${segment.index + 1}. ${line}` : line)}</tspan>`).join("");
+      const label = `<title>${escapeHtml(fullLabel)}</title><text class="dimension-chain-label" x="54" y="${coordinate(segment.labelY)}">${nameLines}</text><text class="dimension-chain-metadata" x="54" y="${coordinate(segment.metadataY)}"><tspan>${escapeHtml(signedEngineeringNumber(segment.factor.designNominal))}</tspan><tspan dx="10">${segment.directionLabel}</tspan></text>`;
       if (segment.direction === "zero") {
-        return `<g data-dimension-chain-segment data-direction="zero"><text class="dimension-chain-label" x="54" y="${coordinate(rowY - 15)}">${escapeHtml(label)}</text><circle class="dimension-chain-zero" cx="${coordinate(startX)}" cy="${coordinate(rowY)}" r="5"/><line class="dimension-chain-zero-tick" x1="${coordinate(startX)}" x2="${coordinate(startX)}" y1="${coordinate(rowY - 9)}" y2="${coordinate(rowY + 9)}"/></g>`;
+        return `<g data-dimension-chain-segment data-direction="zero" data-row-y="${coordinate(segment.rowY)}">${label}<circle class="dimension-chain-zero" cx="${coordinate(startX)}" cy="${coordinate(segment.rowY)}" r="5"/><line class="dimension-chain-zero-tick" x1="${coordinate(startX)}" x2="${coordinate(startX)}" y1="${coordinate(segment.rowY - 9)}" y2="${coordinate(segment.rowY + 9)}"/></g>`;
       }
-      return `<g data-dimension-chain-segment data-direction="${segment.direction}"><text class="dimension-chain-label" x="54" y="${coordinate(rowY - 15)}">${escapeHtml(label)}</text><circle class="dimension-chain-node" cx="${coordinate(startX)}" cy="${coordinate(rowY)}" r="3"/><line class="dimension-chain-segment dimension-chain-${segment.direction}" x1="${coordinate(startX)}" x2="${coordinate(endX)}" y1="${coordinate(rowY)}" y2="${coordinate(rowY)}" marker-end="url(#dimension-chain-arrow-${segment.direction})"/></g>`;
+      return `<g data-dimension-chain-segment data-direction="${segment.direction}" data-row-y="${coordinate(segment.rowY)}">${label}<circle class="dimension-chain-node" cx="${coordinate(startX)}" cy="${coordinate(segment.rowY)}" r="3"/><line class="dimension-chain-segment dimension-chain-${segment.direction}" x1="${coordinate(startX)}" x2="${coordinate(endX)}" y1="${coordinate(segment.rowY)}" y2="${coordinate(segment.rowY)}" marker-end="url(#dimension-chain-arrow-${segment.direction})"/></g>`;
     }).join("")}
     <g data-dimension-chain-closure><text class="dimension-chain-label dimension-chain-closure-label" x="54" y="${coordinate(closureY - 15)}">Closure to datum</text><line class="dimension-chain-closure" x1="${coordinate(displayX(closureStart))}" x2="${coordinate(zeroX)}" y1="${coordinate(closureY)}" y2="${coordinate(closureY)}" marker-end="url(#dimension-chain-arrow-closure)"/></g>
   </svg>`;
 }
 
 function renderEngineeringInputs(report: F7ReportProjection): string {
-  const factors = governedReportFactors(report);
+  const factors = report.factors;
   const factorRows = factors.map((factor, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${formatNumber(factor.designNominal)}</td><td>${formatNumber(factor.upperTolerance)}</td><td>${formatNumber(factor.lowerTolerance)}</td><td>${formatNumber(factor.longTermSafetyFactor)}</td><td>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td><td>${escapeHtml(sourceModeLabel(factor.sourceMode))}</td></tr>`).join("");
   return `<section class="engineering-inputs page-break-after" data-engineering-inputs><p class="eyebrow">Governed analysis inputs</p><h2>Engineering Inputs</h2><h3>Factor Setup</h3><table data-factor-setup-inputs><thead><tr><th>Item</th><th>Factor</th><th>Design nominal</th><th>Upper tolerance</th><th>Lower tolerance</th><th>Long-term safety factor</th><th>Sigma level</th><th>Setup distribution</th><th>Source mode</th></tr></thead><tbody>${factorRows}</tbody></table><h3>Dimension Chain</h3>${renderDimensionChain(report)}</section>`;
 }
@@ -506,6 +526,7 @@ function renderWebReport(report: F7ReportProjection): string {
 export function renderF7ReportPdfHtml(report: F7ReportProjection): string {
   const statusClass = report.assessment === "MEETS_TARGET" ? "pass" : report.assessment === "BELOW_TARGET" ? "review" : "not-evaluable";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>F7 Monte Carlo Governed Result Report</title><style>
+    .dimension-chain-svg { width: 100%; height: auto; max-height: none; }
     @page { size: A4 landscape; margin: 12mm; } * { box-sizing: border-box; } body { margin: 0; color: #182b3a; font: 9pt "Segoe UI", sans-serif; line-height: 1.42; } header { border-bottom: 4px solid #0b7a75; padding-bottom: 12px; margin-bottom: 16px; } h1 { margin: 0 0 5px; color: #102a43; font-size: 23pt; letter-spacing: 0; } h2 { margin: 16px 0 7px; color: #102a43; font-size: 13pt; break-after: avoid; } h3 { margin: 9px 0 4px; color: #183b56; font-size: 10.5pt; } p { margin: 4px 0; } table { border-collapse: collapse; width: 100%; margin: 7px 0; font-size: 8.2pt; } caption { color: #5c6b76; padding-bottom: 5px; text-align: left; } th, td { border: 1px solid #c8d1d8; padding: 5px 7px; text-align: left; vertical-align: top; overflow-wrap: anywhere; } thead { display: table-header-group; } thead th, tbody th { background: #edf0f3; } section, article, table, figure, .assessment-banner, .run-metadata { break-inside: avoid; } ol, ul { margin: 5px 0; padding-left: 20px; } .page-break { break-before: page; } .page-break-after { break-after: page; } .meta, .muted { color: #5c6b76; } .eyebrow, .assessment-label { margin: 0 0 3px; color: #48606f; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; } .badge, .status-chip { display: inline-block; margin-top: 7px; padding: 3px 8px; border-radius: 3px; font-weight: 700; } .pass, .chip-success { background: #dcefe9; color: #076b4b; } .review, .chip-blocked { background: #fbeceb; color: #a33a32; } .not-evaluable { background: #edf0f3; color: #52616b; } .engineering-inputs, .engineering-inputs table { break-inside: auto; } .engineering-inputs tr { break-inside: avoid; } [data-factor-setup-inputs] { table-layout: fixed; font-size: 7.4pt; } [data-factor-setup-inputs] th:first-child, [data-factor-setup-inputs] td:first-child { width: 5%; text-align: center; } [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: 10%; text-align: right; } [data-dimension-chain] { width: 100%; height: auto; max-height: none; } [data-dimension-chain] marker path { fill: currentColor; } .dimension-chain-zero-axis { stroke: #aab6be; stroke-width: 1; stroke-dasharray: 4 4; } .dimension-chain-node { fill: #536574; } .dimension-chain-segment, .dimension-chain-closure { fill: none; stroke-width: 3; } .dimension-chain-additive { color: #0b7a75; stroke: #0b7a75; } .dimension-chain-subtractive { color: #b6423a; stroke: #b6423a; } .dimension-chain-zero, .dimension-chain-zero-tick { fill: #fff; stroke: #6b4f8a; stroke-width: 2; } .dimension-chain-closure { color: #536574; stroke: #536574; stroke-dasharray: 6 4; } .dimension-chain-label { fill: #183b56; font: 11px "Segoe UI", sans-serif; font-weight: 600; } .dimension-chain-closure-label { fill: #536574; } .hero-result { border-left: 6px solid #0b7a75; padding: 9px 13px; background: #f3f6f7; } .hero-result h2 { margin: 0; } .hero-result strong { color: #102a43; font-size: 18pt; } .distribution-section { margin-top: 12px; } .distribution-figure { margin: 6px 0 12px; } svg { display: block; width: 100%; max-height: 84mm; background: #f8fafb; border: 1px solid #d4dce2; } .plot-grid { stroke: #dce3e8; stroke-width: 1; } .plot-axis, .plot-tick { stroke: #536574; stroke-width: 1; } .plot-tick-label, .plot-axis-label, .monte-carlo-reference-label { fill: #536574; font: 10px "Segoe UI", sans-serif; } .plot-axis-label { font-weight: 700; } .monte-carlo-bin-in-spec { fill: #4b82c3; } .monte-carlo-bin-out-of-spec { fill: #c94a45; } .monte-carlo-bin-mixed { fill: #8a98a4; } .monte-carlo-fit { fill: none; stroke: #123f63; stroke-width: 2.5; } .factor-setup-fit { fill: none; stroke: #0b7a75; stroke-width: 2.5; stroke-dasharray: 7 4; } .factor-setup-mean { stroke: #0b7a75; stroke-width: 1.5; stroke-dasharray: 3 3; } .monte-carlo-reference { stroke-width: 1.2; stroke-dasharray: 4 3; } .reference-lower-spec-limit, .reference-upper-spec-limit { stroke: #a33a32; } .reference-target { stroke: #6b4f8a; } .reference-mean { stroke: #123f63; } .reference-minus-target-sigma, .reference-plus-target-sigma { stroke: #b17c11; } .chart-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 6px; color: #4e606c; font-size: 7.5pt; } .chart-legend span { white-space: nowrap; } .chart-legend i { display: inline-block; width: 15px; height: 7px; margin-right: 4px; vertical-align: middle; } .legend-in-spec { background: #4b82c3; } .legend-out-of-spec { background: #c94a45; } .legend-mixed { background: #8a98a4; } .legend-monte-carlo { border-top: 2px solid #123f63; } .legend-setup { border-top: 2px dashed #0b7a75; } .legend-setup-mean { border-left: 2px dashed #0b7a75; } .legend-spec { border-left: 2px dashed #a33a32; } .legend-target { border-left: 2px dashed #b17c11; } .section-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; } .section-heading h2, .section-heading h3 { margin-top: 0; } .run-metadata { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 8px 0 0; } .run-metadata div { border: 1px solid #d2dbe1; padding: 6px; background: #f4f6f7; } .run-metadata dt { color: #5c6b76; font-size: 7.5pt; } .run-metadata dd { margin: 2px 0 0; color: #102a43; font-weight: 700; overflow-wrap: anywhere; } .web-report { border-top: 4px solid #0b7a75; padding-top: 10px; } .guidance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .guidance-grid article { border-left: 4px solid #71808b; padding: 9px 12px; background: #f4f5f6; } .guidance-grid article:last-child { border-left-color: #0b7a75; background: #eef5f7; } .applicability { color: #5c6b76; font-size: 8pt; } .assessment-banner { display: grid; grid-template-columns: 1fr 0.8fr; gap: 14px; align-items: center; border: 1px solid #ccd5dc; border-left: 6px solid #7b8790; padding: 10px 12px; background: #f4f5f6; margin-top: 12px; } .assessment-meets_target { border-left-color: #0b7a75; background: #edf7f4; } .assessment-below_target { border-left-color: #b6423a; background: #fbeceb; } .assessment-disclaimer { border-left: 1px solid #ccd5dc; padding-left: 13px; color: #4f606c; font-weight: 700; } footer { margin-top: 18px; border-top: 1px solid #ccd5dc; padding-top: 7px; color: #65737e; font-size: 7.5pt; }
     .legend-center-target { background: #6b4f8a; }
   </style></head><body>
