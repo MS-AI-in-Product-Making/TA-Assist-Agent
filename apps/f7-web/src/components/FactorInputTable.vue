@@ -3,7 +3,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
 import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
-import type { Distribution } from "@ai-assist/contracts";
+import type { Distribution, ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
 import {
   buildConfirmedEngineeringEvidence,
@@ -25,6 +25,24 @@ const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Trapezoidal",
   "Elliptical",
   "Beta",
+];
+
+const COMPONENT_CATEGORY_OPTIONS: ReadonlyArray<{
+  readonly value: ProcessRequirementComponentCategory;
+  readonly label: string;
+}> = [
+  { value: "battery-cts", label: "Battery CTS" },
+  { value: "z-axis-or-around-xy-clearance", label: "Z-axis or around-XY clearance" },
+  { value: "glass-tdm-gap-or-z-step", label: "Glass/TDM gap or Z-step" },
+  { value: "thermal-module-critical-path", label: "Thermal module critical path" },
+  { value: "pcb-critical-clearance-or-alignment", label: "PCB critical clearance or alignment" },
+  { value: "cover-fit-and-function", label: "Cover fit and function" },
+  { value: "hinge-trackpad-button-or-sensor", label: "Hinge, trackpad, button, or sensor" },
+  { value: "cable-routing", label: "Cable routing" },
+  { value: "external-port-kickstand-logo-or-ssd", label: "External port, kickstand, logo, or SSD" },
+  { value: "pcb-component-or-fastener", label: "PCB component or fastener" },
+  { value: "engagement-or-assembly-feature", label: "Engagement or assembly feature" },
+  { value: "foam-or-gasket-sealing-cushioning-or-nvh", label: "Foam or gasket sealing, cushioning, or NVH" },
 ];
 
 const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>> = {
@@ -53,6 +71,7 @@ const emit = defineEmits<{
       readonly longTermSafetyFactor: number;
       readonly sigmaLevel: number;
       readonly distribution: F7SetupDistribution;
+      readonly componentCategory?: ProcessRequirementComponentCategory;
       readonly factorName?: string;
       readonly userAdded?: true;
     }>,
@@ -71,6 +90,7 @@ interface FactorSpecificationDraft {
   longTermSafetyFactor: number | "";
   sigmaLevel: number | "";
   distribution: F7SetupDistribution | "";
+  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 interface CompleteFactorSpecificationDraft {
@@ -80,6 +100,7 @@ interface CompleteFactorSpecificationDraft {
   longTermSafetyFactor: number;
   sigmaLevel: number;
   distribution: F7SetupDistribution;
+  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 type FactorSpecificationField = keyof FactorSpecificationDraft;
@@ -143,6 +164,7 @@ const baseColumns = [
   { key: "longTermSafetyFactor", label: "Long Term/Safety Factor", lines: ["Long Term/", "Safety Factor"], defaultWidth: 96, minWidth: 88 },
   { key: "sigmaLevel", label: "σ Level", lines: ["σ", "Level"], defaultWidth: 58, minWidth: 54 },
   { key: "distribution", label: "Distribution", lines: ["Distribution"], defaultWidth: 88, minWidth: 80 },
+  { key: "componentCategory", label: "Component category", lines: ["Component", "category"], defaultWidth: 140, minWidth: 124 },
   { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 68, minWidth: 62 },
   { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 72, minWidth: 66 },
   { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 60, minWidth: 56 },
@@ -219,6 +241,7 @@ function addFactor(afterFactor?: DeepReadonly<F7FactorState>): void {
     longTermSafetyFactor: 1,
     sigmaLevel: 4,
     distribution: "Normal",
+    componentCategory: "",
   };
   addedFactors.push({
     factorCandidate: {
@@ -285,6 +308,7 @@ function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number
     longTermSafetyFactor: factor.setup?.longTermSafetyFactor ?? factor.evidence?.longTermSafetyFactor ?? factor.factorCandidate.longTermSafetyFactor ?? 1,
     sigmaLevel: factor.setup?.sigmaLevel ?? factor.evidence?.sigmaLevel ?? factor.factorCandidate.sigmaLevel ?? 4,
     distribution: factor.setup?.distribution ?? factor.evidence?.distribution ?? factor.factorCandidate.distribution,
+    componentCategory: factor.setup?.componentCategory ?? factor.evidence?.componentCategory ?? "",
   });
 }
 
@@ -329,6 +353,7 @@ function importedSnapshot(): FactorEditSnapshot {
         longTermSafetyFactor: factor.factorCandidate.longTermSafetyFactor ?? 1,
         sigmaLevel: factor.factorCandidate.sigmaLevel ?? 4,
         distribution: factor.factorCandidate.distribution,
+        componentCategory: "",
       } satisfies FactorSpecificationDraft,
     ])),
     names: {},
@@ -883,6 +908,10 @@ function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][numbe
     : "pending";
 }
 
+function componentCategoryLabel(category: ProcessRequirementComponentCategory | "" | undefined): string {
+  return COMPONENT_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ?? "Not classified";
+}
+
 function submitSetup(): void {
   if (props.busy) return;
   const systemSpecification = completeSystemSpecification();
@@ -898,6 +927,7 @@ function submitSetup(): void {
       longTermSafetyFactor: draft.longTermSafetyFactor,
       sigmaLevel: draft.sigmaLevel,
       distribution: draft.distribution,
+      ...(draft.componentCategory ? { componentCategory: draft.componentCategory } : {}),
       ...(isUserAdded(factor) ? {
         factorName: factorNameFor(factor).trim(),
         userAdded: true as const,
@@ -1220,6 +1250,24 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "distribution") }}</small>
               </div>
             </td>
+            <td data-column-key="componentCategory">
+              <div class="factor-field" data-factor-field="componentCategory">
+                <select
+                  v-if="setupEditable"
+                  v-model="candidateDraft(factor).componentCategory"
+                  data-component-category
+                  class="factor-distribution-select factor-component-category-select"
+                  :aria-label="`${factorNameFor(factor)} Component category`"
+                  :disabled="busy"
+                >
+                  <option value="">Not classified</option>
+                  <option v-for="option in COMPONENT_CATEGORY_OPTIONS" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <span v-else>{{ componentCategoryLabel(factor.setup?.componentCategory ?? factor.evidence?.componentCategory) }}</span>
+              </div>
+            </td>
             <td><output :aria-label="`${factorNameFor(factor)} Mean`">{{ formatFactorCalculation(factor, calculatedValues(factor).mean) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
@@ -1293,7 +1341,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td data-factor-column="design-nominal"><output data-summary-design-nominal>{{ formatSummary(displayedResponseSummary.designNominal) }}</output></td>
             <td data-factor-column="upper-tolerance"><output data-summary-upper-tolerance>{{ formatSigned(displayedResponseSummary.upperTolerance) }}</output></td>
             <td data-factor-column="lower-tolerance"><output data-summary-lower-tolerance>{{ formatSummary(displayedResponseSummary.lowerTolerance) }}</output></td>
-            <th colspan="3">Mean Response:</th>
+            <th colspan="4">Mean Response:</th>
             <td data-factor-column="mean"><output data-summary-mean-response>{{ formatSummary(displayedResponseSummary.meanResponse) }}</output></td>
             <td data-factor-column="tolerance"><output data-summary-tolerance>± {{ formatSummary(displayedResponseSummary.tolerance) }}</output></td>
             <td data-factor-column="one-sigma"><output data-summary-rss-sigma>{{ formatSummary(displayedResponseSummary.rssSigma) }}</output></td>
@@ -1301,7 +1349,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="3"></td>
           </tr>
           <tr class="factor-response-summary-row factor-mean-shift-row">
-            <th colspan="8"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
+            <th colspan="9"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
             <td data-factor-column="mean">
               <input
                 id="additional-mean-shift"
@@ -1316,7 +1364,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="6"></td>
           </tr>
           <tr class="factor-response-summary-row factor-adjusted-mean-row">
-            <th colspan="8">Adjusted Mean:</th>
+            <th colspan="9">Adjusted Mean:</th>
             <td data-factor-column="mean"><output data-summary-adjusted-mean>{{ formatSummary(displayedResponseSummary.adjustedMean) }}</output></td>
             <td colspan="6"></td>
           </tr>

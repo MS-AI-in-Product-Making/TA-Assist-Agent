@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, isReactive } from "vue";
 import { describe, expect, it } from "vitest";
+import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
 import FactorInputTable from "./FactorInputTable.vue";
@@ -965,5 +966,132 @@ describe("FactorInputTable measurement entry modes", () => {
 
     expect(importWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
     expect(individualWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
+  });
+});
+
+describe("FactorInputTable component category", () => {
+  const expectedOptions = [
+    ["", "Not classified"],
+    ["battery-cts", "Battery CTS"],
+    ["z-axis-or-around-xy-clearance", "Z-axis or around-XY clearance"],
+    ["glass-tdm-gap-or-z-step", "Glass/TDM gap or Z-step"],
+    ["thermal-module-critical-path", "Thermal module critical path"],
+    ["pcb-critical-clearance-or-alignment", "PCB critical clearance or alignment"],
+    ["cover-fit-and-function", "Cover fit and function"],
+    ["hinge-trackpad-button-or-sensor", "Hinge, trackpad, button, or sensor"],
+    ["cable-routing", "Cable routing"],
+    ["external-port-kickstand-logo-or-ssd", "External port, kickstand, logo, or SSD"],
+    ["pcb-component-or-fastener", "PCB component or fastener"],
+    ["engagement-or-assembly-feature", "Engagement or assembly feature"],
+    ["foam-or-gasket-sealing-cushioning-or-nvh", "Foam or gasket sealing, cushioning, or NVH"],
+  ] as const;
+
+  function editableSession(categorySource: "setup" | "evidence" | "blank"): F7SessionSnapshot {
+    const session = createSession({ status: "factor_setup" });
+    const factor = session.factors[0]!;
+    session.factors = [{
+      ...factor,
+      setup: factor.setup
+        ? {
+            ...factor.setup,
+            ...(categorySource === "setup" ? { componentCategory: "battery-cts" as const } : {}),
+          }
+        : factor.setup,
+      evidence: factor.evidence
+        ? {
+            ...factor.evidence,
+            ...(categorySource === "evidence" ? { componentCategory: "cable-routing" as const } : {}),
+          }
+        : factor.evidence,
+    }];
+    return session;
+  }
+
+  it("renders the blank option plus every controlled component category with engineering labels", () => {
+    const wrapper = mountWithFastStubs({
+      session: editableSession("blank"),
+      busy: false,
+      editingSetup: true,
+    });
+
+    const select = wrapper.get("[data-component-category]");
+    const options = select.findAll("option").map((option) => [option.element.value, option.text()]);
+    expect(options).toEqual(expectedOptions.map((option) => [...option]));
+    expect(options.slice(1).map(([value]) => value)).toEqual(processRequirementComponentCategorySchema.options);
+    expect(wrapper.get("col[data-column-key='componentCategory']").attributes("style")).toContain("140px");
+  });
+
+  it.each([
+    ["setup", "battery-cts"],
+    ["evidence", "cable-routing"],
+  ] as const)("backfills an existing %s category", (categorySource, expectedCategory) => {
+    const wrapper = mountWithFastStubs({
+      session: editableSession(categorySource),
+      busy: false,
+      editingSetup: true,
+    });
+
+    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe(expectedCategory);
+  });
+
+  it("includes a selected category in confirmation payload and omits a blank category", async () => {
+    const selectedWrapper = mountWithFastStubs({
+      session: editableSession("blank"),
+      busy: false,
+      editingSetup: true,
+    });
+    await selectedWrapper.get("[data-component-category]").setValue("thermal-module-critical-path");
+    await selectedWrapper.get("#confirm-factor-setup").trigger("click");
+    expect(selectedWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
+      expect.objectContaining({ componentCategory: "thermal-module-critical-path" }),
+    ]);
+
+    const blankWrapper = mountWithFastStubs({
+      session: editableSession("blank"),
+      busy: false,
+      editingSetup: true,
+    });
+    await blankWrapper.get("#confirm-factor-setup").trigger("click");
+    expect(blankWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
+      expect.not.objectContaining({ componentCategory: expect.anything() }),
+    ]);
+  });
+
+  it("defaults user-added factors to blank and reset clears a manually selected category", async () => {
+    const wrapper = mountWithFastStubs({
+      session: editableSession("blank"),
+      busy: false,
+      editingSetup: true,
+    });
+    const importedSelect = wrapper.get<HTMLSelectElement>("[data-component-category]");
+    await importedSelect.setValue("cover-fit-and-function");
+    await wrapper.get("[data-factor-reset]").trigger("click");
+    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("");
+
+    await wrapper.get("button[aria-label='Add factor after Factor A']").trigger("click");
+    const selects = wrapper.findAll<HTMLSelectElement>("[data-component-category]");
+    expect(selects).toHaveLength(2);
+    expect(selects[1]!.element.value).toBe("");
+  });
+
+  it("preserves category changes through undo and redo snapshots", async () => {
+    const wrapper = mountWithFastStubs({
+      session: editableSession("evidence"),
+      busy: false,
+      editingSetup: true,
+    });
+    const category = () => wrapper.get<HTMLSelectElement>("[data-component-category]").element.value;
+
+    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
+    await wrapper.vm.$nextTick();
+    expect(category()).toBe("pcb-component-or-fastener");
+
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(category()).toBe("cable-routing");
+
+    await wrapper.get("[data-factor-redo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(category()).toBe("pcb-component-or-fastener");
   });
 });
