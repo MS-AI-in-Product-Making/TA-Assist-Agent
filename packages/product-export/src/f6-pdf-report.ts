@@ -8,6 +8,7 @@ export interface F6PdfHtmlInput {
 }
 
 const COMPLETE_FACTOR_TABLE_HEADERS = [
+  "Ordinal",
   "Factor Description",
   "Part Name",
   "Part Category",
@@ -26,6 +27,10 @@ const COMPLETE_FACTOR_TABLE_HEADERS = [
 
 const REQUIRED_MISSING_MARKER_OPEN = /^<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="(\d+)" hidden(?:="")? aria-hidden="true">$/u;
 const REQUIRED_MISSING_MARKER_CLOSE = /^<\/span>$/u;
+const F6_OPTIMIZATION_COMPARISON_MARKER = "<!-- f6-optimization-comparison -->";
+const F6_OPTIMIZATION_CONTINUATION_MARKER = "<!-- f6-optimization-comparison continuation=\"1\" -->";
+
+type SlideSection = "summary" | "worksheet" | "optimization" | "optimization-continuation";
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -59,8 +64,14 @@ function formatReportHtml(value: string): string {
     )
     .replaceAll("Capability: non_f0_process_category", '<span class="guidance guidance--neutral">Not covered</span>')
     .replaceAll("tighten_tolerance", "Tighten tolerance");
-  return simplified.split(/(<[^>]*>)/gu)
+  const formatOutsideOptimizationSlides = (fragment: string): string => fragment
+    .split(/(<[^>]*>)/gu)
     .map((part) => part.startsWith("<") ? part : formatReportText(part))
+    .join("");
+  const optimizationSectionPattern = /(<section class="optimization-section slide slide-optimization(?: slide-optimization-continuation)?">[\s\S]*?<\/section><\/div><\/section>)/gu;
+  return simplified
+    .split(optimizationSectionPattern)
+    .map((part) => part.startsWith('<section class="optimization-section slide slide-optimization') ? part : formatOutsideOptimizationSlides(part))
     .join("");
 }
 
@@ -140,8 +151,9 @@ function specificationRangeGraph(requirements: ReadonlyMap<string, string>, rows
   const domain = [lowerSpec, upperSpec, nominal, ...ranges.flatMap(({ lower, upper }) => [lower!, upper!])];
   const minimum = Math.min(...domain);
   const maximum = Math.max(...domain);
-  const rangeRows = ranges.map(({ label, lower, upper, margin, result }) => `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><b class="spec-window" style="left:${graphPosition(lowerSpec, minimum, maximum)}%;width:${Math.max(1, graphPosition(upperSpec, minimum, maximum) - graphPosition(lowerSpec, minimum, maximum))}%"></b><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em></span><strong>${result.display}</strong><small>Margin ${escapeHtml(margin)}</small></div>`).join("");
-  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${ranges[1]?.result.display ?? "N/A"}"><figcaption>Specification range</figcaption>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
+  const rangeRows = ranges.map(({ label, lower, upper, margin, result }) => `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><b class="range-bound range-bound--lower" style="left:${graphPosition(lowerSpec, minimum, maximum)}%"><span>LSL ${threeSignificantFigures(lowerSpec)}</span></b><b class="range-bound range-bound--upper" style="left:${graphPosition(upperSpec, minimum, maximum)}%"><span>USL ${threeSignificantFigures(upperSpec)}</span></b><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em></span><strong>${result.display}</strong><small>${threeSignificantFigures(lower!)} to ${threeSignificantFigures(upper!)} · Margin ${escapeHtml(margin)}</small></div>`).join("");
+  const worstCaseResult = ranges.find(({ label }) => label === "Worst-Case Range")?.result.display ?? "N/A";
+  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
 }
 
 function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: readonly Tokens.TableCell[][]): string {
@@ -163,13 +175,13 @@ function meanOffsetGraph(items: readonly string[]): string {
   const value = (label: string) => items.map((item) => new RegExp(`^${label}:\\s*(.+)$`, "iu").exec(item)?.[1]).find(Boolean) ?? "N/A";
   const offsetText = value("Offset");
   const adjustedMean = value("Adjusted Mean");
-  const specificationCenter = value("Specification Center");
+  const designNominal = value("Design Nominal");
   const offset = numericValue(offsetText);
-  if (numericValue(adjustedMean) === undefined || numericValue(specificationCenter) === undefined || offset === undefined) {
+  if (numericValue(adjustedMean) === undefined || numericValue(designNominal) === undefined || offset === undefined) {
     return unavailableGraph("mean-offset-graph", "Mean-center alignment");
   }
   const magnitude = Math.min(45, Math.abs(offset) * 500);
-  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i></i><b style="left:calc(50% + ${offset < 0 ? -magnitude : magnitude}%)"></b></div><p>Mean ${escapeHtml(adjustedMean)} · Center ${escapeHtml(specificationCenter)} · Offset ${escapeHtml(offsetText)}</p></figure>`;
+  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--nominal"><span>Design nominal</span></i><b class="mean-marker mean-marker--adjusted" style="left:calc(50% + ${offset < 0 ? -magnitude : magnitude}%)"><span>Adjusted mean</span></b></div><p>Design nominal ${escapeHtml(designNominal)} · Adjusted mean ${escapeHtml(adjustedMean)} · Offset ${escapeHtml(offsetText)}</p></figure>`;
 }
 
 function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
@@ -180,15 +192,17 @@ function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
   const domain = entries.flatMap(({ current, proposed }) => [current!, proposed!]);
   const minimum = Math.min(...domain);
   const maximum = Math.max(...domain);
-  const graphRows = entries.map(({ side, current, proposed }) => `<div class="change-row"><span>${escapeHtml(side)}</span><span class="change-track"><i style="left:${graphPosition(current!, minimum, maximum)}%"></i><b style="left:${graphPosition(proposed!, minimum, maximum)}%"></b></span><small>${threeSignificantFigures(current!)} → ${threeSignificantFigures(proposed!)}</small></div>`).join("");
+  const graphRows = entries.map(({ side, current, proposed }) => `<div class="change-row"><span>${escapeHtml(side)}</span><span class="change-track"><i class="spec-marker spec-marker--current" style="left:${graphPosition(current!, minimum, maximum)}%"></i><b class="spec-marker spec-marker--proposed" style="left:${graphPosition(proposed!, minimum, maximum)}%"></b></span><small>${threeSignificantFigures(current!)} → ${threeSignificantFigures(proposed!)}</small></div>`).join("");
   return `<figure class="spec-change-graph"><figcaption>Specification proposal</figcaption>${graphRows}<p>Engineering approval required.</p></figure>`;
 }
 
 class F6PdfRenderer extends Renderer {
-  private worksheetSectionOpen = false;
+  private section: SlideSection = "summary";
+  private pendingOptimizationSection: "optimization" | "optimization-continuation" | undefined;
   private analysisGridOpen = false;
   private analysisPanelOpen = false;
   private analysisPanelType: string | undefined;
+  private inlineOptimizationOpen = false;
   private readonly requirements = new Map<string, string>();
 
   constructor(private readonly inlineImages: ReadonlyMap<string, string>) {
@@ -196,11 +210,29 @@ class F6PdfRenderer extends Renderer {
   }
 
   get hasWorksheetSection(): boolean {
-    return this.worksheetSectionOpen;
+    return this.section === "worksheet";
   }
 
   finishContent(): string {
-    return `${this.closeAnalysisGrid()}${this.worksheetSectionOpen ? "</div></section>" : "</section>"}`;
+    return this.closeCurrentSection();
+  }
+
+  private closeCurrentSection(): string {
+    if (this.section === "worksheet") {
+      this.section = "summary";
+      const inlineEnd = this.inlineOptimizationOpen ? "</section>" : "";
+      this.inlineOptimizationOpen = false;
+      return `${this.closeAnalysisGrid()}${inlineEnd}</div></section>`;
+    }
+    if (this.section === "optimization" || this.section === "optimization-continuation") {
+      this.section = "summary";
+      return "</section></div></section>";
+    }
+    return "</section>";
+  }
+
+  private inOptimizationSection(): boolean {
+    return this.section === "optimization" || this.section === "optimization-continuation";
   }
 
   private closeAnalysisGrid(): string {
@@ -212,7 +244,16 @@ class F6PdfRenderer extends Renderer {
     return closing;
   }
 
-  override html(): string {
+  override html(token: Tokens.HTML | Tokens.Tag): string {
+    const raw = token.raw.trim();
+    if (raw === F6_OPTIMIZATION_COMPARISON_MARKER) {
+      this.pendingOptimizationSection = "optimization";
+      return "";
+    }
+    if (raw === F6_OPTIMIZATION_CONTINUATION_MARKER) {
+      this.pendingOptimizationSection = "optimization-continuation";
+      return "";
+    }
     return "";
   }
 
@@ -220,11 +261,23 @@ class F6PdfRenderer extends Renderer {
     const content = this.parser.parseInline(token.tokens);
     const worksheetMatch = token.depth === 1 ? /^3-(\d+)\s+Worksheet:/i.exec(token.text.trim()) : null;
     if (worksheetMatch !== null) {
-      const closePrevious = this.worksheetSectionOpen ? `${this.closeAnalysisGrid()}</div></section>` : "</section>";
-      this.worksheetSectionOpen = true;
+      const closePrevious = this.closeCurrentSection();
+      this.section = "worksheet";
+      this.pendingOptimizationSection = undefined;
       return `${closePrevious}<section class="worksheet-section slide slide-worksheet" id="worksheet-${worksheetMatch[1]}"><div class="worksheet-fit"><h1>${content}</h1>\n`;
     }
+    const optimizationSection = this.pendingOptimizationSection;
+    const optimizationHeading = token.depth === 2
+      && /^Optimization Comparison(?: \(Continued\))?$/u.test(token.text.trim())
+      && optimizationSection !== undefined;
+    if (optimizationHeading) {
+      this.pendingOptimizationSection = undefined;
+      const previousInlineEnd = this.inlineOptimizationOpen ? "</section>" : "";
+      this.inlineOptimizationOpen = true;
+      return `${this.closeAnalysisGrid()}${previousInlineEnd}<section class="optimization-inline optimization-inline--${optimizationSection}"><h2>${content}</h2>\n`;
+    }
     const panelTypes = new Map([
+      ["Process and Requirements", "process"],
       ["Tolerance Path Image", "image"],
       ["Requirements and Statistical Results", "results"],
       ["Adjusted Mean to Spec Center Shift", "center"],
@@ -259,6 +312,11 @@ class F6PdfRenderer extends Renderer {
 
   override list(token: Tokens.List): string {
     const items = token.items.map((item) => item.text.replace(/<[^>]*>/gu, "").trim());
+    if (this.inOptimizationSection()) {
+      const list = token.ordered ? "ol" : "ul";
+      const rows = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      return `<section class="optimization-decision"><h2>Decision Summary</h2><${list}>${rows}</${list}></section>`;
+    }
     if (this.analysisPanelType === "center") return meanOffsetGraph(items);
     if (this.analysisPanelType === "results") {
       return `<p class="system-summary">${items.map(escapeHtml).join(" · ")}</p>`;
@@ -271,11 +329,11 @@ class F6PdfRenderer extends Renderer {
     if (headers.length === 2 && headers[0] === "Field" && headers[1] === "Value" && !this.analysisGridOpen) {
       return super.table(token).replace("<table>", '<table class="document-overview">');
     }
-    if (headers.length === 4 && headers[0] === "Worksheet" && headers[3] === "Comment") {
+    if (exactHeadersMatch(headers, ["Result", "Worksheet", "Tolerance Loop Description", "Key Finding"])) {
       const headerCells = token.header.map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`).join("");
       const rows = token.rows.map((row) => {
         const cells = row.map((cell, index) => {
-          if (index !== 3) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+          if (index !== 0) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
           const comment = cellText(cell);
           const status = comment.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
           return `<td><span class="comment comment--${status}">${escapeHtml(comment)}</span></td>`;
@@ -287,6 +345,18 @@ class F6PdfRenderer extends Renderer {
     if (headers.length === 2 && headers[0] === "Requirement" && headers[1] === "Value") {
       for (const row of token.rows) this.requirements.set(cellText(row[0]!), cellText(row[1]!));
       return "";
+    }
+    if (this.inOptimizationSection() || this.inlineOptimizationOpen) {
+      if (headers.length === 3 && headers[0] === "Metric" && headers[1] === "Raw Data" && headers[2] === "Optimized Data") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--system">');
+      }
+      if (headers.length === 4 && headers[0] === "Step" && headers[1] === "Status" && headers[2] === "Action" && headers[3] === "Result") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--path">');
+      }
+      if (headers.length === 7 && headers[0] === "Factor" && headers[1] === "Table / Row" && headers[6] === "Changed By") {
+        return super.table(token).replace("<table>", '<table class="optimization-table optimization-table--factors">');
+      }
+      return super.table(token).replace("<table>", '<table class="optimization-table">');
     }
     if (headers.length === 5 && headers[0] === "Metric" && headers[1] === "Lower" && headers[2] === "Upper") {
       return specificationRangeGraph(this.requirements, token.rows);
@@ -300,10 +370,10 @@ class F6PdfRenderer extends Renderer {
       }
       const headerCells = token.header.map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`).join("");
       const rows = token.rows.map((row) => {
-        const marker = requiredMissingMarker(row[0]!);
+        const marker = requiredMissingMarker(row[1]!);
         const rowClass = marker === undefined ? "" : ' class="missing"';
         const cells = row.map((cell, index) => {
-          if (index !== 0 || marker === undefined) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+          if (index !== 1 || marker === undefined) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
           const before = this.parser.parseInline(cell.tokens.slice(0, marker.index));
           const after = this.parser.parseInline(cell.tokens.slice(marker.index + 2));
           return `<td>${before}<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${marker.sourceRow}" hidden="" aria-hidden="true"></span>${after}</td>`;
@@ -343,7 +413,7 @@ class F6PdfRenderer extends Renderer {
 }
 
 const PRINT_CSS = `
-  :root { --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --paper:#fff; --wash:#f8fafc; --blue:#0078d4; --pass:#107c10; --warn:#a15c00; --fail:#d13438; }
+  :root { --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --paper:#fff; --wash:#f8fafc; --blue:#0078d4; --pass:#107c10; --warn:#a15c00; --fail:#d13438; --signal-red:#c43135; --signal-green:#198754; }
   * { box-sizing:border-box; }
   @page { size:A4 landscape; margin:10mm 8mm 12mm; @bottom-right { content:"TA Assist Agent  |  " counter(page) " / " counter(pages); color:#64748b; font:6pt "Segoe UI", Arial, sans-serif; } }
   html { background:var(--wash); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:10pt; line-height:1.25; font-variant-numeric:tabular-nums; }
@@ -353,10 +423,10 @@ const PRINT_CSS = `
   .report-content>h2 { margin:2.5mm 0 1mm; font-size:11pt; }
   .document-overview,.workbook-summary { table-layout:fixed; margin:0 0 2mm; font-size:9pt; }
   .document-overview th:first-child,.document-overview td:first-child { width:34%; }
-  .workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:14%; }
-  .workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:24%; }
-  .workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:52%; }
-  .workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:10%; text-align:center; }
+  .workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:12%; text-align:center; }
+  .workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:16%; }
+  .workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:25%; }
+  .workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:47%; }
   .worksheet-section { margin:0 0 6mm; break-before:page; page-break-before:always; }
   .worksheet-fit { width:100%; padding:0; }
   h1 { margin:0 0 1.5mm; padding:0 0 1mm; border-bottom:2px solid var(--blue); font-size:20pt; font-weight:650; letter-spacing:0; }
@@ -372,31 +442,33 @@ const PRINT_CSS = `
   .f6-inline-marker,[data-f6-marker] { display:none !important; }
   .factor-table { table-layout:fixed; }
   .factor-table td,.factor-table th { font-size:8.5pt; overflow-wrap:normal; word-break:normal; }
-  .factor-table th:nth-child(1),.factor-table td:nth-child(1) { width:16%; }
-  .factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:10%; }
-  .factor-table th:nth-child(3),.factor-table td:nth-child(3) { width:8%; }
-  .factor-table th:nth-child(4),.factor-table td:nth-child(4) { width:8%; }
+  .factor-table th:nth-child(1),.factor-table td:nth-child(1) { width:4%; }
+  .factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:11%; }
+  .factor-table th:nth-child(3),.factor-table td:nth-child(3) { width:7%; }
+  .factor-table th:nth-child(4),.factor-table td:nth-child(4) { width:7%; }
   .factor-table th:nth-child(5),.factor-table td:nth-child(5) { width:7%; }
-  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:7%; text-align:right; }
-  .factor-table th:nth-child(7),.factor-table td:nth-child(7) { width:7%; text-align:right; }
-  .factor-table th:nth-child(8),.factor-table td:nth-child(8) { width:7%; text-align:right; }
-  .factor-table th:nth-child(9),.factor-table td:nth-child(9) { width:7%; text-align:right; }
-  .factor-table th:nth-child(10),.factor-table td:nth-child(10) { width:6%; text-align:right; }
-  .factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:6%; text-align:right; }
+  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:6%; }
+  .factor-table th:nth-child(7),.factor-table td:nth-child(7) { width:6%; text-align:right; }
+  .factor-table th:nth-child(8),.factor-table td:nth-child(8) { width:6%; text-align:right; }
+  .factor-table th:nth-child(9),.factor-table td:nth-child(9) { width:6%; text-align:right; }
+  .factor-table th:nth-child(10),.factor-table td:nth-child(10) { width:5%; text-align:right; }
+  .factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:5%; text-align:right; }
   .factor-table th:nth-child(12),.factor-table td:nth-child(12) { width:6%; text-align:right; }
   .factor-table th:nth-child(13),.factor-table td:nth-child(13) { width:6%; text-align:right; }
-  .factor-table th:nth-child(14),.factor-table td:nth-child(14) { width:16%; }
+  .factor-table th:nth-child(14),.factor-table td:nth-child(14) { width:6%; text-align:right; }
+  .factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%; }
+  .factor-table th:nth-child(2),.factor-table td:nth-child(2),.factor-table th:nth-child(5),.factor-table td:nth-child(5),.factor-table th:nth-child(6),.factor-table td:nth-child(6),.factor-table th:nth-child(15),.factor-table td:nth-child(15) { overflow-wrap:anywhere; }
   .factor-table tbody tr.missing td { background:#fef2f2; }
   .drawing-health { display:flex; align-items:center; justify-content:space-between; gap:4mm; margin:0 0 1.5mm; padding:1.4mm 2mm; border:1px solid var(--line); background:#f8fafc; } .health-copy { display:flex; align-items:baseline; gap:3mm; } .health-copy h2,.health-copy p { margin:0; } .health-copy h2 { font-size:10pt; } .health-copy p { color:var(--muted); font-size:7.5pt; } .health-measures { display:flex; gap:5mm; font-size:7.5pt; } .health-measures span { white-space:nowrap; } .health-measures strong { margin-right:1mm; color:var(--fail); font-size:11pt; }
   .analysis-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-template-rows:auto auto; gap:0; align-items:stretch; border:1px solid var(--line); } .analysis-panel { min-width:0; padding:1.5mm 2mm; background:var(--paper); break-inside:avoid; } .analysis-panel+.analysis-panel { border-left:1px solid var(--line); } .analysis-panel h2 { margin-bottom:1mm; } .analysis-panel--image { display:grid; grid-template-columns:78mm minmax(0,1fr); column-gap:3mm; grid-column:span 5; } .analysis-panel--image h2 { grid-column:1/-1; } .analysis-panel--image>.stack-image { grid-column:1; grid-row:2/span 3; } .analysis-panel--image>p { grid-column:2; margin:.5mm 0; font-size:7.5pt; line-height:1.3; } .analysis-panel--results { display:grid; grid-template-columns:1fr 1fr; gap:2mm; grid-column:span 7; } .analysis-panel--results>h2,.analysis-panel--results>.system-summary { grid-column:1/-1; } .analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { min-height:36mm; border-top:1px solid var(--line); } .analysis-panel--center { grid-column:span 3; } .analysis-panel--contributors { grid-column:span 6; } .analysis-panel--specifications { grid-column:span 3; }
   .stack-image { margin:0; text-align:center; break-inside:avoid; } .stack-image img { width:78mm; max-height:62mm; object-fit:contain; }
   figure { margin:0; } figcaption { margin-bottom:1.2mm; color:var(--ink); font-size:8pt; font-weight:650; }
   .spec-range-graph,.capability-spectrum,.mean-offset-graph,.spec-change-graph { min-width:0; }
-  .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--muted); } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:#e7edf3; } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track .spec-window { position:absolute; top:0; height:4mm; border:1px solid #94a3b8; background:transparent; z-index:1; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
+  .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--muted); } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:#e7edf3; } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track .range-bound { position:absolute; top:-1mm; width:2px; height:6mm; background:var(--signal-red); z-index:3; } .range-bound>span { position:absolute; top:-4mm; color:var(--signal-red); font-size:5.5pt; white-space:nowrap; } .range-bound--lower>span { left:0; } .range-bound--upper>span { right:0; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
   .capability-spectrum figcaption strong { color:var(--blue); } .capability-row { display:grid; grid-template-columns:12mm 1fr 14mm; gap:1mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .capability-track i { display:block; height:100%; background:#64748b; } .capability-row--pass .capability-track i { background:var(--pass); } .capability-row--fail .capability-track i { background:var(--fail); } .capability-track b { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); } .capability-spectrum>p,.system-summary { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
-  .offset-track { margin:3mm 0 2mm; background:#e7edf3; } .offset-track i { position:absolute; left:50%; top:-1mm; width:1px; height:6mm; background:var(--ink); } .offset-track b { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--blue); transform:translateX(-50%) rotate(45deg); } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
+  .offset-track { margin:3mm 0 2mm; background:#e7edf3; } .offset-track .mean-marker--nominal { position:absolute; left:50%; top:-1mm; width:2px; height:6mm; background:var(--signal-red); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:#dbe4ee; } .contribution-fill { display:block; height:100%; background:#64748b; } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:normal; word-break:normal; }
-  .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track i { background:#64748b; } .change-track b { background:var(--blue); }
+  .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track .spec-marker--current { background:var(--signal-red); } .change-track .spec-marker--proposed { background:var(--signal-green); }
   @media print { html,body { background:#fff; } body { max-width:none; } }
 
   :root { --st-bone:#e2dcc9; --st-black:#000; --st-ink:#0a0a0a; --st-paper:#f4efe0; --st-magenta:#c73b7a; --st-orange:#ee7a2e; --st-teal:#2d7e73; --st-blue:#3f73b7; --st-mustard:#d8a93b; --st-display:"Stardos Stencil","Rockwell Extra Bold",Rockwell,serif; --st-meta:"Barlow Condensed","Arial Narrow",sans-serif; --st-body:Aptos,"Segoe UI",sans-serif; }
@@ -406,7 +478,7 @@ const PRINT_CSS = `
   .slide { position:relative; display:grid; width:1920px; height:1080px; margin:0; padding:48px 64px 42px; overflow:hidden; break-after:page; page-break-after:always; background:var(--st-bone); }
   .slide:last-child { break-after:auto; page-break-after:auto; }
   .slide::after { position:absolute; right:64px; bottom:24px; content:"TA ASSIST AGENT  /  DRAFT"; color:rgba(10,10,10,.56); font:700 20px/1 var(--st-meta); letter-spacing:.08em; }
-  .slide-summary { grid-template-columns:1.05fr .95fr; grid-template-rows:180px 1fr; gap:24px 28px; }
+  .slide-summary { grid-template-columns:.72fr 1.28fr; grid-template-rows:180px 1fr; gap:24px 28px; }
   .slide-summary>h1 { grid-column:1/-1; align-self:end; margin:0; padding:0; border:0; color:var(--st-ink); font:700 112px/.84 var(--st-display); text-transform:uppercase; letter-spacing:0; }
   .slide-summary>h2 { display:none; }
   .document-overview,.workbook-summary { align-self:stretch; width:100%; margin:0; overflow:hidden; border:2px solid var(--st-ink); border-radius:24px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--st-paper); font-size:24px; }
@@ -414,26 +486,61 @@ const PRINT_CSS = `
   .workbook-summary::before { content:"Workbook Summary"; background:var(--st-teal); color:var(--st-bone); }
   .document-overview th,.workbook-summary th { padding:14px 20px; border:0; border-bottom:2px solid var(--st-ink); background:var(--st-black); color:var(--st-bone); font:800 20px/1 var(--st-meta); letter-spacing:.04em; text-transform:uppercase; }
   .document-overview td,.workbook-summary td { padding:13px 20px; border:0; border-bottom:1px solid rgba(10,10,10,.22); color:var(--st-ink); font-size:21px; }
+  .workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:18px; line-height:1.2; }
+  .workbook-summary td:nth-child(1) { white-space:nowrap; }
   .workbook-summary .comment { display:inline-block; padding:7px 16px; border-radius:999px; background:var(--st-magenta); color:var(--st-bone); font:800 18px/1 var(--st-meta); text-transform:uppercase; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--st-ink); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
+  .slide-optimization { display:flex; flex-direction:column; border:0; }
+  .slide-optimization>.optimization-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 1fr; gap:10px; }
+  .slide-optimization>.optimization-fit>h1 { margin:0; padding:0; border:0; color:var(--st-ink); font:700 54px/.95 var(--st-display); text-transform:uppercase; }
+  .optimization-grid { display:grid; min-height:0; grid-template-columns:1fr 1fr; grid-template-rows:220px 1fr 1fr; gap:12px; }
+  .optimization-decision { min-height:0; padding:18px 20px; border-radius:22px; background:var(--st-orange); }
+  .optimization-decision h2 { margin:0 0 8px; color:var(--st-ink); font:700 24px/1 var(--st-display); text-transform:uppercase; }
+  .optimization-decision ul,.optimization-decision ol { margin:0; padding-left:20px; font-size:16px; line-height:1.25; }
+  .optimization-decision li { margin:4px 0; color:var(--st-ink); }
+  .optimization-table { width:100%; margin:0; table-layout:fixed; overflow:hidden; border:2px solid var(--st-ink); border-radius:20px; border-collapse:separate; border-spacing:0; background:var(--st-paper); }
+  .optimization-table th { padding:10px 11px; border:0; border-bottom:2px solid var(--st-ink); background:var(--st-black); color:var(--st-bone); font:800 15px/1 var(--st-meta); letter-spacing:.03em; text-transform:uppercase; }
+  .optimization-table td { padding:8px 10px; border:0; border-bottom:1px solid rgba(10,10,10,.22); color:var(--st-ink); font-size:14px; line-height:1.2; }
+  .optimization-table--system { grid-column:1; grid-row:2/span 2; }
+  .optimization-table--path { grid-column:2; grid-row:1/span 2; }
+  .optimization-table--path td { overflow-wrap:anywhere; word-break:break-word; }
+  .optimization-table--path th:nth-child(1),.optimization-table--path td:nth-child(1) { width:24%; }
+  .optimization-table--path th:nth-child(2),.optimization-table--path td:nth-child(2) { width:24%; }
+  .optimization-table--path th:nth-child(3),.optimization-table--path td:nth-child(3) { width:32%; }
+  .optimization-table--path th:nth-child(4),.optimization-table--path td:nth-child(4) { width:20%; }
+  .optimization-table--factors { grid-column:1/span 2; grid-row:3; }
+  .optimization-table--factors th,.optimization-table--factors td { padding:6px 7px; font-size:11px; overflow-wrap:anywhere; }
+  .optimization-table--factors th:nth-child(1),.optimization-table--factors td:nth-child(1) { width:13%; }
+  .optimization-table--factors th:nth-child(2),.optimization-table--factors td:nth-child(2) { width:9%; }
+  .optimization-table--factors th:nth-child(3),.optimization-table--factors td:nth-child(3) { width:16%; }
+  .optimization-table--factors th:nth-child(4),.optimization-table--factors td:nth-child(4) { width:25%; }
+  .optimization-table--factors th:nth-child(5),.optimization-table--factors td:nth-child(5) { width:13%; }
+  .optimization-table--factors th:nth-child(6),.optimization-table--factors td:nth-child(6) { width:15%; }
+  .optimization-table--factors th:nth-child(7),.optimization-table--factors td:nth-child(7) { width:9%; }
+  .slide-optimization-continuation .optimization-table--factors { grid-row:2/span 2; }
+  .slide-optimization-continuation .optimization-table--path { grid-row:1; }
+  .slide-optimization-continuation .optimization-table--system { grid-row:1; }
   .factor-table { height:330px; margin:0; overflow:hidden; border:2px solid var(--st-ink); border-radius:22px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--st-paper); }
   .factor-table th { padding:10px 9px; border:0; border-bottom:2px solid var(--st-ink); background:var(--st-black); color:var(--st-bone); font:800 15px/1 var(--st-meta); letter-spacing:.03em; text-transform:uppercase; }
   .factor-table td { padding:8px 9px; border:0; border-bottom:1px solid rgba(10,10,10,.2); color:var(--st-ink); font-size:14px; line-height:1.1; }
   .factor-table tbody tr.missing td { background:transparent; }
-  .factor-table tbody tr.missing td:nth-child(4) { color:var(--st-magenta); font-weight:700; }
+  .factor-table tbody tr.missing td:nth-child(5) { color:var(--st-magenta); font-weight:700; }
   .guidance { display:inline-block; padding-left:8px; border-left:3px solid rgba(10,10,10,.38); }
   .guidance--pass { border-color:var(--st-teal); color:var(--st-teal); }
   .guidance--review { border-color:var(--st-orange); }
-  .analysis-grid { display:grid; min-height:0; grid-template-columns:1.15fr .85fr .72fr; grid-template-rows:1fr 220px; gap:12px; border:0; }
+  .analysis-grid { display:grid; min-height:0; grid-template-columns:.72fr 1.15fr .95fr; grid-template-rows:1fr 220px; gap:12px; border:0; }
   .analysis-panel { min-width:0; min-height:0; padding:20px 22px; overflow:hidden; border:0; border-radius:22px; break-inside:avoid; color:var(--st-ink); }
   .analysis-panel+.analysis-panel { border-left:0; }
   .analysis-panel h2 { margin:0 0 12px; color:inherit; font:700 28px/1 var(--st-display); text-transform:uppercase; }
-  .analysis-panel--image { display:block; grid-column:1; grid-row:1; background:var(--st-paper); }
-  .analysis-panel--results { display:block; grid-column:2; grid-row:1; background:var(--st-mustard); }
-  .analysis-panel--center { grid-column:3; grid-row:1; min-height:0; border:0; background:var(--st-blue); color:var(--st-bone); }
-  .analysis-panel--contributors { grid-column:1/span 2; grid-row:2; min-height:0; border:0; background:var(--st-teal); color:var(--st-bone); }
+  .analysis-panel--process { grid-column:1; grid-row:1; background:var(--st-orange); }
+  .analysis-panel--process ul { margin:0; padding-left:20px; font-size:14px; line-height:1.25; }
+  .analysis-panel--process li { margin:6px 0; color:var(--st-ink); }
+  .analysis-panel--image { display:block; grid-column:2; grid-row:1; background:var(--st-paper); }
+  .analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--st-mustard); }
+  .analysis-panel--center { grid-column:1; grid-row:2; min-height:0; border:0; background:var(--st-blue); color:var(--st-bone); }
+  .analysis-panel--contributors { grid-column:2; grid-row:2; min-height:0; border:0; background:var(--st-teal); color:var(--st-bone); }
   .analysis-panel--specifications { grid-column:3; grid-row:2; min-height:0; border:0; background:var(--st-magenta); color:var(--st-bone); }
   .analysis-panel--image>.stack-image { display:block; float:left; width:48%; margin:0 18px 8px 0; }
   .analysis-panel--image .stack-image img { width:100%; height:auto; max-height:248px; object-fit:contain; }
@@ -458,20 +565,23 @@ const PRINT_CSS = `
   .analysis-panel--contributors>p { margin:4px 0 0; color:var(--st-bone); font-size:11px; line-height:1.15; }
   .analysis-panel--specifications .change-row { margin:0 0 6px; }
   .analysis-panel--specifications .change-track { background:rgba(226,220,201,.28); }
-  .analysis-panel--specifications .change-track i { background:var(--st-bone); }
-  .analysis-panel--specifications .change-track b { background:var(--st-mustard); }
+  .analysis-panel--specifications .change-track .spec-marker--current { background:var(--signal-red); }
+  .analysis-panel--specifications .change-track .spec-marker--proposed { background:var(--signal-green); }
   .analysis-panel--specifications .spec-change-graph p,.analysis-panel--specifications .change-row small { color:var(--st-bone); }
   .analysis-panel--specifications .spec-change-graph p { margin:4px 0 0; font-size:11px; }
+  .optimization-inline { display:grid; grid-template-columns:1fr 1fr; gap:8px; min-height:0; overflow:hidden; }
+  .optimization-inline>h2 { grid-column:1/-1; margin:0; font:700 18px/1 var(--st-display); text-transform:uppercase; }
+  .optimization-inline .optimization-table { font-size:10px; }
 `;
 
 export function renderF6PdfHtml(input: F6PdfHtmlInput): string {
   if (!/^[a-f0-9]{64}$/.test(input.sourceHash)) throw new Error("F6 PDF source hash must be a SHA-256 digest.");
   if (input.markdown.trim().length === 0) throw new Error("F6 PDF source Markdown must not be empty.");
   const renderer = new F6PdfRenderer(input.inlineImages ?? new Map());
-  const content = formatReportHtml(marked.parse(input.markdown, { async: false, renderer }));
-  const closingSection = renderer.finishContent();
+  const parsedContent = marked.parse(input.markdown, { async: false, renderer });
+  const content = formatReportHtml(`${parsedContent}${renderer.finishContent()}`);
   const base = input.baseHref === undefined ? "" : `<base href="${escapeHtml(input.baseHref)}">`;
-  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}${closingSection}</main></body></html>`;
+  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}</main></body></html>`;
 }
 
 export function f6PdfImageLinks(markdown: string): readonly string[] {

@@ -98,10 +98,31 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Escalations!A2",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for escalation coverage.",
+      },
+    },
+    {
+      entryId: "instruction-consider-worst-case-small-stack",
+      entryType: "instruction",
+      topic: "analysis-method",
+      title: "Consider Worst Case for small stacks",
+      message: "Consider Worst Case values when the tolerance stack contains fewer than 4 factors.",
+      normativeStrength: "should",
+      state: "guidance",
+      relatedFactReferences: ["toleranceCount"],
+      evidence: {
+        sourceAlias: "controlled-ta-template-beta",
+        sourceFileHash: "b".repeat(64),
+        sourceRevision: "Beta",
+        sheetName: "TA Process and Requirements",
+        sourceRange: "B19:R19",
+        effectiveVersion: "process-requirements-v3",
+        owner: "Dimensional Management",
+        confidence: "reviewed",
+        changeSummary: "Add reviewed worst-case guidance for tolerance stacks with fewer than four factors.",
       },
     },
     {
@@ -119,7 +140,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Warnings!A3",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for warning coverage.",
@@ -140,7 +161,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Requirements!A4",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for requirement coverage.",
@@ -161,7 +182,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Milestones!A5",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for milestone coverage.",
@@ -182,7 +203,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Instructions!A6",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for instruction coverage.",
@@ -356,7 +377,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available" as const,
-        version: "process-requirements-v1" as const,
+        version: "process-requirements-v3" as const,
         entries: processGuidanceEntries(),
       },
     };
@@ -723,7 +744,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -856,7 +877,7 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
     expect(processGuidance.text()).not.toContain("Triggered by");
     expect(processGuidance.find("[data-process-guidance-version]").exists()).toBe(false);
-    expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(5);
+    expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(6);
     expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
     expect(processGuidance.get("ol").classes()).toContain("action-sequence");
     expect(processGuidance.findAll("[data-process-guidance-entry]").every((item) => (
@@ -864,6 +885,7 @@ describe("TAResultsInterpretation", () => {
     ))).toBe(true);
     expect(processGuidance.findAll("[data-process-guidance-entry]").map((item) => item.attributes("data-guidance-state"))).toEqual([
       "warning",
+      "guidance",
       "guidance",
       "warning",
       "guidance",
@@ -880,6 +902,7 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.findAll('[data-guidance-state="guidance"] [data-process-guidance-warning]')).toHaveLength(0);
     expect(processGuidance.findAll("[data-process-guidance-entry-title]").map((item) => item.text())).toEqual([
       "Escalate tolerance ownership",
+      "Consider Worst Case for small stacks",
       "Check workbook evidence freshness",
       "Capture governed requirement linkage",
       "Schedule the next F0 review milestone",
@@ -887,6 +910,7 @@ describe("TAResultsInterpretation", () => {
     ]);
     expect(processGuidance.findAll("[data-process-guidance-entry-message]").map((item) => item.text())).toEqual([
       "Escalate to the owning engineering lead before closing the worksheet review.",
+      "Consider Worst Case values when the tolerance stack contains fewer than 4 factors.",
       "Warning entries should stay visible beside stronger guidance types.",
       "Requirement entries should retain their own semantic styling.",
       "Milestone guidance should remain distinct from requirements and instructions.",
@@ -906,7 +930,7 @@ describe("TAResultsInterpretation", () => {
       ...unavailable,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -1021,7 +1045,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: [],
       },
     });

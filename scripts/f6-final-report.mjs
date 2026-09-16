@@ -9,7 +9,7 @@ import {
   f5DataInterpretationResultSchema,
   f6AnalysisContextSchema,
   f6ModelInterpretationArtifactSchema,
-  f6OptimizationResultSchema,
+  f6ReadableOptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 import { createF5MultimodalFactorSetHash, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
@@ -188,6 +188,7 @@ function factorSourceKey(tableId, sourceRow) {
 }
 
 const COMPLETE_FACTOR_TABLE_HEADERS = [
+  "Ordinal",
   "Factor Description",
   "Part Name",
   "Part Category",
@@ -256,6 +257,7 @@ function readyFactorTableRows(factors) {
     const actual = f2Row.actualFields;
     return {
       cells: [
+        clean(f2Row.factorOrdinal?.value),
         f2Row.missingIdentifiers?.length > 0
           ? blockedFactorDescription(clean(modelRow.factorName), f2Row.sourceRow)
           : clean(modelRow.factorName),
@@ -279,6 +281,7 @@ function blockedFactorTableRows(worksheet) {
       || (Array.isArray(f2Row.missingIdentifiers) && f2Row.missingIdentifiers.length > 0);
     return {
       cells: [
+        clean(f2Row.factorOrdinal?.value),
         hasBlockedMarker
           ? blockedFactorDescription(blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName), f2Row.sourceRow)
           : (blockedRequiredField(f2Row, "factorName") ? "MISSING" : clean(actual.factorName)),
@@ -392,15 +395,51 @@ function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, 
 function renderF6V3WorkbookSummary(worksheets, catalog) {
   const lines = [
     `## 2. ${catalog.workbook}`, "",
-    "| Worksheet | Tolerance Loop Description | Key Finding | Comment |", "|---|---|---|---|",
+    "| Result | Worksheet | Tolerance Loop Description | Key Finding |", "|---|---|---|---|",
   ];
   worksheets.forEach((worksheet, index) => lines.push(row([
+    dispositionComment(worksheet.disposition),
     `[${clean(worksheet.worksheetName)}](#worksheet-${index + 1})`,
     clean(worksheet.f2Worksheet.toleranceLoopDescription),
     worksheet.f2Worksheet.status === "ready" ? v3PrimaryFinding(worksheet) : blockedWorksheetFinding(worksheet, "en"),
-    dispositionComment(worksheet.disposition),
   ])));
   return lines;
+}
+
+function renderProcessAndRequirements(factors) {
+  const warnings = factors.filter(({ f2Row }) => f2Row.capabilityStatus !== "internal_within_guidance");
+  return [
+    "## Process and Requirements",
+    "",
+    ...factors.map(({ f2Row, modelRow, f0 }) => `- ${clean(f2Row.factorOrdinal?.value)}: ${clean(modelRow.factorName)}; ${f0GuidanceText(f2Row, f0)}`),
+    `- Result: ${warnings.length === 0 ? "PASS" : `WARNING - ${warnings.length} Factor${warnings.length === 1 ? "" : "s"} require engineering review.`}`,
+  ];
+}
+
+function statisticalRangeRows(projection, calculation, unit) {
+  const lowerSpec = calculation.capability.lowerSpecLimit;
+  const upperSpec = calculation.capability.upperSpecLimit;
+  const rows = [3, 4, 6].map((sigmaLevel) => {
+    const range = projection.statisticalRanges.find((item) => item.sigmaLevel === sigmaLevel)?.range;
+    if (range === undefined) failInvalid(`${sigmaLevel}-sigma report range`);
+    const minimumMargin = Math.min(range.lower - lowerSpec, upperSpec - range.upper);
+    return row([
+      `${sigmaLevel}-Sigma Range`,
+      engineeringText(range.lower, unit),
+      engineeringText(range.upper, unit),
+      engineeringText(minimumMargin, unit),
+      minimumMargin >= 0 ? "PASS" : "FAIL",
+    ]);
+  });
+  const worstCase = projection.margins.worstCase;
+  rows.push(row([
+    "Worst-Case Range",
+    engineeringText(worstCase.lowerBound, unit),
+    engineeringText(worstCase.upperBound, unit),
+    engineeringText(worstCase.minimumMargin, unit),
+    worstCase.minimumMargin >= 0 ? "PASS" : "FAIL",
+  ]));
+  return rows;
 }
 
 function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
@@ -416,8 +455,6 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
-  const statistical = projection.margins.statistical;
-  const worstCase = projection.margins.worstCase;
   const interpretationText = paragraph(interpretation.imageTableInterpretation)
     .replace(MODEL_RISK_DISCLOSURE, "")
     .trim() || NA;
@@ -428,6 +465,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     ...renderCompleteFactorTable(readyFactorTableRows(factors)),
   ];
   lines.push(
+    "", ...renderProcessAndRequirements(factors),
     "", `## ${catalog.image}`, "", imageLink, "", interpretationText, "", `*${MODEL_RISK_DISCLOSURE}*`,
     "", `## ${catalog.results}`, "",
     "| Requirement | Value |", "|---|---:|",
@@ -437,8 +475,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
     row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
     "", "| Metric | Lower | Upper | Minimum Margin | Result |", "|---|---:|---:|---:|---|",
-    row(["Statistical Range", engineeringText(statistical.lowerBound, unit), engineeringText(statistical.upperBound, unit), engineeringText(statistical.minimumMargin, unit), statistical.minimumMargin >= 0 ? "PASS" : "FAIL"]),
-    row(["Worst-Case Range", engineeringText(worstCase.lowerBound, unit), engineeringText(worstCase.upperBound, unit), engineeringText(worstCase.minimumMargin, unit), worstCase.minimumMargin >= 0 ? "PASS" : "FAIL"]),
+    ...statisticalRangeRows(projection, calculation, unit),
     "", "| Capability Metric | Value | Result |", "|---|---:|---|",
     row(["Predictive Cp", numberText(calculation.capability.cp), clean(calculation.capability.cpStatus)]),
     row(["Predictive CpkL", numberText(calculation.capability.lowerCpk), clean(calculation.capability.lowerCpkStatus)]),
@@ -452,31 +489,31 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   );
   lines.push("", `## ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
   if (center.status !== "clarification_required") {
-    lines.push(`- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
-      `- Specification Center: ${fixedEngineering(center.specificationMidpoint, unit)}`,
+    lines.push(`- Design Nominal: ${fixedEngineering(calculation.system.designNominal, unit)}`,
+      `- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
       `- Offset: ${fixedEngineering(center.offset, unit)}`);
   }
   if (center.status === "offset") lines.push(`- ${catalog.nominalReminder}`, `- ${clean(center.interpretation)}`);
   if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
   lines.push("", `## ${catalog.contributors}`, "",
     `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`, "|---:|---|---:|---:|---|---|");
-  for (const item of contributors.priorities) {
+  const contributorPriorities = Array.isArray(contributors?.priorities) ? contributors.priorities : [];
+  for (const item of contributorPriorities) {
     const factor = v3CalculationFactor(calculation, item.factor);
     if (factor === undefined) failInvalid("contributor Factor identity");
     lines.push(row([item.rank, clean(item.factor.factorName), engineeringText(factor.sigma, factor.unit), percentText(item.contribution),
-      v3PriorityLabel(item.rank, contributors.priorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
+      v3PriorityLabel(item.rank, contributorPriorities.length, catalog), item.rank <= 3 ? clean(item.guidance) : NA]));
   }
   lines.push("", catalog.topThree);
-  if (worksheet.disposition !== "PASS") {
+  const specificationProposals = (Array.isArray(specifications?.proposals) ? specifications.proposals : [])
+    .filter(({ currentLimit, proposedLimit }) => !nearlyEqual(currentLimit, proposedLimit));
+  if ((calculation.capability.lowerCpkStatus === "FAIL" || calculation.capability.upperCpkStatus === "FAIL")
+    && specificationProposals.length > 0) {
     lines.push("", `## ${catalog.specifications}`, "");
-    if (specifications.proposals.length === 0) lines.push(catalog.noProposal);
-    else {
-      lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
-      for (const proposal of specifications.proposals) {
-        lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
-      }
+    lines.push(`| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`, "|---|---:|---:|---:|---|");
+    for (const proposal of specificationProposals) {
+      lines.push(row([proposal.side, numberText(proposal.currentLimit), numberText(proposal.proposedLimit), numberText(proposal.targetCpk), catalog.approvalRequired]));
     }
-    for (const item of specifications.clarifications) lines.push(`- ${catalog.clarification}: ${clean(item.reasonCode)} (${clean(item.requiredInputs.join(", "))})`);
   }
   return lines;
 }
@@ -569,6 +606,209 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
           ...(calculation.capability.cpk === undefined ? {} : { cpk: calculation.capability.cpk }),
           ...(calculation.capability.yield === undefined ? {} : { yield: calculation.capability.yield }),
           ...(calculation.capability.totalDpm === undefined ? {} : { dpm: calculation.capability.totalDpm }) },
+      };
+    }),
+  };
+  return { markdown: reportMarkdown, reportSummary, projection };
+}
+
+function v4SelectedStatusText(status) {
+  if (status === "baseline_meets_target") return "Baseline meets target";
+  if (status === "step1_centered") return "Step 1 centered";
+  if (status === "step2_tolerance_optimized") return "Step 2 tolerance optimized";
+  if (status === "step3_specification_relaxed_pending_approval") return "Step 3 specification relaxed pending approval";
+  return "No validated optimized result";
+}
+
+function renderV4OptimizationModules(worksheet, unit, catalog) {
+  const baseline = worksheet.f6Worksheet.baselineResult;
+  const selected = worksheet.f6Worksheet.selectedResult.snapshot;
+  const contributors = [...selected.factors].sort((left, right) => right.contribution - left.contribution);
+  const lines = [
+    "",
+    `## ${catalog.center}`,
+    "",
+    `- Design Nominal: ${fixedEngineering(baseline.system.designNominal, unit)}`,
+    `- Adjusted Mean: ${fixedEngineering(selected.system.mean, unit)}`,
+    `- Offset: ${fixedEngineering(selected.system.meanOffset, unit)}`,
+    `- Selected Result: ${v4SelectedStatusText(worksheet.f6Worksheet.selectedResult.status)}`,
+    "",
+    `## ${catalog.contributors}`,
+    "",
+    `| ${catalog.rank} | ${catalog.factor} | One Sigma | Variance Contribution | ${catalog.priority} | ${catalog.guidance} |`,
+    "|---:|---|---:|---:|---|---|",
+  ];
+  contributors.forEach((item, index) => lines.push(row([
+    index + 1,
+    clean(item.factor.factorName),
+    engineeringText(item.sigma, item.factor.unit),
+    percentText(item.contribution),
+    v3PriorityLabel(index + 1, contributors.length, catalog),
+    index < 3 ? "Review tolerance range" : NA,
+  ])));
+  lines.push("", catalog.topThree);
+
+  const failedSides = [
+    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
+      && !nearlyEqual(baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit)
+      ? ["lower", baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit]
+      : undefined,
+    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
+      && !nearlyEqual(baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit)
+      ? ["upper", baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit]
+      : undefined,
+  ].filter(Boolean);
+  if (failedSides.length > 0) {
+    lines.push(
+      "",
+      `## ${catalog.specifications}`,
+      "",
+      `| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`,
+      "|---|---:|---:|---:|---|",
+      ...failedSides.map(([side, currentLimit, proposedLimit]) => row([
+        side,
+        numberText(currentLimit),
+        numberText(proposedLimit),
+        numberText(baseline.capability.targetCpk),
+        catalog.approvalRequired,
+      ])),
+    );
+  }
+  return lines;
+}
+
+function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
+  const prefix = `3-${ordinal}`;
+  const calculation = worksheet.f4Calculation;
+  const unit = calculation.factors[0]?.unit ?? "unit";
+  const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
+  const verifiedRelativePath = imageLinks?.get(worksheet.worksheetName);
+  const relativePath = verifiedRelativePath ?? interpretation?.request?.image?.artifactPath;
+  const imageLink = typeof relativePath === "string"
+    && (verifiedRelativePath !== undefined || (!relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)))
+    ? `[${catalog.openImage}](<${encodeURI(relativePath.replace(/\\/g, "/"))}>)`
+    : NA;
+  const factors = v3CompleteFactorRows(worksheet, interpretation);
+  const lines = [
+    `<a id="worksheet-${ordinal}"></a>`,
+    "",
+    `# ${prefix} ${catalog.worksheet}: ${clean(worksheet.worksheetName)}`,
+    "",
+    `## ${catalog.factors}`,
+    "",
+    ...renderCompleteFactorTable(readyFactorTableRows(factors)),
+    "",
+    ...renderProcessAndRequirements(factors),
+    "",
+    `## ${catalog.image}`,
+    "",
+    imageLink,
+    "",
+    clean(interpretation?.imageTableInterpretation, NA),
+    "",
+    `*${MODEL_RISK_DISCLOSURE}*`,
+    "",
+    `## ${catalog.results}`,
+    "",
+    "| Requirement | Value |",
+    "|---|---:|",
+    row(["Design Nominal", engineeringText(calculation.system.designNominal, unit)]),
+    row(["LSL", engineeringText(calculation.capability.lowerSpecLimit, unit)]),
+    row(["USL", engineeringText(calculation.capability.upperSpecLimit, unit)]),
+    row(["Target Cpk", numberText(calculation.capability.targetCpk)]),
+    row(["Evaluation Level", `${numberText(calculation.capability.targetSigmaLevel)} sigma`]),
+    "",
+    "| Metric | Lower | Upper | Minimum Margin | Result |",
+    "|---|---:|---:|---:|---|",
+    ...statisticalRangeRows(projection, calculation, unit),
+    "",
+    "| Capability Metric | Value | Result |",
+    "|---|---:|---|",
+    row(["Predictive Cp", numberText(calculation.capability.cp), clean(calculation.capability.cpStatus)]),
+    row(["Predictive CpkL", numberText(calculation.capability.lowerCpk), clean(calculation.capability.lowerCpkStatus)]),
+    row(["Predictive CpkU", numberText(calculation.capability.upperCpk), clean(calculation.capability.upperCpkStatus)]),
+    row(["Predictive Cpk", numberText(calculation.capability.cpk), clean(calculation.capability.status)]),
+    row(["Predicted Yield", percentText(calculation.capability.yield), NA]),
+    row(["Predicted DPM", numberText(calculation.capability.totalDpm), NA]),
+  ];
+
+  lines.push(...renderV4OptimizationModules(worksheet, unit, catalog));
+  return lines;
+}
+
+function createF6V4Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, blockedWorksheetDetailsByName = new Map(), generatedAt, imageLinks }) {
+  const worksheets = buildWorksheetPolicyInputs({
+    f2Report,
+    f3Report,
+    f4Report,
+    f5Report,
+    f6Optimization,
+    blockedWorksheetDetailsByName,
+  });
+  const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
+  const language = "en";
+  const catalog = F6_V3_REPORT_CATALOG.en;
+  const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
+  const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
+  const reportSummary = { workbookDisposition, worksheetDispositions };
+
+  const markdown = [
+    `# ${catalog.title}`,
+    "",
+    ...renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog),
+    "",
+    ...renderF6V3WorkbookSummary(worksheets, catalog),
+  ];
+
+  worksheets.forEach((worksheet, index) => markdown.push(
+    "",
+    ...((worksheet.f2Worksheet.status === "ready" && worksheet.blocker === undefined)
+      ? renderF6V4Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks)
+      : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
+  ));
+
+  const reportMarkdown = `${markdown.join("\n")}\n`;
+  if (/\p{Script=Han}/u.test(reportMarkdown)) {
+    throw new Error("Invalid F6 final report input: English-only report content is required.");
+  }
+  const projection = {
+    schemaVersion: "ta-engineering-report-projection-v1",
+    title: catalog.title,
+    workbookDisposition,
+    worksheetDispositions,
+    workbook: {
+      fileName: f2Report.workbook.fileName,
+      ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }),
+      contentHash: f2Report.workbook.contentHash,
+    },
+    worksheets: worksheets.map((worksheet) => {
+      const calculation = worksheet.f4Calculation;
+      const base = {
+        worksheetName: worksheet.worksheetName,
+        toleranceLoopDescription: clean(worksheet.f2Worksheet.toleranceLoopDescription, NA),
+        disposition: worksheet.disposition,
+        requiredAction: requiredAction(worksheet),
+        findings: [worksheet.f2Worksheet.status === "ready"
+          ? v3PrimaryFinding(worksheet)
+          : blockedWorksheetFinding(worksheet, language)],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: worksheet.f2Worksheet.status === "ready"
+          ? [`F4:${worksheet.worksheetName}`, `F5-multimodal:${worksheet.worksheetName}`]
+          : [`F2:${worksheet.worksheetName}`],
+      };
+      if (calculation === undefined || worksheet.f6Worksheet === undefined) return base;
+      return {
+        ...base,
+        metrics: {
+          mean: worksheet.f6Worksheet.baselineResult.system.mean,
+          rssSigma: worksheet.f6Worksheet.baselineResult.system.rssSigma,
+          worstCaseLower: worksheet.f6Worksheet.baselineResult.system.worstCaseLower,
+          worstCaseUpper: worksheet.f6Worksheet.baselineResult.system.worstCaseUpper,
+          cpk: worksheet.f6Worksheet.baselineResult.capability.cpk,
+          yield: worksheet.f6Worksheet.baselineResult.capability.yield,
+          dpm: worksheet.f6Worksheet.baselineResult.capability.totalDpm,
+        },
       };
     }),
   };
@@ -766,7 +1006,10 @@ function resolveWorksheetDisposition({ f2Worksheet, f3Worksheet, f4Calculation, 
 function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization, blockedWorksheetDetailsByName = new Map() }) {
   assertWorkbookIdentity({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
   assertReportScope(f2Report, f6Optimization, blockedWorksheetDetailsByName);
-  const blockedScopeNameSet = new Set(f6Optimization.provenance.reportScope.blockedWorksheetNames);
+  const blockedScopeNameSet = new Set([
+    ...f6Optimization.provenance.reportScope.blockedWorksheetNames,
+    ...blockedWorksheetDetailsByName.keys(),
+  ]);
   const readyNames = f6Optimization.provenance.reportScope.worksheetNames
     .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName));
 
@@ -776,11 +1019,20 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
     "f3Report",
   );
   assertExactWorksheetSet(
-    f5Report.worksheets.filter(({ status }) => status === "completed").map(({ worksheetName }) => worksheetName),
+    f5Report.worksheets
+      .filter(({ status }) => status === "completed")
+      .map(({ worksheetName }) => worksheetName)
+      .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName)),
     readyNames,
     "f5Report",
   );
-  assertExactWorksheetSet(f6Optimization.worksheets.map(({ worksheetName }) => worksheetName), readyNames, "f6Optimization");
+  assertExactWorksheetSet(
+    f6Optimization.worksheets
+      .map(({ worksheetName }) => worksheetName)
+      .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName)),
+    readyNames,
+    "f6Optimization",
+  );
 
   const f3ByName = indexByWorksheetName(f3Report.worksheets);
   const f5ByName = indexByWorksheetName(
@@ -789,7 +1041,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
   const f6ByName = indexByWorksheetName(f6Optimization.worksheets);
   const { byName: f4ByName, counts: f4Counts } = indexCalculationsByWorksheetName(f4Report.calculations);
   const f2ReadyByName = indexByWorksheetName(f2Report.worksheets.filter(({ status }) => status === "ready"));
-  const f2HandoffByName = indexByWorksheetName(f2Report.f4Handoffs ?? []);
+  const f2HandoffByName = indexByWorksheetName(f2Report.f4Handoffs);
   const f4CalculationIndexes = new Map(f4Report.calculations.map((calculation, index) => [
     calculation.worksheetSelection.worksheetName,
     index + 1,
@@ -917,7 +1169,7 @@ function topFactor(calculation) {
 }
 
 function factorGovernanceBySource(f3Worksheet) {
-  return new Map((f3Worksheet?.rows ?? []).map((item) => [
+  return new Map(f3Worksheet.rows.map((item) => [
     `${item.source.tableId}:${item.source.sourceRow}`,
     item,
   ]));
@@ -955,16 +1207,12 @@ function v3PrimaryFinding(context) {
     return "The statistical or worst-case range does not meet the worksheet specification.";
   }
 
-  const governanceRows = context.f3Worksheet?.rows ?? [];
+  const governanceRows = context.f3Worksheet.rows;
   const missingDrawing = governanceRows.filter(({ drawingNumber }) => drawingNumber == null || drawingNumber === "").length;
   const missingDimId = governanceRows.filter(({ dimId }) => dimId == null || dimId === "").length;
   const openDrawingDefinition = governanceRows.some(({ governanceStatus }) => governanceStatus !== "complete");
   if (context.disposition === "CONDITIONAL_PASS" || missingDrawing > 0 || missingDimId > 0 || openDrawingDefinition) {
-    const gaps = [];
-    if (missingDrawing > 0) gaps.push(`${missingDrawing} Drawing Number${missingDrawing === 1 ? "" : "s"}`);
-    if (missingDimId > 0) gaps.push(`${missingDimId} DIM ID${missingDimId === 1 ? "" : "s"}`);
-    if (openDrawingDefinition || gaps.length === 0) gaps.push("drawing dimension definition or engineering review");
-    return `Capability meets Target Cpk ${numberText(targetCpk)}, but ${gaps.join(", ")} remains incomplete; analysis closure is not complete.`;
+    return "Drawing Numbers, drawing dimension definition is missing.";
   }
 
   return `CpkL ${numberText(lowerCpk)} and CpkU ${numberText(upperCpk)} meet Target Cpk ${numberText(targetCpk)}; required inputs and reviews are complete.`;
@@ -1854,8 +2102,8 @@ function assertMultimodalAuthority(artifact, { f2Report, f3Report, f4Report, f5R
 }
 
 function parseRequiredMultimodalArtifact(value) {
-  const v4 = f5MultimodalArtifactV4Schema.safeParse(value);
-  if (v4.success) return v4.data;
+  const parsedV4 = f5MultimodalArtifactV4Schema.safeParse(value);
+  if (parsedV4.success) return parsedV4.data;
   return parseOrThrow(f5MultimodalArtifactV3Schema, value, "multimodal v3 modelInterpretation");
 }
 
@@ -1878,7 +2126,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
   const f4Report = parseOrThrow(f4WorkflowCalculationResultSchema, input.f4Report, "f4Report");
   const f5Report = parseOrThrow(f5DataInterpretationResultSchema, input.f5Report, "f5Report");
-  const f6Optimization = parseOrThrow(f6OptimizationResultSchema, input.f6Optimization, "f6Optimization");
+  const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, input.f6Optimization, "f6Optimization");
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");
@@ -1889,6 +2137,20 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     assertMultimodalAuthority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report });
     const blockedWorksheetDetailsByName = multimodalBlockedWorksheetDetailsByName(requiredMultimodalV3);
     const imageLinks = verifiedImageLinks(requiredMultimodalV3, options);
+    if (f6Optimization.optimizationVersion === "f6-optimization-v4") {
+      return createF6V4Report({
+        f2Report,
+        f3Report,
+        f4Report,
+        f5Report,
+        f6Optimization,
+        modelInterpretation: requiredMultimodalV3,
+        analysisContext,
+        blockedWorksheetDetailsByName,
+        imageLinks,
+        generatedAt: options.generatedAt ?? input.generatedAt,
+      });
+    }
     return createF6V3Report({
       f2Report,
       f3Report,

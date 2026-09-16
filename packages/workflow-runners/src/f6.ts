@@ -14,9 +14,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV3Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV4Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
 import { renderF6PdfSync } from "@ai-assist/product-export";
-import { createF6OptimizationV3 } from "@ai-assist/workbook-catalog";
+import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
@@ -36,7 +36,7 @@ interface F6Layout {
 export interface F6Dependencies {
   readonly resolveOutputLayout?: (request: F6OptimizationRequest, context: RunContext) => F6Layout;
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
-  readonly createOptimization?: typeof createF6OptimizationV3;
+  readonly createOptimization?: typeof createF6OptimizationV4;
   readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
   readonly renderFinalReportPdf?: typeof renderF6PdfSync;
   readonly mkdir?: typeof mkdirSync;
@@ -254,7 +254,7 @@ function safeSources(sourceReferences: Record<string, { artifact: string; conten
   }]));
 }
 
-function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown) {
+function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown, failureDetail?: F6OptimizationResult["failureDetail"]) {
   return {
     contractVersion: "v1",
     artifactSetVersion: layout.artifactSetVersion,
@@ -264,8 +264,29 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(inputDecisions === undefined ? {} : { inputDecisions }),
     ...(interactionLanguage === undefined ? {} : { interactionLanguage }),
+    ...(failureDetail === undefined ? {} : { failureDetail }),
     artifacts,
   };
+}
+
+function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationResult["failureDetail"] | undefined {
+  if (stage === "report_projection") return { code: "report_projection_failed" };
+  if (stage !== "pdf_render") return undefined;
+  if (typeof error !== "object" || error === null || !("code" in error)) return { code: "pdf_render_failed" };
+  const code = (error as { code?: unknown }).code;
+  if (code !== "pdf_artifact_invalid" && code !== "pdf_render_unavailable") return { code: "pdf_render_failed" };
+  if (!("attempts" in error) || !Array.isArray((error as { attempts?: unknown }).attempts)) return { code };
+
+  const attempts: Array<{ browser: string; reason: "execution_failed" | "invalid_pdf" }> = [];
+  for (const attempt of (error as { attempts: unknown[] }).attempts) {
+    if (typeof attempt !== "object" || attempt === null) continue;
+    const browser = "browser" in attempt ? attempt.browser : undefined;
+    const reason = "reason" in attempt ? attempt.reason : undefined;
+    if (typeof browser !== "string" || browser.length === 0
+      || (reason !== "execution_failed" && reason !== "invalid_pdf")) continue;
+    attempts.push({ browser: path.basename(browser), reason });
+  }
+  return attempts.length === 0 ? { code } : { code, attempts };
 }
 
 function validInteractionLanguage(value: unknown): boolean {
@@ -279,11 +300,11 @@ function validInteractionLanguage(value: unknown): boolean {
     && Object.keys(language).length === 5;
 }
 
-function failedResult(layout: F6Layout, paths: ReturnType<typeof outputPaths>, artifacts: Record<string, string>, reasonCode: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>): F6OptimizationResult {
+function failedResult(layout: F6Layout, paths: ReturnType<typeof outputPaths>, artifacts: Record<string, string>, reasonCode: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>, failureDetail?: F6OptimizationResult["failureDetail"]): F6OptimizationResult {
   try {
     assertBoundary(boundary, dependencies);
-    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode)), boundary, staging, dependencies);
-    return { featureId: "F6", status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifest };
+    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode, undefined, undefined, failureDetail)), boundary, staging, dependencies);
+    return { featureId: "F6", status: "failed", reasonCode, ...(failureDetail === undefined ? {} : { failureDetail }), outputDirectory: layout.runRoot, manifestPath: paths.manifest };
   } catch {
     return { featureId: "F6", status: "failed", reasonCode: "workflow_output_failed", outputDirectory: layout.runRoot };
   }
@@ -328,7 +349,7 @@ export function runF6Optimization(
 ): F6OptimizationResult {
   const resolveOutputLayout = dependencies.resolveOutputLayout;
   const loadBundle = dependencies.loadBundle;
-  const createOptimization = dependencies.createOptimization ?? createF6OptimizationV3;
+  const createOptimization = dependencies.createOptimization ?? createF6OptimizationV4;
   const createFinalReport = dependencies.createFinalReport;
   const renderFinalReportPdf = dependencies.renderFinalReportPdf ?? renderF6PdfSync;
   const mkdir = dependencies.mkdir ?? mkdirSync;
@@ -394,14 +415,32 @@ export function runF6Optimization(
         ? completedF5MultimodalProjection(loaded.modelInterpretation)
         : loaded.modelInterpretation,
       multimodalReference: inputDecisions.modelInterpretation.artifactReference,
+      ...(loaded.sourceReferences.imageObservation === undefined
+        ? {}
+        : { imageObservationReference: loaded.sourceReferences.imageObservation }),
+      ...(loaded.sourceReferences.supplierCapability === undefined
+        ? {}
+        : { supplierCapabilityReference: loaded.sourceReferences.supplierCapability }),
+      ...(loaded.sourceReferences.datumStrategy === undefined
+        ? {}
+        : { datumStrategyReference: loaded.sourceReferences.datumStrategy }),
+      ...(loaded.sourceReferences.cost === undefined
+        ? {}
+        : { costReference: loaded.sourceReferences.cost }),
+      ...(loaded.sourceReferences.analysisContext === undefined
+        ? {}
+        : { analysisContextReference: loaded.sourceReferences.analysisContext }),
+      ...(loaded.sourceReferences.optimizationTargets === undefined
+        ? {}
+        : { optimizationTargetsReference: loaded.sourceReferences.optimizationTargets }),
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
       optimizationTargetsDecision: inputDecisions.optimizationTargets,
     });
-    const parsedOptimization = f6OptimizationResultV3Schema.safeParse(optimizationCandidate);
-    if (!parsedOptimization.success) throw new Error("Feature 6 optimizer must emit a governed v3 result.");
+    const parsedOptimization = f6OptimizationResultV4Schema.safeParse(optimizationCandidate);
+    if (!parsedOptimization.success) throw new Error("Feature 6 optimizer must emit a governed v4 result.");
     const optimization = parsedOptimization.data;
 
-    failureStage = "report";
+    failureStage = "report_projection";
     const finalReportCandidate = createFinalReport({
       f2Report: loaded.f2Report,
       f3Report: loaded.f3Report,
@@ -420,6 +459,7 @@ export function runF6Optimization(
     });
     const finalReport = taEngineeringReportProjectionSchema.parse(finalReportCandidate);
 
+    failureStage = "pdf_render";
     const finalReportPdf = renderFinalReportPdf({
       markdown: finalReport.markdown,
       sourceHash: sha256(finalReport.markdown),
@@ -480,11 +520,12 @@ export function runF6Optimization(
         ? "input_rejected"
         : failureStage === "optimization"
           ? "optimization_failed"
-          : failureStage === "report"
+          : failureStage === "report_projection" || failureStage === "pdf_render"
             ? "report_failed"
             : "workflow_output_failed";
+      const failureDetail = safeReportFailureDetail(failureStage, error);
       try {
-        return failedResult(boundary.layout, outputPaths(boundary.layout), artifacts, reasonCode, boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
+        return failedResult(boundary.layout, outputPaths(boundary.layout), artifacts, reasonCode, boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm }, failureDetail);
       } finally {
         cleanupStaging(boundary, staging, { realpath, stat, lstat, rmdir, rm });
       }

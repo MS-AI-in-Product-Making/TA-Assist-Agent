@@ -151,11 +151,35 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Do not prompt for Analysis Context or Optimization Targets on the standard workbook path.");
     expect(internal).toContain("Omit `--analysis-context` and `--optimization-targets` unless an existing artifact entry mode explicitly supplies them.");
     expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
-    expect(internal).toContain("f6-optimization-v3");
+    expect(internal).toContain("f6-optimization-v4");
+    expect(internal).toContain("f6-sequential-optimization-policy-v2");
+    expect(internal).not.toContain("f6-sequential-optimization-policy-v1");
+    expect(internal).toContain("mean response centering before tolerance reverse solve");
+    expect(internal).toContain("specification relaxation only after tolerance cannot meet target");
+    expect(internal).toContain("OP1/OP2/OP3 are sensitivity/fallback and never selectedResult");
+    expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
+    expect(internal).toContain("f6-artifact-set-v3 remains the five-file publication contract");
     expect(internal).not.toContain("reduce_top_contributor_20");
     expect(internal).not.toContain("Confirm analysis context");
     expect(internal).not.toContain("Confirm optimization targets");
     expect(internal).not.toContain("two separate `vscode_askQuestions` calls");
+  });
+
+  it("defines v4 sequential optimization governance for Step2 stop and Step3 approval boundaries", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("For `f6-sequential-optimization-policy-v2`, Step2 is target-RSS reverse solve");
+    expect(internal).toContain("When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), do not enter the sequential optimization path");
+    expect(internal).toContain("When the Step2 F4 scenario reports PASS, stop the sequential path after Step2 and do not enter Step3");
+    expect(internal).toContain("Step3 specification relaxation is a requirement change");
+    expect(internal).toContain("F6 may calculate and report the Step3 scenario, but applying the proposed specification change requires explicit engineering and requirement-owner approval");
+    expect(internal).toContain("Do not describe Step3 specification relaxation as a design capability improvement or manufacturing capability improvement");
+    expectOrdered(internal, [
+      "For `f6-sequential-optimization-policy-v2`, Step2 is target-RSS reverse solve",
+      "When F4 reports baseline PASS (`CpkL` and `CpkU` both meet Target Cpk), do not enter the sequential optimization path",
+      "When the Step2 F4 scenario reports PASS, stop the sequential path after Step2 and do not enter Step3",
+      "Step3 specification relaxation is a requirement change",
+      "F6 may calculate and report the Step3 scenario, but applying the proposed specification change requires explicit engineering and requirement-owner approval",
+    ]);
   });
 
   it("keeps image evaluation internal on the standard workbook path while preserving governed gates", () => {
@@ -239,6 +263,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("governed proposal materializer");
     expect(internal).toContain("preview-ready pending draft");
     expect(internal).toContain("f6-top3-tolerance-policy-v1");
+    expect(internal).toContain("sensitivity/fallback");
+    expect(internal).toContain("never selectedResult");
     expect(internal).toContain("CpkL");
     expect(internal).toContain("CpkU");
     expect(internal).toContain("OP1");
@@ -285,6 +311,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Feature6-Report.md");
     expect(internal).toContain("Feature6-Report.pdf");
     expect(internal).toContain("five-file");
+    expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
     expect(internal).not.toContain("Feature6-Optimization.md");
     expect(internal).toContain("final Markdown and PDF report links");
     expect(internal).toContain("reportSummary");

@@ -2,6 +2,7 @@ import path from "node:path";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
 import { validateExistingF6 } from "./index.js";
 import {
@@ -22,6 +23,47 @@ function readJson(filePath: string): any {
 
 function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function recomputeOptimizationHash(runRoot: string): void {
+  const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+  const summary = readJson(summaryPath);
+  summary.hashes.optimizationJsonSha256 = fixtureFileSha256(path.join(runRoot, "Feature6-Optimization.json"));
+  writeJson(summaryPath, summary);
+}
+
+function syncSummaryCounts(runRoot: string, optimization: { readonly summary: unknown }): void {
+  const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+  const summary = readJson(summaryPath);
+  summary.counts = optimization.summary;
+  writeJson(summaryPath, summary);
+}
+
+function createV4FinalReportStub() {
+  return {
+    markdown: "# F6 final report\n",
+    reportSummary: {
+      workbookDisposition: "CONDITIONAL_PASS",
+      worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }],
+    },
+    projection: {
+      schemaVersion: "ta-engineering-report-projection-v1",
+      title: "F6 final report",
+      workbookDisposition: "CONDITIONAL_PASS",
+      worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }],
+      workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Loop A",
+        disposition: "CONDITIONAL_PASS",
+        requiredAction: "Review",
+        findings: ["Stub report content for v4 validation tests."],
+        assumptions: [],
+        clarifications: [],
+        gatingEvidenceReferences: ["F4:Analysis-A", "F5-multimodal:Analysis-A"],
+      }],
+    },
+  };
 }
 
 function rewriteAsHistoricalV2(runRoot: string): void {
@@ -78,6 +120,183 @@ afterEach(() => {
 });
 
 describe("validateExistingF6", () => {
+  it("accepts a valid current v4 bundle with unchanged five-file publication", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-14T09-00-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+
+    expect(result.status).toBe("completed");
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(optimization.optimizationVersion).toBe("f6-optimization-v4");
+    expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
+    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("rejects v4 selected-result tampering even when optimization hash is recomputed", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-14T09-05-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+
+    const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
+    const optimization = readJson(optimizationPath);
+    optimization.worksheets[0].selectedResult.snapshot.scenarioId = "tampered:selected-result";
+    writeJson(optimizationPath, optimization);
+    recomputeOptimizationHash(runRoot);
+
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects v4 met-status mismatches and step3 pending from FAIL even when optimization hash is recomputed", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-14T09-06-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+
+    const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");
+    const optimization = readJson(optimizationPath);
+    const worksheet = optimization.worksheets[0];
+
+    worksheet.baselineResult.capability.status = "FAIL";
+    worksheet.steps[0] = {
+      step: "meanResponseCentering",
+      status: "COMPLETED_TARGET_MET",
+      result: {
+        ...worksheet.baselineResult,
+        scenarioId: `${worksheet.baselineResult.scenarioId}:step1`,
+        sourceStep: "meanResponseCentering",
+        inputScenarioId: worksheet.baselineResult.scenarioId,
+        capability: { ...worksheet.baselineResult.capability, status: "FAIL" },
+      },
+    };
+    worksheet.steps[1] = {
+      step: "toleranceReverseSolve",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.selectedResult = {
+      status: "step1_centered",
+      snapshot: worksheet.steps[0].result,
+    };
+    optimization.summary = {
+      ...optimization.summary,
+      baselineMeetsTargetWorksheetCount: 0,
+      optimizedWorksheetCount: 1,
+      noValidatedResultWorksheetCount: 0,
+      clarificationRequiredWorksheetCount: 0,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+
+    worksheet.steps[0] = {
+      step: "meanResponseCentering",
+      status: "COMPLETED_TARGET_NOT_MET",
+      result: {
+        ...worksheet.steps[0].result,
+        capability: { ...worksheet.steps[0].result.capability, status: "PASS" },
+      },
+    };
+    worksheet.steps[1] = {
+      step: "toleranceReverseSolve",
+      status: "COMPLETED_TARGET_NOT_MET",
+      result: {
+        ...worksheet.steps[0].result,
+        scenarioId: `${worksheet.steps[0].result.scenarioId}:step2`,
+        sourceStep: "toleranceReverseSolve",
+        inputScenarioId: worksheet.steps[0].result.scenarioId,
+        capability: { ...worksheet.steps[0].result.capability, status: "FAIL" },
+      },
+    };
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "NOT_RUN_EARLIER_STEP_MET_TARGET",
+    };
+    worksheet.selectedResult = {
+      status: "step2_tolerance_optimized",
+      snapshot: worksheet.steps[1].result,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+
+    worksheet.steps[2] = {
+      step: "specificationRelaxation",
+      status: "COMPLETED_TARGET_NOT_MET",
+      changeClass: "requirement_change",
+      approvalRequired: true,
+      capabilityImprovementClaim: false,
+      result: {
+        ...worksheet.steps[1].result,
+        scenarioId: `${worksheet.steps[1].result.scenarioId}:step3`,
+        sourceStep: "specificationRelaxation",
+        inputScenarioId: worksheet.steps[1].result.scenarioId,
+        capability: { ...worksheet.steps[1].result.capability, status: "FAIL" },
+      },
+    };
+    worksheet.selectedResult = {
+      status: "step3_specification_relaxed_pending_approval",
+      snapshot: worksheet.steps[2].result,
+    };
+    optimization.summary = {
+      ...optimization.summary,
+      baselineMeetsTargetWorksheetCount: 0,
+      optimizedWorksheetCount: 1,
+      noValidatedResultWorksheetCount: 0,
+      clarificationRequiredWorksheetCount: 0,
+    };
+    writeJson(optimizationPath, optimization);
+    syncSummaryCounts(runRoot, optimization);
+    recomputeOptimizationHash(runRoot);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
   it("reads an untouched historical v2 bundle without requiring model interpretation or rewriting files", () => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);
@@ -91,6 +310,8 @@ describe("validateExistingF6", () => {
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
       renderFinalReportPdf: () => PDF,
     });
     expect(result.status).toBe("completed");
@@ -120,6 +341,8 @@ describe("validateExistingF6", () => {
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
       renderFinalReportPdf: () => PDF,
     });
 
@@ -151,6 +374,8 @@ describe("validateExistingF6", () => {
         runSummaryJsonName: "Feature6-Run-Summary.json",
         manifestName: "manifest.json",
       }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
       renderFinalReportPdf: () => PDF,
     });
 
@@ -161,7 +386,11 @@ describe("validateExistingF6", () => {
     });
   });
 
-  it("accepts a current v3 run with a validated F5 image observation source", () => {
+  it.each([
+    ["imageObservation", "Feature5-Image-Observations.json"],
+    ["analysisContext", "Feature6-Analysis-Context.json"],
+    ["optimizationTargets", "Feature6-Optimization-Targets.json"],
+  ])("rejects an unproven extra %s source on current v4 run summaries", (sourceKey, artifact) => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);
     cleanup.push(bundle.root);
@@ -170,17 +399,19 @@ describe("validateExistingF6", () => {
     const result = runF6FullValidation({}, {
       parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
       renderFinalReportPdf: () => PDF,
     });
 
     expect(result.status).toBe("completed");
     const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
     const summary = readJson(summaryPath);
-    summary.sources.imageObservation = {
-      artifact: "Feature5-Image-Observations.json",
+    summary.sources[sourceKey] = {
+      artifact,
       contentHash: "b".repeat(64),
     };
     writeJson(summaryPath, summary);
-    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "rejected", reasonCode: "run_summary_invalid" });
   });
 });

@@ -3,7 +3,11 @@ import { z } from "zod";
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonEmptyStringSchema = z.string().min(1);
 
-export const processRequirementVersionSchema = z.literal("process-requirements-v1");
+export const processRequirementVersionSchema = z.enum([
+  "process-requirements-v1",
+  "process-requirements-v2",
+  "process-requirements-v3",
+]);
 export const processRequirementEntryTypeSchema = z.enum([
   "requirement",
   "warning",
@@ -43,6 +47,7 @@ export const processRequirementFactReferenceSchema = z.enum([
   "workbookArea",
   "toleranceCount",
   "hasThreeDimensionalSensitivity",
+  "componentCategories",
 ]);
 export const processRequirementActorSchema = z.enum([
   "odm",
@@ -74,6 +79,25 @@ export const processRequirementWorkbookAreaSchema = z.enum([
   "auto-summary",
   "part-sub-required-dimensions",
 ]);
+export const processRequirementComponentCategorySchema = z.enum([
+  "battery-cts",
+  "z-axis-or-around-xy-clearance",
+  "glass-tdm-gap-or-z-step",
+  "thermal-module-critical-path",
+  "pcb-critical-clearance-or-alignment",
+  "cover-fit-and-function",
+  "hinge-trackpad-button-or-sensor",
+  "cable-routing",
+  "external-port-kickstand-logo-or-ssd",
+  "pcb-component-or-fastener",
+  "engagement-or-assembly-feature",
+  "foam-or-gasket-sealing-cushioning-or-nvh",
+]);
+
+const processRequirementComponentCategoriesSchema = z
+  .array(processRequirementComponentCategorySchema)
+  .min(1)
+  .refine((categories) => new Set(categories).size === categories.length);
 
 export const processRequirementApplicabilitySchema = z
   .object({
@@ -87,12 +111,14 @@ export const processRequirementApplicabilitySchema = z
     requirementGapPresent: z.boolean().optional(),
     workbookArea: processRequirementWorkbookAreaSchema.optional(),
     minimumToleranceCountExclusive: z.number().int().nonnegative().optional(),
+    maximumToleranceCountExclusive: z.number().int().nonnegative().optional(),
     hasThreeDimensionalSensitivity: z.boolean().optional(),
+    componentCategory: processRequirementComponentCategorySchema.optional(),
     requiredFacts: z.array(processRequirementFactReferenceSchema),
   })
   .strict();
 
-export const processRequirementSourceIdentitySchema = z
+const processRequirementWorkbookSourceIdentitySchema = z
   .object({
     sourceAlias: nonEmptyStringSchema,
     sourceFileHash: sha256Schema,
@@ -101,7 +127,20 @@ export const processRequirementSourceIdentitySchema = z
     sourceRange: nonEmptyStringSchema,
   })
   .strict();
-export const processRequirementSourceMetadataSchema = z
+const processRequirementTranscriptionSourceIdentitySchema = z
+  .object({
+    sourceType: z.literal("approved-transcription"),
+    sourceAlias: nonEmptyStringSchema,
+    sourceContentHash: sha256Schema,
+    sourceRevision: nonEmptyStringSchema,
+    section: nonEmptyStringSchema,
+  })
+  .strict();
+export const processRequirementSourceIdentitySchema = z.union([
+  processRequirementWorkbookSourceIdentitySchema,
+  processRequirementTranscriptionSourceIdentitySchema,
+]);
+const processRequirementWorkbookSourceMetadataSchema = z
   .object({
     sourceAlias: nonEmptyStringSchema,
     hash: sha256Schema,
@@ -114,16 +153,46 @@ export const processRequirementSourceMetadataSchema = z
     reviewedAt: z.string().datetime(),
   })
   .strict();
-export const processRequirementConfidenceSchema = z.enum(["reviewed", "verified"]);
-export const processRequirementProvenanceSchema = z
+const processRequirementTranscriptionSourceMetadataSchema = z
   .object({
-    ...processRequirementSourceIdentitySchema.shape,
+    sourceType: z.literal("approved-transcription"),
+    sourceAlias: nonEmptyStringSchema,
+    hash: sha256Schema,
+    revision: nonEmptyStringSchema,
+    section: nonEmptyStringSchema,
+    sourceClassification: z.literal("confidential"),
+    releasedClassification: z.literal("internal"),
+    owner: nonEmptyStringSchema,
+    reviewedAt: z.string().datetime(),
+  })
+  .strict();
+export const processRequirementSourceMetadataSchema = z.union([
+  processRequirementWorkbookSourceMetadataSchema,
+  processRequirementTranscriptionSourceMetadataSchema,
+]);
+export const processRequirementConfidenceSchema = z.enum(["reviewed", "verified"]);
+const processRequirementWorkbookProvenanceSchema = z
+  .object({
+    ...processRequirementWorkbookSourceIdentitySchema.shape,
     effectiveVersion: processRequirementVersionSchema,
     owner: nonEmptyStringSchema,
     confidence: processRequirementConfidenceSchema,
     changeSummary: nonEmptyStringSchema,
   })
   .strict();
+const processRequirementTranscriptionProvenanceSchema = z
+  .object({
+    ...processRequirementTranscriptionSourceIdentitySchema.shape,
+    effectiveVersion: processRequirementVersionSchema,
+    owner: nonEmptyStringSchema,
+    confidence: processRequirementConfidenceSchema,
+    changeSummary: nonEmptyStringSchema,
+  })
+  .strict();
+export const processRequirementProvenanceSchema = z.union([
+  processRequirementWorkbookProvenanceSchema,
+  processRequirementTranscriptionProvenanceSchema,
+]);
 
 export const processRequirementEntrySchema = z
   .object({
@@ -133,6 +202,7 @@ export const processRequirementEntrySchema = z
     title: nonEmptyStringSchema,
     message: nonEmptyStringSchema,
     normativeStrength: processRequirementNormativeStrengthSchema,
+    recommendedPriority: processRequirementPrioritySchema.optional(),
     applicability: processRequirementApplicabilitySchema,
     relatedEntryIds: z.array(nonEmptyStringSchema),
     provenance: processRequirementProvenanceSchema,
@@ -198,12 +268,21 @@ export const processRequirementEvaluationFactsSchema = z
     workbookArea: processRequirementWorkbookAreaSchema.optional(),
     toleranceCount: z.number().int().nonnegative().optional(),
     hasThreeDimensionalSensitivity: z.boolean().optional(),
+    componentCategories: processRequirementComponentCategoriesSchema.optional(),
   })
   .strict();
 export const processRequirementEvaluationRequestSchema = processRequirementEvaluationFactsSchema;
 
 export const processRequirementResolvedTargetsSchema = z
   .object({ sigma: z.union([z.literal(4), z.literal(6)]).optional() })
+  .strict();
+export const processRequirementPriorityRecommendationSchema = z
+  .object({
+    selectedPriority: processRequirementPrioritySchema,
+    matchedEntryIds: z.array(nonEmptyStringSchema).min(1)
+      .refine((entryIds) => new Set(entryIds).size === entryIds.length),
+    requiresMeDmAlignment: z.literal(true),
+  })
   .strict();
 export const processRequirementMatchedEntrySchema = z
   .object({
@@ -229,8 +308,20 @@ export const processRequirementMatchedEvaluationSchema = z
     status: z.literal("matched"),
     matchedEntries: z.array(processRequirementMatchedEntrySchema).min(1),
     missingFacts: z.array(processRequirementFactReferenceSchema),
+    priorityRecommendation: processRequirementPriorityRecommendationSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((evaluation, context) => {
+    if (evaluation.priorityRecommendation === undefined) return;
+    const matchedEntryIds = new Set(evaluation.matchedEntries.map(({ entryId }) => entryId));
+    if (evaluation.priorityRecommendation.matchedEntryIds.some((entryId) => !matchedEntryIds.has(entryId))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["priorityRecommendation", "matchedEntryIds"],
+        message: "Priority recommendation evidence must be present in matched entries.",
+      });
+    }
+  });
 export const processRequirementInsufficientFactsEvaluationSchema = z
   .object({
     ...evaluationFields,
@@ -247,7 +338,7 @@ export const processRequirementNotApplicableEvaluationSchema = z
     missingFacts: z.array(processRequirementFactReferenceSchema).max(0),
   })
   .strict();
-export const processRequirementEvaluationSchema = z.discriminatedUnion("status", [
+export const processRequirementEvaluationSchema = z.union([
   processRequirementMatchedEvaluationSchema,
   processRequirementInsufficientFactsEvaluationSchema,
   processRequirementNotApplicableEvaluationSchema,
@@ -266,11 +357,13 @@ export type ProcessRequirementLifecycleStage = z.infer<typeof processRequirement
 export type ProcessRequirementSubject = z.infer<typeof processRequirementSubjectSchema>;
 export type ProcessRequirementFactorRepresentation = z.infer<typeof processRequirementFactorRepresentationSchema>;
 export type ProcessRequirementWorkbookArea = z.infer<typeof processRequirementWorkbookAreaSchema>;
+export type ProcessRequirementComponentCategory = z.infer<typeof processRequirementComponentCategorySchema>;
 export type ProcessRequirementApplicability = z.infer<typeof processRequirementApplicabilitySchema>;
 export type ProcessRequirementSourceIdentity = z.infer<typeof processRequirementSourceIdentitySchema>;
 export type ProcessRequirementSourceMetadata = z.infer<typeof processRequirementSourceMetadataSchema>;
 export type ProcessRequirementConfidence = z.infer<typeof processRequirementConfidenceSchema>;
 export type ProcessRequirementProvenance = z.infer<typeof processRequirementProvenanceSchema>;
+export type ProcessRequirementPriorityRecommendation = z.infer<typeof processRequirementPriorityRecommendationSchema>;
 export type ProcessRequirementEntry = z.infer<typeof processRequirementEntrySchema>;
 export type ProcessRequirementEntryTypeCounts = z.infer<typeof processRequirementEntryTypeCountsSchema>;
 export type ProcessRequirementManifestCounts = z.infer<typeof processRequirementManifestCountsSchema>;
