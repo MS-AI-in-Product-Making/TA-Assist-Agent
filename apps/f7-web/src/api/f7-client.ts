@@ -14,6 +14,9 @@ import type {
   F7LoopCoefficient as ContractF7LoopCoefficient,
   F7MeasurementDataset as ContractF7MeasurementDataset,
   F7MeasurementDispositionRouteRequest,
+  F7MeasurementImportCommitRouteRequest,
+  F7MeasurementImportPreviewResponse as ContractF7MeasurementImportPreviewResponse,
+  F7MeasurementImportPreviewRouteRequest,
   F7MeasurementPasteResult as ContractF7MeasurementPasteResult,
   F7MeasurementPasteRouteRequest,
   F7MeasurementStructure as ContractF7MeasurementStructure,
@@ -28,7 +31,12 @@ import type {
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
 import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
-import { f7ReportProjectionSchema, f7SessionSnapshotSchema } from "@ai-assist/contracts";
+import {
+  f7AnalysisResultSchema,
+  f7MeasurementImportPreviewResponseSchema,
+  f7ReportProjectionSchema,
+  f7SessionSnapshotSchema,
+} from "@ai-assist/contracts";
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
 export type F7SourceMode = F7FactorSourceMode;
@@ -78,6 +86,13 @@ export type F7MeasurementDataset = ContractF7MeasurementDataset;
 export type F7FactorInput = ContractF7FactorInput;
 
 export type F7MeasurementPasteResult = ContractF7MeasurementPasteResult;
+
+export type F7MeasurementImportPreviewResponse = ContractF7MeasurementImportPreviewResponse;
+
+export interface F7MeasurementTemplateDownload {
+  readonly fileName: string;
+  readonly bytes: Uint8Array;
+}
 
 export type F7ReportProjection = ContractF7ReportProjection;
 
@@ -223,6 +238,12 @@ export type AssumptionResultsPdfRequest = {
 
 export interface F7Client {
   importWorkbook(request: { readonly file: File }): Promise<F7SessionSnapshot>;
+  downloadMeasurementTemplate(request: { readonly sessionId: string }): Promise<F7MeasurementTemplateDownload>;
+  previewMeasurementImport(request: {
+    readonly sessionId: string;
+    readonly file: File;
+  }): Promise<F7MeasurementImportPreviewResponse>;
+  commitMeasurementImport(request: F7MeasurementImportCommitRouteRequest["body"]): Promise<F7SessionSnapshot>;
   confirmWorksheet(request: WorksheetConfirmRequest): Promise<F7SessionSnapshot>;
   confirmFactors(request: ConfirmFactorsRequest): Promise<F7SessionSnapshot>;
   setFactorMode(request: SetFactorModeRequest): Promise<F7SessionSnapshot>;
@@ -303,6 +324,29 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function extractSafeAttachmentFileName(contentDisposition: string | null): string | undefined {
+  if (!/^attachment\s*;/iu.test(contentDisposition ?? "")) return undefined;
+  const match = /(?:^|;)\s*filename="([^"]+)"\s*(?:;|$)/iu.exec(contentDisposition ?? "");
+  const fileName = match?.[1];
+  if (
+    !fileName
+    || fileName.length > 255
+    || !/\.xlsx$/iu.test(fileName)
+    || /[<>:"/\\|?*]/u.test(fileName)
+    || [...fileName].some((character) => {
+      const codePoint = character.codePointAt(0)!;
+      return codePoint < 32 || codePoint === 127;
+    })
+    || fileName.includes("..")
+    || fileName.trim() !== fileName
+  ) {
+    return undefined;
+  }
+  return fileName;
+}
+
 export function createF7Client(baseUrl = ""): F7Client {
   const parseSnapshot = (value: unknown): F7SessionSnapshot | undefined => {
     const parsed = f7SessionSnapshotSchema.safeParse(value);
@@ -359,6 +403,72 @@ export function createF7Client(baseUrl = ""): F7Client {
       return await requestJson("/f7/workbook/import", {
         method: "POST",
         body: JSON.stringify(payload),
+      });
+    },
+
+    async downloadMeasurementTemplate(request) {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/f7/measurements/import-template`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: request.sessionId }),
+        });
+      } catch {
+        throw toGenericError();
+      }
+      if (!response.ok) {
+        throw mapErrorEnvelope(await parseJsonResponse(response));
+      }
+      const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+      const fileName = extractSafeAttachmentFileName(response.headers.get("content-disposition"));
+      if (mediaType !== XLSX_CONTENT_TYPE || !fileName) {
+        throw toGenericError();
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await response.arrayBuffer());
+      } catch {
+        throw toGenericError();
+      }
+      if (bytes.byteLength === 0) {
+        throw toGenericError();
+      }
+      return { fileName, bytes };
+    },
+
+    async previewMeasurementImport({ sessionId, file }) {
+      if (file.size > 16 * 1024 * 1024) {
+        throw {
+          code: "validation_error",
+          summary: "Workbook exceeds the 16 MiB local import limit.",
+          suggestedAction: "Reduce workbook size and retry import.",
+          affectedInputReferences: [file.name],
+        } satisfies F7UiError;
+      }
+      const payload = {
+        sessionId,
+        fileName: file.name,
+        workbookBase64: await fileToBase64(file),
+      } satisfies F7MeasurementImportPreviewRouteRequest["body"];
+      return await requestValidatedJson("/f7/measurements/import-preview", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }, (value) => {
+        const parsed = f7MeasurementImportPreviewResponseSchema.safeParse(value);
+        return parsed.success ? parsed.data : undefined;
+      });
+    },
+
+    async commitMeasurementImport(request) {
+      return await requestValidatedJson("/f7/measurements/import-commit", {
+        method: "POST",
+        body: JSON.stringify(request satisfies F7MeasurementImportCommitRouteRequest["body"]),
+      }, (value) => {
+        const parsed = f7AnalysisResultSchema.safeParse(value);
+        return parsed.success && parsed.data.snapshot.sessionId === request.sessionId
+          ? parsed.data.snapshot
+          : undefined;
       });
     },
 

@@ -116,6 +116,45 @@ const validSnapshot = {
   ],
 } as const;
 
+const validMeasurementImportPreview = {
+  previewId: "preview-01",
+  expiresAt: "2026-09-16T08:15:00.000Z",
+  sessionStateDigest: HASH_A,
+  factorSetDigest: HASH_B,
+  status: "ready",
+  factorCount: 1,
+  replacementFactorIds: [HASH_B],
+  factors: [{
+    factorId: HASH_B,
+    factorName: "C-cover height",
+    unit: "mm",
+    structure: "ORDERED_INDIVIDUALS",
+    sampleCount: 32,
+    status: "ready",
+    replacesExistingFactor: true,
+    diagnostics: [],
+    warnings: [],
+    validation: {
+      status: "ready",
+      blockingIssues: [],
+      advisoryIssues: [],
+      candidateEligibility: {
+        normal: "eligible",
+        lognormal: "eligible",
+        weibull: "eligible",
+        gamma: "eligible",
+        uniform: "eligible_with_boundary_warning",
+      },
+    },
+  }],
+  diagnostics: [],
+  readyFactorCount: 1,
+  blockedFactorCount: 0,
+  replacementCount: 1,
+  totalSampleCount: 32,
+  diagnosticCount: 0,
+} as const;
+
 const validReport = {
   contractId: "f7-report-v1",
   outputClassification: "confidential",
@@ -833,5 +872,142 @@ describe("createF7Client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     vi.stubGlobal("FileReader", originalFileReader);
+  });
+
+  it("downloads the measurement template through the exact request and returns safe XLSX bytes", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([80, 75, 3, 4]), {
+      status: 200,
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": 'attachment; filename="F7_Measurements_Anonymous_TA.xlsx"',
+      },
+    }));
+
+    const result = await createF7Client("http://localhost:3017").downloadMeasurementTemplate({
+      sessionId: "session-01",
+    });
+
+    expect(result.fileName).toBe("F7_Measurements_Anonymous_TA.xlsx");
+    expect(result.bytes).toEqual(new Uint8Array([80, 75, 3, 4]));
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-template", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-01" }),
+    });
+  });
+
+  it.each([
+    ["application/octet-stream", 'attachment; filename="measurements.xlsx"'],
+    ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 'attachment; filename="../../escape.xlsx"'],
+    ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 'inline; filename="measurements.xlsx"'],
+  ])("rejects an unsafe measurement template response (%s, %s)", async (contentType, contentDisposition) => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([80, 75, 3, 4]), {
+      status: 200,
+      headers: {
+        "content-type": contentType,
+        "content-disposition": contentDisposition,
+      },
+    }));
+
+    await expect(createF7Client().downloadMeasurementTemplate({ sessionId: "session-01" })).rejects.toMatchObject({
+      code: "request_failed",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("previews a measurement workbook with canonical base64 and strictly parses the response", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(validMeasurementImportPreview), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const file = new File([new Uint8Array([1, 2, 3])], "measurements.xlsx");
+
+    const preview = await createF7Client("http://localhost:3017").previewMeasurementImport({
+      sessionId: "session-01",
+      file,
+    });
+
+    expect(preview).toEqual(validMeasurementImportPreview);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "session-01",
+        fileName: "measurements.xlsx",
+        workbookBase64: "AQID",
+      }),
+    });
+  });
+
+  it("rejects measurement preview files larger than 16 MiB before fetching", async () => {
+    const file = new File([new Uint8Array(16 * 1024 * 1024 + 1)], "too-large.xlsx");
+
+    await expect(createF7Client().previewMeasurementImport({
+      sessionId: "session-01",
+      file,
+    })).rejects.toMatchObject({ code: "validation_error" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a measurement preview response containing an unknown field", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ...validMeasurementImportPreview, extra: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().previewMeasurementImport({
+      sessionId: "session-01",
+      file: new File([new Uint8Array([1])], "measurements.xlsx"),
+    })).rejects.toMatchObject({ code: "request_failed" });
+  });
+
+  it("commits the reviewed preview with the exact body and maps the analysis-result envelope to its snapshot", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      snapshot: validSnapshot,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    const result = await createF7Client("http://localhost:3017").commitMeasurementImport({
+      sessionId: "session-01",
+      previewId: "preview-01",
+      replacementFactorIds: [HASH_B],
+      confirmed: true,
+    });
+
+    expect(result).toEqual(validSnapshot);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-commit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "session-01",
+        previewId: "preview-01",
+        replacementFactorIds: [HASH_B],
+        confirmed: true,
+      }),
+    });
+  });
+
+  it("rejects a commit analysis-result envelope containing an unknown field", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      snapshot: validSnapshot,
+      extra: true,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().commitMeasurementImport({
+      sessionId: "session-01",
+      previewId: "preview-01",
+      replacementFactorIds: [HASH_B],
+      confirmed: true,
+    })).rejects.toMatchObject({ code: "request_failed" });
   });
 });

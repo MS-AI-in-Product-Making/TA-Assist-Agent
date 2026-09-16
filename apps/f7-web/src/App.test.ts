@@ -721,6 +721,9 @@ function createMockClient(
       session = nextByAction.importWorkbook ?? session;
       return session;
     }),
+    downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+    previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by this App test."); }),
+    commitMeasurementImport: vi.fn(async () => session),
     confirmWorksheet: vi.fn(async () => {
       session = nextByAction.confirmWorksheet ?? session;
       return session;
@@ -3557,6 +3560,9 @@ describe("F7 workbench shell", () => {
     let resolveImport: ((value: F7SessionSnapshot) => void) | undefined;
     const client: F7Client = {
       importWorkbook: vi.fn(async () => await new Promise<F7SessionSnapshot>((resolve) => { resolveImport = resolve; })),
+      downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+      previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by App tests."); }),
+      commitMeasurementImport: vi.fn(async () => measurementEntrySnapshot()),
       confirmWorksheet: vi.fn(async () => factorSetupSnapshot()),
       confirmFactors: vi.fn(async () => measurementEntrySnapshot()),
       setFactorMode: vi.fn(async () => measurementEntrySnapshot()),
@@ -3615,6 +3621,9 @@ describe("F7 workbench shell", () => {
           rawMessage: "secret stack trace",
         })
         .mockResolvedValueOnce(createSnapshot({ status: "worksheet_selection" })),
+      downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+      previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by App tests."); }),
+      commitMeasurementImport: vi.fn(async () => measurementEntrySnapshot()),
       confirmWorksheet: vi.fn(async () => factorSetupSnapshot()),
       confirmFactors: vi.fn(async () => measurementEntrySnapshot()),
       setFactorMode: vi.fn(async () => measurementEntrySnapshot()),
