@@ -123,4 +123,67 @@ describe("buildF0ProcessGuidance", () => {
     expect(load).toHaveBeenCalledOnce();
     expect(result).toEqual({ status: "unavailable", entries: [] });
   });
+
+  it("fails closed when the evaluation version does not match the manifest", () => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const load: LoadDependency = vi.fn((request) => {
+      expect(request).toEqual({ version: VERSION });
+      return {
+        manifest: { version: VERSION },
+        listProcessRequirements: actual.listProcessRequirements,
+        evaluateProcessRequirements: (
+          facts: Parameters<typeof actual.evaluateProcessRequirements>[0],
+        ) => ({
+          ...actual.evaluateProcessRequirements(facts),
+          version: "process-requirements-v1" as const,
+        }),
+      };
+    });
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
+
+    expect(load).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "unavailable", entries: [] });
+  });
+
+  it.each([
+    ["candidate", (entry: ReturnType<ReturnType<typeof loadProcessRequirements>["listProcessRequirements"]>[number]) => (
+      entry.entryId === "instruction-consider-worst-case-small-stack"
+    )],
+    ["definition", (entry: ReturnType<ReturnType<typeof loadProcessRequirements>["listProcessRequirements"]>[number]) => (
+      entry.entryType === "definition"
+    )],
+  ] as const)("fails closed when a listed %s entry has a mismatched effective version", (_kind, isTarget) => {
+    const actual = loadProcessRequirements({ version: VERSION });
+    const targetEntry = actual.listProcessRequirements({}).find(isTarget);
+    if (targetEntry === undefined) {
+      throw new Error("expected a process requirement entry for the mixed-version test");
+    }
+
+    const load: LoadDependency = vi.fn((request) => {
+      expect(request).toEqual({ version: VERSION });
+      return {
+        manifest: { version: VERSION },
+        evaluateProcessRequirements: actual.evaluateProcessRequirements,
+        listProcessRequirements: (
+          query: Parameters<typeof actual.listProcessRequirements>[0],
+        ) => actual.listProcessRequirements(query).map((entry) => (
+          entry.entryId === targetEntry.entryId
+            ? {
+                ...entry,
+                provenance: {
+                  ...entry.provenance,
+                  effectiveVersion: "process-requirements-v1" as const,
+                },
+              }
+            : entry
+        )),
+      };
+    });
+
+    const result = buildF0ProcessGuidance(snapshotWithFactorCount(3), undefined, { load });
+
+    expect(load).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "unavailable", entries: [] });
+  });
 });
