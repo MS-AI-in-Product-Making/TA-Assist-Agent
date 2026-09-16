@@ -21,6 +21,8 @@ const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
 const editingFactorSetup = ref(false);
 const reportRetryAvailable = ref(false);
+const reportPdfBusy = ref(false);
+const reportPdfError = ref("");
 const workbookInput = ref<HTMLInputElement>();
 const pendingWorkbookFile = ref<File>();
 const importingWorkbookFileName = ref("");
@@ -32,9 +34,57 @@ let restartDialogOpener: globalThis.HTMLElement | undefined;
 let restartConfirmationPending = false;
 let workbookReplacementAuthorized = false;
 let reportRequestToken = 0;
+let reportPdfRequestToken = 0;
 
 function generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<globalThis.Blob> {
   return client.generateAssumptionResultsPdf(request);
+}
+
+function reportPdfFileName(workbookName: string, worksheetName: string): string {
+  const workbookBase = workbookName.replace(/\.[^.]+$/, "");
+  const safePart = (value: string): string => value
+    .normalize("NFKC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-")
+    .replace(/[\s._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "report";
+  return `${safePart(workbookBase)}-${safePart(worksheetName)}-f7-monte-carlo-report.pdf`;
+}
+
+async function downloadReportPdf(): Promise<void> {
+  const session = store.session.value;
+  if (!session?.monteCarloResult || store.isBusy.value || reportPdfBusy.value) return;
+  const requestToken = ++reportPdfRequestToken;
+  const sessionId = session.sessionId;
+  reportPdfBusy.value = true;
+  reportPdfError.value = "";
+  try {
+    if (!store.report.value) await store.generateReport();
+    const report = store.report.value;
+    if (requestToken !== reportPdfRequestToken || store.session.value?.sessionId !== sessionId) return;
+    if (!report || report.sessionId !== sessionId) throw new Error("The governed report is unavailable.");
+    const pdf = await client.generateReportPdf({ sessionId, report });
+    if (requestToken !== reportPdfRequestToken || store.session.value?.sessionId !== sessionId) return;
+    const objectUrl = globalThis.URL.createObjectURL(pdf);
+    const anchor = globalThis.document.createElement("a");
+    try {
+      anchor.href = objectUrl;
+      anchor.download = reportPdfFileName(report.workbook.fileName, report.workbook.worksheetName);
+      globalThis.document.body.append(anchor);
+      anchor.click();
+    } finally {
+      anchor.remove();
+      globalThis.URL.revokeObjectURL(objectUrl);
+    }
+  } catch (error) {
+    if (requestToken !== reportPdfRequestToken) return;
+    const summary = error && typeof error === "object" && "summary" in error && typeof error.summary === "string"
+      ? error.summary
+      : "Unable to generate the PDF report.";
+    reportPdfError.value = summary;
+  } finally {
+    if (requestToken === reportPdfRequestToken) reportPdfBusy.value = false;
+  }
 }
 
 const workbookImportBusy = computed(() => store.busyAction.value === "importWorkbook");
@@ -117,6 +167,9 @@ async function swallowHandledError(operation: () => Promise<void>): Promise<void
 
 async function importWorkbookFile(file: File): Promise<void> {
   fitActionFactorId.value = "";
+  reportPdfRequestToken += 1;
+  reportPdfBusy.value = false;
+  reportPdfError.value = "";
   importingWorkbookFileName.value = file.name;
   try {
     await store.importWorkbook(file);
@@ -246,6 +299,9 @@ async function onConfirmFactors(confirmations: ReadonlyArray<{
 
 function onEditFactorSetup(): void {
   reportRequestToken += 1;
+  reportPdfRequestToken += 1;
+  reportPdfBusy.value = false;
+  reportPdfError.value = "";
   activeMeasurementFactorId.value = "";
   activeMeasurementStage.value = "measurement";
   editingFactorSetup.value = true;
@@ -322,6 +378,9 @@ async function onRunMonteCarlo(request: {
   runSeed: string;
   correlationMode: "INDEPENDENT";
 }): Promise<void> {
+  reportPdfRequestToken += 1;
+  reportPdfBusy.value = false;
+  reportPdfError.value = "";
   let completed = false;
   reportRetryAvailable.value = false;
   await swallowHandledError(async () => {
@@ -329,6 +388,13 @@ async function onRunMonteCarlo(request: {
     completed = true;
   });
   if (completed) await openReport();
+}
+
+function closeMonteCarlo(): void {
+  reportPdfRequestToken += 1;
+  reportPdfBusy.value = false;
+  reportPdfError.value = "";
+  activeMeasurementStage.value = "measurement";
 }
 
 async function openReport(): Promise<void> {
@@ -508,8 +574,11 @@ async function openReport(): Promise<void> {
           v-if="activeMeasurementStage === 'monteCarlo' && simulationReady"
           :session="store.session.value"
           :busy="store.isBusy.value"
+          :report-pdf-busy="reportPdfBusy"
+          :report-pdf-error="reportPdfError"
           @run="onRunMonteCarlo"
-          @close="activeMeasurementStage = 'measurement'"
+          @download-report-pdf="downloadReportPdf"
+          @close="closeMonteCarlo"
         />
 
         <button

@@ -718,6 +718,46 @@ describe("createF7ReportProjection", () => {
     expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
   });
 
+  it("keeps multiple root-cause signals aligned with the governed narrative order", () => {
+    const snapshot = createSnapshot("BELOW_TARGET", {
+      specificationOverrides: {
+        lowerSpecLimit: -0.15,
+        upperSpecLimit: 0.05,
+        targetSigmaLevel: 3,
+      },
+    });
+    const simulation = snapshot.monteCarloResult!;
+    const mean = -0.0257;
+    const standardDeviation = 0.0567;
+    const cp = (simulation.upperSpecLimit - simulation.lowerSpecLimit) / (6 * standardDeviation);
+    const lowerCpk = (mean - simulation.lowerSpecLimit) / (3 * standardDeviation);
+    const upperCpk = (simulation.upperSpecLimit - mean) / (3 * standardDeviation);
+    snapshot.monteCarloResult = {
+      ...simulation,
+      mean,
+      standardDeviation,
+      normalFit: { ...simulation.normalFit, mean, standardDeviation },
+      capability: {
+        status: "available",
+        cp,
+        lowerCpk,
+        upperCpk,
+        cpk: Math.min(lowerCpk, upperCpk),
+        targetCpk: 1,
+        targetStatus: "below_target",
+      },
+    };
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.analysis?.status).toBe("available");
+    if (report.analysis?.status !== "available") throw new Error("Expected available report analysis");
+    expect(report.analysis.rootCauseSignals.length).toBeGreaterThan(1);
+    expect(report.analysis.rootCauseSignals.map(({ ruleId }) => ruleId)).toEqual(
+      report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId),
+    );
+  });
+
   it("fails closed when F0 returns multiple matching performance rules", () => {
     interpretationTestState.duplicatePerformanceRule = true;
     try {
