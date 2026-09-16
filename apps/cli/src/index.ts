@@ -404,7 +404,14 @@ function typedErrorSummary(error: unknown): string | undefined {
 
 function resolveAgentRequest(request: ParsedAgentRequest, dependencies: CliDependencies): AgentCliRequest {
   if (request.action !== "analyze") return request;
-  if (request.analysisRequestContext !== undefined) return request;
+  if (request.analysisRequestContext !== undefined) {
+    return {
+      action: request.action,
+      rootDir: request.rootDir,
+      interactionLanguage: request.interactionLanguage,
+      analysisRequestContext: request.analysisRequestContext,
+    };
+  }
   const requestedAt = (dependencies.now ?? (() => new Date()))().toISOString();
   return {
     action: request.action,

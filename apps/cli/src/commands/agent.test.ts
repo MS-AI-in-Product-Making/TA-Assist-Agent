@@ -10,6 +10,7 @@ import { createLauncherForTest, handleWorkbenchHostIpcMessage, resolveBrowserArg
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T00:00:00.000Z", utcOffsetMinutes: 480, source: "cli" } as const;
 
 const tempRoots: string[] = [];
 
@@ -38,25 +39,30 @@ describe("runAgentCommand", () => {
     const analyze = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
     const workbench = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
 
-    await runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
+    await runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT }, { analyze, workbench });
     await runAgentCommand({ action: "workbench", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
 
-    expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK, undefined);
+    expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK, REQUEST_CONTEXT);
     expect(workbench).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
   });
 
-  it("creates the default CLI analysis request context exactly once", async () => {
+  it("fails closed when analyze request context is omitted", async () => {
+    const analyze = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
+
+    await expect(runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze })).rejects.toThrow(
+      "validation_error: analysis request context is required for analyze",
+    );
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("creates a real SessionStore snapshot before analyze launches the browser", async () => {
     const rootDir = await tempRoot();
     const openedUrls: string[] = [];
     const launcher = createLauncherForTest({
       startWorkbenchServer: async (options) => {
         const store = await openSessionStore({ rootDir, sessionId: options.resumeSessionId! });
         try {
-          expect((await store.readSnapshot()).analysisRequestContext).toEqual({
-            requestedAt: "2026-09-16T00:00:00.000Z",
-            utcOffsetMinutes: 480,
-            source: "cli",
-          });
+          expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
         } finally {
           await store.close();
         }
@@ -67,17 +73,15 @@ describe("runAgentCommand", () => {
         };
       },
       openBrowser: (url) => { openedUrls.push(url); },
-      now: () => new Date("2026-09-16T00:00:00.000Z"),
-      utcOffsetMinutes: () => 480,
     });
 
-    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK }, launcher);
+    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT }, launcher);
 
     expect(result).toContain("session: ");
     expect(openedUrls).toHaveLength(1);
   });
 
-  it("creates a real SessionStore snapshot before analyze launches the browser", async () => {
+  it("stores the provided analysis request context before analyze launches the browser", async () => {
     const rootDir = await tempRoot();
     const startedServers: { close(): Promise<void> }[] = [];
     const openedUrls: string[] = [];
@@ -87,7 +91,13 @@ describe("runAgentCommand", () => {
         const store = await openSessionStore({ rootDir, sessionId: options.resumeSessionId! });
         try {
           const snapshot = await store.readSnapshot();
-          expect(snapshot).toMatchObject({ sessionId: options.resumeSessionId, revision: 0, state: "created", interactionLanguage: ENGLISH_LOCK });
+          expect(snapshot).toMatchObject({
+            sessionId: options.resumeSessionId,
+            revision: 0,
+            state: "created",
+            interactionLanguage: ENGLISH_LOCK,
+            analysisRequestContext: REQUEST_CONTEXT,
+          });
         } finally {
           await store.close();
         }
@@ -98,7 +108,7 @@ describe("runAgentCommand", () => {
       openBrowser: (url) => { openedUrls.push(url); },
     });
 
-    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK }, launcher);
+    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT }, launcher);
     const sessionId = result.match(/^session: (.+)$/m)?.[1];
 
     expect(sessionId).toMatch(/[0-9a-f-]{36}/);

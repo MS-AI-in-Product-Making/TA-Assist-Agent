@@ -1,4 +1,4 @@
-import { analysisRequestContextSchema, type AnalysisRequestContext } from "@ai-assist/contracts";
+import type { AnalysisRequestContext } from "@ai-assist/contracts";
 import { createSessionStore } from "@ai-assist/workbench";
 import { startWorkbenchServer, type StartWorkbenchServerOptions } from "@ai-assist/workbench-server";
 import { randomUUID } from "node:crypto";
@@ -19,16 +19,12 @@ function createLauncher(): AgentLauncher {
   return createLauncherForTest({
     startWorkbenchServer,
     openBrowser,
-    now: () => new Date(),
-    utcOffsetMinutes: () => -new Date().getTimezoneOffset(),
   });
 }
 
 export function createLauncherForTest(dependencies: {
   readonly startWorkbenchServer: (options: StartWorkbenchServerOptions) => ReturnType<typeof startWorkbenchServer>;
   readonly openBrowser: (url: string) => void;
-  readonly now?: () => Date;
-  readonly utcOffsetMinutes?: () => number;
 }): AgentLauncher {
   const start = async (rootDir: string, interactionLanguage: InteractionLanguage) => {
     const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, interactionLanguage });
@@ -36,17 +32,13 @@ export function createLauncherForTest(dependencies: {
     dependencies.openBrowser(started.url);
     return { sessionId: "pending", url: new URL(started.url).origin };
   };
-  const analyze = async (rootDir: string, interactionLanguage: InteractionLanguage, analysisRequestContext?: AnalysisRequestContext) => {
+  const analyze = async (rootDir: string, interactionLanguage: InteractionLanguage, analysisRequestContext: AnalysisRequestContext) => {
     const sessionId = randomUUID();
     const store = await createSessionStore({
       rootDir,
       sessionId,
       interactionLanguage,
-      analysisRequestContext: analysisRequestContext ?? analysisRequestContextSchema.parse({
-        requestedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-        utcOffsetMinutes: (dependencies.utcOffsetMinutes ?? (() => -new Date().getTimezoneOffset()))(),
-        source: "cli",
-      }),
+      analysisRequestContext,
     });
     await store.close();
     const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, resumeSessionId: sessionId });

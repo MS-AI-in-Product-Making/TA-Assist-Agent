@@ -11,7 +11,7 @@ export type AgentCliRequest = {
   readonly action: "analyze";
   readonly rootDir: string;
   readonly interactionLanguage: InteractionLanguage;
-  readonly analysisRequestContext?: AnalysisRequestContext;
+  readonly analysisRequestContext: AnalysisRequestContext;
 } | {
   readonly action: "workbench";
   readonly rootDir: string;
@@ -19,7 +19,7 @@ export type AgentCliRequest = {
 };
 
 export interface AgentLauncher {
-  analyze(rootDir: string, interactionLanguage: InteractionLanguage, analysisRequestContext?: AnalysisRequestContext): Promise<{ readonly sessionId: string; readonly url: string }>;
+  analyze(rootDir: string, interactionLanguage: InteractionLanguage, analysisRequestContext: AnalysisRequestContext): Promise<{ readonly sessionId: string; readonly url: string }>;
   resume(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
   status(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
   workbench(rootDir: string, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }>;
@@ -30,6 +30,7 @@ export async function runAgentCommand(request: AgentCliRequest, launcher: Partia
   switch (request.action) {
     case "analyze":
       if (launcher.analyze === undefined) throw new Error("dependency_error: Workbench launcher is unavailable");
+      if (request.analysisRequestContext === undefined) throw new Error("validation_error: analysis request context is required for analyze");
       result = await launcher.analyze(request.rootDir, request.interactionLanguage, request.analysisRequestContext);
       break;
     case "workbench":
