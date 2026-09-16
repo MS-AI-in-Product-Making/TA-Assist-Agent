@@ -4,7 +4,7 @@ import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requi
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildF0ProcessGuidance } from "./f0-process-guidance";
 
-const VERSION = "process-requirements-v1" as const;
+const VERSION = "process-requirements-v2" as const;
 type LoadDependency = NonNullable<NonNullable<Parameters<typeof buildF0ProcessGuidance>[2]>["load"]>;
 
 function snapshotWithFactorCount(factorCount: number): DeepReadonly<F7SessionSnapshot> {
@@ -37,16 +37,22 @@ function entryState(result: ReturnType<typeof buildF0ProcessGuidance>, entryId: 
 }
 
 describe("buildF0ProcessGuidance", () => {
-  it("lists the complex-stack guidance for every evaluable stack and warns only above ten factors", () => {
+  it("lists small- and complex-stack guidance and warns for complex stacks only above ten factors", () => {
+    const three = buildF0ProcessGuidance(snapshotWithFactorCount(3));
     const seven = buildF0ProcessGuidance(snapshotWithFactorCount(7));
     const eleven = buildF0ProcessGuidance(snapshotWithFactorCount(11));
 
+    expect(three.status).toBe("available");
     expect(seven.status).toBe("available");
     expect(eleven.status).toBe("available");
-    if (seven.status !== "available" || eleven.status !== "available") {
+    if (three.status !== "available" || seven.status !== "available" || eleven.status !== "available") {
       throw new Error("expected available process guidance");
     }
 
+    expect(entryIds(three)).toContain("instruction-consider-worst-case-small-stack");
+    expect(entryState(three, "instruction-consider-worst-case-small-stack")).toBe("guidance");
+    expect(entryIds(seven)).toContain("instruction-consider-worst-case-small-stack");
+    expect(entryState(seven, "instruction-consider-worst-case-small-stack")).toBe("guidance");
     expect(entryIds(seven)).toContain("method-escalation-complex-stack");
     expect(entryIds(eleven)).toContain("method-escalation-complex-stack");
     expect(entryState(seven, "method-escalation-complex-stack")).toBe("guidance");
@@ -106,7 +112,7 @@ describe("buildF0ProcessGuidance", () => {
     const load: LoadDependency = vi.fn((request) => {
       expect(request).toEqual({ version: VERSION });
       return {
-        manifest: { version: "process-requirements-v0" },
+        manifest: { version: "process-requirements-v1" },
         listProcessRequirements: actual.listProcessRequirements,
         evaluateProcessRequirements: actual.evaluateProcessRequirements,
       };
