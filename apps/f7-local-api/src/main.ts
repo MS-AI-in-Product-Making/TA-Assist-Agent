@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import {
   createAssumptionResultsPdfRenderer,
   type AssumptionResultsPdfRenderer,
 } from "./assumption-results-pdf-renderer.js";
 import { createF7SessionService } from "./f7-session-service.js";
+import { createF7MeasurementImportRegistry } from "./f7-measurement-import-registry.js";
 import { createF7LocalServer, listenF7LocalServer } from "./server.js";
 
 interface ProcessSignalsTarget {
@@ -35,7 +36,11 @@ export async function startF7LocalApplication(options: StartF7LocalApplicationOp
   });
   const assumptionResultsPdfRenderer = options.assumptionResultsPdfRenderer
     ?? createAssumptionResultsPdfRenderer();
-  const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+  const measurementImportRegistry = createF7MeasurementImportRegistry({
+    now: Date.now,
+    createId: () => randomBytes(16).toString("hex"),
+  });
+  const server = createF7LocalServer({ service, measurementImportRegistry, assumptionResultsPdfRenderer });
 
   let closingPromise: Promise<void> | undefined;
   const cleanupSignalListeners = (): void => {

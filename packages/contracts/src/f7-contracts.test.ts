@@ -3286,7 +3286,12 @@ describe("F7 bulk measurement import contracts", () => {
       totalSampleCount: 5,
       diagnosticCount: 2,
     };
-    expect(f7MeasurementImportPreviewResponseSchema.parse(response)).toEqual(response);
+    const publicResponse = {
+      ...response,
+      factors: response.factors.map(({ dataset: _dataset, ...factor }) => factor),
+    };
+    expect(f7MeasurementImportPreviewResponseSchema.parse(publicResponse)).toEqual(publicResponse);
+    expect(f7MeasurementImportPreviewResponseSchema.safeParse(response).success).toBe(false);
 
     const storedBatch = {
       previewId: response.previewId,

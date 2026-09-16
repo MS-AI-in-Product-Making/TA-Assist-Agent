@@ -943,6 +943,34 @@ export const f7MeasurementImportFactorPreviewSchema = z
     }
   });
 
+export const f7MeasurementImportFactorPreviewResponseSchema = z
+  .object({
+    factorId: sha256LowerSchema,
+    factorName: z.string().trim().min(1).max(300),
+    unit: z.string().trim().min(1).max(50),
+    structure: f7MeasurementStructureSchema,
+    rationalSubgroupConfig: f7RationalSubgroupConfigSchema.optional(),
+    sampleCount: z.number().int().min(0).max(F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS),
+    status: z.enum(["ready", "blocked"]),
+    replacesExistingFactor: z.boolean(),
+    diagnostics: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+    warnings: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
+    validation: f7DatasetValidationResultSchema,
+  })
+  .strict()
+  .superRefine((preview, context) => {
+    requireMatchingRationalSubgroupConfiguration(preview, context);
+    requireImportValidationConsistency(preview.validation, context);
+    requireValidationIssueFactorIdsMatch(preview.factorId, preview.validation, context);
+    if (preview.status !== preview.validation.status) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "status must match validation.status",
+        path: ["status"],
+      });
+    }
+  });
+
 export const f7MeasurementImportPreviewRequestSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -960,7 +988,7 @@ export const f7MeasurementImportPreviewResponseSchema = z
     status: z.enum(["ready", "blocked"]),
     factorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     replacementFactorIds: z.array(sha256LowerSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
-    factors: z.array(f7MeasurementImportFactorPreviewSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
+    factors: z.array(f7MeasurementImportFactorPreviewResponseSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     diagnostics: z.array(f7MeasurementImportDiagnosticSchema).max(F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS),
     readyFactorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     blockedFactorCount: z.number().int().min(0).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),

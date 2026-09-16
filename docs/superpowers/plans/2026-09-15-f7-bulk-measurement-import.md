@@ -490,7 +490,7 @@ git commit -m "feat(f7): govern measurement import previews"
 - Modify: `apps/f7-local-api/src/server.test.ts`
 - Modify: `apps/f7-local-api/src/main.ts`
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Cover `POST /f7/measurements/import-template`, `POST /f7/measurements/import-preview`, exact strict bodies, XLSX attachment headers, sanitized worksheet filename, canonical base64 and existing byte bound, `no-store`, wrong session/template ownership, stale authority, tampering, parser diagnostics, and that preview leaves the session byte-for-byte unchanged.
 
@@ -503,13 +503,13 @@ expect(preview.body).toMatchObject({ status: "ready", factorCount: 2 });
 expect(service.getSession(sessionId)).toEqual(before);
 ```
 
-- [ ] **Step 2: Run server tests and verify RED**
+- [x] **Step 2: Run server tests and verify RED**
 
 Run: `npx.cmd vitest run --project node apps/f7-local-api/src/server.test.ts`
 
 Expected: FAIL with 404 for both routes.
 
-- [ ] **Step 3: Implement bounded download and preview orchestration**
+- [x] **Step 3: Implement bounded download and preview orchestration**
 
 Inject one registry into `createF7LocalServer` and construct it in `main.ts` with `randomBytes(16).toString("hex")`. Download gets current service authority, registers it, generates bytes, and writes an attachment. Preview decodes bytes, extracts the template ID, resolves only server-held authority, re-checks current service digests, parses all Factors, runs existing readiness validation, computes replacement IDs and out-of-spec advisory counts, then stores the ready/blocked projection without mutating the session.
 
@@ -520,7 +520,7 @@ const MEASUREMENT_IMPORT_PREVIEW_PATH = "/f7/measurements/import-preview";
 
 Use uniform error envelopes; never return hidden manifest authority, datasets, or private revision to the browser.
 
-- [ ] **Step 4: Run focused API tests and verify GREEN**
+- [x] **Step 4: Run focused API tests and verify GREEN**
 
 Run:
 
@@ -530,7 +530,7 @@ npx.cmd vitest run --project node apps/f7-local-api/src/f7-measurement-import-re
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/f7-local-api/src/server.ts apps/f7-local-api/src/server.test.ts apps/f7-local-api/src/main.ts

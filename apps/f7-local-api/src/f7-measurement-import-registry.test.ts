@@ -363,6 +363,35 @@ describe("createF7MeasurementImportRegistry", () => {
     expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: firstPreview.previewId })).toEqual({ status: "not_found" });
   });
 
+  it("records blocked previews and invalidates the prior ready preview generation", () => {
+    const registry = createF7MeasurementImportRegistry({
+      now: () => BASE_TIME,
+      createId: createIdSource(["1".repeat(32), "2".repeat(32), "3".repeat(32)]),
+    });
+    const template = registry.registerTemplate({
+      sessionId: SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthorityContext({ templateId }),
+    });
+    const readyPreview = registry.storePreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+      createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
+        previewId,
+        expiresAt,
+        authority: template.authority,
+      }),
+    });
+
+    const blockedPreview = registry.storeBlockedPreview({
+      sessionId: SESSION_ID,
+      templateId: template.templateId,
+    });
+
+    expect(blockedPreview.previewGeneration).toBe(2);
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: readyPreview.previewId })).toEqual({ status: "stale" });
+    expect(registry.claimPreview({ sessionId: SESSION_ID, previewId: blockedPreview.previewId })).toEqual({ status: "blocked" });
+  });
+
   it("distinguishes session ownership, exact ttl boundaries, and process restart invalidation without leaking data", () => {
     const clock = createClock();
     const registry = createF7MeasurementImportRegistry({
@@ -399,7 +428,7 @@ describe("createF7MeasurementImportRegistry", () => {
     const expiringClock = createClock();
     const expiringRegistry = createF7MeasurementImportRegistry({
       now: expiringClock.now,
-      createId: createIdSource(["3".repeat(32), "4".repeat(32)]),
+      createId: createIdSource(["3".repeat(32), "4".repeat(32), "5".repeat(32)]),
     });
     const expiringTemplate = expiringRegistry.registerTemplate({
       sessionId: SESSION_ID,
@@ -419,6 +448,15 @@ describe("createF7MeasurementImportRegistry", () => {
     });
 
     expiringClock.advance(F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS);
+    expect(expiringRegistry.resolveTemplate({ sessionId: SESSION_ID, templateId: expiringTemplate.templateId })).toEqual({ status: "expired" });
+    expect(expiringRegistry.claimPreview({ sessionId: SESSION_ID, previewId: expiringPreview.previewId })).toEqual({ status: "expired" });
+    expiringRegistry.registerTemplate({
+      sessionId: OTHER_SESSION_ID,
+      createAuthority: ({ templateId }) => makeAuthorityContext({
+        sessionId: OTHER_SESSION_ID,
+        templateId,
+      }),
+    });
     expect(expiringRegistry.resolveTemplate({ sessionId: SESSION_ID, templateId: expiringTemplate.templateId })).toEqual({ status: "expired" });
     expect(expiringRegistry.claimPreview({ sessionId: SESSION_ID, previewId: expiringPreview.previewId })).toEqual({ status: "expired" });
 

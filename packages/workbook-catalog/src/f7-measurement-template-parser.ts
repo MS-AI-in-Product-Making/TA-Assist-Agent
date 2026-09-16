@@ -12,8 +12,8 @@ import { validateF7MeasurementDataset } from "./f7-dataset-validation.js";
 import { normalizeF7Factor } from "./f7-factor-normalization.js";
 import { hashF7MeasurementDatasetContent } from "./f7-measurement-parser.js";
 import { F7_MEASUREMENT_TEMPLATE_LAYOUT } from "./f7-measurement-template.js";
-import { MAX_DOM_DEPTH, MAX_TOTAL_CELLS, readOoxmlWorkbook, type OoxmlCell } from "./ooxml-reader.js";
-import { MAX_XML_PART_BYTES, readSafeZip } from "./zip-security.js";
+import { MAX_DOM_DEPTH, MAX_TOTAL_CELLS, readOoxmlWorkbookFromSafeZip, type OoxmlCell } from "./ooxml-reader.js";
+import { MAX_XML_PART_BYTES, readSafeZip, type SafeZipParts } from "./zip-security.js";
 
 const ALLOWED_PARTS = new Set([
   "[Content_Types].xml",
@@ -68,6 +68,7 @@ export function parseF7MeasurementTemplate(
   bytes: Uint8Array,
   authorityInput: F7MeasurementImportAuthority,
   importedAt: string,
+  safeParts?: SafeZipParts,
 ): F7MeasurementTemplateParseResult {
   const authority = f7MeasurementImportAuthoritySchema.parse(authorityInput);
   const diagnostics: PendingDiagnostic[] = [];
@@ -101,9 +102,9 @@ export function parseF7MeasurementTemplate(
     });
   };
 
-  let parts: ReadonlyMap<string, Uint8Array>;
+  let parts: SafeZipParts;
   try {
-    parts = readSafeZip(bytes);
+    parts = safeParts ?? readSafeZip(bytes);
   } catch {
     addDiagnostic("unsupported_workbook_content", "Workbook archive is not a supported F7 measurement template.");
     return blocked(diagnostics);
@@ -137,10 +138,10 @@ export function parseF7MeasurementTemplate(
   }
   if (diagnostics.length > 0) return blocked(diagnostics);
 
-  let workbook: ReturnType<typeof readOoxmlWorkbook>;
+  let workbook: ReturnType<typeof readOoxmlWorkbookFromSafeZip>;
   try {
-    workbook = readOoxmlWorkbook(
-      bytes,
+    workbook = readOoxmlWorkbookFromSafeZip(
+      parts,
       [F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName, F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName],
       false,
       {

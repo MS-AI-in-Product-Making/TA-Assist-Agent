@@ -1,5 +1,6 @@
-export { readOoxmlWorkbook } from "./ooxml-reader.js";
+export { readOoxmlWorkbook, readOoxmlWorkbookFromSafeZip } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
+export type { SafeZipParts } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
 export { FACTOR_FIELD_ORDER, resolveFactorHeaderCluster } from "./factor-header-resolver.js";
 export type { FactorFieldName, FactorHeaderResolution, HeaderCell, ResolvedHeaderColumn } from "./factor-header-resolver.js";

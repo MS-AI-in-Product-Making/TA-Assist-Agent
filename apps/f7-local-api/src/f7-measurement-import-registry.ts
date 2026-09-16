@@ -39,7 +39,7 @@ interface TemplateRecord {
 }
 
 interface PreviewRecord {
-  state: "available" | "consumed";
+  state: "available" | "blocked" | "consumed";
   readonly previewId: string;
   readonly templateId: string;
   readonly sessionId: string;
@@ -71,7 +71,7 @@ export type F7MeasurementImportPreviewClaim =
     readonly sessionGeneration: number;
     readonly previewGeneration: number;
   }
-  | { readonly status: "not_found" | "expired" | "stale" | "consumed" | "session_mismatch" };
+  | { readonly status: "not_found" | "expired" | "stale" | "blocked" | "consumed" | "session_mismatch" };
 
 export interface F7MeasurementImportRegistry {
   registerTemplate(request: {
@@ -103,6 +103,15 @@ export interface F7MeasurementImportRegistry {
   }): {
     readonly previewId: string;
     readonly storedBatch: F7MeasurementImportStoredBatch;
+    readonly expiresAt: string;
+    readonly sessionGeneration: number;
+    readonly previewGeneration: number;
+  };
+  storeBlockedPreview(request: {
+    readonly sessionId: string;
+    readonly templateId: string;
+  }): {
+    readonly previewId: string;
     readonly expiresAt: string;
     readonly sessionGeneration: number;
     readonly previewGeneration: number;
@@ -215,14 +224,18 @@ export function createF7MeasurementImportRegistry(dependencies: {
   const readSession = (sessionId: string): SessionState => {
     const current = sessions.get(sessionId);
     if (current) return current;
-    const created: SessionState = {
+    return {
       generation: 0,
       previewGeneration: 0,
       currentTemplateId: undefined,
       currentPreviewId: undefined,
     };
-    sessions.set(sessionId, created);
-    return created;
+  };
+
+  const deleteSessionIfEmpty = (sessionId: string): void => {
+    const hasTemplate = [...templateRecords.values()].some((record) => record.sessionId === sessionId);
+    const hasPreview = [...previewRecords.values()].some((record) => record.sessionId === sessionId);
+    if (!hasTemplate && !hasPreview) sessions.delete(sessionId);
   };
 
   const deleteTemplateRecord = (record: TemplateRecord): void => {
@@ -233,6 +246,7 @@ export function createF7MeasurementImportRegistry(dependencies: {
       session.currentTemplateId = undefined;
       session.currentPreviewId = undefined;
     }
+    deleteSessionIfEmpty(record.sessionId);
   };
 
   const deletePreviewRecord = (record: PreviewRecord): void => {
@@ -242,15 +256,7 @@ export function createF7MeasurementImportRegistry(dependencies: {
     if (session.currentPreviewId === record.previewId) {
       session.currentPreviewId = undefined;
     }
-  };
-
-  const pruneExpired = (nowMs: number): void => {
-    for (const record of templateRecords.values()) {
-      if (nowMs >= record.expiresAtMs) deleteTemplateRecord(record);
-    }
-    for (const record of previewRecords.values()) {
-      if (record.state === "available" && nowMs >= record.expiresAtMs) deletePreviewRecord(record);
-    }
+    deleteSessionIfEmpty(record.sessionId);
   };
 
   const evictOldestPerSessionTemplates = (): void => {
@@ -342,7 +348,6 @@ export function createF7MeasurementImportRegistry(dependencies: {
   return {
     registerTemplate(request) {
       const nowMs = readNow();
-      pruneExpired(nowMs);
       const sessionId = validateSessionId(request?.sessionId, "sessionId");
       if (typeof request?.createAuthority !== "function") {
         throw fixedError("createAuthority must be a function.");
@@ -366,6 +371,7 @@ export function createF7MeasurementImportRegistry(dependencies: {
         throw fixedError("Authority templateId must match the generated template id.");
       }
 
+      sessions.set(sessionId, session);
       session.generation = sessionGeneration;
       session.previewGeneration = 0;
       session.currentTemplateId = templateId;
@@ -407,7 +413,6 @@ export function createF7MeasurementImportRegistry(dependencies: {
 
     storePreview(request) {
       const nowMs = readNow();
-      pruneExpired(nowMs);
       const sessionId = validateSessionId(request?.sessionId, "sessionId");
       const templateId = validateOpaqueId(request?.templateId, "templateId");
       if (typeof request?.createStoredBatch !== "function") {
@@ -479,6 +484,42 @@ export function createF7MeasurementImportRegistry(dependencies: {
       };
     },
 
+    storeBlockedPreview(request) {
+      const nowMs = readNow();
+      const sessionId = validateSessionId(request?.sessionId, "sessionId");
+      const templateId = validateOpaqueId(request?.templateId, "templateId");
+      const template = currentTemplateRecord(sessionId, templateId, nowMs);
+      const session = readSession(sessionId);
+      const previewId = nextOpaqueId("previewId");
+      const previewGeneration = session.previewGeneration + 1;
+      const expiresAtMs = nowMs + F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS;
+      const expiresAt = isoFromEpochMs(expiresAtMs, "expiresAt");
+
+      session.previewGeneration = previewGeneration;
+      session.currentPreviewId = previewId;
+      previewRecords.set(previewId, {
+        state: "blocked",
+        previewId,
+        templateId,
+        sessionId,
+        preview: undefined,
+        expectedMeasurementImportRevision: template.context.expectedMeasurementImportRevision,
+        sessionGeneration: template.sessionGeneration,
+        previewGeneration,
+        insertedSequence: sequence++,
+        expiresAtMs,
+      });
+      evictOldestPerSessionPreviews();
+      evictOldestPreviews();
+
+      return {
+        previewId,
+        expiresAt,
+        sessionGeneration: template.sessionGeneration,
+        previewGeneration,
+      };
+    },
+
     claimPreview(request) {
       const nowMs = readNow();
       const sessionId = validateSessionId(request?.sessionId, "sessionId");
@@ -499,6 +540,7 @@ export function createF7MeasurementImportRegistry(dependencies: {
       ) {
         return { status: "stale" };
       }
+      if (record.state === "blocked") return { status: "blocked" };
 
       const preview = record.preview;
       if (!preview) {

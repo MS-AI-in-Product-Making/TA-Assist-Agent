@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { Socket } from "node:net";
+import { strToU8, zipSync } from "fflate";
 import {
   createTypedError,
+  f7MeasurementImportPreviewResponseSchema,
   f7ReportProjectionSchema,
   typedErrorSchema,
   type F7SessionService,
 } from "@ai-assist/contracts";
 import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
+import { readSafeZip } from "@ai-assist/workbook-catalog";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import {
   encodeRfc5987FileName,
@@ -20,6 +23,10 @@ import {
   AssumptionResultsPdfQueueFullError,
   type AssumptionResultsPdfRenderer,
 } from "./assumption-results-pdf-renderer.js";
+import {
+  createF7MeasurementImportRegistry,
+  type F7MeasurementImportRegistry,
+} from "./f7-measurement-import-registry.js";
 import { createF7SessionService } from "./f7-session-service.js";
 import {
   createF7LocalServer as createProductionF7LocalServer,
@@ -41,15 +48,28 @@ const DISTRIBUTION_BY_LABEL = {
 
 type ServerOptions = Parameters<typeof createProductionF7LocalServer>[0];
 
+function createMeasurementImportRegistry(): F7MeasurementImportRegistry {
+  let nextId = 0;
+  return createF7MeasurementImportRegistry({
+    now: () => Date.parse("2026-09-16T08:00:00.000Z"),
+    createId: () => (++nextId).toString(16).padStart(32, "0"),
+  });
+}
+
 function createF7LocalServer(
   options: Omit<ServerOptions, "assumptionResultsPdfRenderer"> & {
     readonly assumptionResultsPdfRenderer?: AssumptionResultsPdfRenderer;
+    readonly measurementImportRegistry?: F7MeasurementImportRegistry;
   },
 ): ReturnType<typeof createProductionF7LocalServer> {
   const assumptionResultsPdfRenderer = options.assumptionResultsPdfRenderer ?? {
     render: vi.fn(async () => Buffer.from("%PDF-1.7\ntest-fake")),
   };
-  return createProductionF7LocalServer({ ...options, assumptionResultsPdfRenderer });
+  return createProductionF7LocalServer({
+    ...options,
+    assumptionResultsPdfRenderer,
+    measurementImportRegistry: options.measurementImportRegistry ?? createMeasurementImportRegistry(),
+  } as ServerOptions);
 }
 
 function worksheet(rows: string): string {
@@ -82,12 +102,12 @@ function sheetRows(firstFactorName = "Fabric thickness", includeVolume = true): 
   return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}<row r="50">${cell("O50", "Additional Mean Shift")}${cell("P50", "0.01")}</row><row r="53">${cell("O53", "Response Summary")}</row><row r="54">${cell("O54", "Design Nominal")}${cell("P54", "1.627")}</row><row r="55">${cell("O55", "LSL")}${cell("P55", "-0.15")}</row><row r="56">${cell("O56", "USL")}${cell("P56", "0.05")}${volumeCells}</row><row r="57">${cell("O57", "Target Sigma Level")}${cell("P57", "4")}</row>`;
 }
 
-function buildWorkbook(firstFactorName = "Fabric thickness", includeVolume = true): Uint8Array {
-  const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
+function buildWorkbook(firstFactorName = "Fabric thickness", includeVolume = true, worksheetName = "Anonymous_TA"): Uint8Array {
+  const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="${worksheetName}" sheetId="3" r:id="rId3"/></sheets></workbook>`;
   const xmlParts: Record<string, string> = {
     "xl/workbook.xml": workbookXml,
     "xl/worksheets/sheet1.xml": worksheet(`<row r="2">${cell("A2", "Document No.")}${cell("B2", "DOC-007")}</row><row r="4">${cell("A4", "Revision:")}${cell("B4", "R2")}</row><row r="6">${cell("A6", "Date:")}${cell("B6", "2026-07-23")}</row>`),
-    "xl/worksheets/sheet2.xml": worksheet(`<row r="9">${cell("A9", "Device Level Dim")}${cell("C9", "Tolerance Loop Description")}</row><row r="10">${cell("A10", "Anonymous_TA")}${cell("C10", "First loop")}</row>`),
+    "xl/worksheets/sheet2.xml": worksheet(`<row r="9">${cell("A9", "Device Level Dim")}${cell("C9", "Tolerance Loop Description")}</row><row r="10">${cell("A10", worksheetName)}${cell("C10", "First loop")}</row>`),
     "xl/worksheets/sheet3.xml": worksheet(sheetRows(firstFactorName, includeVolume)),
   };
   return createAnonymousWorkbookZip({ xmlParts });
@@ -97,6 +117,63 @@ function createRealService(): F7SessionService {
   return createF7SessionService({
     createId: () => "session-fixed",
     now: () => "2026-08-19T08:00:00.000Z",
+  });
+}
+
+function createRouteService(): F7SessionService {
+  let nextId = 0;
+  return createF7SessionService({
+    createId: () => `session-${++nextId}`,
+    now: () => "2026-08-19T08:00:00.000Z",
+  });
+}
+
+function prepareMeasurementImportSession(service: F7SessionService, worksheetName = "Anonymous_TA"): ReturnType<F7SessionService["getSession"]> {
+  const imported = service.importWorkbook({
+    contractId: "f7-analysis-request-v1",
+    inputClassification: "confidential",
+    fileName: "anonymous.xlsx",
+    workbookBytes: buildWorkbook("Fabric thickness", true, worksheetName),
+  });
+  const factorSetup = service.confirmWorksheet({
+    sessionId: imported.sessionId,
+    confirmation: {
+      workbookContentHash: imported.workbook.workbookContentHash,
+      selectedWorksheetNames: [worksheetName],
+      confirmed: true,
+    },
+  });
+  return service.confirmFactorSetup({
+    sessionId: imported.sessionId,
+    confirmations: factorSetup.factors.map(({ factorCandidate }) => ({
+      factorCandidateId: factorCandidate.factorCandidateId,
+      designNominal: factorCandidate.designNominal,
+      upperTolerance: factorCandidate.upperTolerance,
+      lowerTolerance: factorCandidate.lowerTolerance,
+      confirmed: true,
+    })),
+  });
+}
+
+function editMeasurementTemplate(bytes: Uint8Array, edit: (sheet: string) => string): Uint8Array {
+  const parts = Object.fromEntries(readSafeZip(bytes));
+  const sheetName = "xl/worksheets/sheet1.xml";
+  parts[sheetName] = strToU8(edit(new TextDecoder().decode(parts[sheetName])));
+  return zipSync(parts, { level: 0, mtime: new Date("2026-01-01T00:00:00.000Z") });
+}
+
+function addReadyMeasurements(bytes: Uint8Array, factorCount: number): Uint8Array {
+  return editMeasurementTemplate(bytes, (sheet) => {
+    let edited = sheet;
+    for (let offset = 0; offset < 20; offset += 1) {
+      const row = 15 + offset;
+      const cells = Array.from({ length: factorCount }, (_, factorIndex) => {
+        const column = String.fromCharCode("B".charCodeAt(0) + factorIndex);
+        return `<c r="${column}${row}" s="1"><v>${factorIndex + 1 + offset / 100}</v></c>`;
+      }).join("");
+      edited = edited.replace(`<row r="${row}"/>`, `<row r="${row}">${cells}</row>`);
+    }
+    return edited;
   });
 }
 
@@ -634,6 +711,260 @@ describe("f7 local server", () => {
     expect(serverSource).toMatch(
       /readonly assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer;/u,
     );
+  });
+
+  it("downloads an XLSX attachment and previews every Factor without mutating the session", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const before = JSON.stringify(service.getSession(snapshot.sessionId));
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({ service, onEvent: (event) => events.push({ ...event }) });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const download = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+
+    expect(download.status).toBe(200);
+    expect(download.headers["content-type"]).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(download.headers["content-disposition"]).toBe('attachment; filename="F7_Measurements_Anonymous_TA.xlsx"');
+    expect(download.headers["cache-control"]).toBe("no-store");
+    expect(download.headers["x-content-type-options"]).toBe("nosniff");
+    expect(download.rawBytes.subarray(0, 2).toString("ascii")).toBe("PK");
+
+    const completed = addReadyMeasurements(download.rawBytes, snapshot.factors.length);
+    const preview = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "completed.xlsx",
+        workbookBase64: Buffer.from(completed).toString("base64"),
+      },
+    });
+
+    expect(preview.status).toBe(200);
+    expect(preview.headers["cache-control"]).toBe("no-store");
+    const parsed = f7MeasurementImportPreviewResponseSchema.parse(preview.json);
+    expect(parsed).toMatchObject({
+      status: "ready",
+      factorCount: snapshot.factors.length,
+      readyFactorCount: snapshot.factors.length,
+      blockedFactorCount: 0,
+      replacementFactorIds: [],
+      replacementCount: 0,
+      totalSampleCount: snapshot.factors.length * 20,
+      diagnosticCount: 0,
+    });
+    expect(parsed.factors.every((factor) => factor.sampleCount === 20 && factor.status === "ready")).toBe(true);
+    expect(JSON.stringify(preview.json)).not.toContain('"authority"');
+    expect(parsed.factors.every((factor) => !("dataset" in factor))).toBe(true);
+    expect(JSON.stringify(preview.json)).not.toContain('"dataset"');
+    expect(JSON.stringify(preview.json)).not.toContain("expectedMeasurementImportRevision");
+    expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(before);
+    expect(events).toEqual([
+      { kind: "f7.measurements.import-template", status: 200 },
+      { kind: "f7.measurements.import-preview", status: 200 },
+    ]);
+  });
+
+  it("sanitizes a Unicode worksheet name in the XLSX attachment header", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service, "Mesuré TA");
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const download = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+
+    expect(download.status).toBe(200);
+    expect(download.headers["content-disposition"]).toBe(
+      'attachment; filename="F7_Measurements_Mesure_TA.xlsx"',
+    );
+  });
+
+  it("enforces strict template and preview bodies, canonical base64, and the 16 MiB workbook bound", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const strictTemplate = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId, unknown: true },
+    });
+    expectRequestEnvelope(strictTemplate, 400);
+
+    const strictPreview = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "measurements.xlsx",
+        workbookBase64: "bm90LWEtdGVtcGxhdGU=",
+        unknown: true,
+      },
+    });
+    expectRequestEnvelope(strictPreview, 400);
+
+    const nonCanonical = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "measurements.xlsx",
+        workbookBase64: "bm90LWEtdGVtcGxhdGU=\n",
+      },
+    });
+    expectRequestEnvelope(nonCanonical, 400);
+
+    const atLimit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "measurements.xlsx",
+        workbookBase64: Buffer.alloc(16 * 1024 * 1024, 1).toString("base64"),
+      },
+    });
+    expectRequestEnvelope(atLimit, 400);
+
+    const tooLarge = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "measurements.xlsx",
+        workbookBase64: Buffer.alloc(16 * 1024 * 1024 + 1, 1).toString("base64"),
+      },
+    });
+    expectRequestEnvelope(tooLarge, 413);
+  });
+
+  it("rejects wrong-session templates and stale server authority", async () => {
+    const service = createRouteService();
+    const first = prepareMeasurementImportSession(service);
+    const second = prepareMeasurementImportSession(service);
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const firstDownload = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: first.sessionId },
+    });
+    const wrongOwner = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: second.sessionId,
+        fileName: "wrong-owner.xlsx",
+        workbookBase64: firstDownload.rawBytes.toString("base64"),
+      },
+    });
+    expectRequestEnvelope(wrongOwner, 400);
+
+    const firstFactorId = first.factors[0]?.evidence?.factorId;
+    expect(firstFactorId).toBeDefined();
+    service.setFactorMode({
+      sessionId: first.sessionId,
+      factorId: firstFactorId!,
+      mode: "BASELINE_ASSUMPTION",
+    });
+    const stale = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: first.sessionId,
+        fileName: "stale.xlsx",
+        workbookBase64: firstDownload.rawBytes.toString("base64"),
+      },
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.headers["cache-control"]).toBe("no-store");
+    expect((stale.json as { code: string }).code).toBe("prerequisite_not_ready");
+  });
+
+  it("returns bounded parser diagnostics for tampering and preserves the exact session snapshot", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const before = JSON.stringify(service.getSession(snapshot.sessionId));
+    const measurementImportRegistry = createMeasurementImportRegistry();
+    const server = createF7LocalServer({ service, measurementImportRegistry });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const download = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+    const completed = addReadyMeasurements(download.rawBytes, snapshot.factors.length);
+    const ready = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "ready.xlsx",
+        workbookBase64: Buffer.from(completed).toString("base64"),
+      },
+    });
+    expect(ready.status).toBe(200);
+    const readyPreviewId = (ready.json as { previewId: string }).previewId;
+    const tampered = editMeasurementTemplate(download.rawBytes, (sheet) =>
+      sheet.replace(/<c r="B2"[^>]*>[\s\S]*?<\/c>/, '<c r="B2" t="inlineStr"><is><t>Tampered Factor</t></is></c>'));
+    const preview = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "tampered.xlsx",
+        workbookBase64: Buffer.from(tampered).toString("base64"),
+      },
+    });
+
+    expect(preview.status).toBe(200);
+    expect(preview.json).toMatchObject({
+      status: "blocked",
+      diagnostics: [{ reason: "changed_locked_cell", sheetCell: "Measurements!B2" }],
+      readyFactorCount: 0,
+      blockedFactorCount: snapshot.factors.length,
+    });
+    const blockedPreviewId = (preview.json as { previewId: string }).previewId;
+    expect(blockedPreviewId).not.toBe(readyPreviewId);
+    expect(measurementImportRegistry.claimPreview({
+      sessionId: snapshot.sessionId,
+      previewId: readyPreviewId,
+    })).toEqual({ status: "stale" });
+    expect(measurementImportRegistry.claimPreview({
+      sessionId: snapshot.sessionId,
+      previewId: blockedPreviewId,
+    })).toEqual({ status: "blocked" });
+    expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(before);
   });
 
   it("binds on loopback and supports end-to-end import/get", async () => {
