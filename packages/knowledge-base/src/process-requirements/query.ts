@@ -12,10 +12,10 @@ import {
   type ProcessRequirementMatchedEntry,
 } from "@ai-assist/contracts";
 import { createReviewedProcessRequirementsV1SeedPackage } from "./data/process-requirements-v1.js";
+import { createReviewedProcessRequirementsV2SeedPackage } from "./data/process-requirements-v2.js";
 import type { DeepReadonly, ProcessRequirementSnapshot } from "./types.js";
 import { createProcessRequirementSnapshot } from "./validation.js";
 
-const VERSION = "process-requirements-v1";
 const LIST_REFERENCE = "process-requirements-list-request";
 const EVALUATION_REFERENCE = "process-requirements-evaluation-request";
 const SEVERITY_ORDER = new Map([
@@ -36,13 +36,20 @@ export interface ProcessRequirements {
 }
 
 export function loadProcessRequirements(request: unknown): ProcessRequirements {
-  parseOrThrow(processRequirementLoadRequestSchema, request, "process-requirements-load-request");
-  const snapshot = createProcessRequirementSnapshot(createReviewedProcessRequirementsV1SeedPackage());
+  const { version } = parseOrThrow(
+    processRequirementLoadRequestSchema,
+    request,
+    "process-requirements-load-request",
+  );
+  const seed = version === "process-requirements-v1"
+    ? createReviewedProcessRequirementsV1SeedPackage()
+    : createReviewedProcessRequirementsV2SeedPackage();
+  const snapshot = createProcessRequirementSnapshot(seed);
 
   return {
     manifest: snapshot.manifest,
     listProcessRequirements: (query) => list(snapshot.entries, query),
-    evaluateProcessRequirements: (facts) => evaluate(snapshot.entries, facts),
+    evaluateProcessRequirements: (facts) => evaluate(snapshot, facts),
   };
 }
 
@@ -61,9 +68,10 @@ function matchesListFilter(entry: SnapshotEntry, query: ProcessRequirementListRe
 }
 
 function evaluate(
-  entries: ProcessRequirementSnapshot["entries"],
+  snapshot: ProcessRequirementSnapshot,
   request: unknown,
 ): DeepReadonly<ProcessRequirementEvaluation> {
+  const entries = snapshot.entries;
   const facts = parseOrThrow(processRequirementEvaluationRequestSchema, request, EVALUATION_REFERENCE);
   const evaluableEntries = entries.filter(({ entryType }) => entryType !== "definition");
   const matchedEntries = sortEntries(evaluableEntries.filter((entry) => matchesEntry(entry, facts)));
@@ -75,7 +83,7 @@ function evaluate(
 
   if (matchedEntries.length > 0) {
     return immutableEvaluation({
-      version: VERSION,
+      version: snapshot.manifest.version,
       status: "matched",
       resolvedTargets,
       factsUsed: uniqueSorted([...matchedEntries, ...relevantEntries].flatMap(({ applicability }) => (
@@ -88,7 +96,7 @@ function evaluate(
 
   if (missingFacts.length > 0) {
     return immutableEvaluation({
-      version: VERSION,
+      version: snapshot.manifest.version,
       status: "insufficient-facts",
       resolvedTargets,
       factsUsed: uniqueSorted(relevantEntries.flatMap(({ applicability }) => (
@@ -100,7 +108,7 @@ function evaluate(
   }
 
   return immutableEvaluation({
-    version: VERSION,
+    version: snapshot.manifest.version,
     status: "not-applicable",
     resolvedTargets,
     factsUsed: [],
@@ -136,8 +144,11 @@ function predicatesMatch(
     if (actual === undefined) return ignoreAbsent;
     switch (reference) {
       case "toleranceCount":
-        return applicability.minimumToleranceCountExclusive === undefined
-          || typeof actual === "number" && actual > applicability.minimumToleranceCountExclusive;
+        return typeof actual === "number"
+          && (applicability.minimumToleranceCountExclusive === undefined
+            || actual > applicability.minimumToleranceCountExclusive)
+          && (applicability.maximumToleranceCountExclusive === undefined
+            || actual < applicability.maximumToleranceCountExclusive);
       default: {
         const expected = applicability[reference];
         return expected === undefined || expected === "all" || actual === expected;
@@ -149,6 +160,7 @@ function predicatesMatch(
 function hasPredicate(entry: SnapshotEntry, reference: ProcessRequirementFactReference): boolean {
   return reference === "toleranceCount"
     ? entry.applicability.minimumToleranceCountExclusive !== undefined
+      || entry.applicability.maximumToleranceCountExclusive !== undefined
     : entry.applicability[reference] !== undefined;
 }
 

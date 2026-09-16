@@ -21,6 +21,57 @@ function captureTypedError(invoke: () => unknown) {
 }
 
 describe("process requirement queries", () => {
+  it("loads v1 and v2 exactly and evaluates with the selected snapshot version", () => {
+    const v1 = loadProcessRequirements({ version: "process-requirements-v1" });
+    const v2 = loadProcessRequirements({ version: "process-requirements-v2" });
+
+    expect(v1.manifest.version).toBe("process-requirements-v1");
+    expect(v2.manifest.version).toBe("process-requirements-v2");
+    expect(v1.evaluateProcessRequirements({ actor: "all" }).version).toBe("process-requirements-v1");
+    expect(v2.evaluateProcessRequirements({ actor: "all" }).version).toBe("process-requirements-v2");
+  });
+
+  it("matches v2 small stacks only below the exclusive maximum", () => {
+    const knowledge = loadProcessRequirements({ version: "process-requirements-v2" });
+
+    expect(entryIds(knowledge.evaluateProcessRequirements({ toleranceCount: 3 }))).toContain(
+      "instruction-consider-worst-case-small-stack",
+    );
+    expect(entryIds(knowledge.evaluateProcessRequirements({ toleranceCount: 4 }))).not.toContain(
+      "instruction-consider-worst-case-small-stack",
+    );
+  });
+
+  it("matches v2 complex stacks only above the exclusive minimum", () => {
+    const knowledge = loadProcessRequirements({ version: "process-requirements-v2" });
+    const commonFacts = {
+      analysisMethod: "one-dimensional-rss",
+      hasThreeDimensionalSensitivity: false,
+      subject: "other",
+    } as const;
+
+    expect(entryIds(knowledge.evaluateProcessRequirements({ ...commonFacts, toleranceCount: 10 }))).not.toContain(
+      "method-escalation-complex-stack",
+    );
+    expect(entryIds(knowledge.evaluateProcessRequirements({ ...commonFacts, toleranceCount: 11 }))).toContain(
+      "method-escalation-complex-stack",
+    );
+  });
+
+  it("reports a missing tolerance count without matching either v2 count rule", () => {
+    const result = loadProcessRequirements({ version: "process-requirements-v2" })
+      .evaluateProcessRequirements({
+        analysisMethod: "one-dimensional-rss",
+        hasThreeDimensionalSensitivity: false,
+        subject: "other",
+      });
+
+    expect(result.status).toBe("insufficient-facts");
+    expect(result.missingFacts).toContain("toleranceCount");
+    expect(entryIds(result)).not.toContain("instruction-consider-worst-case-small-stack");
+    expect(entryIds(result)).not.toContain("method-escalation-complex-stack");
+  });
+
   it("matches complex stacks only above the exclusive threshold", () => {
     const knowledge = loadProcessRequirements({ version: "process-requirements-v1" });
 
