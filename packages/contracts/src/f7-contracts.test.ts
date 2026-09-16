@@ -331,10 +331,21 @@ describe("F7 report contracts", () => {
       }).success).toBe(false);
     }
 
-    expect(f7ReportProjectionSchema.safeParse({
-      ...report,
-      factors: [{ ...report.factors[0], designNominal: Number.POSITIVE_INFINITY }],
-    }).success).toBe(false);
+    const numericSetupFields = [
+      "designNominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "longTermSafetyFactor",
+      "sigmaLevel",
+    ] as const;
+
+    for (const field of numericSetupFields) {
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [{ ...report.factors[0], [field]: Number.POSITIVE_INFINITY }],
+      }).success).toBe(false);
+    }
+
     expect(f7ReportProjectionSchema.safeParse({
       ...report,
       factors: [{ ...report.factors[0], setupDistribution: "normal" }],
