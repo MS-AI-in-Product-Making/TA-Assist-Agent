@@ -82,6 +82,10 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
   });
 
+  it("rejects a worksheet selection without governed request context", () => {
+    expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--analysis-request-context/i);
+  });
+
   it.each([[], ["f2"], ["f2", "f3"], ["f2", "f3", "f4"]])(
     "rejects missing roots: %j",
     (args) => expect(() => parseF6CliArgs(args)).toThrow(/four.*artifact roots/i),
@@ -93,7 +97,7 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, "extra"])).toThrow(/unexpected argument/i);
   });
 
-  it.each(["--worksheet", "--language", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
+  it.each(["--worksheet", "--language", "--analysis-request-context", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
     "rejects a missing value for %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, option])).toThrow(/requires|duplicate/i),
   );
@@ -108,6 +112,17 @@ describe("parseF6CliArgs", () => {
     (option) => expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, option, "a.json", option, "b.json"]))
       .toThrow(/duplicate/i),
   );
+
+  it("rejects duplicate request context options after parsing the first strict JSON value", () => {
+    expect(() => parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      ...MODEL_ARGS,
+      "--worksheet", "Analysis-A",
+      ...REQUEST_CONTEXT_ARGS,
+      "--analysis-request-context", JSON.stringify({ ...REQUEST_CONTEXT, requestedAt: "2026-09-16T08:31:12.000Z" }),
+    ])).toThrow(/duplicate/i);
+  });
 
   it("rejects unknown options and empty roots", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, "--unknown", "value"])).toThrow(/unknown option/i);
@@ -125,5 +140,28 @@ describe("parseF6CliArgs", () => {
       selectedWorksheetNames: ["Analysis-A"],
       analysisRequestContext: REQUEST_CONTEXT,
     });
+  });
+
+  it("rejects malformed request context JSON", () => {
+    expect(() => parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      ...MODEL_ARGS,
+      "--worksheet", "Analysis-A",
+      "--analysis-request-context", "{not-json",
+    ])).toThrow(/valid JSON/i);
+  });
+
+  it.each([
+    ["schema invalid", { ...REQUEST_CONTEXT, utcOffsetMinutes: 900 }],
+    ["unknown field", { ...REQUEST_CONTEXT, generatedAt: "2026-09-16T08:30:12.000Z" }],
+  ])("rejects %s request context", (_caseName, requestContext) => {
+    expect(() => parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      ...MODEL_ARGS,
+      "--worksheet", "Analysis-A",
+      "--analysis-request-context", JSON.stringify(requestContext),
+    ])).toThrow(/--analysis-request-context is invalid/i);
   });
 });

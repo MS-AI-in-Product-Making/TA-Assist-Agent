@@ -36,6 +36,11 @@ const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
 const HASH = "a".repeat(64);
 const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
 const interactionLanguage = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -85,9 +90,11 @@ function createMockV4Optimization() {
     interactionLanguage,
     requireMultimodalV3: true,
     publishRoot: bundle.publishRoot,
+    analysisRequestContext: REQUEST_CONTEXT,
   });
   if (loaded.status !== "accepted") throw new Error(`failed to build mock v4 optimization fixture: ${JSON.stringify(loaded)}`);
-  return createF6OptimizationV4(loaded.request, {
+  const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+  return createF6OptimizationV4(optimizationRequest, {
     interactionLanguage,
     multimodalInterpretation: loaded.modelInterpretation,
     multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
@@ -145,6 +152,7 @@ function setup({ status = "completed" } = {}) {
       f5ArtifactRoot: path.join(publishRoot, "f5"),
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationArtifact: path.join(publishRoot, "multimodal.json"),
       expectedModelInterpretationContentHash: HASH,
     })),
@@ -161,7 +169,7 @@ function setup({ status = "completed" } = {}) {
     })),
     loadBundle: vi.fn(() => ({
       status: "accepted",
-      request: { request: true },
+      request: { request: true, analysisRequestContext: REQUEST_CONTEXT },
       f2Report: { f2: true },
       f3Report: { f3: true },
       f4Report: { f4: true },
@@ -205,7 +213,7 @@ function createRealBundle(options) {
 
 function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}) {
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
-  const parsed = { ...bundle, interactionLanguage, ...parsedOverrides };
+  const parsed = { ...bundle, interactionLanguage, analysisRequestContext: REQUEST_CONTEXT, ...parsedOverrides };
   if (!Object.hasOwn(parsedOverrides, "modelInterpretationArtifact")
     && typeof bundle.modelInterpretationArtifactRoot === "string"
     && typeof bundle.modelInterpretationArtifact === "string") {
@@ -359,6 +367,7 @@ describe("runF6FullValidation", () => {
       f6Optimization: context.optimization,
       generatedAt: "2026-08-17T01:02:03.456Z",
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" },
     }, {
       outputRoot: context.runRoot,
@@ -450,6 +459,7 @@ describe("runF6FullValidation", () => {
       generatedAt: "2026-08-17T01:02:03.456Z",
       analysisContext,
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretation,
     }, {
       outputRoot: context.runRoot,
@@ -665,9 +675,10 @@ describe("F6 real artifact full flow", () => {
       if (failedImage === "missing") rmSync(imagePath);
       else writeFileSync(imagePath, "tampered failed image");
     }
-    const loaded = loadF6ArtifactBundle({ ...bundle, requireMultimodalV3: true });
+    const loaded = loadF6ArtifactBundle({ ...bundle, analysisRequestContext: REQUEST_CONTEXT, requireMultimodalV3: true });
     expect(loaded.status, JSON.stringify(loaded)).toBe("accepted");
-    const optimized = createF6OptimizationV4(loaded.request, {
+    const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+    const optimized = createF6OptimizationV4(optimizationRequest, {
       interactionLanguage, multimodalInterpretation: loaded.modelInterpretation,
       multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
       optimizationTargetsDecision: loaded.inputDecisions.optimizationTargets,
@@ -729,6 +740,7 @@ describe("F6 real artifact full flow", () => {
           "--worksheet", "Analysis-A",
           "--worksheet", "Analysis-B",
           "--language", "en-US",
+          "--analysis-request-context", JSON.stringify(REQUEST_CONTEXT),
           "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
           "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
         ],
@@ -799,6 +811,7 @@ describe("F6 real artifact full flow", () => {
         source: "workflow_start",
         fallbackUsed: false,
       },
+      analysisRequestContext: REQUEST_CONTEXT,
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
         finalReportMarkdown: "Feature6-Report.md",
@@ -844,6 +857,7 @@ describe("F6 real artifact full flow", () => {
       bundle.f5ArtifactRoot,
       "--worksheet", "Analysis-A",
       "--language", "en-US",
+      "--analysis-request-context", JSON.stringify(REQUEST_CONTEXT),
       "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
     ], {

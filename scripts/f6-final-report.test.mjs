@@ -30,6 +30,11 @@ import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -380,10 +385,12 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       modelInterpretationArtifactRoot: bundle.modelInterpretationArtifactRoot,
       modelInterpretationArtifact: bundle.modelInterpretationArtifact,
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
+      analysisRequestContext: REQUEST_CONTEXT,
       requireMultimodalV3: true,
     });
     expect(loaded.status, JSON.stringify(loaded, null, 2)).toBe("accepted");
-    optimizationArtifact = createF6OptimizationV3(loaded.request, {
+    const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+    optimizationArtifact = createF6OptimizationV3(optimizationRequest, {
       interactionLanguage,
       multimodalInterpretation: loaded.modelInterpretation,
       multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
@@ -395,6 +402,7 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       parseArgs: () => ({
         ...bundle,
         interactionLanguage,
+        analysisRequestContext: REQUEST_CONTEXT,
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
       resolveLayout: () => ({
@@ -427,6 +435,7 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
         ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
     f6Optimization: f6ReadableOptimizationResultSchema.parse(optimizationArtifact),
+    analysisRequestContext: REQUEST_CONTEXT,
     modelInterpretation: requiredMultimodal,
     ...(modelInterpretation === undefined ? {} : { legacyModelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
   };
@@ -1393,6 +1402,14 @@ describe("createF6FinalReportProjection v3", () => {
     ...options,
   });
 
+  it("fails closed when the current final report projection is missing analysis request context", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const { analysisRequestContext: _analysisRequestContext, ...withoutRequestContext } = inputs;
+
+    expect(() => createF6FinalReportProjection(withoutRequestContext, { requireMultimodalV3: true }))
+      .toThrow(/analysisRequestContext/i);
+  });
+
   it("marks ready identifier gaps as MISSING with the printable row marker", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
     const sourceRow = inputs.f2Report.worksheets[0].rows[0];
@@ -1549,7 +1566,7 @@ describe("createF6FinalReportProjection v3", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toMatch(/\| Report Generated At \| 2026-08-\d{2} \d{2}:\d{2}:\d{2} \(UTC [+-]\d{1,2}(?::\d{2})?\) \|/u);
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC-7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
     expect(report.markdown).toContain("| Need Review | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");

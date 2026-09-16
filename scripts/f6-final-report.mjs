@@ -393,7 +393,7 @@ function verifiedImageLinks(modelInterpretation, options) {
   return links;
 }
 
-function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext, analysisRequestContext }, catalog) {
+function renderF6V3DocumentOverview({ f2Report, analysisContext, analysisRequestContext }, catalog) {
   const readyCount = f2Report.worksheets.filter(({ status }) => status === "ready").length;
   return [
     `## 1. ${catalog.document}`, "",
@@ -402,7 +402,7 @@ function renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext, an
     row(["Workbook Revision", clean(f2Report.workbook.revision, NA)]),
     row(["Selected Worksheet Count", f2Report.worksheets.length]),
     row(["Ready / Blocked Worksheet Count", `${readyCount} / ${f2Report.worksheets.length - readyCount}`]),
-    row(["Analysis Requested At", requestTimestamp(analysisRequestContext, generatedAt)]),
+    row(["Analysis Requested At", requestTimestamp(analysisRequestContext)]),
     row(["Reviewed By", reviewStatus(analysisContext)]),
   ];
 }
@@ -549,7 +549,7 @@ function renderF6V3BlockedWorksheet(worksheet, ordinal, catalog, language) {
   ];
 }
 
-function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, blockedWorksheetDetailsByName = new Map(), generatedAt, imageLinks }) {
+function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimization, modelInterpretation, analysisContext, analysisRequestContext, blockedWorksheetDetailsByName = new Map(), imageLinks }) {
   if (f6Optimization.runStatus !== "COMPLETED" || f6Optimization.worksheets.some(({ runStatus }) => runStatus !== "COMPLETED")) {
     failInvalid("incomplete F6 optimization");
   }
@@ -570,7 +570,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   const markdown = [
     `# ${catalog.title}`,
     "",
-    ...renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext }, catalog),
+    ...renderF6V3DocumentOverview({ f2Report, analysisContext, analysisRequestContext }, catalog),
     "",
     ...renderF6V3WorkbookSummary(worksheets, catalog),
   ];
@@ -804,7 +804,7 @@ function createF6V4Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   const markdown = [
     `# ${catalog.title}`,
     "",
-    ...renderF6V3DocumentOverview({ f2Report, generatedAt, analysisContext, analysisRequestContext }, catalog),
+    ...renderF6V3DocumentOverview({ f2Report, analysisContext, analysisRequestContext }, catalog),
     "",
     ...renderF6V3WorkbookSummary(worksheets, catalog),
   ];
@@ -1383,8 +1383,7 @@ function reportTimestamp(value, utcOffsetMinutes) {
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} (UTC${offset})`;
 }
 
-function requestTimestamp(analysisRequestContext, fallback) {
-  if (analysisRequestContext === undefined) return reportTimestamp(fallback);
+function requestTimestamp(analysisRequestContext) {
   return reportTimestamp(analysisRequestContext.requestedAt, analysisRequestContext.utcOffsetMinutes);
 }
 
@@ -1408,7 +1407,7 @@ function renderDocumentControl(context) {
     row(["Workbook Revision", clean(context.f2Report.workbook.revision, NA), "F1 workbook metadata"]),
     row(["Selected Worksheet Count", clean(context.f2Report.worksheets.length), "F2 selected scope"]),
     row(["Ready / Blocked Worksheet Count", `${readyCount} / ${blockedCount}`, "F2 handoff status"]),
-    row(["Analysis Requested At", requestTimestamp(context.analysisRequestContext, context.generatedAt), "Analysis request context"]),
+    row(["Analysis Requested At", requestTimestamp(context.analysisRequestContext), "Analysis request context"]),
     row(["Reviewed By", reviewStatus(context.analysisContext), "Explicit review record or PENDING"]),
   ];
 }
@@ -2185,9 +2184,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");
-  const analysisRequestContext = input.analysisRequestContext === undefined
-    ? undefined
-    : parseOrThrow(analysisRequestContextSchema, input.analysisRequestContext, "analysisRequestContext");
+  const analysisRequestContext = parseOrThrow(analysisRequestContextSchema, input.analysisRequestContext, "analysisRequestContext");
   const modelInterpretation = requiredMultimodalV3 ?? (input.modelInterpretation === undefined
     ? undefined
     : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation"));

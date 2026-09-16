@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -433,6 +433,7 @@ describe("runF6Optimization", () => {
       expect(missingContextResult).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
       expect(missingContextResult.optimizationJsonPath).toBeUndefined();
       expect(missingContextResult.finalReportMdPath).toBeUndefined();
+      expect(readdirSync(missingRunRoot).sort()).toEqual(["manifest.json"]);
 
       const withContextResult = runF6Optimization({
         ...requestBase,
