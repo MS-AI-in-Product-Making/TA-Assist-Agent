@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import {
   drawingGovernanceResultV2Schema,
+  drawingGovernanceResultV3Schema,
   f2UserReportSchema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
@@ -18,7 +19,7 @@ import {
   createCalculationRequestFromF4Handoff,
   createF4Handoff,
 } from "../packages/workbook-catalog/dist/f4-handoff.js";
-import { createF6ReportProjection, F6_DISPOSITION_RANK, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
+import { createF6ProcessChecks, createF6ReportProjection, F6_DISPOSITION_RANK, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import {
   renderCalculationClaims,
@@ -33,6 +34,22 @@ const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
 const MODEL_RISK_DISCLOSURE = "Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.";
 const MODEL_RISK_DISCLOSURE_PATTERN = /Model interpretation may contain hallucinations,\s*label mismatches,\s*or omissions and must be reviewed by ME\./giu;
+const PRODUCT_CAPABILITIES = {
+  dataCleaning: "Data Cleaning",
+  calculationEngine: "Calculation Engine",
+  analysisInterpretation: "Analysis Interpretation",
+  reportEnhancement: "Report Enhancement",
+  drawingGovernance: "Drawing Governance",
+};
+const F6_PROCESS_CHECK_LABELS = {
+  "analysis-method": "Analysis Method",
+  "input-completeness": "Input Completeness",
+  "output-completeness": "Output Completeness",
+  "tolerance-validity": "Tolerance Validity",
+  "drawing-dim-governance": "Drawing/DIM Governance",
+  "ado-traceability": "ADO Traceability",
+  "target-sigma": "Target Sigma",
+};
 const RECOMMENDATION_CLASS_ORDER = [
   "factor_nominal",
   "system_mean_shift",
@@ -421,13 +438,55 @@ function renderF6V3WorkbookSummary(worksheets, catalog) {
   return lines;
 }
 
-function renderProcessAndRequirements(factors) {
-  const warnings = factors.filter(({ f2Row }) => f2Row.capabilityStatus !== "internal_within_guidance");
+function adoTraceabilityForReport(f3Report) {
+  return f3Report.modelVersion === "drawing-governance-v3" ? f3Report.ado : { status: "not_requested" };
+}
+
+function adoTraceabilityLink(ado) {
+  if (ado.status !== "updated" || !Number.isInteger(ado.workItemId) || ado.workItemId <= 0) return undefined;
+  const operation = ado.operation === "created" ? "Created" : "Updated";
+  return `[${operation} Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
+}
+
+function processCheckAssessment(check, f3Ado) {
+  const link = check.checkId === "ado-traceability" ? adoTraceabilityLink(f3Ado) : undefined;
+  const summary = clean(check.summary);
+  return link === undefined ? summary : `${summary} ${link}`;
+}
+
+function createWorksheetProcessChecks(worksheet, analysisContext, f3Ado) {
+  return createF6ProcessChecks({
+    worksheetName: worksheet.worksheetName,
+    toleranceLoopDescription: worksheet.f2Worksheet.toleranceLoopDescription,
+    f2Worksheet: worksheet.f2Worksheet,
+    f3Worksheet: worksheet.f3Worksheet,
+    f3Ado,
+    calculation: worksheet.f4Calculation,
+    analysisContext,
+  });
+}
+
+function processCheckProjection(check, f3Ado) {
+  return {
+    checkId: check.checkId,
+    status: check.status,
+    assessment: processCheckAssessment(check, f3Ado),
+    ...(check.details.length === 0 ? {} : { details: [...check.details] }),
+  };
+}
+
+function renderProcessAndRequirements(worksheet, analysisContext, f3Ado) {
+  const checks = createWorksheetProcessChecks(worksheet, analysisContext, f3Ado);
   return [
     "## Process and Requirements",
     "",
-    ...factors.map(({ f2Row, modelRow, f0 }) => `- ${clean(f2Row.factorOrdinal?.value)}: ${clean(modelRow.factorName)}; ${f0GuidanceText(f2Row, f0)}`),
-    `- Result: ${warnings.length === 0 ? "PASS" : `WARNING - ${warnings.length} Factor${warnings.length === 1 ? "" : "s"} require engineering review.`}`,
+    "| Check | Status | Assessment |",
+    "|---|---|---|",
+    ...checks.map((check) => row([
+      F6_PROCESS_CHECK_LABELS[check.checkId] ?? clean(check.checkId),
+      check.status,
+      processCheckAssessment(check, f3Ado),
+    ])),
   ];
 }
 
@@ -457,7 +516,7 @@ function statisticalRangeRows(projection, calculation, unit) {
   return rows;
 }
 
-function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
+function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks, analysisContext, f3Ado) {
   const prefix = `3-${ordinal}`;
   const [center, contributors, specifications] = worksheet.f6Worksheet.steps;
   const verifiedRelativePath = imageLinks?.get(worksheet.worksheetName);
@@ -478,7 +537,7 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     ...renderCompleteFactorTable(readyFactorTableRows(factors)),
   ];
   lines.push(
-    "", ...renderProcessAndRequirements(factors),
+    "", ...renderProcessAndRequirements(worksheet, analysisContext, f3Ado),
     "", `## ${catalog.image}`, "", imageLink, "", interpretationText, "", `*${MODEL_RISK_DISCLOSURE}*`,
     "", `## ${catalog.results}`, "",
     "| Requirement | Value |", "|---|---:|",
@@ -564,6 +623,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
   const language = "en";
   const catalog = F6_V3_REPORT_CATALOG.en;
+  const f3Ado = adoTraceabilityForReport(f3Report);
   const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = { workbookDisposition, worksheetDispositions };
@@ -577,7 +637,7 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
     ...((worksheet.f2Worksheet.status === "ready" && worksheet.blocker === undefined)
-      ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks)
+      ? renderF6V3Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks, analysisContext, f3Ado)
       : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
   ));
   const reportMarkdown = `${markdown.join("\n")}\n`;
@@ -604,8 +664,11 @@ function createF6V3Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
           : [`F2:${worksheet.worksheetName}`],
       };
       if (calculation === undefined || worksheet.f6Worksheet === undefined) return base;
+      const processChecks = createWorksheetProcessChecks(worksheet, analysisContext, f3Ado)
+        .map((check) => processCheckProjection(check, f3Ado));
       return {
         ...base,
+        processChecks,
         clarifications: worksheet.f6Worksheet.steps.flatMap((step) => step.step === "centerAssessment" && step.status === "clarification_required"
           ? [step.reasonCode]
           : step.step === "specificationChanges"
@@ -726,7 +789,7 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
   return lines;
 }
 
-function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks) {
+function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageLinks, analysisContext, f3Ado) {
   const prefix = `3-${ordinal}`;
   const calculation = worksheet.f4Calculation;
   const unit = calculation.factors[0]?.unit ?? "unit";
@@ -747,7 +810,7 @@ function renderF6V4Worksheet(worksheet, interpretation, ordinal, catalog, imageL
     "",
     ...renderCompleteFactorTable(readyFactorTableRows(factors)),
     "",
-    ...renderProcessAndRequirements(factors),
+    ...renderProcessAndRequirements(worksheet, analysisContext, f3Ado),
     "",
     `## ${catalog.image}`,
     "",
@@ -797,6 +860,7 @@ function createF6V4Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
   const language = "en";
   const catalog = F6_V3_REPORT_CATALOG.en;
+  const f3Ado = adoTraceabilityForReport(f3Report);
   const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = { workbookDisposition, worksheetDispositions };
@@ -812,7 +876,7 @@ function createF6V4Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
   worksheets.forEach((worksheet, index) => markdown.push(
     "",
     ...((worksheet.f2Worksheet.status === "ready" && worksheet.blocker === undefined)
-      ? renderF6V4Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks)
+      ? renderF6V4Worksheet(worksheet, interpretations.get(worksheet.worksheetName), index + 1, catalog, imageLinks, analysisContext, f3Ado)
       : renderF6V3BlockedWorksheet(worksheet, index + 1, catalog, language)),
   ));
 
@@ -847,8 +911,11 @@ function createF6V4Report({ f2Report, f3Report, f4Report, f5Report, f6Optimizati
           : [`F2:${worksheet.worksheetName}`],
       };
       if (calculation === undefined || worksheet.f6Worksheet === undefined) return base;
+      const processChecks = createWorksheetProcessChecks(worksheet, analysisContext, f3Ado)
+        .map((check) => processCheckProjection(check, f3Ado));
       return {
         ...base,
+        processChecks,
         metrics: {
           mean: worksheet.f6Worksheet.baselineResult.system.mean,
           rssSigma: worksheet.f6Worksheet.baselineResult.system.rssSigma,
@@ -1388,10 +1455,10 @@ function requestTimestamp(analysisRequestContext) {
 }
 
 function requiredAction(context) {
-  if (context.blocker !== undefined) return "Resolve multimodal worksheet evidence before F5/F6 interpretation";
-  if (context.f2Worksheet.status !== "ready") return "Resolve F2 blocked worksheet evidence before F4/F5/F6 interpretation";
+  if (context.blocker !== undefined) return `Resolve ${PRODUCT_CAPABILITIES.analysisInterpretation} evidence before ${PRODUCT_CAPABILITIES.reportEnhancement}.`;
+  if (context.f2Worksheet.status !== "ready") return `Resolve ${PRODUCT_CAPABILITIES.dataCleaning} evidence before ${PRODUCT_CAPABILITIES.calculationEngine}, ${PRODUCT_CAPABILITIES.analysisInterpretation}, and ${PRODUCT_CAPABILITIES.reportEnhancement}.`;
   if (context.disposition === "PASS") return "None";
-  if (context.disposition === "CONDITIONAL_PASS") return "Close F3/F5 engineering review items";
+  if (context.disposition === "CONDITIONAL_PASS") return `Close ${PRODUCT_CAPABILITIES.drawingGovernance} and ${PRODUCT_CAPABILITIES.analysisInterpretation} review items.`;
   return "Engineering review required before release decision";
 }
 
@@ -2177,7 +2244,10 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     ? parseRequiredMultimodalArtifact(input.modelInterpretation)
     : undefined;
   const f2Report = parseOrThrow(f2UserReportSchema, input.f2Report, "f2Report");
-  const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
+  const parsedF3V3 = drawingGovernanceResultV3Schema.safeParse(input.f3Report);
+  const f3Report = parsedF3V3.success
+    ? parsedF3V3.data
+    : parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
   const f4Report = parseOrThrow(f4WorkflowCalculationResultSchema, input.f4Report, "f4Report");
   const f5Report = parseOrThrow(f5DataInterpretationResultSchema, input.f5Report, "f5Report");
   const f6Optimization = parseOrThrow(f6ReadableOptimizationResultSchema, input.f6Optimization, "f6Optimization");

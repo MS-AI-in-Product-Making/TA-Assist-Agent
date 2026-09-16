@@ -1575,6 +1575,110 @@ describe("createF6FinalReportProjection v3", () => {
     expect(report.markdown).toContain('<a id="worksheet-2"></a>');
   });
 
+  it("uses the original request instant and requester explicit offset", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: -420,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 08:30:12 (UTC-7) |");
+    expect(report.markdown).not.toContain("Report Generated At");
+  });
+
+  it("renders process checks from governed inputs", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(readySection).toContain("| Check | Status | Assessment |");
+    expect(readySection).toContain("| Analysis Method | WARNING |");
+    expect(readySection).toContain("| Input Completeness | COMPLETE |");
+    expect(readySection).toContain("| Output Completeness | COMPLETE |");
+    expect(readySection).toContain("| Tolerance Validity | COMPLETE |");
+    expect(readySection).toContain("| Drawing/DIM Governance | COMPLETE |");
+    expect(readySection).toContain("| ADO Traceability | MISSING |");
+    expect(readySection).toContain("| Target Sigma | WARNING |");
+    expect(report.projection.worksheets[0].processChecks.map(({ checkId }) => checkId)).toEqual([
+      "analysis-method",
+      "input-completeness",
+      "output-completeness",
+      "tolerance-validity",
+      "drawing-dim-governance",
+      "ado-traceability",
+      "target-sigma",
+    ]);
+    expect(JSON.stringify(report.projection)).not.toMatch(/"(?:source|evidence|provenance)"\s*:/iu);
+  });
+
+  it("uses product capability names in blocked Required Action", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const blockedSectionStart = report.markdown.indexOf("# 3-2 Worksheet: Blocked-A");
+    const blockedSection = report.markdown.slice(blockedSectionStart);
+
+    expect(blockedSection).toContain(
+      "Required Action: Resolve Data Cleaning evidence before Calculation Engine, Analysis Interpretation, and Report Enhancement.",
+    );
+    expect(blockedSection).not.toMatch(/\bF[2456]\b/u);
+  });
+
+  it("renders ADO traceability links only from complete validated identity", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f3Report = {
+      ...inputs.f3Report,
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "updated",
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(readySection).toContain(
+      "[Updated Work Item #1119604](https://dev.azure.com/contoso/Devices/_workitems/edit/1119604)",
+    );
+
+    const noAdoInputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const noAdoReport = createF6FinalReportProjection(noAdoInputs, { requireMultimodalV3: true });
+    const noAdoSection = noAdoReport.markdown.slice(noAdoReport.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(noAdoSection).not.toContain("https://dev.azure.com/");
+  });
+
+  it("URL-encodes validated ADO traceability organization and project names", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f3Report = {
+      ...inputs.f3Report,
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "created",
+        organization: "contoso lab",
+        project: "Device Programs/Surface",
+        workItemId: 1119604,
+      },
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain(
+      "[Created Work Item #1119604](https://dev.azure.com/contoso%20lab/Device%20Programs%2FSurface/_workitems/edit/1119604)",
+    );
+  });
+
   it("projects the issue 121 PDF report content contract", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });

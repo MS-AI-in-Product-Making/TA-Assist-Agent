@@ -36,6 +36,14 @@ describe("taEngineeringReportProjectionSchema", () => {
             assumptions: ["as-designed"],
             clarifications: [],
             gatingEvidenceReferences: ["F3:Analysis-A"],
+            processChecks: [
+              {
+                checkId: "analysis-method",
+                status: "WARNING",
+                assessment: "Consider Worst Case as the primary assessment method.",
+                details: ["Factor count is below the governed deterministic range."],
+              },
+            ],
           },
           {
             worksheetName: "Analysis-B",
@@ -121,4 +129,39 @@ describe("taEngineeringReportProjectionSchema", () => {
       expect(taEngineeringReportProjectionSchema.safeParse(candidate).success).toBe(false);
     },
   );
+
+  it("rejects forbidden process check projection field names", () => {
+    const candidate = {
+      markdown: "# Report\n",
+      reportSummary: {
+        workbookDisposition: "PASS",
+        worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
+      },
+      projection: {
+        schemaVersion: "ta-engineering-report-projection-v1",
+        title: "Report",
+        workbookDisposition: "PASS",
+        worksheetDispositions: [{ worksheetName: "Analysis-A", disposition: "PASS" }],
+        workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          toleranceLoopDescription: "Loop A",
+          disposition: "PASS",
+          requiredAction: "None",
+          findings: ["ok"],
+          assumptions: [],
+          clarifications: [],
+          gatingEvidenceReferences: ["F4:Analysis-A"],
+          processChecks: [{
+            checkId: "analysis-method",
+            status: "WARNING",
+            assessment: "Consider Worst Case as the primary assessment method.",
+            source: "F6 process checks",
+          }],
+        }],
+      },
+    };
+
+    expect(taEngineeringReportProjectionSchema.safeParse(candidate).success).toBe(false);
+  });
 });
