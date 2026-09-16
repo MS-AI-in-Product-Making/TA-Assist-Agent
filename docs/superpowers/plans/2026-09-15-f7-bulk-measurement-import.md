@@ -444,7 +444,7 @@ git commit -m "feat(f7): commit measurement batches atomically"
 - Create: `apps/f7-local-api/src/f7-measurement-import-registry.test.ts`
 - Modify: `apps/f7-local-api/src/index.ts`
 
-- [ ] **Step 1: Write failing registry tests with a fake clock and ID source**
+- [x] **Step 1: Write failing registry tests with a fake clock and ID source**
 
 Cover CSPRNG-shape IDs from injected `createId`, one authoritative template per session generation, 10-minute expiry, newer-preview invalidation, global and per-session eviction, session ownership, one-time `available -> claimed`, two concurrent claim attempts with one winner, and fresh-registry restart invalidation.
 
@@ -454,13 +454,13 @@ expect(first.status).toBe("claimed");
 expect(registry.claimPreview({ sessionId, previewId })).toEqual({ status: "consumed" });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `npx.cmd vitest run --project node apps/f7-local-api/src/f7-measurement-import-registry.test.ts`
 
 Expected: FAIL because the registry module does not exist.
 
-- [ ] **Step 3: Implement synchronous bounded state transitions**
+- [x] **Step 3: Implement synchronous bounded state transitions**
 
 Export `createF7MeasurementImportRegistry({ now, createId })`. Keep server-held template authorities and parsed preview batches in private Maps. Use a session generation counter and claim records synchronously before any commit call. Set capacities as named exported constants and evict oldest records deterministically.
 
@@ -470,13 +470,13 @@ export const MAX_F7_MEASUREMENT_IMPORT_PREVIEWS = 16;
 export const MAX_F7_MEASUREMENT_IMPORT_TEMPLATES = 16;
 ```
 
-- [ ] **Step 4: Run the test and verify GREEN**
+- [x] **Step 4: Run the test and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/f7-local-api/src/f7-measurement-import-registry.ts apps/f7-local-api/src/f7-measurement-import-registry.test.ts apps/f7-local-api/src/index.ts
