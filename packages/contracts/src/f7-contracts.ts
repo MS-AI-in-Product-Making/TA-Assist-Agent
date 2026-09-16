@@ -2134,7 +2134,7 @@ export const f7ReportAssessmentSchema = z.enum([
 
 export const f7ReportWorkbookSchema = z
   .object({
-    fileName: z.string().min(1),
+    fileName: z.string().min(1).max(255),
     workbookContentHash: sha256LowerSchema,
     worksheetName: z.string().min(1),
   })
@@ -2862,7 +2862,7 @@ export const f7SessionSnapshotSchema = z
     status: f7SessionStatusSchema,
     workbook: z
       .object({
-        fileName: z.string().min(1),
+        fileName: z.string().min(1).max(255),
         workbookContentHash: sha256LowerSchema,
       })
       .strict(),
@@ -2903,7 +2903,7 @@ export const f7WorkbookImportRequestSchema = z
   .object({
     contractId: f7AnalysisRequestContractIdSchema,
     inputClassification: z.literal("confidential"),
-    fileName: z.string().min(1),
+    fileName: z.string().min(1).max(255),
     workbookBytes: z.instanceof(Uint8Array).refine((workbookBytes) => workbookBytes.length > 0, {
       message: "workbookBytes must not be empty",
     }),
@@ -2962,7 +2962,7 @@ export const f7AnalysisResultSchema = z
 
 export const f7WorkbookImportRouteRequestSchema = z
   .object({
-    fileName: z.string().min(1),
+    fileName: z.string().min(1).max(255),
     workbookBase64: z.string().min(1).max(22_369_624),
   })
   .strict();

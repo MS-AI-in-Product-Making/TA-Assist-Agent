@@ -5,6 +5,7 @@ import {
   f7DistributionFitRouteRequestSchema,
   f7FactorConfirmRouteRequestSchema,
   f7FactorModeRouteRequestSchema,
+  f7MeasurementImportCommitRouteRequestSchema,
   f7MeasurementImportPreviewResponseSchema,
   f7MeasurementImportPreviewRouteRequestSchema,
   f7MeasurementDispositionRouteRequestSchema,
@@ -50,6 +51,7 @@ const IMPORT_RAW_LIMIT_BYTES = 22_370_000;
 const JSON_ROUTE_LIMIT_BYTES = 1_100_000;
 const IMPORT_WORKBOOK_LIMIT_BYTES = 16 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2_500_000;
+const MAX_MEASUREMENT_IMPORT_COMMIT_RESPONSE_BYTES = IMPORT_RAW_LIMIT_BYTES;
 
 const ROUTE_KIND_IMPORT = "f7.workbook.import";
 const ROUTE_KIND_WORKSHEET_CONFIRM = "f7.workbook.worksheet-confirm";
@@ -59,6 +61,7 @@ const ROUTE_KIND_MEASUREMENT_PASTE = "f7.factors.measurements.paste";
 const ROUTE_KIND_MEASUREMENT_DISPOSITION = "f7.factors.measurements.disposition";
 const ROUTE_KIND_MEASUREMENT_IMPORT_TEMPLATE = "f7.measurements.import-template";
 const ROUTE_KIND_MEASUREMENT_IMPORT_PREVIEW = "f7.measurements.import-preview";
+const ROUTE_KIND_MEASUREMENT_IMPORT_COMMIT = "f7.measurements.import-commit";
 const ROUTE_KIND_DISTRIBUTION_FIT = "f7.factors.distribution-fit";
 const ROUTE_KIND_DISTRIBUTION_APPROVAL = "f7.factors.distribution-approval";
 const ROUTE_KIND_MONTE_CARLO = "f7.monte-carlo.run";
@@ -76,6 +79,7 @@ const SESSION_PATH = /^\/f7\/session\/([^/]+)$/;
 const DIMENSION_CHAIN_IMAGE_PATH = /^\/f7\/session\/([^/]+)\/dimension-chain-image$/;
 const MEASUREMENT_IMPORT_TEMPLATE_PATH = "/f7/measurements/import-template";
 const MEASUREMENT_IMPORT_PREVIEW_PATH = "/f7/measurements/import-preview";
+const MEASUREMENT_IMPORT_COMMIT_PATH = "/f7/measurements/import-commit";
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 interface ErrorEnvelope {
@@ -159,6 +163,7 @@ function isBodyPostRoute(method: string, pathname: string): boolean {
   if (pathname === "/f7/factors/confirm") return true;
   if (pathname === MEASUREMENT_IMPORT_TEMPLATE_PATH) return true;
   if (pathname === MEASUREMENT_IMPORT_PREVIEW_PATH) return true;
+  if (pathname === MEASUREMENT_IMPORT_COMMIT_PATH) return true;
   if (FACTOR_MODE_PATH.test(pathname)) return true;
   if (FACTOR_MEASUREMENT_PASTE_PATH.test(pathname)) return true;
   if (FACTOR_MEASUREMENT_DISPOSITION_PATH.test(pathname)) return true;
@@ -324,14 +329,14 @@ async function resolveMeasuredUnit(
   return unit;
 }
 
-function writeJson(response: ServerResponse, status: number, payload: unknown): void {
-  if (response.writableEnded || response.destroyed) return;
+function writeJson(response: ServerResponse, status: number, payload: unknown, maxBytes = MAX_RESPONSE_BYTES): number {
+  if (response.writableEnded || response.destroyed) return status;
 
   let responseStatus = status;
   let responsePayload = payload;
 
   let serialized = JSON.stringify(responsePayload);
-  if (Buffer.byteLength(serialized, "utf8") > MAX_RESPONSE_BYTES) {
+  if (Buffer.byteLength(serialized, "utf8") > maxBytes) {
     responseStatus = 500;
     responsePayload = INTERNAL_ENVELOPE;
     serialized = JSON.stringify(responsePayload);
@@ -342,6 +347,7 @@ function writeJson(response: ServerResponse, status: number, payload: unknown): 
   response.setHeader("cache-control", "no-store");
   response.setHeader("content-length", Buffer.byteLength(serialized, "utf8"));
   response.end(serialized);
+  return responseStatus;
 }
 
 function writeImage(response: ServerResponse, mediaType: "image/png" | "image/jpeg", bytes: Uint8Array): void {
@@ -394,6 +400,16 @@ function staleMeasurementImport(): never {
     code: "prerequisite_not_ready",
     summary: "The measurement import template is stale.",
     suggestedAction: "Download a new template for the current F7 session and retry.",
+    affectedInputReferences: ["f7-measurement-import"],
+  });
+}
+
+function rejectMeasurementImportPreview(status: "not_found" | "expired" | "stale" | "blocked" | "consumed" | "session_mismatch"): never {
+  if (status === "not_found" || status === "session_mismatch") rejectBadRequest();
+  throw new HttpRouteError(409, {
+    code: "prerequisite_not_ready",
+    summary: "The measurement import preview cannot be committed.",
+    suggestedAction: "Create and confirm a new measurement import preview for the current F7 session.",
     affectedInputReferences: ["f7-measurement-import"],
   });
 }
@@ -647,6 +663,40 @@ async function handleRequest(
     return { kind: ROUTE_KIND_MEASUREMENT_IMPORT_PREVIEW, status: 200 };
   }
 
+  if (method === "POST" && pathname === MEASUREMENT_IMPORT_COMMIT_PATH) {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const routeRequest = f7MeasurementImportCommitRouteRequestSchema.safeParse({ body });
+    if (!routeRequest.success) rejectBadRequest();
+
+    const claimed = measurementImportRegistry.claimPreview({
+      sessionId: routeRequest.data.body.sessionId,
+      previewId: routeRequest.data.body.previewId,
+    });
+    if (claimed.status !== "claimed") rejectMeasurementImportPreview(claimed.status);
+
+    const expectedReplacementFactorIds = [...claimed.preview.replacementFactorIds].sort();
+    if (routeRequest.data.body.replacementFactorIds.length !== expectedReplacementFactorIds.length
+      || routeRequest.data.body.replacementFactorIds.some((factorId, index) => factorId !== expectedReplacementFactorIds[index])) {
+      rejectBadRequest();
+    }
+
+    const snapshot = service.commitMeasurementImport({
+      sessionId: routeRequest.data.body.sessionId,
+      expectedMeasurementImportRevision: claimed.expectedMeasurementImportRevision,
+      sessionStateDigest: claimed.preview.sessionStateDigest,
+      factorSetDigest: claimed.preview.factorSetDigest,
+      authority: claimed.preview.authority,
+      replacementFactorIds: claimed.preview.replacementFactorIds,
+      factors: claimed.preview.factors,
+    });
+    const responseStatus = writeJson(response, 200, {
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      snapshot,
+    }, MAX_MEASUREMENT_IMPORT_COMMIT_RESPONSE_BYTES);
+    return { kind: ROUTE_KIND_MEASUREMENT_IMPORT_COMMIT, status: responseStatus };
+  }
+
   if (method === "POST" && pathname === "/f7/workbook/import") {
     const body = await readStrictJsonObject(request, IMPORT_RAW_LIMIT_BYTES);
     const routeRequest = f7WorkbookImportRouteRequestSchema.safeParse(body);
@@ -886,6 +936,9 @@ export function createF7LocalServer(options: {
       const parsedUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       if (method === "POST" && parsedUrl.pathname === "/f7/assumption-results/pdf") {
         eventKind = ROUTE_KIND_ASSUMPTION_RESULTS_PDF;
+      }
+      if (method === "POST" && parsedUrl.pathname === MEASUREMENT_IMPORT_COMMIT_PATH) {
+        eventKind = ROUTE_KIND_MEASUREMENT_IMPORT_COMMIT;
       }
       validateRequestFraming(request, method, parsedUrl.pathname);
       const handled = await handleRequest(

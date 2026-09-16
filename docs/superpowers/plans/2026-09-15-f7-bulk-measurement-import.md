@@ -543,7 +543,7 @@ git commit -m "feat(f7): preview bulk measurement workbooks"
 - Modify: `apps/f7-local-api/src/server.ts`
 - Modify: `apps/f7-local-api/src/server.test.ts`
 
-- [ ] **Step 1: Write failing commit route tests**
+- [x] **Step 1: Write failing commit route tests**
 
 Cover `POST /f7/measurements/import-commit`, `confirmed: true`, exact sorted replacement IDs, blocked previews, expired/stale/wrong-session previews, newer generation, repeated commit, and two overlapping requests. Assert only one succeeds and a service validation error consumes the preview while preserving the prior snapshot.
 
@@ -555,13 +555,13 @@ expect(success.body.snapshot.factors.every((factor) =>
 expect(repeated.status).toBe(409);
 ```
 
-- [ ] **Step 2: Run server tests and verify RED**
+- [x] **Step 2: Run server tests and verify RED**
 
 Run: `npx.cmd vitest run --project node apps/f7-local-api/src/server.test.ts`
 
 Expected: FAIL with 404 for the commit route.
 
-- [ ] **Step 3: Implement claim-before-CAS commit**
+- [x] **Step 3: Implement claim-before-CAS commit**
 
 Parse the strict request, synchronously claim the preview, compare exact replacement consent, then call `service.commitMeasurementImport()` with the stored private revision and parsed batch. Return the existing `f7-analysis-result-v1` envelope. Map expired/stale/consumed previews to stable 409 envelopes; leave candidate validation as 400 and unexpected failures as 500.
 
@@ -571,7 +571,7 @@ const claimed = registry.claimPreview({ sessionId, previewId });
 if (claimed.status !== "claimed") throw stalePreviewError(claimed.status);
 ```
 
-- [ ] **Step 4: Run Stage 2 tests and build**
+- [x] **Step 4: Run Stage 2 tests and build**
 
 Run:
 
@@ -582,7 +582,7 @@ npm.cmd run build -- --force
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/f7-local-api/src/server.ts apps/f7-local-api/src/server.test.ts

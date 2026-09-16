@@ -5,6 +5,7 @@ import { Socket } from "node:net";
 import { strToU8, zipSync } from "fflate";
 import {
   createTypedError,
+  f7AnalysisResultSchema,
   f7MeasurementImportPreviewResponseSchema,
   f7ReportProjectionSchema,
   typedErrorSchema,
@@ -621,6 +622,32 @@ async function httpJson(options: {
   });
 }
 
+async function createReadyMeasurementImportPreview(
+  port: number,
+  snapshot: ReturnType<F7SessionService["getSession"]>,
+): Promise<ReturnType<typeof f7MeasurementImportPreviewResponseSchema.parse>> {
+  const download = await httpJson({
+    port,
+    method: "POST",
+    path: "/f7/measurements/import-template",
+    body: { sessionId: snapshot.sessionId },
+  });
+  expect(download.status).toBe(200);
+
+  const preview = await httpJson({
+    port,
+    method: "POST",
+    path: "/f7/measurements/import-preview",
+    body: {
+      sessionId: snapshot.sessionId,
+      fileName: "completed.xlsx",
+      workbookBase64: Buffer.from(addReadyMeasurements(download.rawBytes, snapshot.factors.length)).toString("base64"),
+    },
+  });
+  expect(preview.status).toBe(200);
+  return f7MeasurementImportPreviewResponseSchema.parse(preview.json);
+}
+
 type RawHttpResult = {
   readonly data: string;
   readonly closed: boolean;
@@ -965,6 +992,395 @@ describe("f7 local server", () => {
       previewId: blockedPreviewId,
     })).toEqual({ status: "blocked" });
     expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(before);
+  });
+
+  it("commits a ready preview once with strict confirmation and exact sorted replacement consent", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({ service, onEvent: (event) => events.push({ ...event }) });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const initialPreview = await createReadyMeasurementImportPreview(address.port, snapshot);
+
+    const unconfirmed = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: initialPreview.previewId,
+        replacementFactorIds: [],
+        confirmed: false,
+      },
+    });
+    expectRequestEnvelope(unconfirmed, 400);
+
+    const unknownField = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: initialPreview.previewId,
+        replacementFactorIds: [],
+        confirmed: true,
+        unknown: true,
+      },
+    });
+    expectRequestEnvelope(unknownField, 400);
+
+    const firstCommit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: initialPreview.previewId,
+        replacementFactorIds: [],
+        confirmed: true,
+      },
+    });
+    expect(firstCommit.status).toBe(200);
+    const result = f7AnalysisResultSchema.parse(firstCommit.json);
+    expect(result.snapshot.factors.every((factor) =>
+      factor.sourceMode === "MEASURED" && factor.measurementPasteResult?.status === "ready")).toBe(true);
+    expect(JSON.stringify(firstCommit.json)).not.toContain("expectedMeasurementImportRevision");
+    expect(JSON.stringify(firstCommit.json)).not.toContain('"authority"');
+
+    const replacementPreview = await createReadyMeasurementImportPreview(address.port, service.getSession(snapshot.sessionId));
+    expect(replacementPreview.replacementFactorIds.length).toBe(snapshot.factors.length);
+    const sortedReplacementFactorIds = [...replacementPreview.replacementFactorIds].sort();
+    const wrongConsent = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: replacementPreview.previewId,
+        replacementFactorIds: sortedReplacementFactorIds.slice(1),
+        confirmed: true,
+      },
+    });
+    expectRequestEnvelope(wrongConsent, 400);
+    const consumedAfterWrongConsent = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: replacementPreview.previewId,
+        replacementFactorIds: sortedReplacementFactorIds,
+        confirmed: true,
+      },
+    });
+    expect(consumedAfterWrongConsent.status).toBe(409);
+    expect(consumedAfterWrongConsent.json).toMatchObject({ code: "prerequisite_not_ready" });
+
+    const successfulReplacementPreview = await createReadyMeasurementImportPreview(
+      address.port,
+      service.getSession(snapshot.sessionId),
+    );
+    const successfulReplacementRequest = {
+      sessionId: snapshot.sessionId,
+      previewId: successfulReplacementPreview.previewId,
+      replacementFactorIds: [...successfulReplacementPreview.replacementFactorIds].sort(),
+      confirmed: true,
+    };
+    const replacementCommit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: successfulReplacementRequest,
+    });
+    expect(replacementCommit.status).toBe(200);
+    const repeatedCommit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: successfulReplacementRequest,
+    });
+    expect(repeatedCommit.status).toBe(409);
+    expect(events.at(-1)).toEqual({ kind: "f7.measurements.import-commit", status: 409 });
+  });
+
+  it("maps blocked, expired, stale, newer-generation, consumed, and wrong-session previews without leaking private state", async () => {
+    let nowMs = Date.parse("2026-09-16T08:00:00.000Z");
+    let nextId = 0;
+    const measurementImportRegistry = createF7MeasurementImportRegistry({
+      now: () => nowMs,
+      createId: () => (++nextId).toString(16).padStart(32, "0"),
+    });
+    const service = createRouteService();
+    const first = prepareMeasurementImportSession(service);
+    const second = prepareMeasurementImportSession(service);
+    const server = createF7LocalServer({ service, measurementImportRegistry });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const ready = await createReadyMeasurementImportPreview(address.port, first);
+    const newer = await createReadyMeasurementImportPreview(address.port, first);
+    const stale = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: first.sessionId, previewId: ready.previewId, replacementFactorIds: [], confirmed: true },
+    });
+    expect(stale.status).toBe(409);
+
+    await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: first.sessionId },
+    });
+    const newerGeneration = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: first.sessionId, previewId: newer.previewId, replacementFactorIds: [], confirmed: true },
+    });
+    expect(newerGeneration.status).toBe(409);
+
+    const expiring = await createReadyMeasurementImportPreview(address.port, first);
+    nowMs += 10 * 60 * 1000;
+    const expired = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: first.sessionId, previewId: expiring.previewId, replacementFactorIds: [], confirmed: true },
+    });
+    expect(expired.status).toBe(409);
+
+    nowMs += 1;
+    const blockedDownload = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: first.sessionId },
+    });
+    const blockedWorkbook = editMeasurementTemplate(blockedDownload.rawBytes, (sheet) =>
+      sheet.replace(/<c r="B2"[^>]*>[\s\S]*?<\/c>/, '<c r="B2" t="inlineStr"><is><t>Tampered Factor</t></is></c>'));
+    const blockedPreviewResponse = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: first.sessionId,
+        fileName: "blocked.xlsx",
+        workbookBase64: Buffer.from(blockedWorkbook).toString("base64"),
+      },
+    });
+    const blockedPreviewId = (blockedPreviewResponse.json as { previewId: string }).previewId;
+    const blocked = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: first.sessionId, previewId: blockedPreviewId, replacementFactorIds: [], confirmed: true },
+    });
+    expect(blocked.status).toBe(409);
+
+    const wrongSession = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: second.sessionId, previewId: blockedPreviewId, replacementFactorIds: [], confirmed: true },
+    });
+    const notFound = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: { sessionId: second.sessionId, previewId: "f".repeat(32), replacementFactorIds: [], confirmed: true },
+    });
+    expectRequestEnvelope(wrongSession, 400);
+    expect(wrongSession.json).toEqual(notFound.json);
+
+    for (const result of [stale, newerGeneration, expired, blocked, wrongSession, notFound]) {
+      expect(JSON.stringify(result.json)).not.toContain("expectedMeasurementImportRevision");
+      expect(JSON.stringify(result.json)).not.toContain('"dataset"');
+      expect(JSON.stringify(result.json)).not.toContain('"authority"');
+    }
+  });
+
+  it("allows only one of two overlapping commit requests to claim a preview", async () => {
+    const baseService = createRouteService();
+    const snapshot = prepareMeasurementImportSession(baseService);
+    const commitSpy = vi.fn(baseService.commitMeasurementImport);
+    const service: F7SessionService = { ...baseService, commitMeasurementImport: commitSpy };
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const preview = await createReadyMeasurementImportPreview(address.port, snapshot);
+    const requestBody = {
+      sessionId: snapshot.sessionId,
+      previewId: preview.previewId,
+      replacementFactorIds: preview.replacementFactorIds,
+      confirmed: true,
+    };
+
+    const results = await Promise.all([
+      httpJson({ port: address.port, method: "POST", path: "/f7/measurements/import-commit", body: requestBody }),
+      httpJson({ port: address.port, method: "POST", path: "/f7/measurements/import-commit", body: requestBody }),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    expect(commitSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes a claimed preview when the session revision changed before commit", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const preview = await createReadyMeasurementImportPreview(address.port, snapshot);
+    const factorId = snapshot.factors[0]?.evidence?.factorId;
+    expect(factorId).toBeDefined();
+
+    service.setFactorMode({
+      sessionId: snapshot.sessionId,
+      factorId: factorId!,
+      mode: "MEASURED",
+    });
+    const afterMutation = JSON.stringify(service.getSession(snapshot.sessionId));
+    const requestBody = {
+      sessionId: snapshot.sessionId,
+      previewId: preview.previewId,
+      replacementFactorIds: preview.replacementFactorIds,
+      confirmed: true,
+    };
+
+    const stale = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: requestBody,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.json).toMatchObject({ code: "prerequisite_not_ready" });
+    expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(afterMutation);
+
+    const consumed = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: requestBody,
+    });
+    expect(consumed.status).toBe(409);
+    expect(consumed.json).toMatchObject({ code: "prerequisite_not_ready" });
+    expect(JSON.stringify(service.getSession(snapshot.sessionId))).toBe(afterMutation);
+  });
+
+  it("returns a valid commit envelope larger than the ordinary JSON response limit", async () => {
+    const baseService = createRouteService();
+    const snapshot = prepareMeasurementImportSession(baseService);
+    const oversizedSessionId = "s".repeat(2_600_000);
+    const service: F7SessionService = {
+      ...baseService,
+      commitMeasurementImport: (request) => ({
+        ...baseService.commitMeasurementImport(request),
+        sessionId: oversizedSessionId,
+      }),
+    };
+    const events: Array<{ kind: string; status: number }> = [];
+    const server = createF7LocalServer({ service, onEvent: (event) => events.push({ ...event }) });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const preview = await createReadyMeasurementImportPreview(address.port, snapshot);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: preview.previewId,
+        replacementFactorIds: preview.replacementFactorIds,
+        confirmed: true,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(Number(response.headers["content-length"])).toBeGreaterThan(2_500_000);
+    expect(f7AnalysisResultSchema.parse(response.json).snapshot.sessionId).toBe(oversizedSessionId);
+    expect(events.at(-1)).toEqual({ kind: "f7.measurements.import-commit", status: 200 });
+  });
+
+  it("consumes a claimed preview when service validation fails and preserves the prior session snapshot", async () => {
+    const baseService = createRouteService();
+    const snapshot = prepareMeasurementImportSession(baseService);
+    const before = JSON.stringify(baseService.getSession(snapshot.sessionId));
+    const service: F7SessionService = {
+      ...baseService,
+      commitMeasurementImport: vi.fn(() => {
+        throw createTypedError({
+          code: "validation_error",
+          summary: "Candidate measurement import is invalid.",
+          suggestedAction: "Create a new preview and retry.",
+          affectedInputReferences: ["f7-session-service"],
+        });
+      }),
+    };
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const preview = await createReadyMeasurementImportPreview(address.port, snapshot);
+    const requestBody = {
+      sessionId: snapshot.sessionId,
+      previewId: preview.previewId,
+      replacementFactorIds: preview.replacementFactorIds,
+      confirmed: true,
+    };
+
+    const failed = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: requestBody,
+    });
+    expect(failed.status).toBe(400);
+    expect(failed.json).toMatchObject({ code: "validation_error", summary: "Candidate measurement import is invalid." });
+    expect(JSON.stringify(baseService.getSession(snapshot.sessionId))).toBe(before);
+
+    const repeated = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: requestBody,
+    });
+    expect(repeated.status).toBe(409);
+    expect(service.commitMeasurementImport).toHaveBeenCalledTimes(1);
+
+    const unexpectedPreview = await createReadyMeasurementImportPreview(address.port, snapshot);
+    vi.mocked(service.commitMeasurementImport).mockImplementationOnce(() => {
+      throw new Error("unexpected commit failure");
+    });
+    const unexpected = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: snapshot.sessionId,
+        previewId: unexpectedPreview.previewId,
+        replacementFactorIds: [...unexpectedPreview.replacementFactorIds].sort(),
+        confirmed: true,
+      },
+    });
+    expect(unexpected.status).toBe(500);
+    expect(unexpected.json).toEqual({
+      code: "internal_error",
+      summary: "F7 local API request failed.",
+      suggestedAction: "Retry the request. If the problem persists, restart the local API.",
+      affectedInputReferences: ["f7-local-api"],
+    });
+    expect(JSON.stringify(baseService.getSession(snapshot.sessionId))).toBe(before);
+
+    const malformedFraming = await rawHttpRequest(
+      address.port,
+      "POST /f7/measurements/import-commit HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nTransfer-Encoding: gzip\r\n\r\n{}",
+    );
+    expect(malformedFraming.data).toContain("HTTP/1.1 400");
+    expect(malformedFraming.closed).toBe(true);
   });
 
   it("binds on loopback and supports end-to-end import/get", async () => {
@@ -1458,6 +1874,25 @@ describe("f7 local server", () => {
       body: { sessionId: importJson.sessionId, factorId },
     });
     expectRequestEnvelope(fitBodyWithFactor, 400);
+  });
+
+  it("rejects workbook import file names longer than 255 characters", async () => {
+    const service = createRealService();
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/workbook/import",
+      body: {
+        fileName: `${"a".repeat(251)}.xlsx`,
+        workbookBase64: Buffer.from(buildWorkbook()).toString("base64"),
+      },
+    });
+
+    expectRequestEnvelope(response, 400);
   });
 
   it("enforces raw body limits and strict canonical base64 decode", async () => {
