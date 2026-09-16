@@ -393,6 +393,14 @@ function createV4FinalReportStub({ worksheetNames, blockedWorksheetNames = [] })
   };
 }
 
+function createV4FinalReportWithAdoLinkStub({ worksheetNames, blockedWorksheetNames = [], workItemId = 1119604 } = {}) {
+  const report = createV4FinalReportStub({ worksheetNames, blockedWorksheetNames });
+  return {
+    ...report,
+    markdown: `${report.markdown}\n[Updated Work Item #${workItemId}](https://dev.azure.com/contoso/Devices/_workitems/edit/${workItemId})\n`,
+  };
+}
+
 describe("validateExistingF6Artifact", () => {
   it("rejects current artifacts without request context", () => {
     const { runRoot, bundle } = createVerifiedRun({
@@ -468,6 +476,42 @@ describe("validateExistingF6Artifact", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
     expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("rejects a current v4 report with a work item link when ADO traceability is missing from summary and manifest", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportWithAdoLinkStub({ worksheetNames: ["Analysis-A"] }),
+    });
+
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(summary.adoTraceability).toBeUndefined();
+    expect(manifest.adoTraceability).toBeUndefined();
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("accepts a current v4 report without a work item link when ADO traceability is not requested", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const summary = readJson(summaryPath);
+    const manifest = readJson(manifestPath);
+    summary.adoTraceability = { status: "not_requested" };
+    manifest.adoTraceability = { status: "not_requested" };
+    writeJson(summaryPath, summary);
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({
+      status: "accepted",
+    });
   });
 
   it("rejects v4 selected-result snapshot identity tampering even when hashes are recomputed", () => {

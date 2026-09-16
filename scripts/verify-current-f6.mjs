@@ -159,10 +159,12 @@ function adoTraceabilityLink(ado) {
 function validateCurrentAdoTraceability(summary, manifest, finalReportMarkdown) {
   const summaryAdo = summary?.adoTraceability;
   const manifestAdo = manifest?.adoTraceability;
+  const hasAdoLink = finalReportMarkdown.includes("/_workitems/edit/");
+  if (hasAdoLink && summaryAdo === undefined && manifestAdo === undefined) return false;
   if (summaryAdo === undefined && manifestAdo === undefined) return true;
   if (!sameJson(summaryAdo, manifestAdo) || !validateAdoTraceabilityShape(summaryAdo)) return false;
   if (summaryAdo.status === "updated") return finalReportMarkdown.includes(adoTraceabilityLink(summaryAdo));
-  return !finalReportMarkdown.includes("/_workitems/edit/");
+  return !hasAdoLink;
 }
 
 function sameSourceMap(left, right) {
