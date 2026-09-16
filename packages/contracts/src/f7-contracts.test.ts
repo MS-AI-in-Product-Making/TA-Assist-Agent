@@ -331,24 +331,33 @@ describe("F7 report contracts", () => {
       }).success).toBe(false);
     }
 
-    const numericSetupFields = [
-      "designNominal",
-      "upperTolerance",
-      "lowerTolerance",
-      "longTermSafetyFactor",
-      "sigmaLevel",
+    const invalidNumericSetupFields = [
+      ["designNominal", Number.POSITIVE_INFINITY],
+      ["upperTolerance", Number.POSITIVE_INFINITY],
+      ["lowerTolerance", Number.NEGATIVE_INFINITY],
+      ["longTermSafetyFactor", Number.POSITIVE_INFINITY],
+      ["sigmaLevel", Number.POSITIVE_INFINITY],
     ] as const;
 
-    for (const field of numericSetupFields) {
+    for (const [field, invalidValue] of invalidNumericSetupFields) {
       expect(f7ReportProjectionSchema.safeParse({
         ...report,
-        factors: [{ ...report.factors[0], [field]: Number.POSITIVE_INFINITY }],
+        factors: [{ ...report.factors[0], [field]: invalidValue }],
       }).success).toBe(false);
     }
 
     expect(f7ReportProjectionSchema.safeParse({
       ...report,
       factors: [{ ...report.factors[0], setupDistribution: "normal" }],
+    }).success).toBe(false);
+  });
+
+  it("rejects report factors with zero-width tolerance ranges", () => {
+    const report = createReportFixture();
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], upperTolerance: 0, lowerTolerance: 0 }],
     }).success).toBe(false);
   });
 

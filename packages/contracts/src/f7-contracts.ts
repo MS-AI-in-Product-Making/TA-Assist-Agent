@@ -1476,7 +1476,8 @@ export const f7ReportFactorSchema = z
     approvedDistribution: f7DistributionCandidateFamilySchema,
     sourceReferences: z.array(z.string().min(1)).min(1),
   })
-  .strict();
+  .strict()
+  .superRefine(requireValidEditableFactorSpecification);
 
 export const f7ReportSpecificationSourceCellsSchema = z
   .object({
