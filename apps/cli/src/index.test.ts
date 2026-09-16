@@ -17,12 +17,72 @@ it("parses the internal interaction language for a new Agent session", async () 
   const runAgent = vi.fn(async () => "started");
   const result = await executeCli(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)], {
     cwd: () => "ignored",
+    now: () => new Date("2026-09-16T00:00:00.000Z"),
+    runFeature2: async () => "unused",
+    runAgent,
+    utcOffsetMinutes: () => 480,
+  });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(runAgent).toHaveBeenCalledWith({
+    action: "analyze",
+    rootDir: "repo",
+    interactionLanguage: ENGLISH_LOCK,
+    analysisRequestContext: {
+      requestedAt: "2026-09-16T00:00:00.000Z",
+      utcOffsetMinutes: 480,
+      source: "cli",
+    },
+  });
+});
+
+it("parses explicit analysis request context only for a new Agent analysis", async () => {
+  const runAgent = vi.fn(async () => "started");
+
+  const analyzeResult = await executeCli([
+    "agent",
+    "analyze",
+    "--root",
+    "repo",
+    "--interaction-language",
+    JSON.stringify(ENGLISH_LOCK),
+    "--analysis-request-context",
+    '{"requestedAt":"2026-09-16T15:30:12.000Z","utcOffsetMinutes":-420,"source":"cli"}',
+  ], {
+    cwd: () => "ignored",
     runFeature2: async () => "unused",
     runAgent,
   });
 
-  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(runAgent).toHaveBeenCalledWith({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK });
+  expect(analyzeResult).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(runAgent).toHaveBeenCalledWith({
+    action: "analyze",
+    rootDir: "repo",
+    interactionLanguage: ENGLISH_LOCK,
+    analysisRequestContext: {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: -420,
+      source: "cli",
+    },
+  });
+
+  const resumeResult = await executeCli([
+    "agent",
+    "resume",
+    "--root",
+    "repo",
+    "--session",
+    "session-a",
+    "--analysis-request-context",
+    "{}",
+  ], {
+    cwd: () => "ignored",
+    runFeature2: async () => "unused",
+    runAgent,
+  });
+
+  expect(resumeResult).toMatchObject({ exitCode: 2, stdout: "" });
+  expect(resumeResult.stderr).toContain("analysis-request-context");
 });
 
 it("routes the CLI Agent to the same workbench session", async () => {

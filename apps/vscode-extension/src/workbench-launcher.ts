@@ -20,8 +20,19 @@ export interface WorkbenchProcessLauncher {
   issueHostBearer?(input: { readonly sessionId: string; readonly actionId?: string; readonly hostInstanceId?: string; readonly scopes: readonly ("host-actions:claim" | "host-actions:result" | "host-actions:image:read" | "sessions:read")[] }): Promise<string>;
 }
 
-export async function launchNewWorkbench(rootDir: string, process: WorkbenchProcessLauncher, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }> {
-  const result = await process.launch(["agent", "analyze", "--root", rootDir, "--interaction-language", JSON.stringify(interactionLanguage)]);
+export async function launchNewWorkbench(rootDir: string, process: WorkbenchProcessLauncher, interactionLanguage: InteractionLanguage, utcOffsetMinutes: number): Promise<{ readonly sessionId: string; readonly url: string }> {
+  const result = await process.launch([
+    "agent",
+    "analyze",
+    "--root",
+    rootDir,
+    "--interaction-language",
+    JSON.stringify(interactionLanguage),
+    "--request-source",
+    "vscode",
+    "--utc-offset-minutes",
+    String(utcOffsetMinutes),
+  ]);
   assertLoopbackUrl(result.url);
   if (result.sessionId === undefined || result.sessionId === "pending") throw new Error("Workbench launcher did not return a real session.");
   const url = new URL(result.url);

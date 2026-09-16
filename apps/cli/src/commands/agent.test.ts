@@ -41,8 +41,40 @@ describe("runAgentCommand", () => {
     await runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
     await runAgentCommand({ action: "workbench", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
 
-    expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
+    expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK, undefined);
     expect(workbench).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
+  });
+
+  it("creates the default CLI analysis request context exactly once", async () => {
+    const rootDir = await tempRoot();
+    const openedUrls: string[] = [];
+    const launcher = createLauncherForTest({
+      startWorkbenchServer: async (options) => {
+        const store = await openSessionStore({ rootDir, sessionId: options.resumeSessionId! });
+        try {
+          expect((await store.readSnapshot()).analysisRequestContext).toEqual({
+            requestedAt: "2026-09-16T00:00:00.000Z",
+            utcOffsetMinutes: 480,
+            source: "cli",
+          });
+        } finally {
+          await store.close();
+        }
+        return {
+          server: { close: vi.fn(async () => undefined) },
+          url: `http://127.0.0.1:4317/?session=${options.resumeSessionId}#bootstrap=nonce`,
+          bootstrapNonce: "nonce",
+        };
+      },
+      openBrowser: (url) => { openedUrls.push(url); },
+      now: () => new Date("2026-09-16T00:00:00.000Z"),
+      utcOffsetMinutes: () => 480,
+    });
+
+    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK }, launcher);
+
+    expect(result).toContain("session: ");
+    expect(openedUrls).toHaveLength(1);
   });
 
   it("creates a real SessionStore snapshot before analyze launches the browser", async () => {

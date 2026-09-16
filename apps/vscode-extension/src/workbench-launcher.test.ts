@@ -11,9 +11,9 @@ describe("workbench launcher", () => {
       launch: vi.fn(async () => ({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` })),
     };
 
-    const launched = await launchNewWorkbench("repo", process, ENGLISH_LOCK);
+    const launched = await launchNewWorkbench("repo", process, ENGLISH_LOCK, -420);
 
-    expect(process.launch).toHaveBeenCalledWith(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)]);
+    expect(process.launch).toHaveBeenCalledWith(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK), "--request-source", "vscode", "--utc-offset-minutes", "-420"]);
     expect(launched).toEqual({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` });
   });
 
@@ -22,7 +22,7 @@ describe("workbench launcher", () => {
       launch: vi.fn(async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" })),
     };
 
-    await expect(launchNewWorkbench("repo", process, ENGLISH_LOCK)).rejects.toThrow("real session");
+    await expect(launchNewWorkbench("repo", process, ENGLISH_LOCK, -420)).rejects.toThrow("real session");
     });
 
     it("preserves pure workbench launch without requiring a session", async () => {
@@ -45,5 +45,26 @@ describe("workbench launcher", () => {
 
     expect(process.launch).toHaveBeenCalledWith(["agent", "resume", "--root", "repo", "--session", SESSION_ID]);
     expect(launched).toEqual({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` });
+  });
+
+  it("forwards VS Code source and offset only for new analysis launches", async () => {
+    const process = {
+      launch: vi.fn(async () => ({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` })),
+    };
+
+    await launchNewWorkbench("repo", process, ENGLISH_LOCK, 330);
+
+    expect(process.launch).toHaveBeenCalledWith([
+      "agent",
+      "analyze",
+      "--root",
+      "repo",
+      "--interaction-language",
+      JSON.stringify(ENGLISH_LOCK),
+      "--request-source",
+      "vscode",
+      "--utc-offset-minutes",
+      "330",
+    ]);
   });
 });
