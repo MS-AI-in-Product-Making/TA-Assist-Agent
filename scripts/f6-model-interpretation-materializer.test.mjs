@@ -77,6 +77,7 @@ it("materializes one current v3 artifact for five selected worksheets", () => {
   );
   const loaded = loadF6ArtifactBundle({
     ...bundle,
+    analysisRequestContext: { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: 0, source: "cli" },
     publishRoot: bundle.publishRoot,
     modelInterpretationArtifactRoot: path.dirname(output.artifactPath),
     modelInterpretationArtifact: path.basename(output.artifactPath),

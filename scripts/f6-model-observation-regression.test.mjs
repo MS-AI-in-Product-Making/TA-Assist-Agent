@@ -23,6 +23,7 @@ describe("F6 model-observation evidence continuity regression", () => {
     // Simulate CLI call that does not explicitly pass --image-observations.
     bundle.imageObservationArtifact = undefined;
     bundle.evidenceArtifactRoot = undefined;
+    bundle.analysisRequestContext = { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: 0, source: "cli" };
 
     const result = loadF6ArtifactBundle(bundle);
 

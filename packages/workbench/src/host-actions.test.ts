@@ -12,9 +12,10 @@ import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 const SESSION_ID = "session-host-actions";
 const WORKBOOK_HASH = "a".repeat(64);
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T08:00:00.000Z", utcOffsetMinutes: 0, source: "web" } as const;
 
 function createSessionStore(options: Omit<Parameters<typeof createSessionStoreBase>[0], "interactionLanguage"> & { interactionLanguage?: Parameters<typeof createSessionStoreBase>[0]["interactionLanguage"] }) {
-  return createSessionStoreBase({ ...options, interactionLanguage: options.interactionLanguage ?? ENGLISH_LOCK });
+  return createSessionStoreBase({ ...options, interactionLanguage: options.interactionLanguage ?? ENGLISH_LOCK, analysisRequestContext: options.analysisRequestContext ?? REQUEST_CONTEXT });
 }
 
 const tempRoots: string[] = [];
@@ -606,7 +607,7 @@ function completedResult(
     payload: claim.request?.kind === "surface_validate"
       ? { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation: surfaceConfirmation(claim.request.confirmationHash ?? WORKBOOK_HASH) } }
       : claim.request?.kind === "surface_write"
-        ? { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: WORKBOOK_HASH } } }
+        ? { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { operation: "updated" as const, targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 }, verifiedAt: "2026-08-24T00:00:10.000Z" } } }
         : { status: "completed" as const },
   };
 }

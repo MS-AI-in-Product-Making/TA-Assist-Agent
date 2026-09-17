@@ -49,7 +49,7 @@ describe("vsix package", () => {
     const output = `${execution.stdout}\n${execution.stderr}`;
 
     expect(execution.code).toBe(2);
-    expect(execution.stderr).toContain("internal_error: operation failed");
+    expect(execution.stderr).toContain("validation_error: --root is required");
     expect(output).not.toMatch(/Dynamic require of\s+"node:[^"]+"\s+is not supported/ui);
     expect(output).not.toMatch(/Cannot find module|MODULE_NOT_FOUND/ui);
   }, 20_000);

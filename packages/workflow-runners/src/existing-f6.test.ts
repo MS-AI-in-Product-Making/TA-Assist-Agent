@@ -14,6 +14,7 @@ import { runF6FullValidation } from "../../../scripts/run-f6-full-validation.mjs
 
 const cleanup: string[] = [];
 const interactionLanguage = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
+const analysisRequestContext = { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: 0, source: "cli" } as const;
 const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- artifact mutation tests intentionally exercise untyped external JSON.
@@ -127,7 +128,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-09-14T09-00-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub(),
@@ -150,7 +151,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-09-14T09-05-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub(),
@@ -177,7 +178,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-09-14T09-06-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub(),
@@ -307,6 +308,7 @@ describe("validateExistingF6", () => {
       parseArgs: () => ({
         ...bundle,
         interactionLanguage,
+        analysisRequestContext,
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
@@ -329,7 +331,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-08-24T06-00-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({
         artifactSetVersion: "f6-artifact-set-v3",
         runId,
@@ -362,7 +364,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-09-04T12-30-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({
         artifactSetVersion: "f6-artifact-set-v3",
         runId,
@@ -397,7 +399,7 @@ describe("validateExistingF6", () => {
     const runId = "2026-09-04T12-45-00-000Z";
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
-      parseArgs: () => ({ ...bundle, interactionLanguage, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
       resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub(),
