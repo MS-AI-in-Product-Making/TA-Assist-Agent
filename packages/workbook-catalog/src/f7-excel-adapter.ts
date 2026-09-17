@@ -110,6 +110,14 @@ function normalizeUnit(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function resolveFactorTraceability(
+  parsedValue: string | undefined,
+  overrideValue: string | null | undefined,
+): string | undefined {
+  if (overrideValue === undefined) return parsedValue;
+  return overrideValue ?? undefined;
+}
+
 function cellAddress(reference: string): { readonly column: string; readonly row: number } | undefined {
   const match = CELL_REFERENCE.exec(reference);
   return match ? { column: match[1]!, row: Number(match[2]) } : undefined;
@@ -748,6 +756,8 @@ export function confirmF7FactorSetup(request: {
     const preserveWorksheetSpecification = candidate.specificationSource === "Worksheet";
     const lowerSpecLimit = preserveWorksheetSpecification ? candidate.lowerSpecLimit : derivedLimits.lower;
     const upperSpecLimit = preserveWorksheetSpecification ? candidate.upperSpecLimit : derivedLimits.upper;
+    const partNumber = resolveFactorTraceability(candidate.partNumber, confirmation.partNumber);
+    const dimId = resolveFactorTraceability(candidate.dimId, confirmation.dimId);
 
     const evidence = {
       workbookContentHash: candidate.workbookContentHash,
@@ -758,8 +768,8 @@ export function confirmF7FactorSetup(request: {
       factorCandidateId: candidate.factorCandidateId,
       factorId: buildFactorId(candidate.factorCandidateId, loopCoefficient),
       factorName: candidate.factorName,
-      ...(candidate.partNumber === undefined ? {} : { partNumber: candidate.partNumber }),
-      ...(candidate.dimId === undefined ? {} : { dimId: candidate.dimId }),
+      ...(partNumber === undefined ? {} : { partNumber }),
+      ...(dimId === undefined ? {} : { dimId }),
       ...(candidate.userAdded === true ? { userAdded: true as const } : {}),
       ...(confirmation.componentCategory === undefined
         ? {}
