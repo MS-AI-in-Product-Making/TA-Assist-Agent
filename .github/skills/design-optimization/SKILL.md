@@ -61,7 +61,7 @@ Preserve the same analysis request context for the entire workbook run. Never re
 
 ### Phase W0 - Validate workbook and F0 capabilities
 
-Run `npm run workflow:ta-entry-validation -- <ta-workbook-path>` exactly once. Require its completed result, canonical `.xlsx` path, regular non-linked file validation, workbook content hash, and controlled version list. Preserve the workbook read-only. The command validates repository-backed capabilities through their controlled loaders: public knowledge base `v1`, internal tolerance guidance `internal-v1`, interpretation rules `interpretation-rules-v2`, and process requirements `process-requirements-v1`. Never recursively scan repository contents to validate controlled versions. Stop if the command fails or a required controlled version is unavailable.
+Run `npm run workflow:ta-entry-validation -- <ta-workbook-path>` exactly once. Require its completed result, canonical `.xlsx` path, regular non-linked file validation, workbook content hash, and controlled version list. Preserve the workbook read-only. The command validates repository-backed capabilities through their controlled loaders: public knowledge base `v1`, internal tolerance guidance `internal-v1`, interpretation rules `interpretation-rules-v2`, and process requirements `process-requirements-v3`. Never recursively scan repository contents to validate controlled versions. Stop if the command fails or a required controlled version is unavailable.
 
 ### Phase W1 - Generate F1 worksheet selection
 
