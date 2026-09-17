@@ -423,6 +423,27 @@ describe("createF6ProcessChecks", () => {
     expect(findCheck(createF6ProcessChecks(fixture({ f3Ado: { status: "failed", reasonCode: "permission_denied" } })), "ado-traceability")).toMatchObject({ status: "WARNING" });
   });
 
+  it("treats a validated existing ADO target as complete without claiming a write", () => {
+    const check = findCheck(createF6ProcessChecks(fixture({
+      f3Ado: {
+        status: "target_validated",
+        organization: "1ES4Devices",
+        project: "MechanicalEngineering",
+        workItemId: 1121100,
+      },
+    })), "ado-traceability");
+
+    expect(check).toMatchObject({ status: "COMPLETE", summary: "ADO work item target validated." });
+    expect(check.details).toEqual(["Validated ADO work item: 1ES4Devices/MechanicalEngineering#1121100."]);
+  });
+
+  it("uses complete product capability names in process summaries", () => {
+    const checks = createF6ProcessChecks(completeFixture());
+
+    expect(findCheck(checks, "input-completeness").summary).toContain("F2 Data Cleaning");
+    expect(findCheck(checks, "output-completeness").summary).toContain("F4 Calculation Engine");
+  });
+
   it("returns immutable check objects", () => {
     const checks = createF6ProcessChecks(completeFixture());
     expect(Object.isFrozen(checks)).toBe(true);

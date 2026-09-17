@@ -346,8 +346,8 @@ describe("Design Optimization skill contract", () => {
 
   it("requires validator-confirmed Markdown and PDF links for every successful completion", () => {
     const { internal } = splitSkillSections(readSkill());
-    const markdownLabel = "<Excel basename> - TA Report";
-    const pdfLabel = "<Excel basename> - TA Report PDF";
+    const markdownLabel = "<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT";
+    const pdfLabel = "<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF";
 
     expect(internal).toContain("For every successful completion response");
     expect(internal).toContain("exactly two workspace-relative links");
@@ -359,8 +359,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("do not present any report link");
     expect(internal).not.toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
     expect(internal).not.toContain("[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)");
-    expect(internal.match(/\[<Excel basename> - TA Report\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.md\)/g)).toHaveLength(1);
-    expect(internal.match(/\[<Excel basename> - TA Report PDF\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
+    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.md\)/g)).toHaveLength(1);
+    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
     expectOrdered(internal, [
       `[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`,
       `[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`,

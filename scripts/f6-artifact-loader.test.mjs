@@ -708,6 +708,24 @@ describe("F6 governed bundle validation", () => {
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
   });
 
+  it("accepts structured v3 F3 evidence with a validated ADO target", () => {
+    const bundle = setupBundle();
+    rewriteJson(bundle.paths.f3, (report) => {
+      report.modelVersion = "drawing-governance-v3";
+      report.ado = {
+        status: "target_validated",
+        organization: "1ES4Devices",
+        project: "MechanicalEngineering",
+        workItemId: 1121100,
+      };
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.f3Report.ado).toMatchObject({ status: "target_validated", workItemId: 1121100 });
+  });
+
   it("accepts a required mixed multimodal v4 artifact and carries the failed worksheet as an F6 blocker", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     installRequiredMixedMultimodalV4(bundle);

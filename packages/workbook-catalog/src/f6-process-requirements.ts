@@ -175,8 +175,8 @@ function createInputCompletenessCheck(worksheet: F2Worksheet): F6ProcessCheck {
     .filter((row) => row.missingRequiredFields.length > 0)
     .map((row) => `Factor ${ordinal(row, row.sourceRow)} row ${row.sourceRow} missing required fields: ${row.missingRequiredFields.join(", ")}.`);
   return details.length === 0
-    ? check("input-completeness", "COMPLETE", "All required F2 input fields are present.")
-    : check("input-completeness", "MISSING", `${details.length} factor row(s) are missing required input fields.`, details);
+    ? check("input-completeness", "COMPLETE", "All required F2 Data Cleaning input fields are present.")
+    : check("input-completeness", "MISSING", `${details.length} factor row(s) are missing required F2 Data Cleaning input fields.`, details);
 }
 
 function createOutputCompletenessCheck(calculation: CalculationCompletedResult): F6ProcessCheck {
@@ -190,8 +190,8 @@ function createOutputCompletenessCheck(calculation: CalculationCompletedResult):
     if (!Number.isFinite(calculation.capability[field])) details.push(`Calculation capability.${field} is missing.`);
   }
   return details.length === 0
-    ? check("output-completeness", "COMPLETE", "F4 calculation outputs are complete.")
-    : check("output-completeness", "MISSING", "F4 calculation outputs are incomplete.", details);
+    ? check("output-completeness", "COMPLETE", "F4 Calculation Engine outputs are complete.")
+    : check("output-completeness", "MISSING", "F4 Calculation Engine outputs are incomplete.", details);
 }
 
 function createToleranceValidityCheck(worksheet: F2Worksheet): F6ProcessCheck {
@@ -248,6 +248,11 @@ function createDrawingGovernanceCheck(worksheet: F3Worksheet): F6ProcessCheck {
 }
 
 function createAdoTraceabilityCheck(ado: AdoTraceabilityV3, worksheet: F3Worksheet): F6ProcessCheck {
+  if (ado.status === "target_validated") {
+    return check("ado-traceability", "COMPLETE", "ADO work item target validated.", [
+      `Validated ADO work item: ${ado.organization}/${ado.project}#${ado.workItemId}.`,
+    ]);
+  }
   if (ado.status === "updated") {
     return check("ado-traceability", "COMPLETE", `ADO traceability ${ado.operation}.`, [
       `ADO work item ${ado.operation}: ${ado.organization}/${ado.project}#${ado.workItemId}.`,

@@ -142,6 +142,14 @@ function validateAdoTraceabilityShape(value) {
         && value.project.length > 0
         && Number.isInteger(value.workItemId)
         && value.workItemId > 0;
+    case "target_validated":
+      return sameStrings(keys, ["organization", "project", "status", "workItemId"])
+        && typeof value.organization === "string"
+        && value.organization.length > 0
+        && typeof value.project === "string"
+        && value.project.length > 0
+        && Number.isInteger(value.workItemId)
+        && value.workItemId > 0;
     case "blocked":
     case "failed":
       return sameStrings(keys, value.reasonCode === undefined ? ["status"] : ["reasonCode", "status"])
@@ -152,6 +160,9 @@ function validateAdoTraceabilityShape(value) {
 }
 
 function adoTraceabilityLink(ado) {
+  if (ado.status === "target_validated") {
+    return `[Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
+  }
   const operation = ado.operation === "created" ? "Created" : "Updated";
   return `[${operation} Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
 }
@@ -163,7 +174,7 @@ function validateCurrentAdoTraceability(summary, manifest, finalReportMarkdown) 
   if (hasAdoLink && summaryAdo === undefined && manifestAdo === undefined) return false;
   if (summaryAdo === undefined && manifestAdo === undefined) return true;
   if (!sameJson(summaryAdo, manifestAdo) || !validateAdoTraceabilityShape(summaryAdo)) return false;
-  if (summaryAdo.status === "updated") return finalReportMarkdown.includes(adoTraceabilityLink(summaryAdo));
+  if (summaryAdo.status === "updated" || summaryAdo.status === "target_validated") return finalReportMarkdown.includes(adoTraceabilityLink(summaryAdo));
   return !hasAdoLink;
 }
 
