@@ -1923,6 +1923,23 @@ describe("createF6FinalReportProjection v3", () => {
 });
 
 describe("createF6FinalReportProjection v4 mixed outcomes", () => {
+  it("keeps Chinese interaction metadata while rendering the V4 report in English", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "baseline_meets_target");
+    inputs.f6Optimization.interactionLanguage = {
+      languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false,
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(inputs.f6Optimization.interactionLanguage.uiCatalogLanguage).toBe("zh");
+    expect(report.markdown).toContain("# TA Engineering Analysis Report");
+    expect(report.markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(report.markdown).toContain("## Complete Factor Table");
+    expect(report.markdown).toContain("## Tolerance Path Image");
+    expect(report.markdown).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],

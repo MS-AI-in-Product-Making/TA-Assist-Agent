@@ -84,6 +84,8 @@ describe("Design Optimization skill contract", () => {
     expect(userFacing).toContain("Keep that language locked for the entire workflow");
     expect(userFacing).toContain("Do not re-detect language from confirmation answers");
     expect(userFacing).toContain("Change the locked language only when the user explicitly requests a language change");
+    expect(userFacing).toContain("The interaction language lock governs conversation only");
+    expect(userFacing).toContain("final Markdown and PDF engineering reports are always English");
     expectOrdered(userFacing, [
       "## Purpose",
       "## Entry routing",
@@ -106,7 +108,9 @@ describe("Design Optimization skill contract", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(commandLines(internal)).toEqual(allowedCommands);
     expect(internal).toContain("Pass the workflow-locked language tag with `--language <locked-language-tag>`");
+    expect(internal).toContain("preserve the interaction language as audit metadata without using it to select report prose");
     expect(internal).toContain("Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`");
+    expect(internal).toContain("Generate every report-bound model interpretation field in English");
     expect(internal).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(internal).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
   });
@@ -426,5 +430,7 @@ describe("Design Optimization skill contract", () => {
     expect(entrySkill).toContain("Before any acknowledgement, plan, skill-loading update, or other user-visible text");
     expect(entrySkill).toContain("A naturally English request locks English");
     expect(entrySkill).toContain("Do not inherit the VS Code, host, or UI locale");
+    expect(entrySkill).toContain("The interaction language lock governs conversation only");
+    expect(entrySkill).toContain("final Markdown and PDF engineering reports are always English");
   });
 });

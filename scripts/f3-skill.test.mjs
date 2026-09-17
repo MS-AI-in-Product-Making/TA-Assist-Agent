@@ -248,10 +248,10 @@ describe("Drawing Governance skill contract", () => {
     expect(skill).toContain("[ADO publishing protocol](./references/ado-publishing.md)");
   });
 
-  it("builds repository modules before the first governed workbook command", () => {
+  it("does not register repository-mutating lifecycle hooks for governed workflow commands", () => {
     const scripts = getPackageScripts();
 
-    expect(scripts["preworkflow:f2:excel"]).toBe("npm run build -- --force");
+    expect(Object.keys(scripts).filter((name) => /^(?:pre|post)workflow:/u.test(name))).toEqual([]);
   });
 
   it("locks complete workflow commands to repository scripts and real argument shapes", () => {

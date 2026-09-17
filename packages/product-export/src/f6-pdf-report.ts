@@ -296,7 +296,7 @@ class F6PdfRenderer extends Renderer {
 
   override heading(token: Tokens.Heading): string {
     const content = this.parser.parseInline(token.tokens);
-    const worksheetMatch = token.depth === 1 ? /^3-(\d+)\s+Worksheet:/i.exec(token.text.trim()) : null;
+    const worksheetMatch = token.depth === 1 ? /^3-(\d+)\s+(?:Worksheet|工作表):/iu.exec(token.text.trim()) : null;
     if (worksheetMatch !== null) {
       const closePrevious = this.closeCurrentSection();
       this.section = "worksheet";
@@ -316,13 +316,17 @@ class F6PdfRenderer extends Renderer {
     const panelTypes = new Map([
       ["Process and Requirements", "process"],
       ["Tolerance Path Image", "image"],
+      ["公差路径图片", "image"],
       ["Requirements and Statistical Results", "results"],
+      ["要求与统计结果", "results"],
       ["Adjusted Mean to Spec Center Shift", "center"],
       ["Contributor Priorities", "contributors"],
+      ["贡献因子优先级", "contributors"],
       ["Specification Changes", "specifications"],
+      ["规格变更建议", "specifications"],
     ]);
     const panelType = token.depth === 2 ? panelTypes.get(token.text.trim()) : undefined;
-    if (token.depth === 2 && token.text.trim() === "Complete Factor Table") return "";
+    if (token.depth === 2 && ["Complete Factor Table", "完整 Factor 表"].includes(token.text.trim())) return "";
     if (panelType === undefined) return `<h${token.depth}>${content}</h${token.depth}>\n`;
     const gridStart = this.analysisGridOpen ? "" : '<section class="analysis-grid">';
     const previousPanelEnd = this.analysisPanelOpen ? "</article>" : "";
@@ -632,7 +636,8 @@ const PRINT_CSS = `
   .analysis-panel--contributors .contribution-chart { display:grid; margin:0; grid-template-columns:1fr; }
   .analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }
   .analysis-panel--contributors figcaption,.analysis-panel--specifications figcaption { display:none; }
-  .analysis-panel--contributors .contribution-head,.analysis-panel--contributors .contribution-row { grid-template-columns:30px minmax(145px,1fr) 84px minmax(90px,1fr) 54px 68px minmax(100px,1fr); min-height:17px; padding:1px 0; color:var(--p-black); font-size:10px; line-height:1; }
+  .analysis-panel--contributors { padding:10px 22px; }
+  .analysis-panel--contributors .contribution-head,.analysis-panel--contributors .contribution-row { grid-template-columns:30px minmax(145px,1fr) 84px minmax(90px,1fr) 54px 68px minmax(100px,1fr); min-height:14px; padding:0; color:var(--p-black); font-size:10px; line-height:1; }
   .analysis-panel--contributors .contribution-track { background:rgba(242,242,242,.5); }
   .analysis-panel--contributors .contribution-fill { background:var(--p-yellow); }
   .analysis-panel--contributors>p { margin:4px 0 0; color:var(--p-black); font-size:11px; line-height:1.15; }

@@ -228,6 +228,54 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(6);
   });
 
+  it("paginates localized worksheets and maps localized panel headings", () => {
+    const markdown = [
+      "# TA 工程分析报告",
+      "",
+      "# 3-1 工作表: 分析-A",
+      "",
+      "## 完整 Factor 表",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | DWG-1 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Within guidance |",
+      "",
+      "## 公差路径图片",
+      "",
+      "Image reviewed.",
+      "",
+      "## 要求与统计结果",
+      "",
+      "Results reviewed.",
+      "",
+      "## 贡献因子优先级",
+      "",
+      "Contributors reviewed.",
+      "",
+      "## 规格变更建议",
+      "",
+      "No change proposed.",
+      "",
+      "# 3-2 工作表: 分析-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({
+      markdown,
+      sourceHash: createHash("sha256").update(markdown).digest("hex"),
+    });
+
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
+    expect(html).toContain('id="worksheet-1"');
+    expect(html).toContain('id="worksheet-2"');
+    expect(html).toContain('class="factor-table factor-table--complete"');
+    expect(html).toContain('analysis-panel--image');
+    expect(html).toContain('analysis-panel--results');
+    expect(html).toContain('analysis-panel--contributors');
+    expect(html).toContain('analysis-panel--specifications');
+  });
+
   it("renders the issue 121 bounded worksheet layout", () => {
     const markdown = [
       "# TA Engineering Analysis Report",

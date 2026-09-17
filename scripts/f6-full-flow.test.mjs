@@ -721,6 +721,37 @@ describe("runF6FullValidation", () => {
 });
 
 describe("F6 real artifact full flow", () => {
+  it("preserves Chinese interaction metadata while publishing English reports", () => {
+    const bundle = createRealBundle({ worksheetNames: ["Analysis-A"] });
+    const chineseInteractionLanguage = {
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-zh",
+      source: "workflow_start",
+      fallbackUsed: false,
+    };
+    const { result, runRoot } = runRealF6(bundle, "v4-zh-interaction-english-report", {
+      createFinalReport: createF6FinalReportProjection,
+    }, {
+      interactionLanguage: chineseInteractionLanguage,
+    });
+
+    expect(result).toMatchObject({ status: "completed" });
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const markdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
+    const pdf = readFileSync(path.join(runRoot, "Feature6-Report.pdf"));
+
+    expect(manifest.interactionLanguage).toEqual(chineseInteractionLanguage);
+    expect(summary.interactionLanguage).toEqual(chineseInteractionLanguage);
+    expect(markdown).toContain("# TA Engineering Analysis Report");
+    expect(markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(markdown).not.toMatch(/\p{Script=Han}/u);
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(summary.hashes.finalReportMarkdownSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.md")));
+    expect(summary.hashes.finalReportPdfSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.pdf")));
+  });
+
   it.each([
     [false, "unchanged"], [true, "unchanged"], [true, "missing"], [true, "hash_mismatch"],
   ])("publishes real v4 consumers with mixed=%s and failed image=%s", (mixed, failedImage) => {

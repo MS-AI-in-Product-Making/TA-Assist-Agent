@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { renderF6PdfHtml } from "../../packages/product-export/src/f6-pdf-report.js";
 
 const REQUEST_CONTEXT = {
   requestedAt: "2026-09-16T08:30:12.000Z",
@@ -14,8 +15,8 @@ const REQUEST_CONTEXT = {
 } as const;
 
 const INTERACTION_LANGUAGE = {
-  languageTag: "en-US",
-  uiCatalogLanguage: "en",
+  languageTag: "zh-CN",
+  uiCatalogLanguage: "zh",
   lockedAtTurnId: "task-10-e2e",
   source: "workflow_start",
   fallbackUsed: false,
@@ -336,4 +337,32 @@ test("renders the validated ADO work item link in the worksheet process checks",
       for (const run of runs) rmSync(run.root, { recursive: true, force: true });
     }
   }
+});
+
+test("keeps all ten supported contributor rows visible", async ({ page }, testInfo) => {
+  const factorRows = Array.from({ length: 10 }, (_value, index) => (
+    `| ${index + 1} | Factor ${index + 1} | 0.025 mm | ${(20 - index).toFixed(1)}% | Medium | Review tolerance range |`
+  ));
+  const markdown = [
+    "# TA Engineering Analysis Report",
+    "",
+    "# 3-1 Worksheet: Analysis-A",
+    "",
+    "## Contributor Priorities",
+    "",
+    "| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |",
+    "|---:|---|---:|---:|---|---|",
+    ...factorRows,
+  ].join("\n");
+  const htmlPath = testInfo.outputPath("ten-contributors.html");
+  writeFileSync(htmlPath, renderF6PdfHtml({
+    markdown,
+    sourceHash: createHash("sha256").update(markdown).digest("hex"),
+  }), "utf8");
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto(pathToFileURL(htmlPath).href);
+  const panel = page.locator(".analysis-panel--contributors");
+  await expect(panel.locator(".contribution-row")).toHaveCount(10);
+  expect(await panel.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
 });
