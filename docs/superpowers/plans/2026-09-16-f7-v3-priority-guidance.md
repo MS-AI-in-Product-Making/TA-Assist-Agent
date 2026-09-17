@@ -130,7 +130,7 @@ Run the focused contracts, adapter, session, PDF, Factor table, guidance, interp
 
 Expected: all focused tests and build pass.
 
-- [ ] **Step 5: Run browser and repository hygiene checks**
+- [x] **Step 5: Run browser and repository hygiene checks**
 
 Run the F7 feature server and inspect desktop/mobile priority interpretation. Then run `git diff --check` and `git status --short`.
 

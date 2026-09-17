@@ -1245,7 +1245,7 @@ async function handleGeneratePdf(): Promise<void> {
   gap: 5px 16px;
 }
 
-.process-priority-definitions p {
+.process-priority-definitions > div {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 6px;
@@ -1255,8 +1255,14 @@ async function handleGeneratePdf(): Promise<void> {
   line-height: 1.35;
 }
 
-.process-priority-definitions strong {
+.process-priority-definitions dt,
+.process-priority-definitions dd {
+  margin: 0;
+}
+
+.process-priority-definitions dt {
   color: var(--ink);
+  font-weight: 750;
 }
 
 .process-guidance-list {

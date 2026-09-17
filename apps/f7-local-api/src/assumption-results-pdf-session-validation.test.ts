@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
+import type { ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 import { calculateToleranceAnalysis } from "@ai-assist/workbook-catalog/calculation-kernel";
 import { createF7SessionService } from "./f7-session-service.js";
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
@@ -59,7 +61,11 @@ function createService() {
   });
 }
 
-function createReadySession(fileName = "Session-A.xlsx", firstFactorName?: string) {
+function createReadySession(
+  fileName = "Session-A.xlsx",
+  firstFactorName?: string,
+  componentCategories: readonly (ProcessRequirementComponentCategory | undefined)[] = [],
+) {
   const service = createService();
   const imported = service.importWorkbook({
     contractId: "f7-analysis-request-v1",
@@ -77,11 +83,12 @@ function createReadySession(fileName = "Session-A.xlsx", firstFactorName?: strin
   });
   const ready = service.confirmFactorSetup({
     sessionId: imported.sessionId,
-    confirmations: worksheet.factors.map((factor) => ({
+    confirmations: worksheet.factors.map((factor, index) => ({
       factorCandidateId: factor.factorCandidate.factorCandidateId,
       designNominal: factor.factorCandidate.designNominal,
       upperTolerance: factor.factorCandidate.upperTolerance,
       lowerTolerance: factor.factorCandidate.lowerTolerance,
+      ...(componentCategories[index] === undefined ? {} : { componentCategory: componentCategories[index] }),
       confirmed: true,
     })),
   });
@@ -314,7 +321,57 @@ function cloneRequest(request: AssumptionResultsPdfRouteRequest): AssumptionResu
   return JSON.parse(JSON.stringify(request)) as AssumptionResultsPdfRouteRequest;
 }
 
+function addCanonicalPriorityGuidance(
+  request: AssumptionResultsPdfRouteRequest,
+  componentCategories: readonly ProcessRequirementComponentCategory[],
+): void {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  const evaluation = processRequirements.evaluateProcessRequirements({
+    actor: "all",
+    analysisMethod: "one-dimensional-rss",
+    toleranceCount: request.engineeringEvidence.factorSetup.rows.length,
+    componentCategories,
+  });
+  if (evaluation.status !== "matched" || evaluation.priorityRecommendation === undefined) {
+    throw new Error("Expected a V3 priority recommendation for categorized test Factors.");
+  }
+  request.priorityRecommendation = evaluation.priorityRecommendation;
+  request.priorityDefinitions = processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
+      title: entry.title,
+      message: entry.message,
+    }));
+}
+
 describe("validateAssumptionResultsPdfRequestAgainstSession", () => {
+  it("accepts only the V3 recommendation derived from confirmed session categories", () => {
+    const categories = ["battery-cts", "cover-fit-and-function"] as const;
+    const { ready } = createReadySession("Session-A.xlsx", undefined, categories);
+    const canonical = buildSessionBoundRequest(ready);
+    addCanonicalPriorityGuidance(canonical, categories);
+
+    expect(canonical.priorityRecommendation?.selectedPriority).toBe("P0");
+    expect(validateAssumptionResultsPdfRequestAgainstSession(canonical, ready)).toEqual({ ok: true });
+
+    const forged = cloneRequest(canonical);
+    forged.priorityRecommendation = { selectedPriority: "P3", requiresMeDmAlignment: true };
+    expect(validateAssumptionResultsPdfRequestAgainstSession(forged, ready)).toEqual({ ok: false });
+
+    const missing = cloneRequest(canonical);
+    delete missing.priorityRecommendation;
+    expect(validateAssumptionResultsPdfRequestAgainstSession(missing, ready)).toEqual({ ok: false });
+  });
+
+  it("rejects a priority recommendation when the session has no confirmed categories", () => {
+    const { ready } = createReadySession();
+    const forged = buildSessionBoundRequest(ready);
+    addCanonicalPriorityGuidance(forged, ["battery-cts"]);
+
+    expect(validateAssumptionResultsPdfRequestAgainstSession(forged, ready)).toEqual({ ok: false });
+  });
+
   it("fails closed when request evidence contains Infinity/NaN even if counterpart is also non-finite", () => {
     const { ready } = createReadySession();
     const baseline = buildSessionBoundRequest(ready);

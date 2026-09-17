@@ -1,4 +1,5 @@
-import type { F7SessionSnapshot } from "@ai-assist/contracts";
+import type { F7SessionSnapshot, ProcessRequirementComponentCategory } from "@ai-assist/contracts";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   calculateToleranceAnalysis,
   isCalculationKernelError,
@@ -54,6 +55,33 @@ function sameSessionIdentityNumber(left: number, right: number): boolean {
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function validatePriorityRecommendation(
+  request: AssumptionResultsPdfRouteRequest,
+  sessionEvidenceRows: readonly NonNullable<F7SessionSnapshot["factors"][number]["evidence"]>[],
+): boolean {
+  const componentCategories = [...new Set(sessionEvidenceRows.flatMap((evidence) => {
+    const category = evidence.componentCategory as ProcessRequirementComponentCategory | undefined;
+    return category === undefined ? [] : [category];
+  }))].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  if (componentCategories.length === 0) {
+    return request.priorityRecommendation === undefined;
+  }
+
+  const evaluation = loadProcessRequirements({ version: "process-requirements-v3" })
+    .evaluateProcessRequirements({
+      actor: "all",
+      analysisMethod: "one-dimensional-rss",
+      toleranceCount: sessionEvidenceRows.length,
+      componentCategories,
+    });
+  const expected = evaluation.status === "matched" ? evaluation.priorityRecommendation : undefined;
+  const actual = request.priorityRecommendation;
+  return expected !== undefined
+    && actual !== undefined
+    && actual.selectedPriority === expected.selectedPriority
+    && actual.requiresMeDmAlignment === expected.requiresMeDmAlignment;
 }
 
 function toStatus(value: "PASS" | "FAIL"): "PASS" | "FAIL" {
@@ -341,6 +369,9 @@ export function validateAssumptionResultsPdfRequestAgainstSession(
   }
 
   if (!validateDerivedEngineeringEvidence(request, sessionEvidenceRows, session, calculate)) {
+    return { ok: false };
+  }
+  if (!validatePriorityRecommendation(request, sessionEvidenceRows)) {
     return { ok: false };
   }
 

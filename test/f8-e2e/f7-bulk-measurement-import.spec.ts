@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { expect, test, type Download, type Page } from "@playwright/test";
@@ -95,6 +95,51 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await confirmOverwrite.click();
   await expect(page.locator("[data-measurement-import-success]")).toContainText("7 replacements");
   await assertCanonicalMeasuredRows(page);
+});
+
+test("renders governed V3 priority guidance and exports it to PDF", async ({ page }) => {
+  await page.goto(WEB_ORIGIN);
+  await page.locator("#workbook-file").setInputFiles(F7_ANONYMOUS_SOURCE_WORKBOOK);
+  await page.getByRole("radio", { name: /Anonymous_TA/ }).check();
+  await page.getByRole("button", { name: "Confirm selection" }).click();
+
+  await page.locator("[data-edit-factor-setup]").click();
+  const categorySelectors = page.locator("[data-component-category]");
+  await expect(categorySelectors).toHaveCount(7);
+  await categorySelectors.nth(0).selectOption("battery-cts");
+  await categorySelectors.nth(1).selectOption("cover-fit-and-function");
+  await page.locator("#confirm-factor-setup").click();
+
+  const guidance = page.locator("[data-process-guidance]");
+  await expect(guidance).toBeVisible();
+  await expect(guidance.locator("[data-process-guidance-version]")).toHaveText("V3");
+  await expect(guidance.locator("[data-process-priority-recommendation]")).toContainText("Recommended priority P0");
+  await expect(guidance.locator("[data-process-priority-alignment]")).toContainText("Microsoft ME/DM alignment");
+  await expect(guidance.locator("[data-process-priority-definition]")).toHaveCount(4);
+  await expect(guidance.locator("[data-process-priority-definition]").nth(0)).toHaveAttribute("data-priority", "P0");
+  await expect(guidance.locator("[data-process-priority-definition]").nth(3)).toHaveAttribute("data-priority", "P3");
+
+  await page.screenshot({
+    path: resolve(F7_BULK_IMPORT_OUTPUT_DIRECTORY, "v3-priority-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(guidance).toBeVisible();
+  expect(await guidance.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({
+    path: resolve(F7_BULK_IMPORT_OUTPUT_DIRECTORY, "v3-priority-mobile.png"),
+    fullPage: true,
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("[data-generate-assumption-results-pdf]").click();
+  const pdfPath = await saveDownload(await downloadPromise, "v3-priority-guidance.pdf");
+  const pdfBytes = await readFile(pdfPath);
+  expect(pdfBytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  expect(pdfBytes.byteLength).toBeGreaterThan(10_000);
+  const pageMarkers = pdfBytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? [];
+  expect(pageMarkers.length).toBeGreaterThanOrEqual(4);
+  expect(pageMarkers.length).toBeLessThanOrEqual(8);
 });
 
 async function downloadTemplate(page: Page, fileName: string): Promise<string> {
