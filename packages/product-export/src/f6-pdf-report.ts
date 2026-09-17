@@ -408,6 +408,27 @@ class F6PdfRenderer extends Renderer {
     if (headers.length === 3 && headers[0] === "Capability Metric" && headers[1] === "Value" && headers[2] === "Result") {
       return capabilitySpectrum(this.requirements, token.rows);
     }
+    if (exactHeadersMatch(headers, ["Check", "Status", "Assessment"])) {
+      const headerCells = token.header.map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`).join("");
+      const rows = token.rows.map((row) => {
+        const cells = row.map((cell, index) => {
+          if (index !== 1) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+          const status = cellText(cell).trim().toUpperCase();
+          const semanticClass = status === "MISSING"
+            ? "status-missing"
+            : status === "WARNING"
+              ? "status-warning"
+              : status === "COMPLETE"
+                ? "status-complete"
+                : "";
+          return semanticClass === ""
+            ? `<td>${this.parser.parseInline(cell.tokens)}</td>`
+            : `<td class="${semanticClass}"><strong class="${semanticClass}">${escapeHtml(status)}</strong></td>`;
+        }).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      return `<table class="analysis-table process-check-table"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
     if (exactHeadersMatch(headers, COMPLETE_FACTOR_TABLE_HEADERS)) {
       if (token.rows.length > 10) {
         throw new Error("F6 PDF fixed slide supports at most 10 Factors per worksheet.");
@@ -580,6 +601,11 @@ const PRINT_CSS = `
   .analysis-panel+.analysis-panel { border-left:0; }
   .analysis-panel h2 { margin:0 0 12px; color:inherit; font:700 28px/1 var(--st-display); text-transform:uppercase; }
   .analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-orange); }
+  .process-check-table { margin:0; table-layout:fixed; font-size:11px; line-height:1.1; }
+  .process-check-table th,.process-check-table td { padding:4px 5px; }
+  .process-check-table th:nth-child(1),.process-check-table td:nth-child(1) { width:31%; }
+  .process-check-table th:nth-child(2),.process-check-table td:nth-child(2) { width:22%; }
+  .process-check-table th:nth-child(3),.process-check-table td:nth-child(3) { width:47%; }
   .analysis-panel--process ul { margin:0; padding-left:20px; font-size:14px; line-height:1.25; }
   .analysis-panel--process li { margin:6px 0; color:var(--p-black); }
   .analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:18px; grid-column:2; grid-row:1; background:var(--p-white); }

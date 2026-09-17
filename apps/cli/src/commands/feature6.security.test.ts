@@ -162,7 +162,11 @@ describe("Feature 6 CLI trust boundary", () => {
         costPath: "evidence/cost.json",
         imageObservationsPath: "evidence/images.json",
       },
-      { executeFile },
+      {
+        executeFile,
+        now: () => new Date("2026-09-16T15:30:12.000Z"),
+        utcOffsetMinutes: () => -420,
+      },
     );
 
     expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nfullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}\nstatus: partially_completed`);
@@ -170,6 +174,7 @@ describe("Feature 6 CLI trust boundary", () => {
     expect(calls[0].file).toBe(process.execPath);
     expect(calls[0].args).toEqual([
       trustedRunner, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      "--analysis-request-context", '{"requestedAt":"2026-09-16T15:30:12.000Z","utcOffsetMinutes":-420,"source":"cli"}',
       "--worksheet", "Overview", "--worksheet", "Details",
       "--language", "en-US", "--model-interpretation", "evidence/model.json",
       "--supplier-capability", "evidence/supplier.json",

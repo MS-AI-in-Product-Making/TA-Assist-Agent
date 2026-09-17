@@ -25,6 +25,8 @@ interface Feature6CommandDependencies {
     args: readonly string[],
     options: Feature6ExecutionOptions,
   ) => Promise<{ stdout: string; stderr: string }>;
+  readonly now?: () => Date;
+  readonly utcOffsetMinutes?: (requestedAt: Date) => number;
 }
 
 const defaultDependencies: Feature6CommandDependencies = {
@@ -271,6 +273,12 @@ export async function runFeature6WorkflowCommand(
   validateArtifactRoot(f5Root, "Feature5-Report.json", "Feature 5");
 
   const args = [trustedRunnerPath, f2Root, f3Root, f4Root, f5Root];
+  const requestedAt = (dependencies.now ?? (() => new Date()))();
+  args.push("--analysis-request-context", JSON.stringify({
+    requestedAt: requestedAt.toISOString(),
+    utcOffsetMinutes: (dependencies.utcOffsetMinutes ?? ((value: Date) => -value.getTimezoneOffset()))(requestedAt),
+    source: "cli",
+  }));
   for (const worksheetName of normalizedWorksheets(options.selectedWorksheetNames)) {
     args.push("--worksheet", worksheetName);
   }

@@ -395,6 +395,14 @@ describe("renderF6PdfSync", () => {
       "| B | Factor B | Part B | CNC | DWG-2 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
       "| C | Factor C | Part C | CNC | DWG-3 | 12 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
       "",
+      "## Process and Requirements",
+      "",
+      "| Check | Status | Assessment |",
+      "|---|---|---|",
+      "| Input Completeness | MISSING | Drawing Number is missing. |",
+      "| Target Sigma | WARNING | Current 4 sigma differs from recommended 6 sigma. |",
+      "| Output Completeness | COMPLETE | Specification limits are available. |",
+      "",
       "## Tolerance Path Image",
       "",
       "![Tolerance stack](evidence/stack.png)",
@@ -426,6 +434,8 @@ describe("renderF6PdfSync", () => {
     });
 
     expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain('<strong class="status-warning">WARNING</strong>');
+    expect(html).toContain('<strong class="status-complete">COMPLETE</strong>');
     expect(html).toContain('<strong class="dim-id-review">1</strong>');
     expect(html).not.toContain('<strong class="dim-id-review">DIM-1</strong>');
     expect(html).not.toContain('<strong class="dim-id-review">12</strong>');
