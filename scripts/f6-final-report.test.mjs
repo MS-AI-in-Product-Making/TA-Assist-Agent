@@ -362,8 +362,9 @@ function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
   }));
 }
 
-function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion, optimizationVersion = "v4" } = {}) {
+function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], selectedWorksheetNames = worksheetNames, blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion, optimizationVersion = "v4" } = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames, actualFieldOverrides, systemSpecificationOverrides });
+  bundle.selectedWorksheetNames = [...selectedWorksheetNames];
   const modelInterpretation = modelInterpretationVersion === undefined
     ? undefined
     : installF6ModelInterpretation(bundle, { version: modelInterpretationVersion });
@@ -1408,6 +1409,19 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(() => createF6FinalReportProjection(withoutRequestContext, { requireMultimodalV3: true }))
       .toThrow(/analysisRequestContext/i);
+  });
+
+  it("publishes only the confirmed downstream subset of ready worksheets", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A", "Analysis-B"],
+      selectedWorksheetNames: ["Analysis-A"],
+    });
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.reportSummary.worksheetDispositions.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+    expect(report.markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(report.markdown).not.toContain("Worksheet: Analysis-B");
   });
 
   it("marks ready identifier gaps as MISSING with the printable row marker", () => {

@@ -693,6 +693,21 @@ describe("F6 governed bundle validation", () => {
       findingKind === "confirmed_requirement_violation")).toBe(false);
   });
 
+  it("limits report scope to the confirmed downstream subset plus F2 blocked worksheets", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"], blockedWorksheetNames: ["Blocked-A"] });
+    bundle.selectedWorksheetNames = ["Analysis-A"];
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
+    expect(result.request.reportScope).toEqual({
+      worksheetNames: ["Analysis-A", "Blocked-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+    expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+  });
+
   it("accepts a required mixed multimodal v4 artifact and carries the failed worksheet as an F6 blocker", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     installRequiredMixedMultimodalV4(bundle);

@@ -541,15 +541,16 @@ export function loadF6ArtifactBundle({
   }
 
   const readyWorksheets = f2.worksheets.filter(({ status }) => status === "ready");
-  const reportScope = {
-    worksheetNames: f2.worksheets.map(({ worksheetName }) => worksheetName),
-    blockedWorksheetNames: f2.worksheets
-      .filter(({ status }) => status === "blocked")
-      .map(({ worksheetName }) => worksheetName),
-  };
   const readyWorksheetNames = readyWorksheets.map(({ worksheetName }) => worksheetName);
   let selection = exactUniqueSelection(selectedWorksheetNames, readyWorksheetNames);
   if (!selection) return inputRejected("worksheet_selection_invalid", "selectedWorksheetNames");
+  const blockedWorksheetNames = f2.worksheets
+    .filter(({ status }) => status === "blocked")
+    .map(({ worksheetName }) => worksheetName);
+  const reportScope = {
+    worksheetNames: [...selection, ...blockedWorksheetNames],
+    blockedWorksheetNames,
+  };
   const parsedAnalysisRequestContext = analysisRequestContextSchema.safeParse(analysisRequestContext);
   if (!parsedAnalysisRequestContext.success) return inputRejected("artifact_contract_invalid", "analysisRequestContext");
 

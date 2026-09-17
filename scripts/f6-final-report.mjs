@@ -135,8 +135,11 @@ function assertReportScope(f2Report, f6Optimization, blockedWorksheetDetailsByNa
     && !blockedWorksheetDetailsByName.has(worksheetName))) {
     failInvalid("report scope");
   }
-  if (!isDeepStrictEqual(reportScope.worksheetNames, allWorksheetNames)
-    || reportScope.blockedWorksheetNames.some((worksheetName) => !allWorksheetNames.includes(worksheetName))) {
+  const optimizationWorksheetNames = f6Optimization.worksheets.map(({ worksheetName }) => worksheetName);
+  const expectedReportWorksheetNames = [...optimizationWorksheetNames, ...reportScope.blockedWorksheetNames];
+  if (!isDeepStrictEqual(reportScope.worksheetNames, expectedReportWorksheetNames)
+    || optimizationWorksheetNames.some((worksheetName) => !readyWorksheetNames.includes(worksheetName))
+    || reportScope.blockedWorksheetNames.some((worksheetName) => optimizationWorksheetNames.includes(worksheetName))) {
     failInvalid("report scope");
   }
 }
@@ -1130,15 +1133,17 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
     .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName));
 
   assertExactWorksheetSet(
-    f3Report.worksheets.map(({ worksheetName }) => worksheetName),
-    f2Report.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName),
+    f3Report.worksheets
+      .map(({ worksheetName }) => worksheetName)
+      .filter((worksheetName) => readyNames.includes(worksheetName)),
+    readyNames,
     "f3Report",
   );
   assertExactWorksheetSet(
     f5Report.worksheets
       .filter(({ status }) => status === "completed")
       .map(({ worksheetName }) => worksheetName)
-      .filter((worksheetName) => !blockedScopeNameSet.has(worksheetName)),
+      .filter((worksheetName) => readyNames.includes(worksheetName)),
     readyNames,
     "f5Report",
   );
@@ -1155,6 +1160,7 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
     f5Report.worksheets.filter((worksheet) => worksheet.status === "completed"),
   );
   const f6ByName = indexByWorksheetName(f6Optimization.worksheets);
+  const f2ByName = indexByWorksheetName(f2Report.worksheets);
   const { byName: f4ByName, counts: f4Counts } = indexCalculationsByWorksheetName(f4Report.calculations);
   const f2ReadyByName = indexByWorksheetName(f2Report.worksheets.filter(({ status }) => status === "ready"));
   const f2HandoffByName = indexByWorksheetName(f2Report.f4Handoffs);
@@ -1182,8 +1188,9 @@ function buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6
     });
   }
 
-  return f2Report.worksheets.map((f2Worksheet) => {
-    const worksheetName = f2Worksheet.worksheetName;
+  return f6Optimization.provenance.reportScope.worksheetNames.map((worksheetName) => {
+    const f2Worksheet = f2ByName.get(worksheetName);
+    if (f2Worksheet === undefined) failInvalid("report scope");
     const blockedByScope = blockedScopeNameSet.has(worksheetName);
     const blocker = blockedWorksheetDetailsByName.get(worksheetName);
 
@@ -2157,16 +2164,21 @@ function worksheetProjection(worksheet, interpretation, modelInterpretationVersi
   };
 }
 
-function assertMultimodalAuthority(artifact, { f2Report, f3Report, f4Report, f5Report }) {
+function assertMultimodalAuthority(artifact, { f2Report, f3Report, f4Report, f5Report, f6Optimization }) {
   const readyWorksheets = f2Report.worksheets.filter(({ status }) => status === "ready");
-  const readyNames = readyWorksheets.map(({ worksheetName }) => worksheetName);
-  if (artifact.workbookContentHash !== f2Report.workbook.contentHash
-    || !isDeepStrictEqual(artifact.selectedWorksheetNames, readyNames)) {
-    throw new Error("multimodal v3 scope must exactly match the governed F2 workbook and ready worksheets");
-  }
   const completedWorksheets = artifact.contractVersion === "f5-multimodal-artifact-v4"
     ? artifact.worksheets.filter((worksheet) => worksheet.status === "completed")
     : artifact.worksheets;
+  const completedNames = completedWorksheets.map(({ request }) => request.worksheetName);
+  const optimizationNames = f6Optimization.worksheets.map(({ worksheetName }) => worksheetName);
+  const scopeMatches = artifact.contractVersion === "f5-multimodal-artifact-v4"
+    ? isDeepStrictEqual(optimizationNames, completedNames)
+      || isDeepStrictEqual(optimizationNames, artifact.selectedWorksheetNames)
+    : isDeepStrictEqual(optimizationNames, artifact.selectedWorksheetNames);
+  if (artifact.workbookContentHash !== f2Report.workbook.contentHash
+    || !scopeMatches) {
+    throw new Error("multimodal v3 scope must exactly match the governed optimization worksheets");
+  }
   for (const pair of artifact.worksheets) {
     const { request } = pair;
     const f2Worksheet = readyWorksheets.find(({ worksheetName }) => worksheetName === request.worksheetName);
@@ -2260,7 +2272,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     ? undefined
     : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation"));
   if (requiredMultimodalV3 !== undefined) {
-    assertMultimodalAuthority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report });
+    assertMultimodalAuthority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report, f6Optimization });
     const blockedWorksheetDetailsByName = multimodalBlockedWorksheetDetailsByName(requiredMultimodalV3);
     const imageLinks = verifiedImageLinks(requiredMultimodalV3, options);
     if (f6Optimization.optimizationVersion === "f6-optimization-v4") {
