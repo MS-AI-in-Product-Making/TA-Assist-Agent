@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createF7Client } from "./f7-client";
+import { createF7Client, type AssumptionResultsPdfRequest, type F7Client } from "./f7-client";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
@@ -217,6 +217,78 @@ const validReport = {
   markdown: "# F7 Report\n",
 } as const;
 
+const assumptionResultsPdfRequest = {
+  sessionId: "session-01",
+  workbookName: "demo.xlsx",
+  worksheetName: "Anonymous_TA",
+  resultJudgment: {
+    status: "meets-target",
+    headline: "Capability meets target",
+  },
+  resultSummaryCaption: "Comparison of assumption-based RSS results with system specifications and derived targets",
+  summaryRows: [{
+    metric: "Cpk",
+    result: "1.67",
+    reference: ">= 1.33",
+    referenceDetail: "Target capability",
+    difference: "+0.34",
+    assessment: "Meets target",
+    performanceContext: "Assumption-based result",
+    tone: "pass",
+  }],
+  overallAssessment: "The assumed design meets the target.",
+  rootCauseItems: [{
+    title: "Primary driver",
+    narrative: "C-cover height dominates variation.",
+    hypothesisStatus: "hypothesis",
+    incompleteEvidence: false,
+    quantitativeEvidence: [{ label: "Contribution (%)", value: "100%" }],
+  }],
+  actionItems: [{
+    optionId: "improvement-center-mean",
+    title: "Center the process mean",
+    narrative: "Confirm mean-centering feasibility.",
+    meanCenteringAdjustment: {
+      current: "+0.03",
+      recommended: "0",
+      adjustment: "-0.03 toward LSL",
+    },
+    outcome: {
+      label: "Expected result",
+      value: "Mean 0",
+      context: "after applying the recommended adjustment",
+    },
+  }, {
+    optionId: "improvement-relax-final-specification",
+    title: "Relax the final specification",
+    narrative: "Apply only as a fallback.",
+    specificationAdjustment: {
+      lower: { current: "-0.1", recommended: "-0.37", adjustment: "-0.27" },
+      upper: { current: "0.1", recommended: "0.43", adjustment: "+0.33" },
+    },
+    outcome: {
+      label: "Expected result",
+      value: "Cpk 1.33",
+      context: "after applying both recommended limits",
+    },
+  }],
+  contributors: [{
+    factorName: "C-cover height",
+    reference: "Anonymous_TA!R15",
+    designNominal: -1.94,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    contributionPercent: 100,
+    cumulativePercent: 100,
+  }],
+  processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+  processGuidance: [{ state: "guidance", title: "Next step", message: "Collect measurements." }],
+} as const satisfies AssumptionResultsPdfRequest;
+
+function generatePdfThroughClientContract(client: F7Client): Promise<Blob> {
+  return client.generateAssumptionResultsPdf(assumptionResultsPdfRequest);
+}
+
 describe("createF7Client", () => {
   const fetchMock = vi.fn<typeof fetch>();
 
@@ -227,6 +299,142 @@ describe("createF7Client", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("generates an assumptions-results PDF through the exact route, body, and headers", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([37, 80, 68, 70, 45]), {
+      status: 200,
+      headers: { "content-type": "Application/PDF; charset=binary" },
+    }));
+
+    const pdf = await generatePdfThroughClientContract(createF7Client("http://localhost:3017"));
+
+    expect(pdf).toBeInstanceOf(Blob);
+    expect(pdf.size).toBeGreaterThan(0);
+    expect(pdf.type).toContain("application/pdf");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3017/f7/assumption-results/pdf");
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(assumptionResultsPdfRequest),
+    });
+  });
+
+  it("maps assumptions-results PDF API JSON errors to the typed server error", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      code: "validation_error",
+      summary: "PDF request is invalid.",
+      suggestedAction: "Correct the request and retry.",
+      affectedInputReferences: ["summaryRows"],
+      rawMessage: "private validation detail",
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().generateAssumptionResultsPdf(assumptionResultsPdfRequest)).rejects.toEqual({
+      code: "validation_error",
+      summary: "PDF request is invalid.",
+      suggestedAction: "Correct the request and retry.",
+      affectedInputReferences: ["summaryRows"],
+    });
+  });
+
+  it("rejects a successful assumptions-results response that is not a PDF", async () => {
+    fetchMock.mockResolvedValue(new Response("not a pdf", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }));
+
+    await expect(createF7Client().generateAssumptionResultsPdf(assumptionResultsPdfRequest)).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it.each([
+    "application/pdf-malware",
+    "text/plain; profile=application/pdf",
+  ])("rejects assumptions-results content type %s", async (contentType) => {
+    fetchMock.mockResolvedValue(new Response("not a pdf", {
+      status: 200,
+      headers: { "content-type": contentType },
+    }));
+
+    await expect(createF7Client().generateAssumptionResultsPdf(assumptionResultsPdfRequest)).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("rejects an empty assumptions-results PDF", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array(), {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    }));
+
+    await expect(createF7Client().generateAssumptionResultsPdf(assumptionResultsPdfRequest)).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("maps assumptions-results PDF fetch rejection to the generic error", async () => {
+    fetchMock.mockRejectedValue(new TypeError("ECONNRESET private transport detail"));
+
+    await expect(createF7Client().generateAssumptionResultsPdf(assumptionResultsPdfRequest)).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("generates a governed report PDF through the exact route and body", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([37, 80, 68, 70, 45]), {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    }));
+
+    const pdf = await createF7Client("http://localhost:3017").generateReportPdf({
+      sessionId: "session-01",
+      report: validReport,
+    });
+
+    expect(pdf.size).toBe(5);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3017/f7/report/pdf");
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-01", report: validReport }),
+    });
+  });
+
+  it.each([
+    ["an unexpected media type", "text/plain", new Uint8Array([37, 80, 68, 70, 45])],
+    ["an invalid PDF signature", "application/pdf", new TextEncoder().encode("not a pdf")],
+  ])("rejects report PDF responses with %s", async (_caseName, contentType, body) => {
+    fetchMock.mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "content-type": contentType },
+    }));
+
+    await expect(createF7Client().generateReportPdf({
+      sessionId: "session-01",
+      report: validReport,
+    })).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
   });
 
   it("generates a report through the exact JSON route, method, and body", async () => {

@@ -42,7 +42,7 @@ export interface RunContext {
 export interface F0ValidationResult {
   readonly featureId: "F0";
   readonly status: "completed";
-  readonly versions: readonly ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"];
+  readonly versions: readonly ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v3"];
   readonly artifactRoot?: undefined;
 }
 

@@ -1,12 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import TAResultsInterpretation, * as taResultsInterpretationModule from "./TAResultsInterpretation.vue";
-import type { F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
 import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
 import type {
   F7NarrativeResultJudgment,
   F7NarrativeRootCauseItem,
 } from "@ai-assist/product-language/f7-engineering-narrative";
+import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { F0ProcessGuidanceEntry } from "../f0-process-guidance";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
@@ -14,6 +15,12 @@ let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof a
 
 function enhancedInterpretationSnapshot(): F7SessionSnapshot {
   return {
+    sessionId: "session-export-01",
+    workbook: {
+      fileName: "Gearbox: Design?.xlsx",
+      workbookContentHash: "a".repeat(64),
+    },
+    selectedWorksheetNames: ["Anonymous/TA"],
     systemSpecification: {
       status: "available",
       designNominal: { status: "available", actualValue: 0.03, valueOrigin: "numeric_literal" },
@@ -49,6 +56,20 @@ function unavailableInterpretationSnapshot(): F7SessionSnapshot {
   } as unknown as F7SessionSnapshot;
 }
 
+function renamedInterpretationSnapshot(options: {
+  readonly sessionId?: string;
+  readonly fileName: string;
+  readonly worksheetName: string;
+}): F7SessionSnapshot {
+  const snapshot = enhancedInterpretationSnapshot();
+  return {
+    ...snapshot,
+    sessionId: options.sessionId ?? snapshot.sessionId,
+    workbook: { ...snapshot.workbook, fileName: options.fileName },
+    selectedWorksheetNames: [options.worksheetName],
+  };
+}
+
 function overrideResultJudgment(
   resultJudgment: F7NarrativeResultJudgment,
   override: Partial<F7NarrativeResultJudgment>,
@@ -76,10 +97,31 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Escalations!A2",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for escalation coverage.",
+      },
+    },
+    {
+      entryId: "instruction-consider-worst-case-small-stack",
+      entryType: "instruction",
+      topic: "analysis-method",
+      title: "Consider Worst Case for small stacks",
+      message: "Consider Worst Case values when the tolerance stack contains fewer than 4 factors.",
+      normativeStrength: "should",
+      state: "guidance",
+      relatedFactReferences: ["toleranceCount"],
+      evidence: {
+        sourceAlias: "controlled-ta-template-beta",
+        sourceFileHash: "b".repeat(64),
+        sourceRevision: "Beta",
+        sheetName: "TA Process and Requirements",
+        sourceRange: "B19:R19",
+        effectiveVersion: "process-requirements-v3",
+        owner: "Dimensional Management",
+        confidence: "reviewed",
+        changeSummary: "Add reviewed worst-case guidance for tolerance stacks with fewer than four factors.",
       },
     },
     {
@@ -97,7 +139,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Warnings!A3",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for warning coverage.",
@@ -118,7 +160,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Requirements!A4",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for requirement coverage.",
@@ -139,7 +181,7 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Milestones!A5",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for milestone coverage.",
@@ -160,13 +202,19 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
         sourceRevision: "Seed",
         sheetName: "TA Process Requirements",
         sourceRange: "Instructions!A6",
-        effectiveVersion: "process-requirements-v1",
+        effectiveVersion: "process-requirements-v3",
         owner: "TA Governance",
         confidence: "reviewed",
         changeSummary: "Seeded guidance for instruction coverage.",
       },
     },
   ];
+}
+
+function expectedEvidenceValue(key: string, value: number | string): string {
+  if (typeof value !== "number") return value;
+  const formattedValue = formatF7NarrativeEvidenceValue(value);
+  return /percent/i.test(key) ? `${formattedValue}%` : formattedValue;
 }
 
 describe("TAResultsInterpretation", () => {
@@ -201,6 +249,346 @@ describe("TAResultsInterpretation", () => {
 
   afterEach(() => {
     buildAssumptionResultsInterpretationSpy.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the header action for available and unavailable panels but only enables an available export", () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    const availableWrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+    const unavailableWrapper = mount(TAResultsInterpretation, {
+      props: { session: unavailableInterpretationSnapshot(), generatePdf },
+    });
+
+    const header = availableWrapper.get(".interpretation-header");
+    expect(header.element.firstElementChild?.tagName).toBe("H2");
+    const availableButton = header.get("[data-generate-assumption-results-pdf]");
+    expect(availableButton.text()).toContain("Generate PDF");
+    expect(availableButton.find("svg").exists()).toBe(true);
+    expect(availableButton.attributes("disabled")).toBeUndefined();
+    const unavailableButton = unavailableWrapper.get("[data-generate-assumption-results-pdf]");
+    expect(unavailableButton.attributes("disabled")).toBeDefined();
+    expect(unavailableButton.attributes("title")).toContain("available assumption results");
+  });
+
+  it("maps the exact displayed interpretation into the structured PDF request", async () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    const projected = {
+      ...available,
+      processGuidance: {
+        status: "available" as const,
+        version: "process-requirements-v3" as const,
+        entries: processGuidanceEntries(),
+      },
+    };
+    buildAssumptionResultsInterpretationSpy.mockReturnValue(projected);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:assumption-results"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    expect(generatePdf).toHaveBeenCalledWith({
+      sessionId: "session-export-01",
+      workbookName: "Gearbox: Design?.xlsx",
+      worksheetName: "Anonymous/TA",
+      resultJudgment: {
+        status: projected.narrative.resultJudgment.status,
+        headline: projected.narrative.resultJudgment.headline,
+      },
+      resultSummaryCaption: "Comparison of assumption-based RSS results with system specifications and derived targets",
+      summaryRows: projected.resultSummary.map((row) => ({
+        metric: row.metric,
+        result: row.result,
+        reference: row.reference,
+        ...(row.referenceDetail ? { referenceDetail: row.referenceDetail } : {}),
+        difference: row.difference,
+        assessment: row.assessment,
+        performanceContext: row.performanceContext,
+        ...(row.tone === "pass" || row.tone === "fail" || row.tone === "warning" ? { tone: row.tone } : {}),
+      })),
+      overallAssessment: projected.overallAssessment,
+      rootCauseItems: projected.narrative.rootCauseAnalysis
+        .filter((item) => item.ruleId !== "root-cause-contributor-concentration")
+        .map((item) => ({
+          title: item.title,
+          narrative: item.narrative,
+          hypothesisStatus: item.hypothesisStatus,
+          incompleteEvidence: !item.completeEvidence,
+          quantitativeEvidence: Object.entries(item.quantitativeEvidence ?? {}).map(([key, value]) => ({
+            label: item.quantitativeEvidenceLabels?.[key] ?? key,
+            value: expectedEvidenceValue(key, value),
+          })),
+        })),
+      actionItems: projected.narrative.suggestedActionSequence.map((item) => ({
+        optionId: item.optionId,
+        title: item.title,
+        narrative: item.optionId === "improvement-center-mean" && item.meanCentering
+          ? item.meanCentering.feasibilityNarrative
+          : item.narrative,
+        ...(item.optionId === "improvement-center-mean" && item.meanCentering ? {
+          meanCenteringAdjustment: {
+            current: item.meanCentering.display.currentMean,
+            recommended: item.meanCentering.display.targetMean,
+            adjustment: taResultsInterpretationModule.formatMeanAdjustment(item.meanCentering),
+          },
+          outcome: {
+            label: "Expected result",
+            value: `Mean ${item.meanCentering.display.targetMean}`,
+            context: "after applying the recommended adjustment",
+          },
+        } : {}),
+        ...(item.optionId === "improvement-relax-final-specification" ? {
+          specificationAdjustment: {
+            lower: { current: "-0.1", recommended: "-0.37", adjustment: "-0.27" },
+            upper: { current: "0.1", recommended: "0.43", adjustment: "+0.33" },
+          },
+          outcome: {
+            label: "Expected result",
+            value: "Cpk 1.33",
+            context: "after applying both recommended limits",
+          },
+        } : {}),
+      })),
+      contributors: projected.contributorPriorities.map((item) => ({
+        factorName: item.factorName,
+        reference: item.reference,
+        designNominal: item.designNominal,
+        upperTolerance: item.upperTolerance,
+        lowerTolerance: item.lowerTolerance,
+        contributionPercent: item.contributionPercent,
+        cumulativePercent: item.cumulativePercent,
+      })),
+      processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+      processGuidance: processGuidanceEntries().map(({ state, title, message }) => ({ state, title, message })),
+    });
+  });
+
+  it("disables the action and exposes busy state while PDF generation is pending", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    let resolvePdf: ((blob: Blob) => void) | undefined;
+    const generatePdf = vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; }));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:pending"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    const button = wrapper.get("[data-generate-assumption-results-pdf]");
+    expect(button.attributes("disabled")).toBeDefined();
+    expect(button.attributes("aria-busy")).toBe("true");
+    expect(button.text()).toContain("Generating PDF");
+    resolvePdf?.(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    await vi.waitFor(() => expect(button.attributes("aria-busy")).toBe("false"));
+  });
+
+  it("does not download a stale session response or let its finally clear a newer generation", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const resolvePdf: Array<(blob: Blob) => void> = [];
+    const generatePdf = vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf.push(resolve); }));
+    const createObjectURL = vi.fn(() => "blob:current");
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    await wrapper.setProps({
+      session: renamedInterpretationSnapshot({
+        sessionId: "session-export-02",
+        fileName: "Current.xlsx",
+        worksheetName: "Current TA",
+      }),
+    });
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generatePdf).toHaveBeenCalledTimes(2);
+
+    resolvePdf[0]?.(new Blob(["%PDF-stale"], { type: "application/pdf" }));
+    await vi.waitFor(() => expect(resolvePdf).toHaveLength(2));
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("aria-busy")).toBe("true");
+
+    resolvePdf[1]?.(new Blob(["%PDF-current"], { type: "application/pdf" }));
+    await vi.waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("aria-busy")).toBe("false");
+  });
+
+  it("does not download a pending PDF after unmount", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    let resolvePdf: ((blob: Blob) => void) | undefined;
+    const generatePdf = vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; }));
+    const createObjectURL = vi.fn(() => "blob:disposed");
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    wrapper.unmount();
+    resolvePdf?.(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it("uses the click-time workbook and worksheet snapshot for the download filename", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    let resolvePdf: ((blob: Blob) => void) | undefined;
+    const generatePdf = vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; }));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:snapshot-name"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    await wrapper.setProps({
+      session: renamedInterpretationSnapshot({
+        fileName: "Renamed.xlsx",
+        worksheetName: "Renamed TA",
+      }),
+    });
+    resolvePdf?.(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+
+    await vi.waitFor(() => expect(click).toHaveBeenCalledOnce());
+    const clickedAnchor = click.mock.instances[0] as HTMLAnchorElement | undefined;
+    expect(clickedAnchor?.download).toBe("Gearbox-Design-Anonymous-TA-assumption-results.pdf");
+  });
+
+  it("downloads the PDF with a safe filename and always removes and revokes the temporary URL", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const pdf = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+    const createObjectURL = vi.fn(() => "blob:download");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => pdf),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    const clickedAnchor = click.mock.instances[0] as HTMLAnchorElement | undefined;
+    expect(createObjectURL).toHaveBeenCalledWith(pdf);
+    expect(clickedAnchor?.download).toBe("Gearbox-Design-Anonymous-TA-assumption-results.pdf");
+    expect(clickedAnchor?.href).toContain("blob:download");
+    expect(clickedAnchor?.isConnected).toBe(false);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:download");
+  });
+
+  it("announces a successful PDF download with elapsed time", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    let currentTime = 1_000;
+    let resolvePdf: ((blob: Blob) => void) | undefined;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => currentTime);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:timed-download"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; })),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    currentTime = 2_800;
+    resolvePdf?.(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    await vi.waitFor(() => expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(true));
+
+    const status = wrapper.get("[data-assumption-results-pdf-status]");
+    expect(status.attributes("aria-live")).toBe("polite");
+    expect(status.text()).toBe("PDF downloaded in 1.8 seconds.");
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(false);
+    now.mockRestore();
+  });
+
+  it("clears PDF success feedback when the session changes", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:session-change"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(true);
+
+    await wrapper.setProps({
+      session: renamedInterpretationSnapshot({
+        sessionId: "session-export-02",
+        fileName: "Current.xlsx",
+        worksheetName: "Current TA",
+      }),
+    });
+
+    expect(wrapper.find("[data-assumption-results-pdf-status]").exists()).toBe(false);
+  });
+
+  it("announces a controlled export failure without attempting a download", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const createObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf: vi.fn(async () => {
+          throw {
+            code: "pdf_failed",
+            summary: "Unable to generate the assumption-results PDF.",
+            suggestedAction: "Retry after restarting the local API.",
+            affectedInputReferences: ["assumption-results"],
+          };
+        }),
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    const error = wrapper.get("[data-assumption-results-pdf-error]");
+    expect(error.attributes("aria-live")).toBe("polite");
+    expect(error.text()).toContain("Unable to generate the assumption-results PDF.");
+    expect(error.text()).toContain("Retry after restarting the local API.");
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it("renders the governed engineering narrative hierarchy in the required reading order", () => {
@@ -210,7 +598,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -343,7 +731,7 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
     expect(processGuidance.text()).not.toContain("Triggered by");
     expect(processGuidance.find("[data-process-guidance-version]").exists()).toBe(false);
-    expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(5);
+    expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(6);
     expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
     expect(processGuidance.get("ol").classes()).toContain("action-sequence");
     expect(processGuidance.findAll("[data-process-guidance-entry]").every((item) => (
@@ -351,6 +739,7 @@ describe("TAResultsInterpretation", () => {
     ))).toBe(true);
     expect(processGuidance.findAll("[data-process-guidance-entry]").map((item) => item.attributes("data-guidance-state"))).toEqual([
       "warning",
+      "guidance",
       "guidance",
       "warning",
       "guidance",
@@ -367,6 +756,7 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.findAll('[data-guidance-state="guidance"] [data-process-guidance-warning]')).toHaveLength(0);
     expect(processGuidance.findAll("[data-process-guidance-entry-title]").map((item) => item.text())).toEqual([
       "Escalate tolerance ownership",
+      "Consider Worst Case for small stacks",
       "Check workbook evidence freshness",
       "Capture governed requirement linkage",
       "Schedule the next F0 review milestone",
@@ -374,6 +764,7 @@ describe("TAResultsInterpretation", () => {
     ]);
     expect(processGuidance.findAll("[data-process-guidance-entry-message]").map((item) => item.text())).toEqual([
       "Escalate to the owning engineering lead before closing the worksheet review.",
+      "Consider Worst Case values when the tolerance stack contains fewer than 4 factors.",
       "Warning entries should stay visible beside stronger guidance types.",
       "Requirement entries should retain their own semantic styling.",
       "Milestone guidance should remain distinct from requirements and instructions.",
@@ -393,7 +784,7 @@ describe("TAResultsInterpretation", () => {
       ...unavailable,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: processGuidanceEntries(),
       },
     });
@@ -508,7 +899,7 @@ describe("TAResultsInterpretation", () => {
       ...available,
       processGuidance: {
         status: "available",
-        version: "process-requirements-v1",
+        version: "process-requirements-v3",
         entries: [],
       },
     });

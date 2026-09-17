@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as contractExports from "./index.js";
 import {
+  processRequirementApplicabilitySchema,
   processRequirementEntrySchema,
   processRequirementEvaluationRequestSchema,
   processRequirementEvaluationSchema,
@@ -9,6 +10,8 @@ import {
   processRequirementManifestSchema,
   processRequirementSeedPackageSchema,
   processRequirementSourceMetadataSchema,
+  processRequirementProvenanceSchema,
+  processRequirementVersionSchema,
 } from "./process-requirements-contracts.js";
 
 const hash = "a".repeat(64);
@@ -98,6 +101,81 @@ const validMatchedEntry = () => ({
 describe("F0 process requirement contracts", () => {
   it("exports the process requirements contracts from the package entry point", () => {
     expect(contractExports.processRequirementEntrySchema).toBe(processRequirementEntrySchema);
+  });
+
+  it.each(["process-requirements-v1", "process-requirements-v2", "process-requirements-v3"] as const)(
+    "accepts the %s version",
+    (version) => {
+      expect(processRequirementVersionSchema.parse(version)).toBe(version);
+    },
+  );
+
+  it("accepts controlled component categories and rejects empty or duplicate facts", () => {
+    const evaluationRequest = {
+      componentCategories: ["battery-cts", "cover-fit-and-function"],
+    } as const;
+
+    expect(processRequirementEvaluationRequestSchema.parse(evaluationRequest)).toEqual(evaluationRequest);
+    expect(processRequirementApplicabilitySchema.parse({
+      componentCategory: "battery-cts",
+      requiredFacts: ["componentCategories"],
+    })).toEqual({
+      componentCategory: "battery-cts",
+      requiredFacts: ["componentCategories"],
+    });
+    expect(processRequirementEvaluationRequestSchema.safeParse({ componentCategories: [] }).success).toBe(false);
+    expect(processRequirementEvaluationRequestSchema.safeParse({
+      componentCategories: ["battery-cts", "battery-cts"],
+    }).success).toBe(false);
+    expect(processRequirementEvaluationRequestSchema.safeParse({
+      componentCategories: ["uncontrolled-category"],
+    }).success).toBe(false);
+  });
+
+  it("accepts approved-transcription source metadata and provenance without workbook coordinates", () => {
+    const source = {
+      sourceType: "approved-transcription" as const,
+      sourceAlias: "approved-priority-guidance",
+      hash,
+      revision: "user-approved-2026-09-16",
+      section: "priority-definitions-p0-p3",
+      sourceClassification: "confidential" as const,
+      releasedClassification: "internal" as const,
+      owner: "Dimensional Management",
+      reviewedAt: "2026-09-16T00:00:00.000Z",
+    };
+    const provenance = {
+      sourceType: "approved-transcription" as const,
+      sourceAlias: source.sourceAlias,
+      sourceContentHash: hash,
+      sourceRevision: source.revision,
+      section: "priority-p0",
+      effectiveVersion: "process-requirements-v3" as const,
+      owner: source.owner,
+      confidence: "reviewed" as const,
+      changeSummary: "Add approved P0 priority guidance.",
+    };
+
+    expect(processRequirementSourceMetadataSchema.parse(source)).toEqual(source);
+    expect(processRequirementProvenanceSchema.parse(provenance)).toEqual(provenance);
+    expect(processRequirementSourceMetadataSchema.safeParse({ ...source, sheet: "invented" }).success).toBe(false);
+    expect(processRequirementProvenanceSchema.safeParse({ ...provenance, sourceRange: "A1:A4" }).success).toBe(false);
+  });
+
+  it("accepts a non-negative integer maximum tolerance count", () => {
+    const applicability = {
+      maximumToleranceCountExclusive: 4,
+      requiredFacts: ["toleranceCount"],
+    } as const;
+
+    expect(processRequirementApplicabilitySchema.parse(applicability)).toEqual(applicability);
+  });
+
+  it.each([-1, 3.5])("rejects maximum tolerance count %s", (maximumToleranceCountExclusive) => {
+    expect(processRequirementApplicabilitySchema.safeParse({
+      maximumToleranceCountExclusive,
+      requiredFacts: ["toleranceCount"],
+    }).success).toBe(false);
   });
 
   it.each(["requirement", "warning", "escalation", "milestone", "instruction", "definition"] as const)(
@@ -221,6 +299,44 @@ describe("F0 process requirement contracts", () => {
     expect(processRequirementEvaluationSchema.safeParse({
       ...base,
       matchedEntries: [{ ...validMatchedEntry(), rawProse: "forbidden" }],
+    }).success).toBe(false);
+  });
+
+  it("accepts a strict advisory priority recommendation", () => {
+    const evaluation = {
+      version: "process-requirements-v3" as const,
+      status: "matched" as const,
+      resolvedTargets: {},
+      factsUsed: ["componentCategories"],
+      matchedEntries: [validMatchedEntry()],
+      missingFacts: [],
+      priorityRecommendation: {
+        selectedPriority: "P0" as const,
+        matchedEntryIds: ["warning-example"],
+        requiresMeDmAlignment: true as const,
+      },
+    };
+
+    expect(processRequirementEvaluationSchema.parse(evaluation)).toEqual(evaluation);
+    expect(processRequirementEvaluationSchema.safeParse({
+      ...evaluation,
+      priorityRecommendation: { ...evaluation.priorityRecommendation, requiresMeDmAlignment: false },
+    }).success).toBe(false);
+    expect(processRequirementEvaluationSchema.safeParse({
+      ...evaluation,
+      priorityRecommendation: { ...evaluation.priorityRecommendation, matchedEntryIds: [] },
+    }).success).toBe(false);
+    expect(processRequirementEvaluationSchema.safeParse({
+      ...evaluation,
+      priorityRecommendation: {
+        ...evaluation.priorityRecommendation,
+        matchedEntryIds: ["not-a-matched-entry"],
+      },
+    }).success).toBe(false);
+    expect(processRequirementEvaluationSchema.safeParse({
+      ...evaluation,
+      status: "not-applicable",
+      matchedEntries: [],
     }).success).toBe(false);
   });
 });

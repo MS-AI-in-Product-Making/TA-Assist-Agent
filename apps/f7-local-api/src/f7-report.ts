@@ -174,12 +174,6 @@ function createF0Analysis(
   const cpkDelta = monteCarlo.cpk - setupCpk;
   const rootCauseRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "root-cause-signal");
   const improvementRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "improvement-option");
-  const projectRule = (rule: (typeof evaluation.matchedRules)[number]) => ({
-    ruleId: rule.entryId,
-    title: rule.title,
-    sourceAlias: rule.evidence.sourceAlias,
-    sourceFileHash: rule.evidence.sourceFileHash,
-  });
   const targetAssessment = monteCarlo.cpk >= target
     ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the resolved target of ${target}.`
     : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the resolved target of ${target}.`;
@@ -239,8 +233,18 @@ function createF0Analysis(
     targetAssessment,
     interpretations,
     optimizationDirections,
-    rootCauseSignals: rootCauseRules.map(projectRule),
-    controlledOptions: improvementRules.map(projectRule),
+    rootCauseSignals: narrative.rootCauseAnalysis.map((item) => ({
+      ruleId: item.ruleId,
+      title: item.title,
+      sourceAlias: item.sourceAlias,
+      sourceFileHash: item.sourceFileHash,
+    })),
+    controlledOptions: narrative.suggestedActionSequence.map((item) => ({
+      ruleId: item.optionId,
+      title: item.title,
+      sourceAlias: item.sourceAlias,
+      sourceFileHash: item.sourceFileHash,
+    })),
     validationRequirements: [...new Set(improvementRules.flatMap(({ validationSteps }) => validationSteps ?? []))],
     narrative,
   };
@@ -524,6 +528,12 @@ export function createF7ReportProjection(
     return {
       factorId: evidence.factorId,
       factorName: evidence.factorName,
+      designNominal: evidence.designNominal,
+      upperTolerance: evidence.upperTolerance,
+      lowerTolerance: evidence.lowerTolerance,
+      longTermSafetyFactor: evidence.longTermSafetyFactor,
+      sigmaLevel: evidence.sigmaLevel,
+      setupDistribution: evidence.distribution,
       loopCoefficient: evidence.loopCoefficient,
       sourceMode,
       approvedDistribution,

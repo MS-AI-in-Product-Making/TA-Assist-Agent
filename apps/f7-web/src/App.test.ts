@@ -712,6 +712,9 @@ function createMockClient(
   generateReport: F7Client["generateReport"] = vi.fn(async () => {
     throw new Error("Report generation is not used by this App test.");
   }),
+  generateReportPdf: F7Client["generateReportPdf"] = vi.fn(async () => (
+    new Blob(["%PDF-1.7"], { type: "application/pdf" })
+  )),
 ): F7Client {
   let session = initial;
   return {
@@ -752,6 +755,8 @@ function createMockClient(
       return session;
     }),
     generateReport,
+    generateReportPdf,
+    generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
     getSession: vi.fn(async () => session),
   };
 }
@@ -2800,6 +2805,111 @@ describe("F7 workbench shell", () => {
     expect(generateReport).toHaveBeenCalledTimes(1);
   });
 
+  it("downloads the governed Monte Carlo report as PDF beside Back to factors", async () => {
+    const completed = completedMonteCarloSnapshot();
+    const report = reportProjection(completed);
+    const generateReport = vi.fn(async () => report);
+    const generateReportPdf = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    const createObjectURL = vi.fn(() => "blob:f7-report");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const wrapper = mount(App, {
+      props: { client: createMockClient(completed, { importWorkbook: completed }, generateReport, generateReportPdf) },
+    });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+    await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+
+    const headerButtons = wrapper.find(".monte-carlo-panel .factor-workspace-header").findAll("button");
+    expect(headerButtons.map((button) => button.text())).toEqual(["Back to factors", "Download PDF Report"]);
+    await wrapper.get("[data-download-report-pdf]").trigger("click");
+
+    await vi.waitFor(() => expect(generateReportPdf).toHaveBeenCalledWith({ sessionId: "session-01", report }));
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:f7-report");
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not download a pending report PDF after a replacement workbook import starts", async () => {
+    const completed = completedMonteCarloSnapshot();
+    const report = reportProjection(completed);
+    const replacement = createSnapshot({
+      status: "worksheet_selection",
+      sessionId: "session-02",
+      workbook: { fileName: "replacement.xlsx", workbookContentHash: HASH_B },
+    });
+    let resolvePdf!: (value: Blob) => void;
+    let resolveImport!: (value: F7SessionSnapshot) => void;
+    const generateReportPdf = vi.fn(() => new Promise<Blob>((resolve) => { resolvePdf = resolve; }));
+    const client = createMockClient(completed, {}, vi.fn(async () => report), generateReportPdf);
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(completed)
+      .mockImplementationOnce(() => new Promise<F7SessionSnapshot>((resolve) => { resolveImport = resolve; }));
+    const createObjectURL = vi.fn(() => "blob:stale-report");
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+    await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+    await wrapper.get("[data-download-report-pdf]").trigger("click");
+    expect(wrapper.get("[data-download-report-pdf]").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("[data-download-report-pdf]").text()).toContain("Generating PDF...");
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "replacement.xlsx"));
+    const replacementImport = wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await vi.waitFor(() => expect(client.importWorkbook).toHaveBeenCalledTimes(2));
+
+    resolvePdf(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+
+    resolveImport(replacement);
+    await replacementImport;
+    await vi.waitFor(() => expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(true));
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not show the report PDF action before Monte Carlo has a result", async () => {
+    const ready = approvedDistributionSnapshot();
+    const wrapper = mount(App, { props: { client: createMockClient(ready, { importWorkbook: ready }) } });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+
+    expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
+    expect(wrapper.find("[data-download-report-pdf]").exists()).toBe(false);
+  });
+
+  it("keeps the Monte Carlo result and exposes a retryable error when report PDF generation fails", async () => {
+    const completed = completedMonteCarloSnapshot();
+    const report = reportProjection(completed);
+    const generateReportPdf = vi.fn(async () => {
+      throw {
+        code: "pdf_generation_failed",
+        summary: "Unable to generate the governed PDF report.",
+      };
+    });
+    const wrapper = mount(App, {
+      props: { client: createMockClient(completed, { importWorkbook: completed }, vi.fn(async () => report), generateReportPdf) },
+    });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+    await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+
+    await wrapper.get("[data-download-report-pdf]").trigger("click");
+
+    await vi.waitFor(() => expect(wrapper.get(".report-pdf-error").text()).toBe("Unable to generate the governed PDF report."));
+    expect(wrapper.find("[data-monte-carlo-results]").exists()).toBe(true);
+    expect(wrapper.get("[data-download-report-pdf]").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get("[data-download-report-pdf]").text()).toContain("Download PDF Report");
+  });
+
   it("8h) keeps Step 5 active after report failure and allows a controlled retry", async () => {
     const completed = completedMonteCarloSnapshot();
     const report = reportProjection(completed);
@@ -3466,6 +3576,8 @@ describe("F7 workbench shell", () => {
       approveDistribution: vi.fn(async () => measurementEntrySnapshot()),
       runMonteCarlo: vi.fn(async () => measurementEntrySnapshot()),
       generateReport: vi.fn(async () => { throw new Error("Report generation is not used by App tests."); }),
+      generateReportPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
+      generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       getSession: vi.fn(async () => createSnapshot({ status: "worksheet_selection" })),
     };
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
@@ -3523,6 +3635,8 @@ describe("F7 workbench shell", () => {
       approveDistribution: vi.fn(async () => measurementEntrySnapshot()),
       runMonteCarlo: vi.fn(async () => measurementEntrySnapshot()),
       generateReport: vi.fn(async () => { throw new Error("Report generation is not used by App tests."); }),
+      generateReportPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
+      generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       getSession: vi.fn(async () => createSnapshot({ status: "worksheet_selection" })),
     };
     const wrapper = mount(App, { props: { client } });
@@ -3547,5 +3661,28 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text()).toContain("Import a workbook before continuing.");
     expect(wrapper.text()).not.toContain("Session is not available");
     expect(wrapper.text()).not.toContain("missing session");
+  });
+
+  it("13) wires assumption-results PDF generation through the injected client", async () => {
+    const client = createMockClient(measurementEntrySnapshot());
+    const generateAssumptionResultsPdf = vi.mocked(client.generateAssumptionResultsPdf);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:app-assumption-results"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledOnce();
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-01",
+      workbookName: "demo.xlsx",
+      worksheetName: "Anonymous_TA",
+    }));
+    click.mockRestore();
+    vi.unstubAllGlobals();
   });
 });

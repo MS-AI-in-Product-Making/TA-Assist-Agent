@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { request } from "node:http";
 import type { F7SessionSnapshot } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
+import type { AssumptionResultsPdfRenderer } from "./assumption-results-pdf-renderer.js";
 import { createF7SessionService } from "./f7-session-service.js";
 import { createF7LocalServer, listenF7LocalServer } from "./server.js";
 
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const assumptionResultsPdfRenderer: AssumptionResultsPdfRenderer = {
+  render: async () => Buffer.from("%PDF-1.7\ntest-fake"),
+};
 
 function worksheet(rows: string): string {
   return `<?xml version="1.0"?><worksheet xmlns="${NS}"><sheetData>${rows}</sheetData></worksheet>`;
@@ -124,7 +128,7 @@ describe("f7 phase 1 flow", () => {
       createId: () => "session-flow-fixed",
       now: () => "2026-08-20T08:00:00.000Z",
     });
-    const server = createF7LocalServer({ service });
+    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
     openServers.push(server);
     const address = await listenF7LocalServer(server, 0);
 

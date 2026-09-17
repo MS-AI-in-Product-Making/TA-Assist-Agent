@@ -848,6 +848,39 @@ textarea {
   padding-bottom: 10px;
 }
 
+.monte-carlo-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.monte-carlo-header-actions > button {
+  margin-top: 0;
+}
+
+.report-pdf-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.button-spinner {
+  animation: report-pdf-spin 800ms linear infinite;
+}
+
+.report-pdf-error {
+  margin: 10px 0 0;
+  color: var(--danger, #a52222);
+  font-weight: 700;
+}
+
+@keyframes report-pdf-spin {
+  to { transform: rotate(360deg); }
+}
+
 .workspace-eyebrow {
   margin: 0 0 2px;
   color: var(--accent);

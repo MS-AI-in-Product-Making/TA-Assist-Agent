@@ -27,6 +27,7 @@ import type {
   F7WorksheetConfirmRouteRequest,
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
+import type { DeepReadonly } from "vue";
 import { f7ReportProjectionSchema, f7SessionSnapshotSchema } from "@ai-assist/contracts";
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
@@ -131,6 +132,94 @@ type ApproveDistributionRequest = {
 
 type RunMonteCarloRequest = F7MonteCarloRunRouteRequest["body"];
 
+type PdfAdjustmentRow = {
+  readonly current: string;
+  readonly recommended: string;
+  readonly adjustment: string;
+};
+
+type PdfAdjustmentOutcome = {
+  readonly label: string;
+  readonly value: string;
+  readonly context: string;
+};
+
+type PdfActionBase = {
+  readonly title: string;
+  readonly narrative: string;
+};
+
+type AssumptionResultsPdfActionItem =
+  | PdfActionBase & {
+      readonly optionId: "improvement-center-mean";
+      readonly meanCenteringAdjustment: PdfAdjustmentRow;
+      readonly outcome: PdfAdjustmentOutcome;
+      readonly specificationAdjustment?: never;
+    }
+  | PdfActionBase & {
+      readonly optionId: "improvement-reduce-variation" | "improvement-reduce-contributor";
+      readonly meanCenteringAdjustment?: never;
+      readonly specificationAdjustment?: never;
+      readonly outcome?: never;
+    }
+  | PdfActionBase & {
+      readonly optionId: "improvement-relax-final-specification";
+      readonly specificationAdjustment: {
+        readonly lower: PdfAdjustmentRow;
+        readonly upper: PdfAdjustmentRow;
+      };
+      readonly outcome: PdfAdjustmentOutcome;
+      readonly meanCenteringAdjustment?: never;
+    };
+
+export type AssumptionResultsPdfRequest = {
+  readonly sessionId: string;
+  readonly workbookName: string;
+  readonly worksheetName: string;
+  readonly resultJudgment: {
+    readonly status: "meets-target" | "below-target";
+    readonly headline: string;
+  };
+  readonly resultSummaryCaption: string;
+  readonly summaryRows: readonly {
+    readonly metric: string;
+    readonly result: string;
+    readonly reference: string;
+    readonly referenceDetail?: string;
+    readonly difference: string;
+    readonly assessment: string;
+    readonly performanceContext: string;
+    readonly tone?: "pass" | "fail" | "warning";
+  }[];
+  readonly overallAssessment: string;
+  readonly rootCauseItems: readonly {
+    readonly title: string;
+    readonly narrative: string;
+    readonly hypothesisStatus: "hypothesis";
+    readonly incompleteEvidence: boolean;
+    readonly quantitativeEvidence: readonly {
+      readonly label: string;
+      readonly value: string;
+    }[];
+  }[];
+  readonly actionItems: readonly AssumptionResultsPdfActionItem[];
+  readonly contributors: readonly {
+    readonly factorName: string;
+    readonly reference: string;
+    readonly designNominal: number;
+    readonly upperTolerance: number;
+    readonly lowerTolerance: number;
+    readonly contributionPercent: number;
+    readonly cumulativePercent: number;
+  }[];
+  readonly processGuidanceContext: string;
+  readonly processGuidance: readonly {
+    readonly state: "guidance" | "warning";
+    readonly title: string;
+    readonly message: string;
+  }[];
+};
+
 export interface F7Client {
   importWorkbook(request: { readonly file: File }): Promise<F7SessionSnapshot>;
   confirmWorksheet(request: WorksheetConfirmRequest): Promise<F7SessionSnapshot>;
@@ -142,6 +231,11 @@ export interface F7Client {
   approveDistribution(request: ApproveDistributionRequest): Promise<F7SessionSnapshot>;
   runMonteCarlo(request: RunMonteCarloRequest): Promise<F7SessionSnapshot>;
   generateReport(request: { readonly sessionId: string }): Promise<F7ReportProjection>;
+  generateReportPdf(request: {
+    readonly sessionId: string;
+    readonly report: DeepReadonly<F7ReportProjection>;
+  }): Promise<Blob>;
+  generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<Blob>;
   getSession(sessionId: F7SessionRouteParams["sessionId"]): Promise<F7SessionSnapshot>;
 }
 
@@ -384,6 +478,64 @@ export function createF7Client(baseUrl = ""): F7Client {
         const parsed = f7ReportProjectionSchema.safeParse(value);
         return parsed.success && parsed.data.sessionId === request.sessionId ? parsed.data : undefined;
       });
+    },
+
+    async generateReportPdf(request) {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/f7/report/pdf`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request),
+        });
+      } catch {
+        throw toGenericError();
+      }
+
+      if (!response.ok) throw mapErrorEnvelope(await parseJsonResponse(response));
+      const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+      if (mediaType !== "application/pdf") throw toGenericError();
+      try {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength === 0) throw toGenericError();
+        const signature = bytes.subarray(0, 5);
+        if (String.fromCharCode(...signature) !== "%PDF-") throw toGenericError();
+        return new Blob([bytes], { type: "application/pdf" });
+      } catch {
+        throw toGenericError();
+      }
+    },
+
+    async generateAssumptionResultsPdf(request) {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/f7/assumption-results/pdf`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request),
+        });
+      } catch {
+        throw toGenericError();
+      }
+
+      if (!response.ok) {
+        throw mapErrorEnvelope(await parseJsonResponse(response));
+      }
+      const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+      if (mediaType !== "application/pdf") {
+        throw toGenericError();
+      }
+
+      let pdf: Blob;
+      try {
+        pdf = await response.blob();
+      } catch {
+        throw toGenericError();
+      }
+      if (pdf.size === 0) {
+        throw toGenericError();
+      }
+      return pdf;
     },
 
     async getSession(sessionId) {
