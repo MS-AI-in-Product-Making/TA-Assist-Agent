@@ -57,10 +57,17 @@ function formatReportText(value: string): string {
 function formatReportHtml(value: string): string {
   const simplified = value
     .replaceAll("Capability / Knowledge Guidance", "Guidance")
-    .replaceAll("Capability: f0_information_insufficient; Knowledge: missing_process_context", '<span class="guidance guidance--review">Insufficient evidence</span>')
+    .replace(
+      /Capability: f0_information_insufficient; Knowledge: (?:missing_process_context|invalid_total_band|guidance_unknown)/gu,
+      '<span class="guidance guidance--review">Insufficient evidence</span>',
+    )
     .replace(
       /Capability: internal_within_guidance; Recommended tolerance band or range: &lt;= (-?\d+(?:\.\d+)?) ([^;<]+);[^<]*/gu,
       (_match, rawLimit: string, unit: string) => `<span class="guidance guidance--pass">Within guidance &le; ${rawLimit} ${unit.trim()}</span>`,
+    )
+    .replace(
+      /Capability: internal_guidance_exceeded; Recommended tolerance band or range: &lt;= (-?\d+(?:\.\d+)?) ([^;<]+);[^<]*/gu,
+      (_match, rawLimit: string, unit: string) => `<span class="guidance guidance--review">Exceeds guidance &le; ${rawLimit} ${unit.trim()}</span>`,
     )
     .replaceAll("Capability: non_f0_process_category", '<span class="guidance guidance--neutral">Not covered</span>')
     .replaceAll("tighten_tolerance", "Tighten tolerance");
@@ -177,7 +184,7 @@ function specificationRangeGraph(requirements: ReadonlyMap<string, string>, rows
     return `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><b class="range-spec-line range-spec-line--lower" aria-hidden="true" style="left:${lowerSpecPosition}%"></b><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em><b class="range-spec-line range-spec-line--upper" aria-hidden="true" style="left:${upperSpecPosition}%"></b></span><strong${semanticClass === "" ? "" : ` class="${semanticClass}"`}>${result.display}</strong><small class="range-values">${threeSignificantFigures(lower!)} to ${threeSignificantFigures(upper!)}</small></div>`;
   }).join("");
   const worstCaseResult = ranges.find(({ label }) => label === "Worst-Case Range")?.result.display ?? "N/A";
-  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption><div class="range-spec-labels"><b class="range-spec-label range-spec-label--lower" style="left:${lowerSpecPosition}%">LSL ${threeSignificantFigures(lowerSpec)}</b><b class="range-spec-label range-spec-label--upper" style="left:${upperSpecPosition}%">USL ${threeSignificantFigures(upperSpec)}</b></div>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
+  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption><div class="range-spec-labels"><b class="range-spec-label range-spec-label--lower">LSL ${threeSignificantFigures(lowerSpec)}</b><b class="range-spec-label range-spec-label--upper">USL ${threeSignificantFigures(upperSpec)}</b></div>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
 }
 
 function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: readonly Tokens.TableCell[][]): string {
@@ -196,7 +203,7 @@ function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: rea
   const dpmRow = rows.find((row) => cellText(row[0]!) === "Predicted DPM");
   const evaluationLevelAttribute = evaluationLevel === undefined ? "" : ` data-evaluation-level="${escapeHtml(evaluationLevel)}"`;
   const caption = evaluationLevel === undefined ? threeSignificantFigures(target) : `${escapeHtml(evaluationLevel)} · ${threeSignificantFigures(target)}`;
-  return `<figure class="capability-spectrum" data-target-cpk="${target.toFixed(3)}"${evaluationLevelAttribute}><figcaption>Capability against target <strong>${caption}</strong></figcaption>${bars}<p>${yieldRow === undefined ? "" : `Yield ${escapeHtml(cellText(yieldRow[1]!))}`} ${dpmRow === undefined ? "" : `· DPM ${escapeHtml(cellText(dpmRow[1]!))}`}</p></figure>`;
+  return `<figure class="capability-spectrum" data-target-cpk="${target.toFixed(3)}"${evaluationLevelAttribute}><figcaption><span>Capability against target</span><strong>${caption}</strong></figcaption>${bars}<p>${yieldRow === undefined ? "" : `Yield ${escapeHtml(cellText(yieldRow[1]!))}`} ${dpmRow === undefined ? "" : `· DPM ${escapeHtml(cellText(dpmRow[1]!))}`}</p></figure>`;
 }
 
 function meanOffsetGraph(items: readonly string[]): string {
@@ -296,6 +303,9 @@ class F6PdfRenderer extends Renderer {
 
   override heading(token: Tokens.Heading): string {
     const content = this.parser.parseInline(token.tokens);
+    if (this.section === "summary" && token.depth === 1 && token.text.trim() === "TA Engineering Analysis Report") {
+      return "<h1>TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT</h1>\n";
+    }
     const worksheetMatch = token.depth === 1 ? /^3-(\d+)\s+(?:Worksheet|工作表):/iu.exec(token.text.trim()) : null;
     if (worksheetMatch !== null) {
       const closePrevious = this.closeCurrentSection();
@@ -449,7 +459,8 @@ class F6PdfRenderer extends Renderer {
         }).join("");
         return `<tr${rowClass}>${cells}</tr>`;
       }).join("");
-      return `<table class="factor-table factor-table--complete" data-factor-count="${token.rows.length}"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;
+      const densityClass = token.rows.length > 7 ? " factor-table--dense" : "";
+      return `<table class="factor-table factor-table--complete${densityClass}" data-factor-count="${token.rows.length}"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     if (headers.length === 5 && headers[0] === "Side" && headers[1] === "Current Limit" && headers[2] === "Proposed Limit") {
       return specificationChangeGraph(token.rows);
@@ -484,7 +495,7 @@ class F6PdfRenderer extends Renderer {
 const PRINT_CSS = `
   :root { --p-black:#000000; --p-white:#FFFFFF; --p-gray-242:#F2F2F2; --p-gray-210:#D2D2D2; --p-gray-80:#505050; --p-orange:#FF9349; --p-yellow:#FEF000; --p-green:#9BF00B; --p-aqua:#30E5D0; --p-cyan:#50E6FF; --p-purple:#D59DFF; --p-dark-red:#A72929; --ink:var(--p-black); --muted:var(--p-gray-80); --line:var(--p-gray-210); --paper:var(--p-white); --wash:var(--p-gray-242); --blue:var(--p-cyan); --pass:var(--p-green); --warn:var(--p-orange); --fail:var(--p-dark-red); --signal-red:var(--p-dark-red); --signal-green:var(--p-green); }
   * { box-sizing:border-box; }
-  @page { size:A4 landscape; margin:10mm 8mm 12mm; @bottom-right { content:"TA Assist Agent  |  " counter(page) " / " counter(pages); color:var(--p-gray-80); font:6pt "Segoe UI", Arial, sans-serif; } }
+  @page { size:A4 landscape; margin:10mm 8mm 12mm; }
   html { background:var(--wash); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:10pt; line-height:1.25; font-variant-numeric:tabular-nums; }
   body { margin:0 auto; max-width:281mm; background:var(--paper); }
   .report-content { padding:4mm; }
@@ -547,18 +558,17 @@ const PRINT_CSS = `
   main { width:1920px; }
   .slide { position:relative; display:grid; width:1920px; height:1080px; margin:0; padding:48px 64px 42px; overflow:hidden; break-after:page; page-break-after:always; background:var(--p-gray-242); }
   .slide:last-child { break-after:auto; page-break-after:auto; }
-  .slide::after { position:absolute; right:64px; bottom:24px; content:"TA ASSIST AGENT  /  DRAFT"; color:rgba(0,0,0,.56); font:700 20px/1 var(--st-meta); letter-spacing:.08em; }
   .slide-summary { grid-template-columns:.72fr 1.28fr; grid-template-rows:180px 1fr; gap:24px 28px; }
-  .slide-summary>h1 { grid-column:1/-1; align-self:end; margin:0; padding:0; border:0; color:var(--p-black); font:700 112px/.84 var(--st-display); text-transform:uppercase; letter-spacing:0; }
+  .slide-summary>h1 { grid-column:1/-1; align-self:end; margin:0; padding:0; border:0; color:var(--p-black); font:700 56px/.9 var(--st-display); text-transform:uppercase; letter-spacing:0; white-space:nowrap; }
   .slide-summary>h2 { display:none; }
-  .document-overview,.workbook-summary { align-self:stretch; width:100%; margin:0; overflow:hidden; border:2px solid var(--p-black); border-radius:24px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--p-white); font-size:24px; }
-  .document-overview::before,.workbook-summary::before { display:table-caption; padding:20px 26px; background:var(--p-orange); color:var(--p-black); content:"Document Overview"; font:700 28px/1 var(--st-display); text-align:left; text-transform:uppercase; }
-  .workbook-summary::before { content:"Workbook Summary"; background:var(--p-aqua); color:var(--p-black); }
-  .document-overview th,.workbook-summary th { padding:14px 20px; border:0; border-bottom:2px solid var(--p-black); background:var(--p-black); color:var(--p-white); font:800 20px/1 var(--st-meta); letter-spacing:.04em; text-transform:uppercase; }
-  .document-overview td,.workbook-summary td { padding:13px 20px; border:0; border-bottom:1px solid rgba(0,0,0,.22); color:var(--p-black); font-size:21px; }
-  .workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:18px; line-height:1.2; }
+  .document-overview,.workbook-summary { align-self:stretch; width:100%; margin:0; overflow:hidden; border:2px solid var(--p-black); border-radius:24px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--p-white); font-size:22px; }
+  .document-overview::before,.workbook-summary::before { display:table-caption; padding:20px 26px; background:var(--p-white); color:var(--p-black); content:"Document Overview"; font:700 26px/1 var(--st-display); text-align:left; text-transform:uppercase; }
+  .workbook-summary::before { content:"Workbook Summary"; background:var(--p-white); color:var(--p-black); }
+  .document-overview th,.workbook-summary th { padding:14px 20px; border:0; border-bottom:2px solid var(--p-black); background:var(--p-black); color:var(--p-white); font:800 18px/1 var(--st-meta); letter-spacing:.04em; text-transform:uppercase; }
+  .document-overview td,.workbook-summary td { padding:9px 16px; border:0; border-bottom:1px solid rgba(0,0,0,.22); color:var(--p-black); font-size:17px; }
+  .workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:14px; line-height:1.1; }
   .workbook-summary td:nth-child(1) { white-space:nowrap; }
-  .workbook-summary .comment { display:inline-block; padding:7px 16px; border-radius:999px; background:var(--p-purple); color:var(--p-black); font:800 18px/1 var(--st-meta); text-transform:uppercase; }
+  .workbook-summary .comment { display:inline-block; padding:6px 14px; border-radius:999px; background:var(--p-gray-210); color:var(--p-black); font:800 14px/1 var(--st-meta); text-transform:uppercase; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
@@ -566,7 +576,7 @@ const PRINT_CSS = `
   .slide-optimization>.optimization-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 1fr; gap:10px; }
   .slide-optimization>.optimization-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 54px/.95 var(--st-display); text-transform:uppercase; }
   .optimization-grid { display:grid; min-height:0; grid-template-columns:1fr 1fr; grid-template-rows:220px 1fr 1fr; gap:12px; }
-  .optimization-decision { min-height:0; padding:18px 20px; border-radius:22px; background:var(--p-orange); }
+  .optimization-decision { min-height:0; padding:18px 20px; border-radius:22px; background:var(--p-white); }
   .optimization-decision h2 { margin:0 0 8px; color:var(--p-black); font:700 24px/1 var(--st-display); text-transform:uppercase; }
   .optimization-decision ul,.optimization-decision ol { margin:0; padding-left:20px; font-size:16px; line-height:1.25; }
   .optimization-decision li { margin:4px 0; color:var(--p-black); }
@@ -594,7 +604,17 @@ const PRINT_CSS = `
   .slide-optimization-continuation .optimization-table--system { grid-row:1; }
   .factor-table { height:330px; margin:0; overflow:hidden; border:2px solid var(--p-black); border-radius:22px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--p-white); }
   .factor-table th { padding:10px 9px; border:0; border-bottom:2px solid var(--p-black); background:var(--p-black); color:var(--p-white); font:800 15px/1 var(--st-meta); letter-spacing:.03em; text-transform:uppercase; }
-  .factor-table td { padding:8px 9px; border:0; border-bottom:1px solid rgba(0,0,0,.2); color:var(--p-black); font-size:14px; line-height:1.1; }
+  .factor-table td { padding:5px 7px; border:0; border-bottom:1px solid rgba(0,0,0,.2); color:var(--p-black); font-size:13px; line-height:1.05; }
+  .factor-table--dense th { padding:7px 6px; font-size:14px; }
+  .factor-table--dense td { padding:5px 6px; font-size:13px; line-height:1.05; }
+  .factor-table--dense th:nth-child(1),.factor-table--dense td:nth-child(1) { width:3.5%; }
+  .factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:16.5%; }
+  .factor-table--dense th:nth-child(3),.factor-table--dense td:nth-child(3),.factor-table--dense th:nth-child(4),.factor-table--dense td:nth-child(4) { width:6.5%; }
+  .factor-table--dense th:nth-child(5),.factor-table--dense td:nth-child(5) { width:7%; }
+  .factor-table--dense th:nth-child(6),.factor-table--dense td:nth-child(6),.factor-table--dense th:nth-child(7),.factor-table--dense td:nth-child(7),.factor-table--dense th:nth-child(8),.factor-table--dense td:nth-child(8),.factor-table--dense th:nth-child(9),.factor-table--dense td:nth-child(9),.factor-table--dense th:nth-child(12),.factor-table--dense td:nth-child(12),.factor-table--dense th:nth-child(13),.factor-table--dense td:nth-child(13),.factor-table--dense th:nth-child(14),.factor-table--dense td:nth-child(14) { width:5.5%; }
+  .factor-table--dense th:nth-child(10),.factor-table--dense td:nth-child(10) { width:5%; }
+  .factor-table--dense th:nth-child(11),.factor-table--dense td:nth-child(11) { width:4.5%; }
+  .factor-table--dense th:nth-child(15),.factor-table--dense td:nth-child(15) { width:12%; }
   .factor-table tbody tr.missing td { background:transparent; }
   .factor-table tbody tr.missing td:nth-child(5) { color:var(--p-dark-red); font-weight:700; }
   .guidance { display:inline-block; padding-left:8px; border-left:3px solid rgba(0,0,0,.38); }
@@ -604,7 +624,7 @@ const PRINT_CSS = `
   .analysis-panel { min-width:0; min-height:0; padding:20px 22px; overflow:hidden; border:0; border-radius:22px; break-inside:avoid; color:var(--p-black); }
   .analysis-panel+.analysis-panel { border-left:0; }
   .analysis-panel h2 { margin:0 0 12px; color:inherit; font:700 28px/1 var(--st-display); text-transform:uppercase; }
-  .analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-orange); }
+  .analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-white); }
   .process-check-table { margin:0; table-layout:fixed; font-size:11px; line-height:1.1; }
   .process-check-table th,.process-check-table td { padding:4px 5px; }
   .process-check-table th:nth-child(1),.process-check-table td:nth-child(1) { width:31%; }
@@ -613,10 +633,10 @@ const PRINT_CSS = `
   .analysis-panel--process ul { margin:0; padding-left:20px; font-size:14px; line-height:1.25; }
   .analysis-panel--process li { margin:6px 0; color:var(--p-black); }
   .analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:18px; grid-column:2; grid-row:1; background:var(--p-white); }
-  .analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-yellow); }
-  .analysis-panel--center { grid-column:1; grid-row:2; min-height:0; border:0; background:var(--p-cyan); color:var(--p-black); }
-  .analysis-panel--contributors { grid-column:2; grid-row:2; min-height:0; border:0; background:var(--p-aqua); color:var(--p-black); }
-  .analysis-panel--specifications { grid-column:3; grid-row:2; min-height:0; border:0; background:var(--p-purple); color:var(--p-black); }
+  .analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-white); }
+  .analysis-panel--center { grid-column:1; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
+  .analysis-panel--contributors { grid-column:2; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
+  .analysis-panel--specifications { grid-column:3; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
   .analysis-panel--image>h2 { grid-column:1/-1; }
   .analysis-panel--image>.stack-image { display:block; min-width:0; grid-column:1; grid-row:2/span 4; width:100%; margin:0; }
   .analysis-panel--image .stack-image img { width:100%; height:248px; max-height:248px; object-fit:contain; }
@@ -625,13 +645,17 @@ const PRINT_CSS = `
   .analysis-panel--results .spec-range-graph { float:left; }
   .analysis-panel--results .capability-spectrum { float:right; }
   .analysis-panel figcaption { margin-bottom:12px; color:inherit; font:800 17px/1 var(--st-meta); letter-spacing:.05em; text-transform:uppercase; }
-  .range-spec-labels { margin:0 12px 4px 70px; font-size:11px; }
+  .range-spec-labels { margin:0 54px 4px 70px; font-size:11px; }
+  .range-spec-label--lower { left:0; transform:none; }
+  .range-spec-label--upper { right:0; left:auto; transform:none; }
   .range-row { grid-template-columns:62px 1fr 42px; min-height:39px; margin:0; gap:8px; font-size:12px; }
   .range-row>small { display:block; grid-column:2; margin:0; font-size:9px; line-height:1; color:var(--p-black); }
   .range-axis { font-size:12px; }
   .capability-row { grid-template-columns:38px 1fr 45px; min-height:28px; margin:0; gap:8px; font-size:12px; }
+  .capability-spectrum figcaption span,.capability-spectrum figcaption strong { display:block; }
+  .capability-spectrum figcaption strong { margin-top:5px; }
   .capability-row>strong,.range-row>strong { color:var(--p-black); }
-  .analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:17px; }
+  .analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:14px; }
   .analysis-panel--center .offset-track { margin-top:34px; background:rgba(242,242,242,.55); }
   .analysis-panel--contributors .contribution-chart { display:grid; margin:0; grid-template-columns:1fr; }
   .analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }
