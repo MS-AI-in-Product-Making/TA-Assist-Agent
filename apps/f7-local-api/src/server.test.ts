@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { Socket } from "node:net";
 import { strToU8, zipSync } from "fflate";
-import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   createTypedError,
   f7AnalysisResultSchema,
@@ -29,6 +28,7 @@ import {
   createF7MeasurementImportRegistry,
   type F7MeasurementImportRegistry,
 } from "./f7-measurement-import-registry.js";
+import type { F7ReportPdfRenderer } from "./f7-report-pdf-renderer.js";
 import { createF7SessionService } from "./f7-session-service.js";
 import {
   createF7LocalServer as createProductionF7LocalServer,
@@ -48,17 +48,6 @@ const DISTRIBUTION_BY_LABEL = {
   Beta: "beta",
 } as const;
 
-function canonicalPriorityDefinitions() {
-  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
-  return processRequirements
-    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
-    .map((entry) => ({
-      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
-      title: entry.title,
-      message: entry.message,
-    }));
-}
-
 type ServerOptions = Parameters<typeof createProductionF7LocalServer>[0];
 
 function createMeasurementImportRegistry(): F7MeasurementImportRegistry {
@@ -70,19 +59,24 @@ function createMeasurementImportRegistry(): F7MeasurementImportRegistry {
 }
 
 function createF7LocalServer(
-  options: Omit<ServerOptions, "assumptionResultsPdfRenderer"> & {
+  options: Omit<ServerOptions, "assumptionResultsPdfRenderer" | "reportPdfRenderer"> & {
     readonly assumptionResultsPdfRenderer?: AssumptionResultsPdfRenderer;
     readonly measurementImportRegistry?: F7MeasurementImportRegistry;
+    readonly reportPdfRenderer?: F7ReportPdfRenderer;
   },
 ): ReturnType<typeof createProductionF7LocalServer> {
   const assumptionResultsPdfRenderer = options.assumptionResultsPdfRenderer ?? {
     render: vi.fn(async () => Buffer.from("%PDF-1.7\ntest-fake")),
   };
+  const reportPdfRenderer = options.reportPdfRenderer ?? {
+    render: vi.fn(async () => Buffer.from("%PDF-1.7\ntest-report-fake")),
+  };
   return createProductionF7LocalServer({
     ...options,
     assumptionResultsPdfRenderer,
     measurementImportRegistry: options.measurementImportRegistry ?? createMeasurementImportRegistry(),
-  } as ServerOptions);
+    reportPdfRenderer,
+  });
 }
 
 function worksheet(rows: string): string {
@@ -1433,9 +1427,12 @@ describe("f7 local server", () => {
     expect(JSON.stringify(events)).not.toContain(imported.sessionId);
   });
 
-  it("dispatches all eleven routes with strict parsing and safe percent decoding", async () => {
+  it("dispatches all twelve routes with strict parsing and safe percent decoding", async () => {
     const service = createRealService();
-    const server = createF7LocalServer({ service });
+    const reportPdfRenderer: F7ReportPdfRenderer = {
+      render: vi.fn(async () => Buffer.from("%PDF-1.7\ngoverned-report")),
+    };
+    const server = createF7LocalServer({ service, reportPdfRenderer });
     openServers.push(server);
     const address = await listenF7LocalServer(server, 0);
     const workbook = buildWorkbook();
@@ -1675,6 +1672,24 @@ describe("f7 local server", () => {
     expect(report.status).toBe(200);
     expect(report.headers["cache-control"]).toBe("no-store");
     expect(f7ReportProjectionSchema.parse(report.json)).toEqual(report.json);
+
+    const reportPdf = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report/pdf",
+      body: {
+        sessionId: importJson.sessionId,
+        report: { ...(report.json as Record<string, unknown>), markdown: "# Client-tampered report" },
+      },
+    });
+    expect(reportPdf.status).toBe(200);
+    expect(reportPdf.headers["content-type"]).toBe("application/pdf");
+    expect(reportPdf.headers["content-disposition"]).toContain("f7-monte-carlo-report.pdf");
+    expect(reportPdf.rawBytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(reportPdfRenderer.render).toHaveBeenCalledWith({
+      sessionId: importJson.sessionId,
+      report: report.json,
+    });
 
     const reportWithUnknownKey = await httpJson({
       port: address.port,

@@ -37,6 +37,7 @@ import {
   f7ReportProjectionSchema,
   f7SessionSnapshotSchema,
 } from "@ai-assist/contracts";
+import type { DeepReadonly } from "vue";
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
 export type F7SourceMode = F7FactorSourceMode;
@@ -262,6 +263,10 @@ export interface F7Client {
   approveDistribution(request: ApproveDistributionRequest): Promise<F7SessionSnapshot>;
   runMonteCarlo(request: RunMonteCarloRequest): Promise<F7SessionSnapshot>;
   generateReport(request: { readonly sessionId: string }): Promise<F7ReportProjection>;
+  generateReportPdf(request: {
+    readonly sessionId: string;
+    readonly report: DeepReadonly<F7ReportProjection>;
+  }): Promise<Blob>;
   generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<Blob>;
   getSession(sessionId: F7SessionRouteParams["sessionId"]): Promise<F7SessionSnapshot>;
 }
@@ -596,6 +601,32 @@ export function createF7Client(baseUrl = ""): F7Client {
       });
     },
 
+    async generateReportPdf(request) {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/f7/report/pdf`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request),
+        });
+      } catch {
+        throw toGenericError();
+      }
+
+      if (!response.ok) throw mapErrorEnvelope(await parseJsonResponse(response));
+      const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+      if (mediaType !== "application/pdf") throw toGenericError();
+      try {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength === 0) throw toGenericError();
+        const signature = bytes.subarray(0, 5);
+        if (String.fromCharCode(...signature) !== "%PDF-") throw toGenericError();
+        return new Blob([bytes], { type: "application/pdf" });
+      } catch {
+        throw toGenericError();
+      }
+    },
+
     async generateAssumptionResultsPdf(request) {
       let response: Response;
       try {
@@ -616,16 +647,15 @@ export function createF7Client(baseUrl = ""): F7Client {
         throw toGenericError();
       }
 
-      let pdf: Blob;
       try {
-        pdf = await response.blob();
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength === 0) throw toGenericError();
+        const signature = bytes.subarray(0, 5);
+        if (String.fromCharCode(...signature) !== "%PDF-") throw toGenericError();
+        return new Blob([bytes], { type: "application/pdf" });
       } catch {
         throw toGenericError();
       }
-      if (pdf.size === 0) {
-        throw toGenericError();
-      }
-      return pdf;
     },
 
     async getSession(sessionId) {

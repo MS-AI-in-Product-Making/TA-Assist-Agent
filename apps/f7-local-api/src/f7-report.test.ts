@@ -40,6 +40,20 @@ const BASELINE_FACTOR_ID = "b".repeat(64);
 const MEASURED_FACTOR_ID = "c".repeat(64);
 const BASELINE_CANDIDATE_ID = "d".repeat(64);
 const MEASURED_CANDIDATE_ID = "e".repeat(64);
+const BASELINE_CANDIDATE_SETUP = {
+  designNominal: -9,
+  upperTolerance: 0.9,
+  lowerTolerance: -0.7,
+  standardDeviation: 0.45,
+  distribution: "Uniform" as const,
+};
+const MEASURED_CANDIDATE_SETUP = {
+  designNominal: 8.75,
+  upperTolerance: 0.8,
+  lowerTolerance: -0.6,
+  standardDeviation: 0.35,
+  distribution: "Uniform" as const,
+};
 const DATASET_HASH = "f".repeat(64);
 const RUN_SEED = "1".repeat(64);
 const BOOTSTRAP_SEED = "2".repeat(64);
@@ -70,12 +84,13 @@ function createCandidate(options: {
   factorName: string;
   sourceRow: number;
   designNominal: number;
+  upperTolerance: number;
+  lowerTolerance: number;
   standardDeviation: number;
+  distribution: "Normal" | "Uniform";
 }) {
-  const lowerTolerance = -0.2;
-  const upperTolerance = 0.2;
-  const lowerEndpoint = options.designNominal + lowerTolerance;
-  const upperEndpoint = options.designNominal + upperTolerance;
+  const lowerEndpoint = options.designNominal + options.lowerTolerance;
+  const upperEndpoint = options.designNominal + options.upperTolerance;
   return {
     workbookContentHash: WORKBOOK_HASH,
     worksheetName: WORKSHEET_NAME,
@@ -90,10 +105,10 @@ function createCandidate(options: {
     workbookUnitEvidence: "mm",
     excelSignedMean: options.designNominal,
     designNominal: options.designNominal,
-    upperTolerance,
-    lowerTolerance,
+    upperTolerance: options.upperTolerance,
+    lowerTolerance: options.lowerTolerance,
     standardDeviation: options.standardDeviation,
-    distribution: "Normal" as const,
+    distribution: options.distribution,
     lowerSpecLimit: Math.min(lowerEndpoint, upperEndpoint),
     upperSpecLimit: Math.max(lowerEndpoint, upperEndpoint),
   };
@@ -324,15 +339,13 @@ function createSnapshot(
     factorCandidateId: BASELINE_CANDIDATE_ID,
     factorName: "Baseline frame",
     sourceRow: 14,
-    designNominal: -1,
-    standardDeviation: 0.1,
+    ...BASELINE_CANDIDATE_SETUP,
   });
   const measuredCandidate = createCandidate({
     factorCandidateId: MEASURED_CANDIDATE_ID,
     factorName: MEASURED_FACTOR_NAME,
     sourceRow: 15,
-    designNominal: 1.25,
-    standardDeviation: 0.08,
+    ...MEASURED_CANDIDATE_SETUP,
   });
   const baselineEvidence = createEvidence({
     factorCandidateId: BASELINE_CANDIDATE_ID,
@@ -608,6 +621,12 @@ describe("createF7ReportProjection", () => {
       {
         factorId: BASELINE_FACTOR_ID,
         factorName: "Baseline frame",
+        designNominal: -1,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        setupDistribution: "Normal",
         loopCoefficient: -1,
         sourceMode: "BASELINE_ASSUMPTION",
         approvedDistribution: "normal",
@@ -616,12 +635,26 @@ describe("createF7ReportProjection", () => {
       {
         factorId: MEASURED_FACTOR_ID,
         factorName: MEASURED_FACTOR_NAME,
+        designNominal: 1.25,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        setupDistribution: "Normal",
         loopCoefficient: 1,
         sourceMode: "MEASURED",
         approvedDistribution: "normal",
         sourceReferences: ["Analysis-A!G15", "Analysis-A!R15", MEASUREMENT_SOURCE],
       },
     ]);
+    expect(report.factors[0]?.designNominal).not.toBe(BASELINE_CANDIDATE_SETUP.designNominal);
+    expect(report.factors[0]?.upperTolerance).not.toBe(BASELINE_CANDIDATE_SETUP.upperTolerance);
+    expect(report.factors[0]?.lowerTolerance).not.toBe(BASELINE_CANDIDATE_SETUP.lowerTolerance);
+    expect(report.factors[0]?.setupDistribution).not.toBe(BASELINE_CANDIDATE_SETUP.distribution);
+    expect(report.factors[1]?.designNominal).not.toBe(MEASURED_CANDIDATE_SETUP.designNominal);
+    expect(report.factors[1]?.upperTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.upperTolerance);
+    expect(report.factors[1]?.lowerTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.lowerTolerance);
+    expect(report.factors[1]?.setupDistribution).not.toBe(MEASURED_CANDIDATE_SETUP.distribution);
   });
 
   it("adds an F0-grounded Setup versus Monte Carlo interpretation and optimization direction", () => {
@@ -716,6 +749,46 @@ describe("createF7ReportProjection", () => {
     expect(report.markdown).toContain("root-cause-excessive-variation");
     expect(report.markdown).toContain("improvement-reduce-variation");
     expect(report.markdown).not.toMatch(/ranked recommendation|release decision|optimized tolerance/i);
+  });
+
+  it("keeps multiple root-cause signals aligned with the governed narrative order", () => {
+    const snapshot = createSnapshot("BELOW_TARGET", {
+      specificationOverrides: {
+        lowerSpecLimit: -0.15,
+        upperSpecLimit: 0.05,
+        targetSigmaLevel: 3,
+      },
+    });
+    const simulation = snapshot.monteCarloResult!;
+    const mean = -0.0257;
+    const standardDeviation = 0.0567;
+    const cp = (simulation.upperSpecLimit - simulation.lowerSpecLimit) / (6 * standardDeviation);
+    const lowerCpk = (mean - simulation.lowerSpecLimit) / (3 * standardDeviation);
+    const upperCpk = (simulation.upperSpecLimit - mean) / (3 * standardDeviation);
+    snapshot.monteCarloResult = {
+      ...simulation,
+      mean,
+      standardDeviation,
+      normalFit: { ...simulation.normalFit, mean, standardDeviation },
+      capability: {
+        status: "available",
+        cp,
+        lowerCpk,
+        upperCpk,
+        cpk: Math.min(lowerCpk, upperCpk),
+        targetCpk: 1,
+        targetStatus: "below_target",
+      },
+    };
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.analysis?.status).toBe("available");
+    if (report.analysis?.status !== "available") throw new Error("Expected available report analysis");
+    expect(report.analysis.rootCauseSignals.length).toBeGreaterThan(1);
+    expect(report.analysis.rootCauseSignals.map(({ ruleId }) => ruleId)).toEqual(
+      report.analysis.narrative.rootCauseAnalysis.map(({ ruleId }) => ruleId),
+    );
   });
 
   it("fails closed when F0 returns multiple matching performance rules", () => {

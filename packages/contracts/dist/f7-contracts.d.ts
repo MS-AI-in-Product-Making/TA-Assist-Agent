@@ -3540,26 +3540,70 @@ export declare const f7ReportSummarySchema: z.ZodEffects<z.ZodObject<{
     cpk?: number | undefined;
     cp?: number | undefined;
 }>;
-export declare const f7ReportFactorSchema: z.ZodObject<{
+export declare const f7ReportFactorSchema: z.ZodEffects<z.ZodObject<{
+    longTermSafetyFactor: z.ZodNumber;
+    sigmaLevel: z.ZodNumber;
+    setupDistribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+    approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+    sourceReferences: z.ZodArray<z.ZodString, "many">;
+    designNominal: z.ZodNumber;
+    upperTolerance: z.ZodNumber;
+    lowerTolerance: z.ZodNumber;
     factorId: z.ZodString;
     factorName: z.ZodString;
     loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
     sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
-    approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
-    sourceReferences: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
     factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    longTermSafetyFactor: number;
+    designNominal: number;
+    sigmaLevel: number;
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
 }, {
     factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    longTermSafetyFactor: number;
+    designNominal: number;
+    sigmaLevel: number;
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+}>, {
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    longTermSafetyFactor: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceReferences: string[];
+    factorId: string;
+    loopCoefficient: 0 | 1 | -1;
+    sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+}, {
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    longTermSafetyFactor: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceReferences: string[];
+    factorId: string;
+    loopCoefficient: 0 | 1 | -1;
+    sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
 }>;
 export declare const f7ReportSpecificationSourceCellsSchema: z.ZodObject<{
@@ -4793,26 +4837,70 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }>;
-    factors: z.ZodArray<z.ZodObject<{
+    factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        longTermSafetyFactor: z.ZodNumber;
+        sigmaLevel: z.ZodNumber;
+        setupDistribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+        approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+        sourceReferences: z.ZodArray<z.ZodString, "many">;
+        designNominal: z.ZodNumber;
+        upperTolerance: z.ZodNumber;
+        lowerTolerance: z.ZodNumber;
         factorId: z.ZodString;
         factorName: z.ZodString;
         loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
         sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
-        approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
-        sourceReferences: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }, {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    }>, {
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
+        sourceReferences: string[];
+        factorId: string;
+        loopCoefficient: 0 | 1 | -1;
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    }, {
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
+        sourceReferences: string[];
+        factorId: string;
+        loopCoefficient: 0 | 1 | -1;
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }>, "many">;
     analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
@@ -5506,10 +5594,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     evidence: {
@@ -5719,10 +5813,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     evidence: {
@@ -5932,10 +6032,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     evidence: {
@@ -6145,10 +6251,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        longTermSafetyFactor: number;
+        designNominal: number;
+        sigmaLevel: number;
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     evidence: {

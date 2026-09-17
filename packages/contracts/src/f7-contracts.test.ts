@@ -268,6 +268,12 @@ function createReportFixture(
       factorName: "Gap",
       loopCoefficient: 1 as const,
       sourceMode: "MEASURED" as const,
+      designNominal: 10,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1.5,
+      sigmaLevel: 3,
+      setupDistribution: "Normal" as const,
       approvedDistribution: "normal" as const,
       sourceReferences: ["Analysis-A!A2", "clipboard"],
     }],
@@ -319,56 +325,106 @@ describe("F7 report contracts", () => {
     }).success).toBe(false);
   });
 
+  it("requires strict confirmed Factor Setup inputs for every report factor", () => {
+    const report = createReportFixture();
+    const requiredSetupFields = [
+      "designNominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "longTermSafetyFactor",
+      "sigmaLevel",
+      "setupDistribution",
+    ] as const;
 
-describe("F7 measurement import factor coordinates", () => {
-  it("rejects missing mandatory coordinate cells and accepts the complete coordinate map", () => {
-    expect(f7MeasurementImportFactorCoordinatesSchema.safeParse({
-      factorNameCell: "Measurements!B2",
-      unitCell: "Measurements!B3",
-      designNominalCell: "Measurements!B4",
-      upperToleranceCell: "Measurements!B5",
-      lowerToleranceCell: "Measurements!B6",
-      lowerSpecLimitCell: "Measurements!B7",
-      upperSpecLimitCell: "Measurements!B8",
-      measurementColumn: "B",
-      firstMeasurementCell: "Measurements!B15",
+    for (const field of requiredSetupFields) {
+      const factor: Partial<(typeof report.factors)[number]> = { ...report.factors[0] };
+      delete factor[field];
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [factor],
+      }).success).toBe(false);
+    }
+
+    const invalidNumericSetupFields = [
+      ["designNominal", Number.POSITIVE_INFINITY],
+      ["upperTolerance", Number.POSITIVE_INFINITY],
+      ["lowerTolerance", Number.NEGATIVE_INFINITY],
+      ["longTermSafetyFactor", Number.POSITIVE_INFINITY],
+      ["sigmaLevel", Number.POSITIVE_INFINITY],
+    ] as const;
+
+    for (const [field, invalidValue] of invalidNumericSetupFields) {
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [{ ...report.factors[0], [field]: invalidValue }],
+      }).success).toBe(false);
+    }
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], setupDistribution: "normal" }],
     }).success).toBe(false);
+  });
 
-    expect(f7MeasurementImportFactorCoordinatesSchema.parse({
-      factorNameCell: "Measurements!B2",
-      partNumberCell: "Measurements!B3",
-      dimIdCell: "Measurements!B4",
-      designNominalCell: "Measurements!B5",
-      upperToleranceCell: "Measurements!B6",
-      lowerToleranceCell: "Measurements!B7",
-      lowerSpecLimitCell: "Measurements!B8",
-      upperSpecLimitCell: "Measurements!B9",
-      specificationSourceCell: "Measurements!B10",
-      limitStatusCell: "Measurements!B11",
-      measurementStructureCell: "Measurements!B12",
-      subgroupSizeCell: "Measurements!B13",
-      estimatorCell: "Measurements!B14",
-      measurementColumn: "B",
-      firstMeasurementCell: "Measurements!B15",
-    })).toEqual({
-      factorNameCell: "Measurements!B2",
-      partNumberCell: "Measurements!B3",
-      dimIdCell: "Measurements!B4",
-      designNominalCell: "Measurements!B5",
-      upperToleranceCell: "Measurements!B6",
-      lowerToleranceCell: "Measurements!B7",
-      lowerSpecLimitCell: "Measurements!B8",
-      upperSpecLimitCell: "Measurements!B9",
-      specificationSourceCell: "Measurements!B10",
-      limitStatusCell: "Measurements!B11",
-      measurementStructureCell: "Measurements!B12",
-      subgroupSizeCell: "Measurements!B13",
-      estimatorCell: "Measurements!B14",
-      measurementColumn: "B",
-      firstMeasurementCell: "Measurements!B15",
+  it("rejects report factors with zero-width tolerance ranges", () => {
+    const report = createReportFixture();
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], upperTolerance: 0, lowerTolerance: 0 }],
+    }).success).toBe(false);
+  });
+
+  describe("F7 measurement import factor coordinates", () => {
+    it("rejects missing mandatory coordinate cells and accepts the complete coordinate map", () => {
+      expect(f7MeasurementImportFactorCoordinatesSchema.safeParse({
+        factorNameCell: "Measurements!B2",
+        unitCell: "Measurements!B3",
+        designNominalCell: "Measurements!B4",
+        upperToleranceCell: "Measurements!B5",
+        lowerToleranceCell: "Measurements!B6",
+        lowerSpecLimitCell: "Measurements!B7",
+        upperSpecLimitCell: "Measurements!B8",
+        measurementColumn: "B",
+        firstMeasurementCell: "Measurements!B15",
+      }).success).toBe(false);
+
+      expect(f7MeasurementImportFactorCoordinatesSchema.parse({
+        factorNameCell: "Measurements!B2",
+        partNumberCell: "Measurements!B3",
+        dimIdCell: "Measurements!B4",
+        designNominalCell: "Measurements!B5",
+        upperToleranceCell: "Measurements!B6",
+        lowerToleranceCell: "Measurements!B7",
+        lowerSpecLimitCell: "Measurements!B8",
+        upperSpecLimitCell: "Measurements!B9",
+        specificationSourceCell: "Measurements!B10",
+        limitStatusCell: "Measurements!B11",
+        measurementStructureCell: "Measurements!B12",
+        subgroupSizeCell: "Measurements!B13",
+        estimatorCell: "Measurements!B14",
+        measurementColumn: "B",
+        firstMeasurementCell: "Measurements!B15",
+      })).toEqual({
+        factorNameCell: "Measurements!B2",
+        partNumberCell: "Measurements!B3",
+        dimIdCell: "Measurements!B4",
+        designNominalCell: "Measurements!B5",
+        upperToleranceCell: "Measurements!B6",
+        lowerToleranceCell: "Measurements!B7",
+        lowerSpecLimitCell: "Measurements!B8",
+        upperSpecLimitCell: "Measurements!B9",
+        specificationSourceCell: "Measurements!B10",
+        limitStatusCell: "Measurements!B11",
+        measurementStructureCell: "Measurements!B12",
+        subgroupSizeCell: "Measurements!B13",
+        estimatorCell: "Measurements!B14",
+        measurementColumn: "B",
+        firstMeasurementCell: "Measurements!B15",
+      });
     });
   });
-});
+
   it("rejects available analysis when narrative judgment cpk and target drift from simulation capability", () => {
     const report = createReportFixture("BELOW_TARGET");
     report.analysis = {
