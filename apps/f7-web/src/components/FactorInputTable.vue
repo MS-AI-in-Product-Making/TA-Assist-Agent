@@ -1,10 +1,20 @@
 <script setup lang="ts">
 /* global PointerEvent, window */
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepReadonly } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
 import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
-import type { Distribution } from "@ai-assist/contracts";
+import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
+import type { Distribution, ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
+import {
+  buildConfirmedEngineeringEvidence,
+  type AssumptionResultsEngineeringEvidence,
+  type AssumptionResultsCurrentCalculationInput,
+  type DimensionChainReportProjection,
+  type EngineeringEvidenceEnvelope,
+  type EngineeringEvidenceWorkbookIdentity,
+  snapshotPlainDto,
+} from "../assumption-results-pdf-evidence";
 import DimensionChainPanel from "./DimensionChainPanel.vue";
 import ResponseDistributionCurve from "./ResponseDistributionCurve.vue";
 import type { DimensionChainFactor } from "./dimension-chain";
@@ -17,6 +27,26 @@ const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Elliptical",
   "Beta",
 ];
+
+const COMPONENT_CATEGORY_LABELS = {
+  "battery-cts": "Battery CTS",
+  "z-axis-or-around-xy-clearance": "Z-axis or around-XY clearance",
+  "glass-tdm-gap-or-z-step": "Glass/TDM gap or Z-step",
+  "thermal-module-critical-path": "Thermal module critical path",
+  "pcb-critical-clearance-or-alignment": "PCB critical clearance or alignment",
+  "cover-fit-and-function": "Cover fit and function",
+  "hinge-trackpad-button-or-sensor": "Hinge, trackpad, button, or sensor",
+  "cable-routing": "Cable routing",
+  "external-port-kickstand-logo-or-ssd": "External port, kickstand, logo, or SSD",
+  "pcb-component-or-fastener": "PCB component or fastener",
+  "engagement-or-assembly-feature": "Engagement or assembly feature",
+  "foam-or-gasket-sealing-cushioning-or-nvh": "Foam or gasket sealing, cushioning, or NVH",
+} satisfies Readonly<Record<ProcessRequirementComponentCategory, string>>;
+
+const COMPONENT_CATEGORY_OPTIONS = processRequirementComponentCategorySchema.options.map((value) => ({
+  value,
+  label: COMPONENT_CATEGORY_LABELS[value],
+}));
 
 const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>> = {
   Normal: "normal",
@@ -31,6 +61,7 @@ const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
   readonly editingSetup: boolean;
+  readonly measurementEntryMode?: "import" | "individual";
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +74,7 @@ const emit = defineEmits<{
       readonly longTermSafetyFactor: number;
       readonly sigmaLevel: number;
       readonly distribution: F7SetupDistribution;
+      readonly componentCategory?: ProcessRequirementComponentCategory;
       readonly factorName?: string;
       readonly userAdded?: true;
     }>,
@@ -51,6 +83,7 @@ const emit = defineEmits<{
   editSetup: [];
   setMode: [factorId: string, mode: F7SourceMode];
   openMeasurement: [factorId: string];
+  "engineering-evidence-change": [evidence: EngineeringEvidenceEnvelope | undefined];
 }>();
 
 interface FactorSpecificationDraft {
@@ -60,6 +93,7 @@ interface FactorSpecificationDraft {
   longTermSafetyFactor: number | "";
   sigmaLevel: number | "";
   distribution: F7SetupDistribution | "";
+  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 interface CompleteFactorSpecificationDraft {
@@ -69,6 +103,7 @@ interface CompleteFactorSpecificationDraft {
   longTermSafetyFactor: number;
   sigmaLevel: number;
   distribution: F7SetupDistribution;
+  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 type FactorSpecificationField = keyof FactorSpecificationDraft;
@@ -132,6 +167,7 @@ const baseColumns = [
   { key: "longTermSafetyFactor", label: "Long Term/Safety Factor", lines: ["Long Term/", "Safety Factor"], defaultWidth: 96, minWidth: 88 },
   { key: "sigmaLevel", label: "σ Level", lines: ["σ", "Level"], defaultWidth: 58, minWidth: 54 },
   { key: "distribution", label: "Distribution", lines: ["Distribution"], defaultWidth: 88, minWidth: 80 },
+  { key: "componentCategory", label: "Component category", lines: ["Component", "category"], defaultWidth: 140, minWidth: 124 },
   { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 68, minWidth: 62 },
   { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 72, minWidth: 66 },
   { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 60, minWidth: 56 },
@@ -208,6 +244,7 @@ function addFactor(afterFactor?: DeepReadonly<F7FactorState>): void {
     longTermSafetyFactor: 1,
     sigmaLevel: 4,
     distribution: "Normal",
+    componentCategory: "",
   };
   addedFactors.push({
     factorCandidate: {
@@ -266,15 +303,22 @@ function draftFor(
   return setupDraft[candidateId]!;
 }
 
-function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): FactorSpecificationDraft {
-  return draftFor(factor.factorCandidate.factorCandidateId, {
+function initialDraftFor(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+): FactorSpecificationDraft {
+  return {
     designNominal: factor.setup?.designNominal ?? factor.factorCandidate.designNominal,
     upperTolerance: factor.setup?.upperTolerance ?? factor.factorCandidate.upperTolerance,
     lowerTolerance: factor.setup?.lowerTolerance ?? factor.factorCandidate.lowerTolerance,
     longTermSafetyFactor: factor.setup?.longTermSafetyFactor ?? factor.evidence?.longTermSafetyFactor ?? factor.factorCandidate.longTermSafetyFactor ?? 1,
     sigmaLevel: factor.setup?.sigmaLevel ?? factor.evidence?.sigmaLevel ?? factor.factorCandidate.sigmaLevel ?? 4,
     distribution: factor.setup?.distribution ?? factor.evidence?.distribution ?? factor.factorCandidate.distribution,
-  });
+    componentCategory: factor.setup?.componentCategory ?? factor.evidence?.componentCategory ?? "",
+  };
+}
+
+function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): FactorSpecificationDraft {
+  return draftFor(factor.factorCandidate.factorCandidateId, initialDraftFor(factor));
 }
 
 interface FactorEditSnapshot {
@@ -291,6 +335,20 @@ function cloneValue<T>(value: T): T {
 }
 
 for (const factor of props.session.factors) candidateDraft(factor);
+
+function currentSessionEditSnapshot(): FactorEditSnapshot {
+  return {
+    order: props.session.factors.map((factor) => factor.factorCandidate.factorCandidateId),
+    removedFactorIds: [],
+    addedFactors: [],
+    drafts: Object.fromEntries(props.session.factors.map((factor) => [
+      factor.factorCandidate.factorCandidateId,
+      initialDraftFor(factor),
+    ])),
+    names: {},
+    systemSpecification: importedSystemSpecificationDraft(),
+  };
+}
 
 function captureEditSnapshot(): FactorEditSnapshot {
   return cloneValue({
@@ -318,6 +376,7 @@ function importedSnapshot(): FactorEditSnapshot {
         longTermSafetyFactor: factor.factorCandidate.longTermSafetyFactor ?? 1,
         sigmaLevel: factor.factorCandidate.sigmaLevel ?? 4,
         distribution: factor.factorCandidate.distribution,
+        componentCategory: "",
       } satisfies FactorSpecificationDraft,
     ])),
     names: {},
@@ -421,6 +480,8 @@ function redoEdit(): void {
 
 function resetImportedFactors(): void {
   restoreEditSnapshot(importedSnapshot());
+  latestDimensionChainProjection.value = undefined;
+  dimensionChainResetRevision.value += 1;
 }
 
 function clearAllFactors(): void {
@@ -438,6 +499,7 @@ function clearAllFactors(): void {
     upperSpecLimit: "",
     targetSigmaLevel: DEFAULT_TARGET_SIGMA_LEVEL,
   });
+  latestDimensionChainProjection.value = undefined;
   dimensionChainResetRevision.value += 1;
   addFactor();
 }
@@ -649,7 +711,7 @@ const f4Calculation = computed<KernelCalculationResult | undefined>(() => {
         sourceRow: factor.factorCandidate.sourceRow,
       },
       name: factorNameFor(factor),
-      unit: factor.factorCandidate.workbookUnitEvidence ?? "",
+      unit: factor.evidence?.unit ?? factor.factorCandidate.workbookUnitEvidence ?? "unspecified",
       input: {
         nominalValue: draft.designNominal,
         upperTolerance: draft.upperTolerance,
@@ -697,6 +759,94 @@ const f4Volume = computed(() => {
   const volume = props.session.systemSpecification?.volume;
   return volume?.status === "available" ? volume.actualValue : undefined;
 });
+
+interface DimensionChainProjectionCacheEntry {
+  readonly sessionKey: string;
+  readonly projection: DimensionChainReportProjection;
+}
+
+function workbookIdentityForSession(session: DeepReadonly<F7SessionSnapshot>): EngineeringEvidenceWorkbookIdentity {
+  return {
+    workbookContentHash: session.workbook.workbookContentHash,
+    workbookFileName: session.workbook.fileName,
+    worksheetName: session.selectedWorksheetNames[0] ?? "",
+  };
+}
+
+function freezeProjectionCacheEntry(entry: DimensionChainProjectionCacheEntry): Readonly<DimensionChainProjectionCacheEntry> {
+  return snapshotPlainDto(entry);
+}
+
+const currentSessionKey = computed(() => JSON.stringify({
+  sessionId: props.session.sessionId,
+  workbookContentHash: props.session.workbook.workbookContentHash,
+  workbookFileName: props.session.workbook.fileName,
+  worksheetNames: props.session.selectedWorksheetNames,
+}));
+
+const latestDimensionChainProjection = shallowRef<Readonly<DimensionChainProjectionCacheEntry> | undefined>();
+
+const currentSessionProjection = computed<DimensionChainReportProjection | undefined>(() => {
+  const cached = latestDimensionChainProjection.value;
+  return cached?.sessionKey === currentSessionKey.value ? cached.projection : undefined;
+});
+
+watch(currentSessionKey, (nextKey, previousKey) => {
+  if (previousKey === undefined || previousKey === nextKey) return;
+  applyingHistory = true;
+  restoreEditSnapshot(currentSessionEditSnapshot());
+  undoStack.value = [];
+  redoStack.value = [];
+  addedFactorSequence = 0;
+  latestDimensionChainProjection.value = undefined;
+  dimensionChainResetRevision.value += 1;
+  const importedShift = props.session.systemSpecification?.status === "available"
+    && props.session.systemSpecification.additionalMeanShift.status === "available"
+    ? props.session.systemSpecification.additionalMeanShift.actualValue
+    : 0;
+  additionalMeanShift.value = Number.isFinite(importedShift) ? importedShift : 0;
+  void nextTick(() => {
+    applyingHistory = false;
+  });
+});
+
+const currentCalculationInput = computed<AssumptionResultsCurrentCalculationInput | undefined>(() => {
+  const calculation = f4Calculation.value;
+  if (!calculation) return undefined;
+  return {
+    additionalMeanShift: additionalMeanShift.value,
+    calculation,
+  };
+});
+
+const engineeringEvidence = computed<AssumptionResultsEngineeringEvidence | undefined>(() => {
+  if (props.editingSetup) return undefined;
+  const chain = currentSessionProjection.value;
+  if (!chain) return undefined;
+  const input = currentCalculationInput.value;
+  if (!input) return undefined;
+  return buildConfirmedEngineeringEvidence(props.session, chain, input);
+});
+
+watch(engineeringEvidence, (evidence) => {
+  if (evidence === undefined) {
+    emit("engineering-evidence-change", undefined);
+    return;
+  }
+  emit("engineering-evidence-change", snapshotPlainDto({
+    sessionId: props.session.sessionId,
+    workbookIdentity: workbookIdentityForSession(props.session),
+    evidence,
+  }));
+}, { immediate: true });
+
+function onReportProjectionChange(projection: DimensionChainReportProjection): void {
+  if (projection.sourceSignature !== dimensionChainSourceSignature.value) return;
+  latestDimensionChainProjection.value = freezeProjectionCacheEntry({
+    sessionKey: currentSessionKey.value,
+    projection,
+  });
+}
 
 function formatFixed(value: number | undefined, digits: number): string {
   return value === undefined || !Number.isFinite(value)
@@ -788,6 +938,10 @@ function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][numbe
     : "pending";
 }
 
+function componentCategoryLabel(category: ProcessRequirementComponentCategory | "" | undefined): string {
+  return COMPONENT_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ?? "Not classified";
+}
+
 function submitSetup(): void {
   if (props.busy) return;
   const systemSpecification = completeSystemSpecification();
@@ -803,6 +957,7 @@ function submitSetup(): void {
       longTermSafetyFactor: draft.longTermSafetyFactor,
       sigmaLevel: draft.sigmaLevel,
       distribution: draft.distribution,
+      ...(draft.componentCategory ? { componentCategory: draft.componentCategory } : {}),
       ...(isUserAdded(factor) ? {
         factorName: factorNameFor(factor).trim(),
         userAdded: true as const,
@@ -835,7 +990,13 @@ function onModeChange(factorId: string, event: Event): void {
 </script>
 
 <template>
-  <section class="workbench-panel" aria-label="Factor setup and source mode">
+  <section
+    id="measurement-entry-individual-panel"
+    class="workbench-panel"
+    aria-label="Factor setup and source mode"
+    :role="measurementEntryMode === 'individual' ? 'tabpanel' : undefined"
+    :aria-labelledby="measurementEntryMode === 'individual' ? 'measurement-entry-individual-tab' : undefined"
+  >
     <div class="factor-setup-heading">
       <h2>Factor Setup</h2>
       <div class="factor-setup-actions">
@@ -1119,13 +1280,46 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "distribution") }}</small>
               </div>
             </td>
+            <td data-column-key="componentCategory">
+              <div class="factor-field" data-factor-field="componentCategory">
+                <select
+                  v-if="setupEditable"
+                  v-model="candidateDraft(factor).componentCategory"
+                  data-component-category
+                  class="factor-distribution-select factor-component-category-select"
+                  :aria-label="`${factorNameFor(factor)} Component category`"
+                  :disabled="busy"
+                >
+                  <option value="">Not classified</option>
+                  <option v-for="option in COMPONENT_CATEGORY_OPTIONS" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <span v-else>{{ componentCategoryLabel(factor.setup?.componentCategory ?? factor.evidence?.componentCategory) }}</span>
+              </div>
+            </td>
             <td><output :aria-label="`${factorNameFor(factor)} Mean`">{{ formatFactorCalculation(factor, calculatedValues(factor).mean) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
             <td data-column-key="sourceMode">
               <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
-                <fieldset class="source-mode-options">
+                <template v-if="props.measurementEntryMode === 'import'">
+                  <div class="source-mode-readonly">
+                    <span>{{ factor.sourceMode }}</span>
+                    <button
+                      v-if="factor.sourceMode === 'MEASURED'"
+                      type="button"
+                      class="factor-workspace-button"
+                      :data-open-measurement="factor.evidence.factorId"
+                      :disabled="busy"
+                      @click="emit('openMeasurement', factor.evidence.factorId)"
+                    >
+                      Open workspace
+                    </button>
+                  </div>
+                </template>
+                <fieldset v-else class="source-mode-options">
                   <legend>Source mode</legend>
                   <label class="source-mode-option">
                     <input
@@ -1177,7 +1371,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td data-factor-column="design-nominal"><output data-summary-design-nominal>{{ formatSummary(displayedResponseSummary.designNominal) }}</output></td>
             <td data-factor-column="upper-tolerance"><output data-summary-upper-tolerance>{{ formatSigned(displayedResponseSummary.upperTolerance) }}</output></td>
             <td data-factor-column="lower-tolerance"><output data-summary-lower-tolerance>{{ formatSummary(displayedResponseSummary.lowerTolerance) }}</output></td>
-            <th colspan="3">Mean Response:</th>
+            <th colspan="4">Mean Response:</th>
             <td data-factor-column="mean"><output data-summary-mean-response>{{ formatSummary(displayedResponseSummary.meanResponse) }}</output></td>
             <td data-factor-column="tolerance"><output data-summary-tolerance>± {{ formatSummary(displayedResponseSummary.tolerance) }}</output></td>
             <td data-factor-column="one-sigma"><output data-summary-rss-sigma>{{ formatSummary(displayedResponseSummary.rssSigma) }}</output></td>
@@ -1185,7 +1379,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="3"></td>
           </tr>
           <tr class="factor-response-summary-row factor-mean-shift-row">
-            <th colspan="8"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
+            <th colspan="9"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
             <td data-factor-column="mean">
               <input
                 id="additional-mean-shift"
@@ -1200,7 +1394,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="6"></td>
           </tr>
           <tr class="factor-response-summary-row factor-adjusted-mean-row">
-            <th colspan="8">Adjusted Mean:</th>
+            <th colspan="9">Adjusted Mean:</th>
             <td data-factor-column="mean"><output data-summary-adjusted-mean>{{ formatSummary(displayedResponseSummary.adjustedMean) }}</output></td>
             <td colspan="6"></td>
           </tr>
@@ -1299,6 +1493,7 @@ function onModeChange(factorId: string, event: Event): void {
         :editable="setupEditable && !busy"
         @reverse-all="reverseAllFactors"
         @factor-sign-change="applyFactorSigns"
+        @report-projection-change="onReportProjectionChange"
       />
       <ResponseDistributionCurve
         :calculation="f4Calculation"

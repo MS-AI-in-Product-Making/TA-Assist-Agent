@@ -150,6 +150,21 @@ function finiteNumberFromCell(cell: OoxmlCell | undefined): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
+function normalizedPhysicalSpecificationLimits(
+  designNominal: number,
+  lowerTolerance: number,
+  upperTolerance: number,
+): { readonly lower: number; readonly upper: number } {
+  const lowerEndpoint = designNominal + lowerTolerance;
+  const upperEndpoint = designNominal + upperTolerance;
+  return {
+    lower: lowerEndpoint <= 0 && upperEndpoint >= 0
+      ? 0
+      : Math.min(Math.abs(lowerEndpoint), Math.abs(upperEndpoint)),
+    upper: Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint)),
+  };
+}
+
 function sha256LengthPrefixed(parts: readonly string[]): string {
   const hash = createHash("sha256");
   for (const part of parts) hash.update(`${part.length}:${part}|`);
@@ -328,12 +343,17 @@ function parseConfirmations(value: unknown): readonly F7FactorSetupConfirmation[
   return parsed.data;
 }
 
-function buildCandidateId(workbookContentHash: string, worksheetName: string, tableId: string, sourceRow: number): string {
+export function buildF7FactorCandidateId(identity: {
+  readonly workbookContentHash: string;
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly sourceRow: number;
+}): string {
   return sha256LengthPrefixed([
-    workbookContentHash,
-    worksheetName,
-    tableId,
-    String(sourceRow),
+    identity.workbookContentHash,
+    identity.worksheetName,
+    identity.tableId,
+    String(identity.sourceRow),
   ]);
 }
 
@@ -444,6 +464,10 @@ export function extractF7FactorCandidates(request: {
   const { row: headerRow, resolution } = locateFactorHeader(worksheet);
   const tableId = `factor-table-${resolution.anchorColumn}${headerRow}`;
   const factorColumn = resolution.columns.factorName?.sourceColumn;
+  const partNumberColumn = resolution.columns.partNumber?.sourceColumn;
+  const dimIdColumn = resolution.columns.dimCharacteristicId?.sourceColumn;
+  const factorLowerSpecColumn = resolution.columns.factorLowerSpecLimit?.sourceColumn;
+  const factorUpperSpecColumn = resolution.columns.factorUpperSpecLimit?.sourceColumn;
   const nominalValueColumn = resolution.columns.nominalValue?.sourceColumn;
   const upperToleranceColumn = resolution.columns.upperTolerance?.sourceColumn;
   const lowerToleranceColumn = resolution.columns.lowerTolerance?.sourceColumn;
@@ -453,6 +477,11 @@ export function extractF7FactorCandidates(request: {
   const sigmaColumn = resolution.columns.oneSigma?.sourceColumn ?? resolution.columns.standardDeviation?.sourceColumn;
   const distributionColumn = resolution.columns.distribution?.sourceColumn;
   if (!factorColumn || !meanColumn || !sigmaColumn || !distributionColumn) throw adapterError(EXTRACTION_SUMMARY);
+  if ((factorLowerSpecColumn === undefined) !== (factorUpperSpecColumn === undefined)) {
+    throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "incomplete_factor_specification_columns" });
+  }
+  const hasFactorSpecificationColumns = factorLowerSpecColumn !== undefined
+    && factorUpperSpecColumn !== undefined;
 
   const cellsByCoordinate = worksheetCellByCoordinate(worksheet);
   const factorRows: number[] = [];
@@ -479,6 +508,10 @@ export function extractF7FactorCandidates(request: {
     const meanCell = cellAt(cellsByCoordinate, row, meanColumn);
     const sigmaCell = cellAt(cellsByCoordinate, row, sigmaColumn);
     const distributionCell = cellAt(cellsByCoordinate, row, distributionColumn);
+    const partNumberCell = partNumberColumn ? cellAt(cellsByCoordinate, row, partNumberColumn) : undefined;
+    const dimIdCell = dimIdColumn ? cellAt(cellsByCoordinate, row, dimIdColumn) : undefined;
+    const factorLowerSpecCell = factorLowerSpecColumn ? cellAt(cellsByCoordinate, row, factorLowerSpecColumn) : undefined;
+    const factorUpperSpecCell = factorUpperSpecColumn ? cellAt(cellsByCoordinate, row, factorUpperSpecColumn) : undefined;
     const nominalValueCell = nominalValueColumn ? cellAt(cellsByCoordinate, row, nominalValueColumn) : undefined;
     const upperToleranceCell = upperToleranceColumn ? cellAt(cellsByCoordinate, row, upperToleranceColumn) : undefined;
     const lowerToleranceCell = lowerToleranceColumn ? cellAt(cellsByCoordinate, row, lowerToleranceColumn) : undefined;
@@ -504,33 +537,60 @@ export function extractF7FactorCandidates(request: {
       throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "baseline_sampler_not_defined" });
     }
 
-    const absoluteNominalValue = nominalValue === undefined ? undefined : Math.abs(nominalValue);
-    const factorLowerSpec = absoluteNominalValue !== undefined && lowerTolerance !== undefined
-      ? absoluteNominalValue + lowerTolerance
-      : undefined;
-    const factorUpperSpec = absoluteNominalValue !== undefined && upperTolerance !== undefined
-      ? absoluteNominalValue + upperTolerance
-      : undefined;
-    const hasFactorSpecification = factorLowerSpec !== undefined
-      && factorUpperSpec !== undefined
-      && factorLowerSpec < factorUpperSpec;
-    const lowerSpecLimit = hasFactorSpecification ? factorLowerSpec : selectedSpec.lower.value;
-    const upperSpecLimit = hasFactorSpecification ? factorUpperSpec : selectedSpec.upper.value;
-    const designNominal = hasFactorSpecification ? nominalValue : excelSignedMean;
-    const normalizedLowerTolerance = hasFactorSpecification ? lowerTolerance : lowerSpecLimit;
-    const normalizedUpperTolerance = hasFactorSpecification ? upperTolerance : upperSpecLimit;
-    const specificationSourceCells = hasFactorSpecification
-      ? {
-          nominalValue: `${worksheetName}!${nominalValueCell!.reference}`,
-          upperTolerance: `${worksheetName}!${upperToleranceCell!.reference}`,
-          lowerTolerance: `${worksheetName}!${lowerToleranceCell!.reference}`,
-          lowerSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
-          upperSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
-        }
-      : {
-          lowerSpecLimit: selectedSpec.lower.reference,
-          upperSpecLimit: selectedSpec.upper.reference,
+    const partNumber = partNumberCell ? cellText(partNumberCell).trim() : "";
+    const dimId = dimIdCell ? cellText(dimIdCell).trim() : "";
+    const factorLowerSpecText = factorLowerSpecCell ? cellText(factorLowerSpecCell).trim() : "";
+    const factorUpperSpecText = factorUpperSpecCell ? cellText(factorUpperSpecCell).trim() : "";
+    const explicitFactorLowerSpec = finiteNumberFromCell(factorLowerSpecCell);
+    const explicitFactorUpperSpec = finiteNumberFromCell(factorUpperSpecCell);
+    if (hasFactorSpecificationColumns && (factorLowerSpecText.length === 0
+      || factorUpperSpecText.length === 0
+      || explicitFactorLowerSpec === undefined
+      || explicitFactorUpperSpec === undefined
+      || explicitFactorLowerSpec < 0
+      || explicitFactorLowerSpec >= explicitFactorUpperSpec)) {
+      throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "invalid_factor_specification" });
+    }
+
+    let designNominal = excelSignedMean;
+    let normalizedLowerTolerance = selectedSpec.lower.value;
+    let normalizedUpperTolerance = selectedSpec.upper.value;
+    let specificationSourceCells: Record<string, string> = {
+      lowerSpecLimit: selectedSpec.lower.reference,
+      upperSpecLimit: selectedSpec.upper.reference,
+    };
+    if (nominalValue !== undefined
+      && nominalValueCell !== undefined
+      && lowerTolerance !== undefined
+      && lowerToleranceCell !== undefined
+      && upperTolerance !== undefined
+      && upperToleranceCell !== undefined) {
+      const absoluteNominalValue = Math.abs(nominalValue);
+      const factorLowerSpec = absoluteNominalValue + lowerTolerance;
+      const factorUpperSpec = absoluteNominalValue + upperTolerance;
+      if (factorLowerSpec < factorUpperSpec) {
+        designNominal = nominalValue;
+        normalizedLowerTolerance = lowerTolerance;
+        normalizedUpperTolerance = upperTolerance;
+        specificationSourceCells = {
+          nominalValue: `${worksheetName}!${nominalValueCell.reference}`,
+          upperTolerance: `${worksheetName}!${upperToleranceCell.reference}`,
+          lowerTolerance: `${worksheetName}!${lowerToleranceCell.reference}`,
+          lowerSpecLimit: `${worksheetName}!${nominalValueCell.reference}`,
+          upperSpecLimit: `${worksheetName}!${nominalValueCell.reference}`,
         };
+      }
+    }
+    const derivedLimits = normalizedPhysicalSpecificationLimits(
+      designNominal,
+      normalizedLowerTolerance,
+      normalizedUpperTolerance,
+    );
+    const hasWorksheetSpecification = hasFactorSpecificationColumns
+      && explicitFactorLowerSpec !== undefined
+      && explicitFactorUpperSpec !== undefined;
+    const lowerSpecLimit = hasWorksheetSpecification ? explicitFactorLowerSpec : derivedLimits.lower;
+    const upperSpecLimit = hasWorksheetSpecification ? explicitFactorUpperSpec : derivedLimits.upper;
 
     const candidate = {
       workbookContentHash,
@@ -542,10 +602,20 @@ export function extractF7FactorCandidates(request: {
         distribution: `${worksheetName}!${distributionCell.reference}`,
         excelSignedMean: `${worksheetName}!${meanCell!.reference}`,
         standardDeviation: `${worksheetName}!${sigmaCell!.reference}`,
+        ...(partNumber.length === 0 ? {} : { partNumber: `${worksheetName}!${partNumberCell!.reference}` }),
+        ...(dimId.length === 0 ? {} : { dimId: `${worksheetName}!${dimIdCell!.reference}` }),
         ...specificationSourceCells,
+        ...(hasWorksheetSpecification ? {
+          factorLowerSpecLimit: `${worksheetName}!${factorLowerSpecCell!.reference}`,
+          factorUpperSpecLimit: `${worksheetName}!${factorUpperSpecCell!.reference}`,
+          lowerSpecLimit: `${worksheetName}!${factorLowerSpecCell!.reference}`,
+          upperSpecLimit: `${worksheetName}!${factorUpperSpecCell!.reference}`,
+        } : {}),
       },
-      factorCandidateId: buildCandidateId(workbookContentHash, worksheetName, tableId, row),
+      factorCandidateId: buildF7FactorCandidateId({ workbookContentHash, worksheetName, tableId, sourceRow: row }),
       factorName,
+      ...(partNumber.length === 0 ? {} : { partNumber }),
+      ...(dimId.length === 0 ? {} : { dimId }),
       excelSignedMean,
       designNominal,
       upperTolerance: normalizedUpperTolerance,
@@ -556,6 +626,7 @@ export function extractF7FactorCandidates(request: {
         : 1,
       sigmaLevel: workbookSigmaLevel && workbookSigmaLevel > 0 ? workbookSigmaLevel : 4,
       distribution: candidateDistribution,
+      specificationSource: hasWorksheetSpecification ? "Worksheet" as const : "Derived" as const,
       lowerSpecLimit,
       upperSpecLimit,
     };
@@ -636,6 +707,7 @@ export function confirmF7FactorSetup(request: {
       sigmaLevel,
       standardDeviation: tolerance * (longTermSafetyFactor / sigmaLevel),
       distribution: confirmation.distribution ?? "Normal",
+      specificationSource: "Derived",
       lowerSpecLimit: lowerEndpoint <= 0 && upperEndpoint >= 0
         ? 0
         : Math.min(Math.abs(lowerEndpoint), Math.abs(upperEndpoint)),
@@ -668,12 +740,14 @@ export function confirmF7FactorSetup(request: {
 
     const loopCoefficient = Math.sign(confirmation.designNominal) as F7LoopCoefficient;
     const physicalMean = Math.abs(calculatedFactor.calculatedMean);
-    const lowerEndpoint = confirmation.designNominal + confirmation.lowerTolerance;
-    const upperEndpoint = confirmation.designNominal + confirmation.upperTolerance;
-    const lowerSpecLimit = lowerEndpoint <= 0 && upperEndpoint >= 0
-      ? 0
-      : Math.min(Math.abs(lowerEndpoint), Math.abs(upperEndpoint));
-    const upperSpecLimit = Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint));
+    const derivedLimits = normalizedPhysicalSpecificationLimits(
+      confirmation.designNominal,
+      confirmation.lowerTolerance,
+      confirmation.upperTolerance,
+    );
+    const preserveWorksheetSpecification = candidate.specificationSource === "Worksheet";
+    const lowerSpecLimit = preserveWorksheetSpecification ? candidate.lowerSpecLimit : derivedLimits.lower;
+    const upperSpecLimit = preserveWorksheetSpecification ? candidate.upperSpecLimit : derivedLimits.upper;
 
     const evidence = {
       workbookContentHash: candidate.workbookContentHash,
@@ -684,7 +758,12 @@ export function confirmF7FactorSetup(request: {
       factorCandidateId: candidate.factorCandidateId,
       factorId: buildFactorId(candidate.factorCandidateId, loopCoefficient),
       factorName: candidate.factorName,
+      ...(candidate.partNumber === undefined ? {} : { partNumber: candidate.partNumber }),
+      ...(candidate.dimId === undefined ? {} : { dimId: candidate.dimId }),
       ...(candidate.userAdded === true ? { userAdded: true as const } : {}),
+      ...(confirmation.componentCategory === undefined
+        ? {}
+        : { componentCategory: confirmation.componentCategory }),
       unit,
       unitSource,
       designNominal: confirmation.designNominal,
@@ -705,6 +784,7 @@ export function confirmF7FactorSetup(request: {
         physicalMean,
         calculatedFactor.oneSigma,
       ),
+      specificationSource: preserveWorksheetSpecification ? "Worksheet" as const : "Derived" as const,
       lowerSpecLimit,
       upperSpecLimit,
     };

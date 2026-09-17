@@ -121,6 +121,9 @@ describe("worksheet analysis assets", () => {
       },
     });
 
+    expect(result.worksheets[0]?.factorTables[0]?.columns.filter((column) => column.semanticField === "partNumber")).toEqual([
+      expect.objectContaining({ semanticField: "partNumber", sourceColumn: "C", headerText: "Part Number" }),
+    ]);
     expect(result.worksheets[0]?.factorTables[0]?.rows[0]?.fields).toEqual(expect.objectContaining({
       drawingNumber: expect.objectContaining({ status: "available", rawText: "DWG-100" }),
       partNumber: expect.objectContaining({ status: "available", rawText: "PN-200" }),

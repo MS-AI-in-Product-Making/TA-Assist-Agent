@@ -110,7 +110,13 @@ function inflateBounded(compressed: Uint8Array, declaredSize: number, remainingT
   return content;
 }
 
-export function readSafeZip(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
+declare const safeZipPartsBrand: unique symbol;
+
+export type SafeZipParts = ReadonlyMap<string, Uint8Array> & {
+  readonly [safeZipPartsBrand]: true;
+};
+
+export function readSafeZip(bytes: Uint8Array): SafeZipParts {
   try {
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_ARCHIVE_BYTES) fail();
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -186,7 +192,7 @@ export function readSafeZip(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> 
       offset += recordLength;
     }
     if (offset !== centralOffset + centralSize || REQUIRED_PARTS.some((part) => !result.has(part))) fail();
-    return result;
+    return result as unknown as SafeZipParts;
   } catch (error) {
     if (error instanceof Error && (error as { summary?: string }).summary === ARCHIVE_SUMMARY) throw error;
     throw archiveError();

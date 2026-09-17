@@ -21,6 +21,8 @@ import { FileDown } from "lucide-vue-next";
 import { computed, onBeforeUnmount, ref, watch, type DeepReadonly } from "vue";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
 import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
+import { snapshotPlainDto } from "../assumption-results-pdf-evidence";
 import { buildAssumptionResultsInterpretation } from "../assumption-results-interpretation";
 import { buildSpecificationFallbackDisplay } from "../specification-fallback-display";
 import ContributorParetoChart from "./ContributorParetoChart.vue";
@@ -28,6 +30,7 @@ import ContributorParetoChart from "./ContributorParetoChart.vue";
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly generatePdf?: (request: AssumptionResultsPdfRequest) => Promise<globalThis.Blob>;
+  readonly engineeringEvidence?: AssumptionResultsEngineeringEvidence;
 }>();
 
 const generatingPdf = ref(false);
@@ -46,9 +49,23 @@ const processGuidanceEntries = computed(() => (
     ? interpretation.value.processGuidance.entries
     : []
 ));
+const processPriorityDefinitions = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.priorityDefinitions
+    : []
+));
+const processPriorityRecommendation = computed(() => (
+  interpretation.value.processGuidance.status === "available"
+    ? interpretation.value.processGuidance.priorityRecommendation
+    : undefined
+));
 const shouldRenderProcessGuidance = computed(() => (
   interpretation.value.processGuidance.status === "available"
-  && interpretation.value.processGuidance.entries.length > 0
+  && (
+    interpretation.value.processGuidance.entries.length > 0
+    || interpretation.value.processGuidance.priorityDefinitions.length > 0
+    || interpretation.value.processGuidance.priorityRecommendation !== undefined
+  )
 ));
 const specificationFallbackDisplay = computed(() => (
   interpretation.value.status === "available"
@@ -66,6 +83,7 @@ const selectedWorksheetName = computed(() => props.session.selectedWorksheetName
 const canGeneratePdf = computed(() => (
   interpretation.value.status === "available"
   && props.generatePdf !== undefined
+  && props.engineeringEvidence !== undefined
   && props.session.sessionId.length > 0
   && props.session.workbook.fileName.length > 0
   && selectedWorksheetName.value.length > 0
@@ -105,7 +123,10 @@ function isPdfActionOptionId(value: string): value is PdfActionOptionId {
 function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
   const current = interpretation.value;
   if (current.status !== "available" || !canGeneratePdf.value) return undefined;
+  const engineeringEvidence = props.engineeringEvidence;
+  if (!engineeringEvidence) return undefined;
   const fallbackDisplay = specificationFallbackDisplay.value;
+  const evidenceSnapshot = snapshotPlainDto(engineeringEvidence);
 
   return {
     sessionId: props.session.sessionId,
@@ -191,9 +212,27 @@ function buildPdfRequest(): AssumptionResultsPdfRequest | undefined {
       cumulativePercent: item.cumulativePercent,
     })),
     processGuidanceContext,
+    ...(current.processGuidance.status === "available" && current.processGuidance.priorityRecommendation
+      ? {
+        priorityRecommendation: {
+          selectedPriority: current.processGuidance.priorityRecommendation.selectedPriority,
+          requiresMeDmAlignment: true as const,
+        },
+      }
+      : {}),
+    ...(current.processGuidance.status === "available"
+      ? {
+        priorityDefinitions: current.processGuidance.priorityDefinitions.map(({ priority, title, message }) => ({
+          priority,
+          title,
+          message,
+        })),
+      }
+      : {}),
     processGuidance: current.processGuidance.status === "available"
       ? current.processGuidance.entries.map(({ state, title, message }) => ({ state, title, message }))
       : [],
+    engineeringEvidence: evidenceSnapshot,
   };
 }
 
@@ -646,6 +685,10 @@ async function handleGeneratePdf(): Promise<void> {
     >
       <div class="process-guidance-heading">
         <h3>TA Process and Requirements</h3>
+        <span
+          class="process-guidance-version"
+          data-process-guidance-version
+        >V3</span>
       </div>
       <p
         class="process-guidance-context"
@@ -653,6 +696,30 @@ async function handleGeneratePdf(): Promise<void> {
       >
         {{ processGuidanceContext }}
       </p>
+      <div class="process-priority-guidance">
+        <div
+          v-if="processPriorityRecommendation"
+          class="process-priority-recommendation"
+          data-process-priority-recommendation
+        >
+          <strong>Recommended priority {{ processPriorityRecommendation.selectedPriority }}</strong>
+          <span data-process-priority-alignment>Final priority requires Microsoft ME/DM alignment.</span>
+        </div>
+        <dl
+          class="process-priority-definitions"
+          aria-label="V3 priority definitions"
+        >
+          <div
+            v-for="definition in processPriorityDefinitions"
+            :key="definition.entryId"
+            data-process-priority-definition
+            :data-priority="definition.priority"
+          >
+            <dt><strong>{{ definition.priority }}</strong></dt>
+            <dd>{{ definition.message }}</dd>
+          </div>
+        </dl>
+      </div>
       <ol class="process-guidance-list action-sequence">
         <li
           v-for="entry in processGuidanceEntries"
@@ -1140,6 +1207,64 @@ async function handleGeneratePdf(): Promise<void> {
   line-height: 1.4;
 }
 
+.process-guidance-version {
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  padding: 2px 7px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.process-priority-guidance {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.process-priority-recommendation {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.process-priority-recommendation span {
+  color: var(--ink-soft);
+}
+
+.process-priority-definitions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 16px;
+}
+
+.process-priority-definitions > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.process-priority-definitions dt,
+.process-priority-definitions dd {
+  margin: 0;
+}
+
+.process-priority-definitions dt {
+  color: var(--ink);
+  font-weight: 750;
+}
+
 .process-guidance-list {
   padding-left: 20px;
 }
@@ -1176,6 +1301,12 @@ async function handleGeneratePdf(): Promise<void> {
 
 .process-guidance-entry[data-guidance-state="warning"] {
   color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .process-priority-definitions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .interpretation-unavailable {

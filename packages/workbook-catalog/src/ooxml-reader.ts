@@ -1,7 +1,7 @@
 import { DOMParser, type Document, type Element } from "@xmldom/xmldom";
 import { createHash } from "node:crypto";
 import { createTypedError } from "@ai-assist/contracts";
-import { MAX_XML_PART_BYTES, readSafeZip } from "./zip-security.js";
+import { MAX_XML_PART_BYTES, readSafeZip, type SafeZipParts } from "./zip-security.js";
 
 export interface OoxmlCell { readonly reference: string; readonly value: string; readonly formula?: string; readonly cachedValue?: string; }
 export interface OoxmlImage { readonly contentHash: string; readonly mediaType: string; readonly byteLength: number; readonly sourcePart: string; readonly drawingSourcePart: string; readonly anchor?: { readonly from: string; readonly to: string }; readonly bytes: Uint8Array; }
@@ -368,9 +368,8 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
   return images;
 }
 
-export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlWorkbook {
+export function readOoxmlWorkbookFromSafeZip(parts: SafeZipParts, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlWorkbook {
   try {
-    const parts = readSafeZip(bytes);
     const workbook = parseXml(parts.get("xl/workbook.xml")!);
     const relationships = parseXml(parts.get("xl/_rels/workbook.xml.rels")!);
     const workbookRoot = workbook.documentElement;
@@ -433,4 +432,8 @@ export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly s
     if (error instanceof Error && (error as { summary?: string }).summary === ARCHIVE_SUMMARY) throw error;
     throw archiveError();
   }
+}
+
+export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlWorkbook {
+  return readOoxmlWorkbookFromSafeZip(readSafeZip(bytes), worksheetNames, includeImages, cellWindow, options);
 }

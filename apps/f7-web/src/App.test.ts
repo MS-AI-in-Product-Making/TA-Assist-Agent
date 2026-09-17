@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
+import { isReactive } from "vue";
 import { f7ReportProjectionSchema } from "@ai-assist/contracts";
 import App from "./App.vue";
 import DimensionChainPanel from "./components/DimensionChainPanel.vue";
@@ -10,9 +11,11 @@ import type {
   F7DistributionFitCandidate,
   F7FactorState,
   F7MeasurementDataset,
+  F7MeasurementImportPreviewResponse,
   F7ReportProjection,
   F7SessionSnapshot,
 } from "./api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "./assumption-results-pdf-evidence";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
@@ -576,12 +579,12 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
       factorName: factor.factorCandidate.factorName,
       loopCoefficient: factor.evidence!.loopCoefficient,
       sourceMode: factor.sourceMode!,
-      designNominal: factor.factorCandidate.designNominal,
-      upperTolerance: factor.factorCandidate.upperTolerance,
-      lowerTolerance: factor.factorCandidate.lowerTolerance,
-      longTermSafetyFactor: factor.factorCandidate.longTermSafetyFactor,
-      sigmaLevel: factor.factorCandidate.sigmaLevel,
-      setupDistribution: factor.factorCandidate.distribution,
+      designNominal: factor.evidence!.designNominal,
+      upperTolerance: factor.evidence!.upperTolerance,
+      lowerTolerance: factor.evidence!.lowerTolerance,
+      longTermSafetyFactor: factor.evidence!.longTermSafetyFactor,
+      sigmaLevel: factor.evidence!.sigmaLevel,
+      setupDistribution: factor.evidence!.distribution,
       approvedDistribution: factor.distributionApproval!.family,
       sourceReferences: Object.values(factor.evidence!.sourceCells),
     })),
@@ -728,6 +731,9 @@ function createMockClient(
       session = nextByAction.importWorkbook ?? session;
       return session;
     }),
+    downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+    previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by this App test."); }),
+    commitMeasurementImport: vi.fn(async () => session),
     confirmWorksheet: vi.fn(async () => {
       session = nextByAction.confirmWorksheet ?? session;
       return session;
@@ -765,6 +771,69 @@ function createMockClient(
     generateAssumptionResultsPdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
     getSession: vi.fn(async () => session),
   };
+}
+
+function measurementImportPreview(status: "ready" | "blocked" = "ready"): F7MeasurementImportPreviewResponse {
+  return {
+    previewId: "preview-01",
+    expiresAt: "2026-09-16T08:15:00.000Z",
+    sessionStateDigest: HASH_A,
+    factorSetDigest: HASH_B,
+    status,
+    factorCount: 1,
+    replacementFactorIds: [HASH_C],
+    factors: [{
+      factorId: HASH_C,
+      factorName: "C-cover height",
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sampleCount: 32,
+      status,
+      replacesExistingFactor: true,
+      diagnostics: status === "blocked"
+        ? [{
+            reason: "negative_physical_measurement",
+            factorId: HASH_C,
+            factorName: "C-cover height",
+            sheetCell: "Measurements!B7",
+            rowNumber: 7,
+            value: -0.1,
+            displayMessage: "C-cover height Measurements!B7 must be nonnegative.",
+          }]
+        : [],
+      warnings: [],
+      validation: {
+        status,
+        blockingIssues: status === "blocked"
+          ? [{ reason: "sample_count_below_minimum", factorId: HASH_C, rowNumbers: [7] }]
+          : [],
+        advisoryIssues: [],
+        candidateEligibility: {
+          normal: "eligible",
+          lognormal: status === "blocked" ? "ineligible_nonpositive" : "eligible",
+          weibull: status === "blocked" ? "ineligible_nonpositive" : "eligible",
+          gamma: status === "blocked" ? "ineligible_nonpositive" : "eligible",
+          uniform: "eligible_with_boundary_warning",
+        },
+      },
+    }],
+    diagnostics: status === "blocked"
+      ? [{
+          reason: "negative_physical_measurement",
+          factorId: HASH_C,
+          factorName: "C-cover height",
+          sheetCell: "Measurements!B7",
+          rowNumber: 7,
+          value: -0.1,
+          displayMessage: "C-cover height Measurements!B7 must be nonnegative.",
+        }]
+      : [],
+    readyFactorCount: status === "ready" ? 1 : 0,
+    blockedFactorCount: status === "blocked" ? 1 : 0,
+    replacementCount: 1,
+    totalSampleCount: 32,
+    diagnosticCount: status === "blocked" ? 1 : 0,
+  } as F7MeasurementImportPreviewResponse;
 }
 
 function twoFactorReadySnapshot(): F7SessionSnapshot {
@@ -817,6 +886,15 @@ async function uploadWorkbook(wrapper: ReturnType<typeof mount>, file = new File
   await wrapper.get("#workbook-file").trigger("change");
 }
 
+async function uploadMeasurementImportFile(wrapper: ReturnType<typeof mount>, file = new File([new Uint8Array([8, 9, 10])], "measurements.xlsx")): Promise<void> {
+  const input = wrapper.get("[data-measurement-import-file]").element as HTMLInputElement;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: [file],
+  });
+  await wrapper.get("[data-measurement-import-file]").trigger("change");
+}
+
 async function editFactorSetup(wrapper: ReturnType<typeof mount>): Promise<void> {
   await vi.waitFor(() => {
     const button = wrapper.find("[data-edit-factor-setup]");
@@ -828,6 +906,103 @@ async function editFactorSetup(wrapper: ReturnType<typeof mount>): Promise<void>
 
 async function openMeasurementWorkspace(wrapper: ReturnType<typeof mount>): Promise<void> {
   await wrapper.get(`[data-open-measurement='${HASH_C}']`).trigger("click");
+}
+
+function engineeringEvidenceFixture(seed: string): AssumptionResultsEngineeringEvidence {
+  return {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: `Factor-${seed}`,
+        designNominal: -0.57,
+        upperTolerance: 0.05,
+        lowerTolerance: -0.05,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        mean: -0.57,
+        tolerance: 0.05,
+        oneSigma: 0.0125,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: -0.57,
+        upperWorstCaseTolerance: 0.05,
+        lowerWorstCaseTolerance: -0.05,
+        meanResponse: -0.57,
+        rssTolerance: 0.05,
+        rssSigma: 0.0125,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: -0.57,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: `sig-${seed}`,
+    },
+    responseDistribution: {
+      mean: -0.57,
+      standardDeviation: 0.0125,
+      lowerSpecLimit: -0.62,
+      upperSpecLimit: -0.52,
+      target: -0.57,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.0125, upper: -0.5575, lower: -0.5825 }],
+        worstCase: { tolerance: 0.05, upper: -0.52, lower: -0.62 },
+      },
+      responseAndSpecifications: {
+        designNominal: -0.57,
+        meanResponse: -0.57,
+        additionalMeanShift: 0,
+        adjustedMean: -0.57,
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 4, status: "PASS" },
+        upperZ: { value: 4, status: "PASS" },
+        calculatedSigmaLevel: { value: 4, status: "PASS" },
+        cp: { value: 1.33, status: "PASS" },
+        lowerCpk: { value: 1.33, status: "PASS" },
+        upperCpk: { value: 1.33, status: "PASS" },
+        calculatedCpk: { value: 1.33, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 31.67,
+        upperDpm: 31.67,
+        totalDpm: 63.34,
+        outOfSpecPercent: 0.006334,
+        yieldPercent: 99.993666,
+      },
+    },
+  };
+}
+
+function engineeringEvidenceEnvelope(seed: string): {
+  sessionId: string;
+  workbookIdentity: {
+    workbookContentHash: string;
+    workbookFileName: string;
+    worksheetName: string;
+  };
+  evidence: AssumptionResultsEngineeringEvidence;
+} {
+  const sessionId = seed;
+  const isSessionTwo = sessionId === "session-02";
+  return {
+    sessionId,
+    workbookIdentity: {
+      workbookContentHash: isSessionTwo ? HASH_B : HASH_A,
+      workbookFileName: isSessionTwo ? "next.xlsx" : "demo.xlsx",
+      worksheetName: "Anonymous_TA",
+    },
+    evidence: engineeringEvidenceFixture(seed),
+  };
 }
 
 describe("F7 workbench shell", () => {
@@ -919,7 +1094,7 @@ describe("F7 workbench shell", () => {
         confirmed: true,
       }],
     });
-    await vi.waitFor(() => expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(true));
+    await vi.waitFor(() => expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data"));
     expect(wrapper.find("#confirm-factor-setup").exists()).toBe(false);
     expect(wrapper.get("[data-edit-factor-setup]").text()).toBe("Edit setup");
     expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
@@ -1008,7 +1183,7 @@ describe("F7 workbench shell", () => {
     expect(headers).toContain("% Cont. to σ");
     expect(wrapper.find("[data-factor-advanced-toggle]").exists()).toBe(false);
     expect(wrapper.get(".factor-table").classes()).not.toContain("show-advanced-columns");
-    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1360px");
+    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1500px");
     const expectHeaderLines = (key: string, lines: readonly string[]) => {
       const header = wrapper.get(`th[data-column-key='${key}']`);
       expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
@@ -1334,7 +1509,7 @@ describe("F7 workbench shell", () => {
     }));
     await vi.waitFor(() => expect(wrapper.find("[data-edit-factor-setup]").exists()).toBe(true));
     expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
-    expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(true);
+    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
   });
 
   it("3a.1) toggles each Design Nominal value between positive and negative", async () => {
@@ -1632,6 +1807,7 @@ describe("F7 workbench shell", () => {
       "width: 96px;",
       "width: 58px;",
       "width: 88px;",
+      "width: 140px;",
       "width: 68px;",
       "width: 72px;",
       "width: 60px;",
@@ -1721,6 +1897,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(measured, { importWorkbook: measured, setFactorMode: baseline });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await wrapper.findAll("[role='tab']")[1]!.trigger("click");
     expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
     const sourceModeOptions = wrapper.get("fieldset.source-mode-options");
     const sourceModeColumn = wrapper.get("col[data-column-key='sourceMode']");
@@ -1859,6 +2036,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(pendingMode, { importWorkbook: pendingMode, setFactorMode: measured });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await wrapper.findAll("[role='tab']")[1]!.trigger("click");
 
     expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
     await wrapper.get("input[value='MEASURED']").trigger("change");
@@ -3573,6 +3751,9 @@ describe("F7 workbench shell", () => {
     let resolveImport: ((value: F7SessionSnapshot) => void) | undefined;
     const client: F7Client = {
       importWorkbook: vi.fn(async () => await new Promise<F7SessionSnapshot>((resolve) => { resolveImport = resolve; })),
+      downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+      previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by App tests."); }),
+      commitMeasurementImport: vi.fn(async () => measurementEntrySnapshot()),
       confirmWorksheet: vi.fn(async () => factorSetupSnapshot()),
       confirmFactors: vi.fn(async () => measurementEntrySnapshot()),
       setFactorMode: vi.fn(async () => measurementEntrySnapshot()),
@@ -3632,6 +3813,9 @@ describe("F7 workbench shell", () => {
           rawMessage: "secret stack trace",
         })
         .mockResolvedValueOnce(createSnapshot({ status: "worksheet_selection" })),
+      downloadMeasurementTemplate: vi.fn(async () => ({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) })),
+      previewMeasurementImport: vi.fn(async () => { throw new Error("Measurement import is not used by App tests."); }),
+      commitMeasurementImport: vi.fn(async () => measurementEntrySnapshot()),
       confirmWorksheet: vi.fn(async () => factorSetupSnapshot()),
       confirmFactors: vi.fn(async () => measurementEntrySnapshot()),
       setFactorMode: vi.fn(async () => measurementEntrySnapshot()),
@@ -3680,6 +3864,8 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
 
     await uploadWorkbook(wrapper);
+    wrapper.getComponent({ name: "FactorInputTable" }).vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
+    await wrapper.vm.$nextTick();
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
 
     expect(generateAssumptionResultsPdf).toHaveBeenCalledOnce();
@@ -3690,5 +3876,193 @@ describe("F7 workbench shell", () => {
     }));
     click.mockRestore();
     vi.unstubAllGlobals();
+  });
+
+  it("14) keeps assumption-results PDF disabled until current session engineering evidence is available", async () => {
+    const client = createMockClient(measurementEntrySnapshot());
+    const wrapper = mount(App, { props: { client } });
+    const buttonSelector = "[data-generate-assumption-results-pdf]";
+
+    await uploadWorkbook(wrapper);
+    await vi.waitFor(() => {
+      expect(wrapper.get(buttonSelector).attributes("disabled")).toBeDefined();
+    });
+
+    const factorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    factorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
+    await wrapper.vm.$nextTick();
+
+    await vi.waitFor(() => {
+      expect(wrapper.get(buttonSelector).attributes("disabled")).toBeUndefined();
+    });
+  });
+
+  it("15) clears stale evidence on session change and only forwards matching current-session evidence", async () => {
+    const replacementSession = createSnapshot({
+      ...measurementEntrySnapshot(),
+      sessionId: "session-02",
+      workbook: {
+        fileName: "next.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    const client = createMockClient(measurementEntrySnapshot());
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(measurementEntrySnapshot())
+      .mockResolvedValueOnce(replacementSession);
+    const generateAssumptionResultsPdf = vi.mocked(client.generateAssumptionResultsPdf);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:app-assumption-results-2"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], "demo.xlsx"));
+    const firstFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
+    await wrapper.vm.$nextTick();
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledTimes(1);
+    expect(generateAssumptionResultsPdf.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      sessionId: "session-01",
+      workbookName: "demo.xlsx",
+    }));
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "next.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await vi.waitFor(() => {
+      expect(vi.mocked(client.importWorkbook)).toHaveBeenCalledTimes(2);
+    });
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+    });
+
+    const currentFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    firstFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-01"));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+
+    currentFactorTable.vm.$emit("engineering-evidence-change", engineeringEvidenceEnvelope("session-02"));
+    await wrapper.vm.$nextTick();
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeUndefined();
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generateAssumptionResultsPdf).toHaveBeenCalledTimes(2);
+    expect(generateAssumptionResultsPdf.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      sessionId: "session-02",
+      workbookName: "next.xlsx",
+    }));
+
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects late envelope events from a previous session and keeps cache non-reactive", async () => {
+    const replacementSession = createSnapshot({
+      ...measurementEntrySnapshot(),
+      sessionId: "session-02",
+      workbook: {
+        fileName: "next.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    const client = createMockClient(measurementEntrySnapshot());
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(measurementEntrySnapshot())
+      .mockResolvedValueOnce(replacementSession);
+
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], "demo.xlsx"));
+    const firstFactorTable = wrapper.getComponent({ name: "FactorInputTable" });
+    const staleEnvelope = engineeringEvidenceEnvelope("session-01");
+    firstFactorTable.vm.$emit("engineering-evidence-change", staleEnvelope);
+    await wrapper.vm.$nextTick();
+
+    const cachedBeforeSwitch = (wrapper.vm as unknown as { cachedEngineeringEvidence?: unknown }).cachedEngineeringEvidence;
+    expect(isReactive(cachedBeforeSwitch)).toBe(false);
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "next.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+    });
+
+    firstFactorTable.vm.$emit("engineering-evidence-change", staleEnvelope);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get("[data-generate-assumption-results-pdf]").attributes("disabled")).toBeDefined();
+  });
+
+  it("defaults to import mode with no measured dataset and to individual mode once a measured dataset exists", async () => {
+    const importWrapper = mount(App, {
+      props: { client: createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() }) },
+    });
+    await uploadWorkbook(importWrapper);
+    expect(importWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
+
+    const individualWrapper = mount(App, {
+      props: { client: createMockClient(phaseReadySnapshot(), { importWorkbook: phaseReadySnapshot() }) },
+    });
+    await uploadWorkbook(individualWrapper);
+    expect(individualWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Enter Individually");
+  });
+
+  it("forwards measurement import events while mode switching discards preview without mutating the session", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:measurement-template"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-download-measurement-template]").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("keydown", { key: "ArrowRight" });
+
+    expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1);
+    expect(client.previewMeasurementImport).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("[data-measurement-import-review]").exists()).toBe(false);
+    expect(wrapper.find("[data-measurement-import-surface]").exists()).toBe(false);
+    expect(client.setFactorMode).not.toHaveBeenCalled();
+    expect(client.commitMeasurementImport).not.toHaveBeenCalled();
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows committed measured readiness from the refreshed snapshot and preserves open workspace access", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
+    vi.mocked(client.commitMeasurementImport).mockResolvedValue(phaseReadySnapshot());
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-confirm-measurement-import]").trigger("click");
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain("Ready");
+    });
+    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
+    expect(wrapper.text()).toContain("MEASURED");
+    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
+    expect(wrapper.find("[data-measurement-import-success]").exists()).toBe(true);
+  });
+
+  it("cancels the preview locally without committing", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("blocked"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-cancel-measurement-import]").trigger("click");
+
+    expect(client.commitMeasurementImport).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-measurement-import-review]").exists()).toBe(false);
   });
 });

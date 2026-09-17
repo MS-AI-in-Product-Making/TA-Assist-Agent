@@ -1,5 +1,6 @@
-export { readOoxmlWorkbook } from "./ooxml-reader.js";
+export { readOoxmlWorkbook, readOoxmlWorkbookFromSafeZip } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
+export type { SafeZipParts } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
 export { FACTOR_FIELD_ORDER, resolveFactorHeaderCluster } from "./factor-header-resolver.js";
 export type { FactorFieldName, FactorHeaderResolution, HeaderCell, ResolvedHeaderColumn } from "./factor-header-resolver.js";
@@ -36,9 +37,19 @@ export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export { normalizeF7Factor } from "./f7-factor-normalization.js";
 export { createF7WorkbookImport, extractF7FactorCandidates, confirmF7FactorSetup } from "./f7-excel-adapter.js";
+export { generateF7MeasurementTemplate } from "./f7-measurement-template-writer.js";
+export { parseF7MeasurementTemplate } from "./f7-measurement-template-parser.js";
 export { parseF7MeasurementPaste } from "./f7-measurement-parser.js";
 export { applyF7MeasurementDisposition, validateF7MeasurementDataset } from "./f7-dataset-validation.js";
+export {
+	F7_MEASUREMENT_TEMPLATE_LAYOUT,
+	createF7MeasurementImportAuthority,
+	hashF7MeasurementFactorSet,
+	hashF7MeasurementSessionState,
+} from "./f7-measurement-template.js";
 export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
+export type { F7MeasurementImportAuthorityInput } from "./f7-measurement-template.js";
+export type { F7MeasurementTemplateParseResult } from "./f7-measurement-template-parser.js";
 export type {
 	F7WorkbookImportResult,
 	F7FactorCandidateExtractionResult,

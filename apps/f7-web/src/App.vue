@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { LoaderCircle } from "lucide-vue-next";
-import { computed, nextTick, ref } from "vue";
+import { computed, markRaw, nextTick, ref, shallowRef, watch } from "vue";
 import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
+import MeasurementImportPanel from "./components/MeasurementImportPanel.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
 import MonteCarloPanel from "./components/MonteCarloPanel.vue";
 import ReportPanel from "./components/ReportPanel.vue";
 import TAResultsInterpretation from "./components/TAResultsInterpretation.vue";
+import {
+  type AssumptionResultsEngineeringEvidence,
+  type EngineeringEvidenceEnvelope,
+  type EngineeringEvidenceWorkbookIdentity,
+  snapshotPlainDto,
+} from "./assumption-results-pdf-evidence";
 import { createF7SessionStore } from "./state/f7-session";
 
 const props = defineProps<{
@@ -20,6 +27,8 @@ const activeMeasurementFactorId = ref("");
 const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
 const editingFactorSetup = ref(false);
+const measurementEntryMode = ref<"import" | "individual">("import");
+const measurementImportSuccessMessage = ref("");
 const reportRetryAvailable = ref(false);
 const reportPdfBusy = ref(false);
 const reportPdfError = ref("");
@@ -36,15 +45,82 @@ let workbookReplacementAuthorized = false;
 let reportRequestToken = 0;
 let reportPdfRequestToken = 0;
 
+interface SessionEngineeringEvidence {
+  readonly sessionId: string;
+  readonly workbookIdentity: EngineeringEvidenceWorkbookIdentity;
+  readonly evidence: AssumptionResultsEngineeringEvidence;
+}
+
+const cachedEngineeringEvidence = shallowRef<Readonly<SessionEngineeringEvidence> | undefined>();
+
 function generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<globalThis.Blob> {
   return client.generateAssumptionResultsPdf(request);
 }
+
+function workbookIdentityForSession(session: { readonly workbook: { readonly workbookContentHash: string; readonly fileName: string }; readonly selectedWorksheetNames: readonly string[] }): EngineeringEvidenceWorkbookIdentity {
+  return {
+    workbookContentHash: session.workbook.workbookContentHash,
+    workbookFileName: session.workbook.fileName,
+    worksheetName: session.selectedWorksheetNames[0] ?? "",
+  };
+}
+
+function sameWorkbookIdentity(left: EngineeringEvidenceWorkbookIdentity, right: EngineeringEvidenceWorkbookIdentity): boolean {
+  return left.workbookContentHash === right.workbookContentHash
+    && left.workbookFileName === right.workbookFileName
+    && left.worksheetName === right.worksheetName;
+}
+
+function clearCachedEngineeringEvidence(): void {
+  cachedEngineeringEvidence.value = undefined;
+}
+
+function onEngineeringEvidenceChange(envelope: EngineeringEvidenceEnvelope | undefined): void {
+  const session = store.session.value;
+  if (!session || envelope === undefined) {
+    clearCachedEngineeringEvidence();
+    return;
+  }
+  const currentIdentity = workbookIdentityForSession(session);
+  if (envelope.sessionId !== session.sessionId) return;
+  if (!sameWorkbookIdentity(envelope.workbookIdentity, currentIdentity)) return;
+  if (envelope.evidence === undefined) {
+    clearCachedEngineeringEvidence();
+    return;
+  }
+  cachedEngineeringEvidence.value = markRaw(snapshotPlainDto({
+    sessionId: envelope.sessionId,
+    workbookIdentity: envelope.workbookIdentity,
+    evidence: envelope.evidence,
+  }));
+}
+
+const currentEngineeringEvidence = computed<AssumptionResultsEngineeringEvidence | undefined>(() => {
+  const session = store.session.value;
+  const cached = cachedEngineeringEvidence.value;
+  if (!session || !cached) return undefined;
+  if (cached.sessionId !== session.sessionId) return undefined;
+  if (!sameWorkbookIdentity(cached.workbookIdentity, workbookIdentityForSession(session))) return undefined;
+  return cached.evidence;
+});
+
+watch(() => {
+  const session = store.session.value;
+  if (!session) return "";
+  const worksheetName = session.selectedWorksheetNames[0] ?? "";
+  return `${session.sessionId}|${session.workbook.workbookContentHash}|${session.workbook.fileName}|${worksheetName}`;
+}, (nextKey, previousKey) => {
+  if (previousKey !== undefined && previousKey !== nextKey) clearCachedEngineeringEvidence();
+});
 
 function reportPdfFileName(workbookName: string, worksheetName: string): string {
   const workbookBase = workbookName.replace(/\.[^.]+$/, "");
   const safePart = (value: string): string => value
     .normalize("NFKC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-")
+    .split("")
+    .map((character) => character.charCodeAt(0) < 32 ? "-" : character)
+    .join("")
+    .replace(/[<>:"/\\|?*]+/g, "-")
     .replace(/[\s._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80) || "report";
@@ -104,6 +180,21 @@ const simulationReady = computed(() => {
     || (factor.sourceMode === "MEASURED" && factor.distributionApproval !== undefined)
   ));
 });
+
+const measuredDatasetPresent = computed(() => store.session.value?.factors.some((factor) => factor.measurementPasteResult?.dataset !== undefined) ?? false);
+
+const measurementImportPanelVisible = computed(() => {
+  const session = store.session.value;
+  if (!session) return false;
+  if (editingFactorSetup.value || activeMeasurementFactorId.value) return false;
+  if (activeMeasurementStage.value !== "measurement" && activeMeasurementStage.value !== "capability" && activeMeasurementStage.value !== "distribution") return false;
+  return session.status === "measurement_entry" || session.status === "phase_1_ready";
+});
+
+watch(() => store.session.value?.sessionId ?? "", (nextSessionId, previousSessionId) => {
+  if (!nextSessionId || nextSessionId === previousSessionId) return;
+  measurementEntryMode.value = measuredDatasetPresent.value ? "individual" : "import";
+}, { immediate: true });
 
 const workflowSteps = [
   { id: 1, label: "Select worksheet" },
@@ -173,6 +264,7 @@ async function importWorkbookFile(file: File): Promise<void> {
   importingWorkbookFileName.value = file.name;
   try {
     await store.importWorkbook(file);
+    measurementImportSuccessMessage.value = "";
     reportRequestToken += 1;
     activeMeasurementFactorId.value = "";
     activeMeasurementStage.value = "measurement";
@@ -314,6 +406,53 @@ async function onSetMode(factorId: string, mode: F7SourceMode): Promise<void> {
       activeMeasurementFactorId.value = "";
     }
   });
+}
+
+function onMeasurementEntryModeChange(mode: "import" | "individual"): void {
+  if (mode === measurementEntryMode.value) return;
+  store.cancelMeasurementImport();
+  measurementImportSuccessMessage.value = "";
+  measurementEntryMode.value = mode;
+}
+
+async function onDownloadMeasurementTemplate(): Promise<void> {
+  await swallowHandledError(async () => {
+    const download = await store.downloadMeasurementTemplate();
+    const blob = new globalThis.Blob([Uint8Array.from(download.bytes).buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = globalThis.document.createElement("a");
+      anchor.href = url;
+      anchor.download = download.fileName;
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  });
+}
+
+async function onPreviewMeasurementImport(file: File): Promise<void> {
+  measurementImportSuccessMessage.value = "";
+  await swallowHandledError(async () => {
+    await store.previewMeasurementImport(file);
+  });
+}
+
+async function onCommitMeasurementImport(): Promise<void> {
+  const replacementCount = store.measurementImportPreview.value?.replacementCount ?? 0;
+  const factorCount = store.measurementImportPreview.value?.factorCount ?? 0;
+  await swallowHandledError(async () => {
+    await store.commitMeasurementImport();
+    const label = factorCount === 1 ? "dataset" : "datasets";
+    measurementImportSuccessMessage.value = `Ready. Imported ${factorCount} measured ${label} with ${replacementCount} replacement${replacementCount === 1 ? "" : "s"}.`;
+  });
+}
+
+function onCancelMeasurementImport(): void {
+  store.cancelMeasurementImport();
+  measurementImportSuccessMessage.value = "";
 }
 
 function onOpenMeasurement(factorId: string): void {
@@ -545,15 +684,32 @@ async function openReport(): Promise<void> {
           @confirm="onConfirmWorksheet"
         />
 
+        <MeasurementImportPanel
+          v-if="measurementImportPanelVisible"
+          :session="store.session.value"
+          :preview="store.measurementImportPreview.value"
+          :busy="store.isBusy.value"
+          :action="store.busyAction.value === 'downloadMeasurementTemplate' || store.busyAction.value === 'previewMeasurementImport' || store.busyAction.value === 'commitMeasurementImport' ? store.busyAction.value : null"
+          :mode="measurementEntryMode"
+          :success-message="measurementImportSuccessMessage || null"
+          @download="onDownloadMeasurementTemplate"
+          @upload="onPreviewMeasurementImport"
+          @confirm="onCommitMeasurementImport"
+          @cancel="onCancelMeasurementImport"
+          @mode-change="onMeasurementEntryModeChange"
+        />
+
         <FactorInputTable
           v-if="!activeMeasurementFactorId && (activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && (store.session.value.status === 'factor_setup' || store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :busy="store.isBusy.value"
           :editing-setup="editingFactorSetup"
+          :measurement-entry-mode="measurementEntryMode"
           @confirm-factors="onConfirmFactors"
           @edit-setup="onEditFactorSetup"
           @set-mode="onSetMode"
           @open-measurement="onOpenMeasurement"
+          @engineering-evidence-change="onEngineeringEvidenceChange"
         />
 
         <MeasurementPastePanel
@@ -601,6 +757,7 @@ async function openReport(): Promise<void> {
           v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :generate-pdf="generateAssumptionResultsPdf"
+          v-bind="currentEngineeringEvidence === undefined ? {} : { engineeringEvidence: currentEngineeringEvidence }"
         />
 
         <section
