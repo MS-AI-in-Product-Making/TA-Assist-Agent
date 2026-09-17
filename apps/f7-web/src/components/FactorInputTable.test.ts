@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, isReactive } from "vue";
 import { describe, expect, it } from "vitest";
-import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
 import type { F7FactorInput } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
@@ -1076,7 +1075,7 @@ describe("FactorInputTable measurement entry modes", () => {
       ));
       expect(wrapper.get(`col[data-column-key='${key}']`).attributes("style")).toContain(`${widths.defaultWidth}px`);
     }
-    expect(wrapper.get("#factor-setup-table").attributes("style")).toContain("min-width: 1698px");
+    expect(wrapper.get("#factor-setup-table").attributes("style")).toContain("min-width: 1770px");
 
     const comparison = wrapper.get(`[data-factor-measured-comparison='${HASH_A}']`);
     const setupRow = comparison.element.previousElementSibling;
@@ -1085,8 +1084,8 @@ describe("FactorInputTable measurement entry modes", () => {
     expect(setupRow?.querySelector(`[data-open-measurement='${HASH_A}']`)?.textContent?.trim()).toBe("Measured Data");
     expect(comparison.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(false);
     const setupCells = [...(setupRow?.querySelectorAll("td") ?? [])];
-    expect(setupCells.slice(0, 9).every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
-    expect(setupCells.slice(0, 9).every((cell) => cell.classList.contains("factor-setup-rowspan-cell"))).toBe(true);
+    expect(setupCells.slice(0, 10).every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
+    expect(setupCells.slice(0, 10).every((cell) => cell.classList.contains("factor-setup-rowspan-cell"))).toBe(true);
     const measuredRowspanCells = setupCells.slice(-3);
     expect(measuredRowspanCells.map((cell) => cell.getAttribute("data-column-key"))).toEqual([
       "sourceMode",
@@ -1432,148 +1431,213 @@ describe("FactorInputTable measurement entry modes", () => {
   });
 });
 
-describe("FactorInputTable component category", () => {
-  const expectedOptions = [
-    ["", "Not classified"],
-    ["battery-cts", "Battery CTS"],
-    ["z-axis-or-around-xy-clearance", "Z-axis or around-XY clearance"],
-    ["glass-tdm-gap-or-z-step", "Glass/TDM gap or Z-step"],
-    ["thermal-module-critical-path", "Thermal module critical path"],
-    ["pcb-critical-clearance-or-alignment", "PCB critical clearance or alignment"],
-    ["cover-fit-and-function", "Cover fit and function"],
-    ["hinge-trackpad-button-or-sensor", "Hinge, trackpad, button, or sensor"],
-    ["cable-routing", "Cable routing"],
-    ["external-port-kickstand-logo-or-ssd", "External port, kickstand, logo, or SSD"],
-    ["pcb-component-or-fastener", "PCB component or fastener"],
-    ["engagement-or-assembly-feature", "Engagement or assembly feature"],
-    ["foam-or-gasket-sealing-cushioning-or-nvh", "Foam or gasket sealing, cushioning, or NVH"],
-  ] as const;
-
-  function editableSession(categorySource: "setup" | "evidence" | "blank"): F7SessionSnapshot {
+describe("FactorInputTable factor traceability", () => {
+  function traceabilitySession(source: "setup" | "evidence" | "candidate" | "missing"): F7SessionSnapshot {
     const session = createSession({ status: "factor_setup" });
     const factor = session.factors[0]!;
     session.factors = [{
       ...factor,
+      factorCandidate: {
+        ...factor.factorCandidate,
+        ...(source === "candidate" ? { partNumber: "PN-CANDIDATE", dimId: "DIM-CANDIDATE" } : {}),
+      },
       setup: factor.setup
         ? {
             ...factor.setup,
-            ...(categorySource === "setup" ? { componentCategory: "battery-cts" as const } : {}),
+            ...(source === "setup" ? { partNumber: "PN-SETUP", dimId: "DIM-SETUP" } : {}),
           }
         : factor.setup,
       evidence: factor.evidence
         ? {
             ...factor.evidence,
-            ...(categorySource === "evidence" ? { componentCategory: "cable-routing" as const } : {}),
+            ...(source === "evidence" ? { partNumber: "PN-EVIDENCE", dimId: "DIM-EVIDENCE" } : {}),
           }
         : factor.evidence,
     }];
     return session;
   }
 
-  it("renders the blank option plus every controlled component category with engineering labels", () => {
+  it("uses the exact leading columns and removes component category", () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("blank"),
+      session: traceabilitySession("missing"),
       busy: false,
-      editingSetup: true,
+      editingSetup: false,
     });
 
-    const select = wrapper.get("[data-component-category]");
-    const options = select.findAll("option").map((option) => [option.element.value, option.text()]);
-    expect(options).toEqual(expectedOptions.map((option) => [...option]));
-    expect(options.slice(1).map(([value]) => value)).toEqual(processRequirementComponentCategorySchema.options);
-    expect(wrapper.get("col[data-column-key='componentCategory']").attributes("style")).toContain("140px");
+    const columnKeys = wrapper.findAll("#factor-setup-table col").map((column) => column.attributes("data-column-key"));
+    expect(columnKeys.slice(0, 5)).toEqual(["index", "factor", "partNumber", "dimId", "designNominal"]);
+    expect(columnKeys).not.toContain("componentCategory");
+    expect(wrapper.find("[data-component-category]").exists()).toBe(false);
   });
 
   it.each([
-    ["setup", "battery-cts"],
-    ["evidence", "cable-routing"],
-  ] as const)("backfills an existing %s category", (categorySource, expectedCategory) => {
+    ["setup", "PN-SETUP", "DIM-SETUP"],
+    ["evidence", "PN-EVIDENCE", "DIM-EVIDENCE"],
+    ["candidate", "PN-CANDIDATE", "DIM-CANDIDATE"],
+    ["missing", "Missing", "Missing"],
+  ] as const)("displays %s traceability read-only", (source, expectedPartNumber, expectedDimId) => {
     const wrapper = mountWithFastStubs({
-      session: editableSession(categorySource),
+      session: traceabilitySession(source),
       busy: false,
-      editingSetup: true,
+      editingSetup: false,
     });
 
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe(expectedCategory);
+    expect(wrapper.get("[data-factor-part-number]").text()).toBe(expectedPartNumber);
+    expect(wrapper.get("[data-factor-dim-id]").text()).toBe(expectedDimId);
+    expect(wrapper.find("[data-factor-part-number] input").exists()).toBe(false);
+    expect(wrapper.find("[data-factor-dim-id] input").exists()).toBe(false);
   });
 
-  it("includes a selected category in confirmation payload and omits a blank category", async () => {
-    const selectedWrapper = mountWithFastStubs({
-      session: editableSession("blank"),
-      busy: false,
-      editingSetup: true,
-    });
-    await selectedWrapper.get("[data-component-category]").setValue("thermal-module-critical-path");
-    await selectedWrapper.get("#confirm-factor-setup").trigger("click");
-    expect(selectedWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.objectContaining({ componentCategory: "thermal-module-critical-path" }),
-    ]);
+  it.each([
+    [false, "Missing", "Missing"],
+    [true, "", ""],
+  ] as const)("keeps explicitly cleared current traceability empty when editingSetup is %s", (editingSetup, expectedPartNumber, expectedDimId) => {
+    const session = traceabilitySession("candidate");
+    const factor = session.factors[0]!;
+    session.factors = [{
+      ...factor,
+      setup: {
+        ...factor.setup!,
+        partNumber: undefined,
+      },
+      evidence: {
+        ...factor.evidence!,
+        dimId: undefined,
+      },
+    }];
 
-    const blankWrapper = mountWithFastStubs({
-      session: editableSession("blank"),
-      busy: false,
-      editingSetup: true,
-    });
-    await blankWrapper.get("#confirm-factor-setup").trigger("click");
-    expect(blankWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.not.objectContaining({ componentCategory: expect.anything() }),
-    ]);
+    const wrapper = mountWithFastStubs({ session, busy: false, editingSetup });
+
+    if (editingSetup) {
+      expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe(expectedPartNumber);
+      expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe(expectedDimId);
+    } else {
+      expect(wrapper.get("[data-factor-part-number]").text()).toBe(expectedPartNumber);
+      expect(wrapper.get("[data-factor-dim-id]").text()).toBe(expectedDimId);
+    }
   });
 
-  it("resets category drafts when a new session reuses the same candidate ID", async () => {
+  it("edits imported and user-added traceability with empty drafts for new factors", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("setup"),
+      session: traceabilitySession("evidence"),
       busy: false,
       editingSetup: true,
     });
-    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
 
-    const replacementSession = editableSession("evidence");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe("PN-EVIDENCE");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe("DIM-EVIDENCE");
+    await wrapper.get("button[aria-label='Add factor after Factor A']").trigger("click");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='New factor Part Number']").element.value).toBe("");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='New factor DIM ID']").element.value).toBe("");
+  });
+
+  it("rebuilds traceability drafts from new session authority when candidate IDs are reused", async () => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    await wrapper.get("input[aria-label='Factor A Part Number']").setValue("PN-EDITED");
+    await wrapper.get("input[aria-label='Factor A DIM ID']").setValue("DIM-EDITED");
+
+    const replacementSession = traceabilitySession("evidence");
     replacementSession.sessionId = "session-02";
     await wrapper.setProps({ session: replacementSession });
 
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("cable-routing");
-    await wrapper.get("#confirm-factor-setup").trigger("click");
-    expect(wrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.objectContaining({ componentCategory: "cable-routing" }),
-    ]);
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe("PN-EVIDENCE");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe("DIM-EVIDENCE");
   });
 
-  it("defaults user-added factors to blank and reset clears a manually selected category", async () => {
+  it("reset restores imported candidate traceability values", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("blank"),
+      session: traceabilitySession("candidate"),
       busy: false,
       editingSetup: true,
     });
-    const importedSelect = wrapper.get<HTMLSelectElement>("[data-component-category]");
-    await importedSelect.setValue("cover-fit-and-function");
+    const partNumber = wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']");
+    const dimId = wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']");
+    await partNumber.setValue("PN-EDITED");
+    await dimId.setValue("DIM-EDITED");
+
     await wrapper.get("[data-factor-reset]").trigger("click");
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("");
 
-    await wrapper.get("button[aria-label='Add factor after Factor A']").trigger("click");
-    const selects = wrapper.findAll<HTMLSelectElement>("[data-component-category]");
-    expect(selects).toHaveLength(2);
-    expect(selects[1]!.element.value).toBe("");
+    expect(partNumber.element.value).toBe("PN-CANDIDATE");
+    expect(dimId.element.value).toBe("DIM-CANDIDATE");
   });
 
-  it("preserves category changes through undo and redo snapshots", async () => {
+  it("preserves traceability draft edits through undo and redo snapshots", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("evidence"),
+      session: traceabilitySession("evidence"),
       busy: false,
       editingSetup: true,
     });
-    const category = () => wrapper.get<HTMLSelectElement>("[data-component-category]").element.value;
-
-    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
+    const partNumber = wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']");
+    const dimId = wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']");
+    await partNumber.setValue("PN-EDITED");
+    await dimId.setValue("DIM-EDITED");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("pcb-component-or-fastener");
 
     await wrapper.get("[data-factor-undo]").trigger("click");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("cable-routing");
+    expect(partNumber.element.value).toBe("PN-EDITED");
+    expect(dimId.element.value).toBe("DIM-EVIDENCE");
+
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(partNumber.element.value).toBe("PN-EVIDENCE");
+    expect(dimId.element.value).toBe("DIM-EVIDENCE");
 
     await wrapper.get("[data-factor-redo]").trigger("click");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("pcb-component-or-fastener");
+    await wrapper.get("[data-factor-redo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(partNumber.element.value).toBe("PN-EDITED");
+    expect(dimId.element.value).toBe("DIM-EDITED");
+  });
+
+  it.each([
+    ["Part Number", "partNumber"],
+    ["DIM ID", "dimId"],
+  ] as const)("limits %s to 300 characters and blocks confirmation for longer controlled drafts", async (label, field) => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    const input = wrapper.get<HTMLInputElement>(`input[aria-label='Factor A ${label}']`);
+    expect(input.attributes("maxlength")).toBe("300");
+
+    await input.setValue("X".repeat(301));
+
+    expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    const error = wrapper.get(`[data-factor-${field === "partNumber" ? "part-number" : "dim-id"}] [role='alert']`);
+    expect(error.text()).toBe(`${label} must be 300 characters or fewer.`);
+    expect(input.attributes("aria-invalid")).toBe("true");
+    expect(input.attributes("aria-describedby")).toBe(error.attributes("id"));
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+    expect(wrapper.emitted("confirmFactors")).toBeUndefined();
+  });
+
+  it("emits trimmed nullable traceability and no component category", async () => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    await wrapper.get("input[aria-label='Factor A Part Number']").setValue("   ");
+    await wrapper.get("input[aria-label='Factor A DIM ID']").setValue("  DIM-EDITED  ");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+
+    expect(wrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([{
+      factorCandidateId: HASH_B,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal",
+      partNumber: null,
+      dimId: "DIM-EDITED",
+    }]);
   });
 });

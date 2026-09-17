@@ -864,7 +864,7 @@ function measurementImportPreviewFactor(
 }
 
 function measurementImportPreviewWithFactors(
-  factors: readonly MeasurementImportPreviewFactor[],
+  factors: MeasurementImportPreviewFactor[],
 ): F7MeasurementImportPreviewResponse {
   const blockedFactorCount = factors.filter((factor) => factor.status === "blocked").length;
   const diagnostics = factors.flatMap((factor) => factor.diagnostics);
@@ -1163,6 +1163,8 @@ describe("F7 workbench shell", () => {
         longTermSafetyFactor: 1,
         sigmaLevel: 4,
         distribution: "Normal",
+        partNumber: null,
+        dimId: null,
         confirmed: true,
       }],
     });
@@ -1255,7 +1257,7 @@ describe("F7 workbench shell", () => {
     expect(headers).toContain("% Cont. to σ");
     expect(wrapper.find("[data-factor-advanced-toggle]").exists()).toBe(false);
     expect(wrapper.get(".factor-table").classes()).not.toContain("show-advanced-columns");
-    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1698px");
+    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1770px");
     const expectHeaderLines = (key: string, lines: readonly string[]) => {
       const header = wrapper.get(`th[data-column-key='${key}']`);
       expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
@@ -1276,16 +1278,17 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find("input[id^='unit-']").exists()).toBe(false);
 
     const specificationInputs = wrapper.findAll("input.factor-spec-input");
-    expect(specificationInputs).toHaveLength(5);
+    expect(specificationInputs).toHaveLength(7);
     const numericInputs = wrapper.findAll(".factor-table input[type='number']");
     expect(numericInputs).toHaveLength(6);
     expect(numericInputs.every((input) => input.classes().includes("factor-number-input"))).toBe(true);
-    await specificationInputs[0]!.setValue("-2.05");
-    await specificationInputs[1]!.setValue("0.1");
-    await specificationInputs[2]!.setValue("-0.08");
-    await specificationInputs[3]!.setValue("2");
-    await specificationInputs[4]!.setValue("4");
-    const distribution = wrapper.get("select[aria-label='C-cover height Distribution']");
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    await factorRow.get("[data-factor-field='designNominal'] input").setValue("-2.05");
+    await factorRow.get("[data-factor-field='upperTolerance'] input").setValue("0.1");
+    await factorRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.08");
+    await factorRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("2");
+    await factorRow.get("[data-factor-field='sigmaLevel'] input").setValue("4");
+    const distribution = factorRow.get("[data-factor-field='distribution'] select");
     expect(distribution.findAll("option").map((option) => option.text())).toEqual([
       "Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta",
     ]);
@@ -1444,6 +1447,8 @@ describe("F7 workbench shell", () => {
         longTermSafetyFactor: 2,
         sigmaLevel: 4,
         distribution: "Uniform",
+        partNumber: null,
+        dimId: null,
         confirmed: true,
       }],
     });
@@ -1676,27 +1681,30 @@ describe("F7 workbench shell", () => {
     expect(addedRow.findAll(".factor-item-actions .factor-row-control").map((button) => button.text())).toEqual(["−", "+"]);
     expect((addedRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
     const initialSpecifications = addedRow.findAll("input.factor-spec-input");
-    expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "1", "4"]);
+    expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "", "", "1", "4"]);
     expect((addedRow.get("select.factor-distribution-select").element as HTMLSelectElement).value).toBe("Normal");
     expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", "1.3333", ""]);
     expect(addedRow.find("[role='alert']").exists()).toBe(false);
 
-    expect(initialSpecifications[1]!.attributes("min")).toBeUndefined();
-    expect(initialSpecifications[2]!.attributes("max")).toBeUndefined();
-    await initialSpecifications[0]!.setValue("0");
-    await initialSpecifications[1]!.setValue("-0.1");
-    await initialSpecifications[2]!.setValue("-0.3");
+    const addedNominal = addedRow.get("[data-factor-field='designNominal'] input");
+    const addedUpperTolerance = addedRow.get("[data-factor-field='upperTolerance'] input");
+    const addedLowerTolerance = addedRow.get("[data-factor-field='lowerTolerance'] input");
+    expect(addedUpperTolerance.attributes("min")).toBeUndefined();
+    expect(addedLowerTolerance.attributes("max")).toBeUndefined();
+    await addedNominal.setValue("0");
+    await addedUpperTolerance.setValue("-0.1");
+    await addedLowerTolerance.setValue("-0.3");
     expect(addedRow.get("[data-factor-field='upperTolerance']").text()).toContain("+Tolerance must be non-negative.");
     expect(addedRow.get("[data-factor-field='lowerTolerance']").find("[role='alert']").exists()).toBe(false);
-    await initialSpecifications[1]!.setValue("0.3");
-    await initialSpecifications[2]!.setValue("0.1");
+    await addedUpperTolerance.setValue("0.3");
+    await addedLowerTolerance.setValue("0.1");
     expect(addedRow.get("[data-factor-field='upperTolerance']").find("[role='alert']").exists()).toBe(false);
     expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be non-positive.");
-    await initialSpecifications[1]!.setValue("0.1");
+    await addedUpperTolerance.setValue("0.1");
     expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be less than +Tolerance.");
-    await initialSpecifications[0]!.setValue("");
-    await initialSpecifications[1]!.setValue("");
-    await initialSpecifications[2]!.setValue("");
+    await addedNominal.setValue("");
+    await addedUpperTolerance.setValue("");
+    await addedLowerTolerance.setValue("");
     expect(addedRow.find("[role='alert']").exists()).toBe(false);
 
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.57");
@@ -1714,12 +1722,11 @@ describe("F7 workbench shell", () => {
     expect(rows[1]!.get("button[aria-label='Move C-cover height down']").attributes("disabled")).toBeDefined();
 
     await addedRow.get("input[aria-label='New factor name']").setValue("User stack gap");
-    const addedSpecifications = addedRow.findAll("input.factor-spec-input");
-    await addedSpecifications[0]!.setValue("0.4");
-    await addedSpecifications[1]!.setValue("0.08");
-    await addedSpecifications[2]!.setValue("-0.04");
-    await addedSpecifications[3]!.setValue("1");
-    await addedSpecifications[4]!.setValue("4");
+    await addedNominal.setValue("0.4");
+    await addedUpperTolerance.setValue("0.08");
+    await addedLowerTolerance.setValue("-0.04");
+    await addedRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("1");
+    await addedRow.get("[data-factor-field='sigmaLevel'] input").setValue("4");
     await addedRow.get("select.factor-distribution-select").setValue("Normal");
 
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
@@ -1802,7 +1809,7 @@ describe("F7 workbench shell", () => {
     expect(blankRow.get(".factor-item-number").text()).toBe("1");
     expect((blankRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
     expect(blankRow.findAll("input.factor-spec-input").map((input) => (input.element as HTMLInputElement).value)).toEqual([
-      "", "", "", "1", "4",
+      "", "", "", "", "", "1", "4",
     ]);
     expect(wrapper.find("[data-empty-factor-setup]").exists()).toBe(false);
     expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
@@ -1830,10 +1837,9 @@ describe("F7 workbench shell", () => {
 
     const restoredBlankRow = wrapper.get(".factor-table tbody tr");
     await restoredBlankRow.get("input[aria-label='New factor name']").setValue("Replacement factor");
-    const blankSpecifications = restoredBlankRow.findAll("input.factor-spec-input");
-    await blankSpecifications[0]!.setValue("1");
-    await blankSpecifications[1]!.setValue("0.1");
-    await blankSpecifications[2]!.setValue("-0.1");
+    await restoredBlankRow.get("[data-factor-field='designNominal'] input").setValue("1");
+    await restoredBlankRow.get("[data-factor-field='upperTolerance'] input").setValue("0.1");
+    await restoredBlankRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.1");
     const clearedLsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
     const clearedUsl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
     await clearedLsl.setValue("0.8");
@@ -1916,13 +1922,14 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll("col[data-factor-column-index]").map((column) => column.attributes("style"))).toEqual([
       "width: 64px;",
       "width: 150px;",
+      "width: 112px;",
+      "width: 100px;",
       "width: 88px;",
       "width: 72px;",
       "width: 72px;",
       "width: 96px;",
       "width: 58px;",
       "width: 88px;",
-      "width: 140px;",
       "width: 94px;",
       "width: 116px;",
       "width: 94px;",
@@ -1933,18 +1940,18 @@ describe("F7 workbench shell", () => {
       "width: 72px;",
     ]);
 
-    const specificationInputs = wrapper.findAll("input.factor-spec-input");
-    await specificationInputs[1]!.setValue("0.123456");
-    await specificationInputs[2]!.setValue("-0.1");
-    await specificationInputs[3]!.setValue("1");
-    await specificationInputs[4]!.setValue("3");
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    await factorRow.get("[data-factor-field='upperTolerance'] input").setValue("0.123456");
+    await factorRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.1");
+    await factorRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("1");
+    await factorRow.get("[data-factor-field='sigmaLevel'] input").setValue("3");
 
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-0.5817");
     expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.1117");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0372");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
 
-    const designColumn = wrapper.get("col[data-factor-column-index='2']");
+    const designColumn = wrapper.get("col[data-factor-column-index='4']");
     expect(designColumn.attributes("style")).toContain("width: 88px");
     const resizeHandle = wrapper.get("[aria-label='Resize Design Nominal column']");
     await resizeHandle.trigger("pointerdown", { clientX: 200, pointerId: 1 });
@@ -2163,9 +2170,9 @@ describe("F7 workbench shell", () => {
     await editFactorSetup(wrapper);
     vi.mocked(client.confirmFactors).mockClear();
 
-    const factorInputs = wrapper.get(".factor-table tbody tr").findAll("input.factor-spec-input");
-    const upperTolerance = factorInputs[1]!;
-    const lowerTolerance = factorInputs[2]!;
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    const upperTolerance = factorRow.get("[data-factor-field='upperTolerance'] input");
+    const lowerTolerance = factorRow.get("[data-factor-field='lowerTolerance'] input");
     await upperTolerance.setValue("-0.1");
     expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("+Tolerance must be non-negative.");
