@@ -2,13 +2,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import TAResultsInterpretation, * as taResultsInterpretationModule from "./TAResultsInterpretation.vue";
 import type { AssumptionResultsPdfRequest, F7SessionSnapshot } from "../api/f7-client";
+import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
 import * as assumptionResultsInterpretationModule from "../assumption-results-interpretation";
 import type {
   F7NarrativeResultJudgment,
   F7NarrativeRootCauseItem,
 } from "@ai-assist/product-language/f7-engineering-narrative";
 import { formatF7NarrativeEvidenceValue } from "@ai-assist/product-language/f7-engineering-narrative";
-import type { F0ProcessGuidanceEntry } from "../f0-process-guidance";
+import type { F0ProcessGuidanceEntry, F0ProcessPriorityDefinition } from "../f0-process-guidance";
 
 let actualBuildAssumptionResultsInterpretation: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation;
 let buildAssumptionResultsInterpretationSpy: { mockImplementation: (fn: typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation) => unknown; mockReturnValue: (value: ReturnType<typeof assumptionResultsInterpretationModule.buildAssumptionResultsInterpretation>) => unknown; mockReset: () => unknown; };
@@ -211,10 +212,105 @@ function processGuidanceEntries(): readonly F0ProcessGuidanceEntry[] {
   ];
 }
 
+function priorityDefinitions(): readonly F0ProcessPriorityDefinition[] {
+  return ["P0", "P1", "P2", "P3"].map((priority) => ({
+    entryId: `definition-priority-${priority.toLowerCase()}-components`,
+    priority: priority as "P0" | "P1" | "P2" | "P3",
+    title: `${priority} component priority definition`,
+    message: `${priority} governed component definition.`,
+    evidence: {
+      sourceType: "approved-transcription",
+      sourceAlias: "approved-priority-guidance",
+      sourceContentHash: "f".repeat(64),
+      sourceRevision: "user-approved-2026-09-16",
+      section: `priority-definitions.${priority.toLowerCase()}`,
+      effectiveVersion: "process-requirements-v3",
+      owner: "Dimensional Management",
+      confidence: "reviewed",
+      changeSummary: `Add approved ${priority} component priority definition.`,
+    },
+  }));
+}
+
 function expectedEvidenceValue(key: string, value: number | string): string {
   if (typeof value !== "number") return value;
   const formattedValue = formatF7NarrativeEvidenceValue(value);
   return /percent/i.test(key) ? `${formattedValue}%` : formattedValue;
+}
+
+function engineeringEvidenceFixture(): AssumptionResultsEngineeringEvidence {
+  return {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: "Factor 01",
+        designNominal: 0.03,
+        upperTolerance: 0.3,
+        lowerTolerance: -0.3,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        distribution: "Normal",
+        mean: 0.03,
+        tolerance: 0.3,
+        oneSigma: 0.1,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: 0.03,
+        upperWorstCaseTolerance: 0.3,
+        lowerWorstCaseTolerance: -0.3,
+        meanResponse: 0.03,
+        rssTolerance: 0.3,
+        rssSigma: 0.1,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: 0.03,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: "fixture-signature",
+    },
+    responseDistribution: {
+      mean: 0.03,
+      standardDeviation: 0.1,
+      lowerSpecLimit: -0.1,
+      upperSpecLimit: 0.1,
+      target: 0,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.1, upper: 0.13, lower: -0.07 }],
+        worstCase: { tolerance: 0.3, upper: 0.33, lower: -0.27 },
+      },
+      responseAndSpecifications: {
+        designNominal: 0.03,
+        meanResponse: 0.03,
+        additionalMeanShift: 0,
+        adjustedMean: 0.03,
+        lowerSpecLimit: -0.1,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 3, status: "PASS" },
+        upperZ: { value: 3, status: "PASS" },
+        calculatedSigmaLevel: { value: 3, status: "PASS" },
+        cp: { value: 1, status: "PASS" },
+        lowerCpk: { value: 1, status: "PASS" },
+        upperCpk: { value: 1, status: "PASS" },
+        calculatedCpk: { value: 1, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 1350,
+        upperDpm: 1350,
+        totalDpm: 2700,
+        outOfSpecPercent: 0.27,
+        yieldPercent: 99.73,
+      },
+    },
+  };
 }
 
 describe("TAResultsInterpretation", () => {
@@ -258,7 +354,7 @@ describe("TAResultsInterpretation", () => {
       new Blob(["%PDF-1.7"], { type: "application/pdf" })
     ));
     const availableWrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
     const unavailableWrapper = mount(TAResultsInterpretation, {
       props: { session: unavailableInterpretationSnapshot(), generatePdf },
@@ -275,6 +371,25 @@ describe("TAResultsInterpretation", () => {
     expect(unavailableButton.attributes("title")).toContain("available assumption results");
   });
 
+  it("keeps Generate PDF disabled until current engineering evidence is provided", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+    });
+
+    const button = wrapper.get("[data-generate-assumption-results-pdf]");
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    expect(generatePdf).not.toHaveBeenCalled();
+
+    const evidence = engineeringEvidenceFixture();
+    await wrapper.setProps({ engineeringEvidence: evidence });
+    expect(button.attributes("disabled")).toBeUndefined();
+  });
+
   it("maps the exact displayed interpretation into the structured PDF request", async () => {
     const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
     if (available.status !== "available") throw new Error("expected available interpretation");
@@ -284,6 +399,12 @@ describe("TAResultsInterpretation", () => {
         status: "available" as const,
         version: "process-requirements-v3" as const,
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
+        priorityRecommendation: {
+          selectedPriority: "P0" as const,
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true as const,
+        },
       },
     };
     buildAssumptionResultsInterpretationSpy.mockReturnValue(projected);
@@ -296,7 +417,11 @@ describe("TAResultsInterpretation", () => {
     });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf,
+        engineeringEvidence: engineeringEvidenceFixture(),
+      },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -373,7 +498,59 @@ describe("TAResultsInterpretation", () => {
         cumulativePercent: item.cumulativePercent,
       })),
       processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+      priorityRecommendation: {
+        selectedPriority: "P0",
+        requiresMeDmAlignment: true,
+      },
+      priorityDefinitions: priorityDefinitions().map(({ priority, title, message }) => ({
+        priority,
+        title,
+        message,
+      })),
       processGuidance: processGuidanceEntries().map(({ state, title, message }) => ({ state, title, message })),
+      engineeringEvidence: engineeringEvidenceFixture(),
+    });
+  });
+
+  it("snapshots engineering evidence when building PDF request so later prop mutations do not alter sent payload", async () => {
+    buildAssumptionResultsInterpretationSpy.mockImplementation(actualBuildAssumptionResultsInterpretation);
+    const generatePdf = vi.fn(async (_request: AssumptionResultsPdfRequest) => (
+      new Blob(["%PDF-1.7"], { type: "application/pdf" })
+    ));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:assumption-results-snapshot"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    const evidence = engineeringEvidenceFixture();
+    const wrapper = mount(TAResultsInterpretation, {
+      props: {
+        session: enhancedInterpretationSnapshot(),
+        generatePdf,
+        engineeringEvidence: evidence,
+      },
+    });
+
+    await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
+    expect(generatePdf).toHaveBeenCalledOnce();
+
+    const mutableEvidence = evidence as unknown as {
+      factorSetup: { rows: Array<{ factorName: string }> };
+      dimensionChain: { status: "fallback"; sourceSignature: string };
+    };
+    mutableEvidence.factorSetup.rows[0]!.factorName = "Mutated after build";
+    mutableEvidence.dimensionChain = {
+      status: "fallback",
+      sourceSignature: "mutated-signature",
+    };
+
+    const sentRequest = generatePdf.mock.calls[0]?.[0] as AssumptionResultsPdfRequest | undefined;
+    expect(sentRequest).toBeTruthy();
+    expect(sentRequest?.engineeringEvidence.factorSetup.rows[0]?.factorName).toBe("Factor 01");
+    expect(sentRequest?.engineeringEvidence.dimensionChain).toEqual({
+      status: "fallback",
+      sourceSignature: "fixture-signature",
     });
   });
 
@@ -387,7 +564,7 @@ describe("TAResultsInterpretation", () => {
     });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -408,7 +585,7 @@ describe("TAResultsInterpretation", () => {
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -441,7 +618,7 @@ describe("TAResultsInterpretation", () => {
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -464,7 +641,7 @@ describe("TAResultsInterpretation", () => {
     });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(TAResultsInterpretation, {
-      props: { session: enhancedInterpretationSnapshot(), generatePdf },
+      props: { session: enhancedInterpretationSnapshot(), generatePdf, engineeringEvidence: engineeringEvidenceFixture() },
     });
 
     await wrapper.get("[data-generate-assumption-results-pdf]").trigger("click");
@@ -491,6 +668,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => pdf),
       },
     });
@@ -518,6 +696,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => await new Promise<Blob>((resolve) => { resolvePdf = resolve; })),
       },
     });
@@ -546,6 +725,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" })),
       },
     });
@@ -571,6 +751,7 @@ describe("TAResultsInterpretation", () => {
     const wrapper = mount(TAResultsInterpretation, {
       props: {
         session: enhancedInterpretationSnapshot(),
+        engineeringEvidence: engineeringEvidenceFixture(),
         generatePdf: vi.fn(async () => {
           throw {
             code: "pdf_failed",
@@ -600,6 +781,12 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
+        priorityRecommendation: {
+          selectedPriority: "P0",
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true,
+        },
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -730,10 +917,34 @@ describe("TAResultsInterpretation", () => {
     expect(processGuidance.text()).not.toContain("F0 Process Guidance");
     expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
     expect(processGuidance.text()).not.toContain("Triggered by");
-    expect(processGuidance.find("[data-process-guidance-version]").exists()).toBe(false);
+    expect(processGuidance.get("[data-process-guidance-version]").text()).toBe("V3");
+    expect(processGuidance.get("[data-process-priority-recommendation]").text()).toContain("Recommended priority P0");
+    expect(processGuidance.get("[data-process-priority-alignment]").text()).toBe(
+      "Final priority requires Microsoft ME/DM alignment.",
+    );
+    expect(processGuidance.findAll("[data-process-priority-definition]")).toHaveLength(4);
+    expect(processGuidance.findAll("[data-process-priority-definition]").map((item) => item.attributes("data-priority"))).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(processGuidance.findAll("[data-process-priority-definition] dt").map((item) => item.text())).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(processGuidance.findAll("[data-process-priority-definition] dd").map((item) => item.text())).toEqual([
+      "P0 governed component definition.",
+      "P1 governed component definition.",
+      "P2 governed component definition.",
+      "P3 governed component definition.",
+    ]);
     expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(6);
     expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
     expect(processGuidance.get("ol").classes()).toContain("action-sequence");
+    expect(processGuidance.get("ol").findAll("[data-process-priority-definition]")).toHaveLength(0);
     expect(processGuidance.findAll("[data-process-guidance-entry]").every((item) => (
       item.classes().includes("narrative-item")
     ))).toBe(true);
@@ -786,6 +997,7 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: processGuidanceEntries(),
+        priorityDefinitions: priorityDefinitions(),
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -892,7 +1104,7 @@ describe("TAResultsInterpretation", () => {
     expect(wrapper.text()).not.toContain("Tolerance Adjustment Priority (% Cont. to σ)");
   });
 
-  it("omits the entire guidance section when no process guidance entries are available", () => {
+  it("omits the entire guidance section when no process guidance content is available", () => {
     const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
     if (available.status !== "available") throw new Error("expected available interpretation");
     buildAssumptionResultsInterpretationSpy.mockReturnValue({
@@ -901,6 +1113,7 @@ describe("TAResultsInterpretation", () => {
         status: "available",
         version: "process-requirements-v3",
         entries: [],
+        priorityDefinitions: [],
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -908,6 +1121,51 @@ describe("TAResultsInterpretation", () => {
     });
 
     expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
+  });
+
+  it("renders the guidance section when definitions exist even if ordinary actions are empty", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: priorityDefinitions(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
+    expect(wrapper.findAll("[data-process-priority-definition]")).toHaveLength(4);
+  });
+
+  it("renders the guidance section when only a priority recommendation exists", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: [],
+        priorityRecommendation: {
+          selectedPriority: "P0",
+          matchedEntryIds: ["priority-recommendation-battery-cts"],
+          requiresMeDmAlignment: true,
+        },
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    expect(wrapper.find("[data-process-guidance]").exists()).toBe(true);
+    expect(wrapper.get("[data-process-priority-recommendation]").text()).toContain("Recommended priority P0");
   });
 
   it("omits the entire guidance section when process guidance is unavailable", () => {
@@ -918,6 +1176,7 @@ describe("TAResultsInterpretation", () => {
       processGuidance: {
         status: "unavailable",
         entries: [],
+        priorityDefinitions: [],
       },
     });
     const wrapper = mount(TAResultsInterpretation, {
@@ -925,6 +1184,39 @@ describe("TAResultsInterpretation", () => {
     });
 
     expect(wrapper.find("[data-process-guidance]").exists()).toBe(false);
+  });
+
+  it("renders priority definitions as a semantic description list while preserving hooks", () => {
+    const available = actualBuildAssumptionResultsInterpretation(enhancedInterpretationSnapshot());
+    if (available.status !== "available") throw new Error("expected available interpretation");
+    buildAssumptionResultsInterpretationSpy.mockReturnValue({
+      ...available,
+      processGuidance: {
+        status: "available",
+        version: "process-requirements-v3",
+        entries: [],
+        priorityDefinitions: priorityDefinitions(),
+      },
+    });
+    const wrapper = mount(TAResultsInterpretation, {
+      props: { session: enhancedInterpretationSnapshot() },
+    });
+
+    const definitions = wrapper.get(".process-priority-definitions");
+    expect(definitions.element.tagName).toBe("DL");
+    expect(definitions.findAll("[data-process-priority-definition]")).toHaveLength(4);
+    expect(definitions.findAll("[data-process-priority-definition] dt").map((item) => item.text())).toEqual([
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+    ]);
+    expect(definitions.findAll("[data-process-priority-definition] dd").map((item) => item.text())).toEqual([
+      "P0 governed component definition.",
+      "P1 governed component definition.",
+      "P2 governed component definition.",
+      "P3 governed component definition.",
+    ]);
   });
 
   it("shows the incomplete-evidence visual state when a matched hypothesis lacks dependent facts", () => {

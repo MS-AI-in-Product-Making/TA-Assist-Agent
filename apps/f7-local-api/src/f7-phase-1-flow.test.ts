@@ -3,6 +3,7 @@ import { request } from "node:http";
 import type { F7SessionSnapshot } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { AssumptionResultsPdfRenderer } from "./assumption-results-pdf-renderer.js";
+import { createF7MeasurementImportRegistry } from "./f7-measurement-import-registry.js";
 import { createF7SessionService } from "./f7-session-service.js";
 import { createF7LocalServer, listenF7LocalServer } from "./server.js";
 
@@ -128,7 +129,12 @@ describe("f7 phase 1 flow", () => {
       createId: () => "session-flow-fixed",
       now: () => "2026-08-20T08:00:00.000Z",
     });
-    const server = createF7LocalServer({ service, assumptionResultsPdfRenderer });
+    let nextImportId = 0;
+    const measurementImportRegistry = createF7MeasurementImportRegistry({
+      now: () => Date.parse("2026-08-20T08:00:00.000Z"),
+      createId: () => (++nextImportId).toString(16).padStart(32, "0"),
+    });
+    const server = createF7LocalServer({ service, measurementImportRegistry, assumptionResultsPdfRenderer });
     openServers.push(server);
     const address = await listenF7LocalServer(server, 0);
 

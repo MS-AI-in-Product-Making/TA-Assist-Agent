@@ -116,6 +116,45 @@ const validSnapshot = {
   ],
 } as const;
 
+const validMeasurementImportPreview = {
+  previewId: "preview-01",
+  expiresAt: "2026-09-16T08:15:00.000Z",
+  sessionStateDigest: HASH_A,
+  factorSetDigest: HASH_B,
+  status: "ready",
+  factorCount: 1,
+  replacementFactorIds: [HASH_B],
+  factors: [{
+    factorId: HASH_B,
+    factorName: "C-cover height",
+    unit: "mm",
+    structure: "ORDERED_INDIVIDUALS",
+    sampleCount: 32,
+    status: "ready",
+    replacesExistingFactor: true,
+    diagnostics: [],
+    warnings: [],
+    validation: {
+      status: "ready",
+      blockingIssues: [],
+      advisoryIssues: [],
+      candidateEligibility: {
+        normal: "eligible",
+        lognormal: "eligible",
+        weibull: "eligible",
+        gamma: "eligible",
+        uniform: "eligible_with_boundary_warning",
+      },
+    },
+  }],
+  diagnostics: [],
+  readyFactorCount: 1,
+  blockedFactorCount: 0,
+  replacementCount: 1,
+  totalSampleCount: 32,
+  diagnosticCount: 0,
+} as const;
+
 const validReport = {
   contractId: "f7-report-v1",
   outputClassification: "confidential",
@@ -193,6 +232,12 @@ const validReport = {
     factorName: "C-cover height",
     loopCoefficient: 1,
     sourceMode: "MEASURED",
+    designNominal: -1.94,
+    upperTolerance: 0.05,
+    lowerTolerance: -0.05,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
+    setupDistribution: "Normal",
     approvedDistribution: "normal",
     sourceReferences: ["Anonymous_TA!R15"],
   }],
@@ -282,7 +327,100 @@ const assumptionResultsPdfRequest = {
     cumulativePercent: 100,
   }],
   processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+  priorityRecommendation: {
+    selectedPriority: "P0",
+    requiresMeDmAlignment: true,
+  },
+  priorityDefinitions: [{
+    priority: "P0",
+    title: "P0 component priority definition",
+    message: "Priority 0 covers safety-critical components.",
+  }, {
+    priority: "P1",
+    title: "P1 component priority definition",
+    message: "Priority 1 covers key function-fit components.",
+  }, {
+    priority: "P2",
+    title: "P2 component priority definition",
+    message: "Priority 2 covers secondary interfaces.",
+  }, {
+    priority: "P3",
+    title: "P3 component priority definition",
+    message: "Priority 3 covers low-risk components.",
+  }],
   processGuidance: [{ state: "guidance", title: "Next step", message: "Collect measurements." }],
+  engineeringEvidence: {
+    factorSetup: {
+      rows: [{
+        itemNumber: 1,
+        factorName: "C-cover height",
+        designNominal: -1.94,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        mean: -1.94,
+        tolerance: 0.1,
+        oneSigma: 0.025,
+        contributionPercent: 100,
+      }],
+      footer: {
+        designNominalTotal: -1.94,
+        upperWorstCaseTolerance: 0.1,
+        lowerWorstCaseTolerance: -0.1,
+        meanResponse: -1.94,
+        rssTolerance: 0.1,
+        rssSigma: 0.025,
+        contributionTotalPercent: 100,
+        additionalMeanShift: 0,
+        adjustedMean: -1.94,
+      },
+    },
+    dimensionChain: {
+      status: "fallback",
+      sourceSignature: HASH_A,
+    },
+    responseDistribution: {
+      mean: -1.94,
+      standardDeviation: 0.025,
+      lowerSpecLimit: -2.04,
+      upperSpecLimit: -1.84,
+      target: -1.94,
+    },
+    responseSummary: {
+      rssAndWorstCase: {
+        sigmaBands: [{ sigma: 1, tolerance: 0.025, upper: -1.915, lower: -1.965 }],
+        worstCase: { tolerance: 0.1, upper: -1.84, lower: -2.04 },
+      },
+      responseAndSpecifications: {
+        designNominal: -1.94,
+        meanResponse: -1.94,
+        additionalMeanShift: 0,
+        adjustedMean: -1.94,
+        lowerSpecLimit: -2.04,
+        upperSpecLimit: -1.84,
+        targetSigmaLevel: 4,
+        targetCpk: 1.33,
+      },
+      sigmaLevelAndCapability: {
+        lowerZ: { value: 4, status: "PASS" },
+        upperZ: { value: 4, status: "PASS" },
+        calculatedSigmaLevel: { value: 4, status: "PASS" },
+        cp: { value: 1.33, status: "PASS" },
+        lowerCpk: { value: 1.33, status: "PASS" },
+        upperCpk: { value: 1.33, status: "PASS" },
+        calculatedCpk: { value: 1.33, status: "PASS" },
+      },
+      defectsPerMillion: {
+        lowerDpm: 31.67,
+        upperDpm: 31.67,
+        totalDpm: 63.34,
+        outOfSpecPercent: 0.006334,
+        yieldPercent: 99.993666,
+      },
+    },
+  },
 } as const satisfies AssumptionResultsPdfRequest;
 
 function generatePdfThroughClientContract(client: F7Client): Promise<Blob> {
@@ -319,6 +457,12 @@ describe("createF7Client", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(assumptionResultsPdfRequest),
     });
+    const sentBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(sentBody.priorityRecommendation).toEqual({
+      selectedPriority: "P0",
+      requiresMeDmAlignment: true,
+    });
+    expect(sentBody.priorityDefinitions.map(({ priority }: { priority: string }) => priority)).toEqual(["P0", "P1", "P2", "P3"]);
   });
 
   it("maps assumptions-results PDF API JSON errors to the typed server error", async () => {
@@ -566,7 +710,7 @@ describe("createF7Client", () => {
       factorId: "factor id/1",
     });
 
-    await client.getSession("session id/01");
+    await client.getSession("session-01");
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
 
@@ -593,8 +737,19 @@ describe("createF7Client", () => {
     expect((fetchMock.mock.calls[5]?.[1] as RequestInit).method).toBe("POST");
     expect(JSON.parse(((fetchMock.mock.calls[5]?.[1] as RequestInit).body as string))).toEqual({ sessionId: "s-1" });
 
-    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://localhost:3017/f7/session/session%20id%2F01");
+    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://localhost:3017/f7/session/session-01");
     expect(fetchMock.mock.calls[6]?.[1]).toBeUndefined();
+  });
+
+  it("rejects a valid session snapshot for a different requested session", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(validSnapshot), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().getSession("different-session")).rejects.toMatchObject({
+      code: "request_failed",
+    });
   });
 
   it("maps non-2xx JSON error envelope to controlled F7UiError fields", async () => {
@@ -801,5 +956,142 @@ describe("createF7Client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     vi.stubGlobal("FileReader", originalFileReader);
+  });
+
+  it("downloads the measurement template through the exact request and returns safe XLSX bytes", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([80, 75, 3, 4]), {
+      status: 200,
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": 'attachment; filename="F7_Measurements_Anonymous_TA.xlsx"',
+      },
+    }));
+
+    const result = await createF7Client("http://localhost:3017").downloadMeasurementTemplate({
+      sessionId: "session-01",
+    });
+
+    expect(result.fileName).toBe("F7_Measurements_Anonymous_TA.xlsx");
+    expect(result.bytes).toEqual(new Uint8Array([80, 75, 3, 4]));
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-template", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-01" }),
+    });
+  });
+
+  it.each([
+    ["application/octet-stream", 'attachment; filename="measurements.xlsx"'],
+    ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 'attachment; filename="../../escape.xlsx"'],
+    ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 'inline; filename="measurements.xlsx"'],
+  ])("rejects an unsafe measurement template response (%s, %s)", async (contentType, contentDisposition) => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([80, 75, 3, 4]), {
+      status: 200,
+      headers: {
+        "content-type": contentType,
+        "content-disposition": contentDisposition,
+      },
+    }));
+
+    await expect(createF7Client().downloadMeasurementTemplate({ sessionId: "session-01" })).rejects.toMatchObject({
+      code: "request_failed",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("previews a measurement workbook with canonical base64 and strictly parses the response", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(validMeasurementImportPreview), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const file = new File([new Uint8Array([1, 2, 3])], "measurements.xlsx");
+
+    const preview = await createF7Client("http://localhost:3017").previewMeasurementImport({
+      sessionId: "session-01",
+      file,
+    });
+
+    expect(preview).toEqual(validMeasurementImportPreview);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "session-01",
+        fileName: "measurements.xlsx",
+        workbookBase64: "AQID",
+      }),
+    });
+  });
+
+  it("rejects measurement preview files larger than 16 MiB before fetching", async () => {
+    const file = new File([new Uint8Array(16 * 1024 * 1024 + 1)], "too-large.xlsx");
+
+    await expect(createF7Client().previewMeasurementImport({
+      sessionId: "session-01",
+      file,
+    })).rejects.toMatchObject({ code: "validation_error" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a measurement preview response containing an unknown field", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ...validMeasurementImportPreview, extra: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().previewMeasurementImport({
+      sessionId: "session-01",
+      file: new File([new Uint8Array([1])], "measurements.xlsx"),
+    })).rejects.toMatchObject({ code: "request_failed" });
+  });
+
+  it("commits the reviewed preview with the exact body and maps the analysis-result envelope to its snapshot", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      snapshot: validSnapshot,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    const result = await createF7Client("http://localhost:3017").commitMeasurementImport({
+      sessionId: "session-01",
+      previewId: "preview-01",
+      replacementFactorIds: [HASH_B],
+      confirmed: true,
+    });
+
+    expect(result).toEqual(validSnapshot);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3017/f7/measurements/import-commit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "session-01",
+        previewId: "preview-01",
+        replacementFactorIds: [HASH_B],
+        confirmed: true,
+      }),
+    });
+  });
+
+  it("rejects a commit analysis-result envelope containing an unknown field", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      snapshot: validSnapshot,
+      extra: true,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().commitMeasurementImport({
+      sessionId: "session-01",
+      previewId: "preview-01",
+      replacementFactorIds: [HASH_B],
+      confirmed: true,
+    })).rejects.toMatchObject({ code: "request_failed" });
   });
 });

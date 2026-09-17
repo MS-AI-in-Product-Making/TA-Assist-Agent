@@ -3,8 +3,11 @@ const CELL_REFERENCE = /^([A-Z]+)[1-9]\d*$/;
 export const FACTOR_FIELD_ORDER = [
   "factorName",
   "partName",
+  "partNumber",
   "drawingNumber",
   "dimCharacteristicId",
+  "factorLowerSpecLimit",
+  "factorUpperSpecLimit",
   "partCategory",
   "nominalValue",
   "upperTolerance",
@@ -44,8 +47,11 @@ export type FactorHeaderResolution =
 const HEADER_ALIASES: Readonly<Record<FactorFieldName, readonly string[]>> = {
   factorName: ["factor", "factor name", "factor description", "factor description (ta loop)"],
   partName: ["part name"],
+  partNumber: ["part number", "part no", "part no."],
   drawingNumber: ["drawing number"],
   dimCharacteristicId: ["dim id", "characteristic id", "dim/characteristic id"],
+  factorLowerSpecLimit: ["factor lsl", "factor lower spec limit"],
+  factorUpperSpecLimit: ["factor usl", "factor upper spec limit"],
   partCategory: ["part category"],
   nominalValue: ["nominal", "nominal value", "design nominal"],
   upperTolerance: ["upper tol", "upper tolerance", "+ tolerance", "+ tolerence"],

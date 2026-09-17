@@ -2,7 +2,9 @@ import { computed, readonly, ref, shallowRef } from "vue";
 import type {
   F7Client,
   F7ExclusionReason,
+  F7MeasurementImportPreviewResponse,
   F7MeasurementStructure,
+  F7MeasurementTemplateDownload,
   F7RationalSubgroupConfig,
   F7MsaStatus,
   F7ReportProjection,
@@ -15,6 +17,9 @@ import type {
 
 type BusyAction =
   | "importWorkbook"
+  | "downloadMeasurementTemplate"
+  | "previewMeasurementImport"
+  | "commitMeasurementImport"
   | "confirmWorksheet"
   | "confirmFactors"
   | "setFactorMode"
@@ -71,8 +76,10 @@ function prerequisiteNotReadyError(summary = "Import a workbook before continuin
 export function createF7SessionStore(client: F7Client) {
   const session = ref<F7SessionSnapshot | null>(null);
   const report = shallowRef<F7ReportProjection | null>(null);
+  const measurementImportPreview = shallowRef<F7MeasurementImportPreviewResponse | null>(null);
   const busyAction = ref<BusyAction | null>(null);
   const error = ref<F7UiError | null>(null);
+  let measurementImportPreviewGeneration = 0;
 
   const isBusy = computed(() => busyAction.value !== null);
 
@@ -106,6 +113,7 @@ export function createF7SessionStore(client: F7Client) {
   return {
     session: readonly(session),
     report: readonly(report),
+    measurementImportPreview: readonly(measurementImportPreview),
     busyAction: readonly(busyAction),
     error: readonly(error),
     isBusy: readonly(isBusy),
@@ -115,7 +123,96 @@ export function createF7SessionStore(client: F7Client) {
     async importWorkbook(file: File): Promise<void> {
       await runAction("importWorkbook", async () => {
         commitMutationSnapshot(await client.importWorkbook({ file }));
+        measurementImportPreview.value = null;
       });
+    },
+    async downloadMeasurementTemplate(): Promise<F7MeasurementTemplateDownload> {
+      return await runAction("downloadMeasurementTemplate", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        return await client.downloadMeasurementTemplate({ sessionId: current.sessionId });
+      });
+    },
+    async previewMeasurementImport(file: File): Promise<void> {
+      if (busyAction.value !== null) {
+        throw {
+          code: "busy",
+          summary: "Another F7 action is already running.",
+          suggestedAction: "Wait for the current action to complete.",
+          affectedInputReferences: ["f7-web-session"],
+        } satisfies F7UiError;
+      }
+      const generation = ++measurementImportPreviewGeneration;
+      busyAction.value = "previewMeasurementImport";
+      error.value = null;
+      measurementImportPreview.value = null;
+      try {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        const preview = await client.previewMeasurementImport({
+          sessionId: current.sessionId,
+          file,
+        });
+        if (generation === measurementImportPreviewGeneration) {
+          measurementImportPreview.value = preview;
+        }
+      } catch (caught) {
+        if (generation !== measurementImportPreviewGeneration) return;
+        const uiError = toUiError(caught);
+        error.value = uiError;
+        throw uiError;
+      } finally {
+        if (generation === measurementImportPreviewGeneration) {
+          busyAction.value = null;
+        }
+      }
+    },
+    async commitMeasurementImport(): Promise<void> {
+      await runAction("commitMeasurementImport", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        const preview = measurementImportPreview.value;
+        if (!preview) {
+          throw prerequisiteNotReadyError("Preview a measurement workbook before confirming the import.");
+        }
+        measurementImportPreview.value = null;
+        let snapshot: F7SessionSnapshot;
+        try {
+          snapshot = await client.commitMeasurementImport({
+            sessionId: current.sessionId,
+            previewId: preview.previewId,
+            replacementFactorIds: [...preview.replacementFactorIds].sort(),
+            confirmed: true,
+          });
+        } catch (caught) {
+          if (toUiError(caught).code === "request_failed") {
+            let reconciled = false;
+            try {
+              commitMutationSnapshot(await client.getSession(current.sessionId));
+              reconciled = true;
+            } catch {
+              reconciled = false;
+            }
+            if (reconciled) {
+              throw {
+                code: "commit_result_reconciled",
+                summary: "The commit response was interrupted, and the current session has been refreshed.",
+                suggestedAction: "Review the current factor measurements. If the import is absent, upload the workbook again.",
+                affectedInputReferences: [current.sessionId, preview.previewId],
+              } satisfies F7UiError;
+            }
+          }
+          throw caught;
+        }
+        commitMutationSnapshot(snapshot);
+      });
+    },
+    cancelMeasurementImport(): void {
+      measurementImportPreviewGeneration += 1;
+      measurementImportPreview.value = null;
+      if (busyAction.value === "previewMeasurementImport") {
+        busyAction.value = null;
+      }
     },
     async confirmWorksheet(selectedWorksheetName: string): Promise<void> {
       await runAction("confirmWorksheet", async () => {
@@ -129,6 +226,7 @@ export function createF7SessionStore(client: F7Client) {
           selectedWorksheetName,
           confirmed: true,
         }));
+        measurementImportPreview.value = null;
       });
     },
     async confirmFactors(confirmations: ReadonlyArray<{
@@ -150,6 +248,7 @@ export function createF7SessionStore(client: F7Client) {
           confirmations: confirmations.map((confirmation) => ({ ...confirmation, confirmed: true as const })),
           systemSpecification,
         }));
+        measurementImportPreview.value = null;
       });
     },
     async setFactorMode(factorId: string, mode: F7SourceMode): Promise<void> {
@@ -161,6 +260,7 @@ export function createF7SessionStore(client: F7Client) {
           factorId,
           mode,
         }));
+        measurementImportPreview.value = null;
       });
     },
     async pasteMeasurements(request: {
@@ -185,6 +285,7 @@ export function createF7SessionStore(client: F7Client) {
           msaStatus: request.msaStatus,
           text: request.text,
         }));
+        measurementImportPreview.value = null;
       });
     },
     async applyMeasurementDisposition(request: {
@@ -206,6 +307,7 @@ export function createF7SessionStore(client: F7Client) {
           operatorReference: request.operatorReference,
           confirmed: true,
         }));
+        measurementImportPreview.value = null;
       });
     },
     async fitDistribution(factorId: string): Promise<void> {
@@ -256,6 +358,7 @@ export function createF7SessionStore(client: F7Client) {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
         commitMutationSnapshot(await client.getSession(current.sessionId));
+        measurementImportPreview.value = null;
       });
     },
   };

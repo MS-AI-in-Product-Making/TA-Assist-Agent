@@ -1,7 +1,8 @@
 import { access, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import {
   assumptionResultsPdfRouteRequestSchema,
   encodeRfc5987FileName,
@@ -17,6 +18,18 @@ import {
 } from "./assumption-results-pdf-renderer.js";
 
 const INJECTED_TEXT = `<img src=x onerror="alert('unsafe')"> & analysis`;
+const HASH_B = "b".repeat(64);
+
+function canonicalPriorityDefinitions() {
+  const processRequirements = loadProcessRequirements({ version: "process-requirements-v3" });
+  return processRequirements
+    .listProcessRequirements({ topics: ["priority"], entryTypes: ["definition"] })
+    .map((entry) => ({
+      priority: entry.title.slice(0, 2) as "P0" | "P1" | "P2" | "P3",
+      title: entry.title,
+      message: entry.message,
+    }));
+}
 
 function validRequest(): AssumptionResultsPdfRouteRequest {
   return {
@@ -108,6 +121,105 @@ function validRequest(): AssumptionResultsPdfRouteRequest {
       title: `Review ${INJECTED_TEXT}`,
       message: `Process ${INJECTED_TEXT}`,
     }],
+    engineeringEvidence: {
+      factorSetup: {
+        rows: [{
+          itemNumber: 1,
+          factorName: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+          mean: -1.94,
+          tolerance: 0.1,
+          oneSigma: 0.025,
+          contributionPercent: 100,
+        }],
+        footer: {
+          designNominalTotal: -1.94,
+          upperWorstCaseTolerance: 0.1,
+          lowerWorstCaseTolerance: -0.1,
+          meanResponse: -1.94,
+          rssTolerance: 0.1,
+          rssSigma: 0.025,
+          contributionTotalPercent: 100,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+        },
+      },
+      dimensionChain: {
+        status: "generated",
+        sourceSignature: JSON.stringify({
+          workbookName: "Workbook source",
+          worksheetName: "Anonymous_TA",
+          factorIds: [HASH_B],
+        }),
+        orientation: "horizontal",
+        factors: [{
+          id: HASH_B,
+          itemNumber: 1,
+          name: "C-cover height",
+          designNominal: -1.94,
+          upperTolerance: 0.1,
+          lowerTolerance: -0.1,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+        }],
+        manualLayout: {
+          boundaryOffsets: { [`${HASH_B}::${HASH_B}`]: 0 },
+          laneOffsets: { [HASH_B]: 0 },
+          closureStartOffset: 0,
+          closureEndOffset: 0,
+          closureLaneOffset: 0,
+        },
+        reversedFactorIds: [HASH_B],
+        closureDirection: "start-to-end",
+      },
+      responseDistribution: {
+        mean: -1.94,
+        standardDeviation: 0.025,
+        lowerSpecLimit: -2.04,
+        upperSpecLimit: -1.84,
+        target: -1.94,
+      },
+      responseSummary: {
+        rssAndWorstCase: {
+          sigmaBands: [{ sigma: 1, tolerance: 0.025, upper: -1.915, lower: -1.965 }],
+          worstCase: { tolerance: 0.1, upper: -1.84, lower: -2.04 },
+        },
+        responseAndSpecifications: {
+          designNominal: -1.94,
+          meanResponse: -1.94,
+          additionalMeanShift: 0,
+          adjustedMean: -1.94,
+          lowerSpecLimit: -2.04,
+          upperSpecLimit: -1.84,
+          targetSigmaLevel: 4,
+          targetCpk: 1.33,
+        },
+        sigmaLevelAndCapability: {
+          lowerZ: { value: 4, status: "PASS" },
+          upperZ: { value: 4, status: "PASS" },
+          calculatedSigmaLevel: { value: 4, status: "PASS" },
+          cp: { value: 1.33, status: "PASS" },
+          lowerCpk: { value: 1.33, status: "PASS" },
+          upperCpk: { value: 1.33, status: "PASS" },
+          calculatedCpk: { value: 1.33, status: "PASS" },
+        },
+        defectsPerMillion: {
+          lowerDpm: 31.67,
+          upperDpm: 31.67,
+          totalDpm: 63.34,
+          outOfSpecPercent: 0.006334,
+          yieldPercent: 99.993666,
+          volume: 1000,
+          failuresOverVolume: 0,
+        },
+      },
+    },
   };
 }
 
@@ -166,6 +278,11 @@ function representativeCurrentUiRequest(): AssumptionResultsPdfRouteRequest {
         message: "Document the approved response and evidence in the governed engineering record.",
       },
     ],
+    priorityRecommendation: {
+      selectedPriority: "P0",
+      requiresMeDmAlignment: true,
+    },
+    priorityDefinitions: canonicalPriorityDefinitions(),
   };
 }
 
@@ -180,6 +297,63 @@ async function expectMissing(path: string): Promise<void> {
 }
 
 describe("assumption results PDF contract", () => {
+  it("accepts additionalMeanShift within ±1e9 and rejects out-of-bound finite values", () => {
+    const request = validRequest();
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          footer: {
+            ...request.engineeringEvidence.factorSetup.footer,
+            additionalMeanShift: 1_000_000_000,
+          },
+        },
+      },
+    }).success).toBe(true);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          responseAndSpecifications: {
+            ...request.engineeringEvidence.responseSummary.responseAndSpecifications,
+            additionalMeanShift: -1_000_000_000,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          footer: {
+            ...request.engineeringEvidence.factorSetup.footer,
+            additionalMeanShift: 1_000_000_000.000_001,
+          },
+        },
+      },
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          responseAndSpecifications: {
+            ...request.engineeringEvidence.responseSummary.responseAndSpecifications,
+            additionalMeanShift: -1_000_000_000.000_001,
+          },
+        },
+      },
+    }).success).toBe(false);
+  });
+
   it("accepts only bounded structured data with finite contributor numbers", () => {
     expect(assumptionResultsPdfRouteRequestSchema.safeParse(validRequest()).success).toBe(true);
     expect(assumptionResultsPdfRouteRequestSchema.safeParse({
@@ -218,6 +392,29 @@ describe("assumption results PDF contract", () => {
         narrative: "Unsupported action narrative.",
         optionId: "arbitrary-action",
       }],
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      engineeringEvidence: {
+        ...validRequest().engineeringEvidence,
+        dimensionChain: {
+          ...validRequest().engineeringEvidence.dimensionChain,
+          sourceSignature: "not-json-signature",
+        },
+      },
+    }).success).toBe(false);
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...validRequest(),
+      engineeringEvidence: {
+        ...validRequest().engineeringEvidence,
+        responseSummary: {
+          ...validRequest().engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...validRequest().engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: -0.01,
+          },
+        },
+      },
     }).success).toBe(false);
   });
 
@@ -272,6 +469,238 @@ describe("assumption results PDF contract", () => {
     }).success).toBe(false);
   });
 
+  it("accepts required engineeringEvidence and rejects strict invalid variants", () => {
+    const request = validRequest();
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse(request).success).toBe(true);
+
+    const webSourceSignature = JSON.stringify({
+      workbookName: request.workbookName,
+      worksheetName: request.worksheetName,
+      factorIds: request.engineeringEvidence.dimensionChain.status === "generated"
+        ? request.engineeringEvidence.dimensionChain.factors.map((factor) => factor.id)
+        : [],
+      orientation: request.engineeringEvidence.dimensionChain.status === "generated"
+        ? request.engineeringEvidence.dimensionChain.orientation
+        : "fallback",
+    });
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...request.engineeringEvidence.dimensionChain,
+          sourceSignature: webSourceSignature,
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          rows: Array.from({ length: 101 }, (_, index) => ({
+            ...request.engineeringEvidence.factorSetup.rows[0],
+            itemNumber: index + 1,
+            factorName: `Factor ${index + 1}`,
+          })),
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseDistribution: {
+          ...request.engineeringEvidence.responseDistribution,
+          standardDeviation: Number.POSITIVE_INFINITY,
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          sigmaLevelAndCapability: {
+            ...request.engineeringEvidence.responseSummary.sigmaLevelAndCapability,
+            cp: { value: Number.NaN, status: "PASS" },
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseDistribution: {
+          ...request.engineeringEvidence.responseDistribution,
+          svg: "<svg></svg>",
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...(request.engineeringEvidence.dimensionChain.status === "generated"
+            ? request.engineeringEvidence.dimensionChain
+            : {
+              status: "generated" as const,
+              sourceSignature: HASH_A,
+              orientation: "horizontal" as const,
+              factors: [],
+              manualLayout: { boundaryOffsets: {}, laneOffsets: {} },
+              reversedFactorIds: [],
+              closureDirection: "start-to-end" as const,
+            }),
+          manualLayout: {
+            ...(request.engineeringEvidence.dimensionChain.status === "generated"
+              ? request.engineeringEvidence.dimensionChain.manualLayout
+              : { boundaryOffsets: {}, laneOffsets: {} }),
+            boundaryOffsets: { [`${HASH_B}::${HASH_B}`]: 10001 },
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          rssAndWorstCase: request.engineeringEvidence.responseSummary.rssAndWorstCase,
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            volume: -1,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            volume: 1.5,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: 12.75,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: 250000,
+          },
+        },
+      },
+    }).success).toBe(true);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: Number.NaN,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        responseSummary: {
+          ...request.engineeringEvidence.responseSummary,
+          defectsPerMillion: {
+            ...request.engineeringEvidence.responseSummary.defectsPerMillion,
+            failuresOverVolume: Number.POSITIVE_INFINITY,
+          },
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dimensionChain: {
+          ...request.engineeringEvidence.dimensionChain,
+          status: "invalid-discriminator",
+        },
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        imageUrl: "https://example.invalid/image.png",
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        dataUrl: "data:text/plain;base64,Zm9v",
+      },
+    }).success).toBe(false);
+
+    expect(assumptionResultsPdfRouteRequestSchema.safeParse({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        path: "C:/tmp/unsafe",
+      },
+    }).success).toBe(false);
+  });
+
   it("builds a filesystem-safe PDF download name", () => {
     expect(safePdfDownloadFileName("Design<>.xlsx", "TA / Result"))
       .toBe("Design-TA-Result-assumption-results.pdf");
@@ -314,10 +743,68 @@ describe("assumption results PDF contract", () => {
 });
 
 describe("renderAssumptionResultsPdfHtml", () => {
+  it("renders V3 priority recommendation, ME-DM alignment, and four definitions before process actions", () => {
+    const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+    const processSectionMatch = html.match(/<section><h2>TA Process and Requirements<\/h2>([\s\S]*?)<\/section>/);
+    expect(processSectionMatch).not.toBeNull();
+    const processSection = processSectionMatch?.[1] ?? "";
+
+    expect(processSection).toContain("V3");
+    expect(processSection).toContain("Recommended priority P0");
+    expect(processSection).toContain("Final priority requires Microsoft ME/DM alignment.");
+    expect(processSection.match(/component priority definition/g)).toHaveLength(4);
+    for (const definition of canonicalPriorityDefinitions()) {
+      expect(processSection).toContain(definition.title);
+      expect(processSection).toContain(definition.message);
+    }
+    expect(processSection.indexOf("Recommended priority P0")).toBeLessThan(processSection.indexOf("Guidance"));
+    expect(processSection.indexOf("P0 component priority definition")).toBeLessThan(processSection.indexOf("Guidance"));
+  });
+
+  it("keeps rendering legacy requests without priority guidance fields", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    expect(html).toContain("TA Process and Requirements");
+    expect(html).not.toContain("Recommended priority");
+    expect(html).not.toContain("Microsoft ME/DM alignment");
+    expect(html).not.toContain("V3 priority definitions");
+    expect(html).not.toContain("V3 Process Requirements");
+  });
+
+  it("renders the V3 marker when canonical definitions exist without a recommendation", () => {
+    const html = renderAssumptionResultsPdfHtml({
+      ...validRequest(),
+      priorityDefinitions: canonicalPriorityDefinitions(),
+    });
+
+    expect(html).toContain("V3 priority definitions");
+    expect(html).toContain("P0 component priority definition");
+    expect(html).not.toContain("Recommended priority");
+  });
+
+  it("renders exactly three pages in strict evidence/decision/action order with explicit page breaks", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    const pages = [...html.matchAll(/class="report-page report-page--([a-z-]+)"/g)].map((match) => match[1]);
+    expect(pages).toEqual(["evidence", "decision", "action"]);
+    expect(pages).toHaveLength(3);
+
+    const evidenceStart = html.indexOf('class="report-page report-page--evidence"');
+    const decisionStart = html.indexOf('class="report-page report-page--decision"');
+    const actionStart = html.indexOf('class="report-page report-page--action"');
+    expect(evidenceStart).toBeGreaterThan(-1);
+    expect(decisionStart).toBeGreaterThan(evidenceStart);
+    expect(actionStart).toBeGreaterThan(decisionStart);
+
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*break-after:\s*page;/);
+    expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
+  });
+
   it("uses compact page-two grids for a representative current UI payload", () => {
     const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+    const nonEvidenceHtml = html.replace(/<div class="report-page report-page--evidence">[\s\S]*?<div class="report-page report-page--decision">/, "<div class=\"report-page report-page--decision\">");
 
-    expect(html.match(/<tr>/g)).toHaveLength(20);
+    expect(nonEvidenceHtml.match(/<tr>/g)).toHaveLength(20);
     expect(html.match(/data-pareto-bar/g)).toHaveLength(7);
     expect(html).toMatch(/<div class="report-page report-page--decision">/);
     expect(html).toMatch(/<div class="report-page report-page--action">/);
@@ -330,6 +817,26 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).toMatch(/\.priority-table\s*{[^}]*font-size:\s*8pt;/);
     expect(html).toMatch(/html\s*{[^}]*font-size:\s*8pt;/);
     expect(html).not.toMatch(/overflow:\s*hidden;/);
+  });
+
+  it("defines page-one evidence printable box and compact readable 2x2 response summary structure", () => {
+    const html = renderAssumptionResultsPdfHtml(representativeCurrentUiRequest());
+
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*position:\s*relative;[^}]*break-after:\s*page;[^}]*break-inside:\s*avoid-page;[^}]*page-break-inside:\s*avoid;/);
+    expect(html).not.toMatch(/\.report-page--evidence\s*{[^}]*overflow:\s*visible;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*height:\s*76mm;[^}]*position:\s*absolute;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*bottom:\s*0;[^}]*min-height:\s*0;[^}]*position:\s*absolute;[^}]*top:\s*78mm;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--chain\s*{[^}]*height:\s*55mm;[^}]*left:\s*0;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--curve\s*{[^}]*height:\s*55mm;[^}]*right:\s*0;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel--summary\s*{[^}]*bottom:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*top:\s*58mm;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel\s*{[^}]*min-height:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-panel\s*{[^}]*padding:\s*2mm;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.factor-setup-panel\s+table\s*{[^}]*table-layout:\s*fixed;[^}]*font-size:\s*7\.4pt;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*>\s*\.response-summary-table\s*{[^}]*margin-top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s+th,\s*\.report-page--evidence\s+\.response-summary-table\s+td\s*{[^}]*padding:\s*0\.35mm\s+1mm;[^}]*line-height:\s*1\.05;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
+    expect(html).toMatch(/<div class="response-summary-grid">[\s\S]*?<table class="response-summary-table">[\s\S]*?RSS and Worst Case[\s\S]*?<table class="response-summary-table">[\s\S]*?Response and Specifications[\s\S]*?<table class="response-summary-table">[\s\S]*?Sigma Level and Capability[\s\S]*?<table class="response-summary-table">[\s\S]*?Defects Per Million[\s\S]*?<\/div>/);
   });
 
   it("renders an escaped, self-contained A4 landscape report with all required sections", () => {
@@ -425,6 +932,88 @@ describe("renderAssumptionResultsPdfHtml", () => {
     expect(html).toMatch(/\.source\s*>\s*span\s*{[^}]*min-width:\s*0;/);
     expect(html).toMatch(/th, td\s*{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/);
     expect(html).toMatch(/\.pareto-chart\s+svg\s*{[^}]*max-width:\s*100%;/);
+  });
+
+  it("sets explicit decision page break-before while preserving action page break-before", () => {
+    const html = renderAssumptionResultsPdfHtml(validRequest());
+
+    expect(html).toMatch(/\.report-page--decision\s*{[^}]*break-before:\s*page;/);
+    expect(html).toMatch(/\.report-page--action\s*{[^}]*break-before:\s*page;/);
+    expect(html).toMatch(/\.report-page--evidence\s*{[^}]*height:\s*180mm;[^}]*box-sizing:\s*border-box;[^}]*position:\s*relative;[^}]*break-after:\s*page;[^}]*break-inside:\s*avoid-page;[^}]*page-break-inside:\s*avoid;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-top\s*{[^}]*height:\s*76mm;[^}]*position:\s*absolute;[^}]*top:\s*0;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.evidence-lower-grid\s*{[^}]*min-height:\s*0;[^}]*position:\s*absolute;/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-grid\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
+    expect(html).toMatch(/\.report-page--evidence\s+\.response-summary-table\s*{[^}]*font-size:\s*7\.6pt;/);
+  });
+
+  it("keeps evidence page direct children as evidence-top and evidence-lower-grid, with 7 body rows and 2 footer rows", () => {
+    const request = representativeCurrentUiRequest();
+    const sevenRows = Array.from({ length: 7 }, (_, index) => ({
+      itemNumber: index + 1,
+      factorName: `Factor ${index + 1}`,
+      designNominal: 1 + index,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.2,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal" as const,
+      mean: 1 + index,
+      tolerance: 0.2,
+      oneSigma: 0.05,
+      contributionPercent: Number((100 / 7).toFixed(2)),
+    }));
+    const html = renderAssumptionResultsPdfHtml({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: {
+          ...request.engineeringEvidence.factorSetup,
+          rows: sevenRows,
+        },
+      },
+    });
+    const evidencePageMatch = html.match(/<div class="report-page report-page--evidence">([\s\S]*?)<div class="report-page report-page--decision">/);
+    expect(evidencePageMatch).not.toBeNull();
+    const evidencePage = evidencePageMatch?.[1] ?? "";
+
+    expect(evidencePage).toMatch(/^\s*<div class="evidence-top">[\s\S]*?<\/div>\s*<div class="evidence-lower-grid">[\s\S]*?<\/div>\s*$/);
+    const factorSetupTable = evidencePage.match(/<section class="factor-setup-panel">[\s\S]*?<table>[\s\S]*?<\/table>/)?.[0] ?? "";
+    expect((factorSetupTable.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr>/g) ?? []).length).toBe(7);
+    expect((evidencePage.match(/<tfoot>[\s\S]*?<\/tfoot>/)?.[0].match(/<tr/g) ?? []).length).toBe(2);
+    expect(evidencePage).toContain("data-footer-core-total");
+    expect(evidencePage).toContain("data-footer-derived-total");
+    expect(evidencePage).toContain("data-footer-field=\"design-nominal-total\"");
+    expect(evidencePage).toContain("data-footer-field=\"upper-worst-case-tolerance\"");
+    expect(evidencePage).toContain("data-footer-field=\"lower-worst-case-tolerance\"");
+    expect(evidencePage).toContain("data-footer-field=\"contribution-total\"");
+    expect(evidencePage).toContain("data-footer-field=\"mean-response\"");
+    expect(evidencePage).toContain("data-footer-field=\"rss-tolerance\"");
+    expect(evidencePage).toContain("data-footer-field=\"rss-sigma\"");
+    expect(evidencePage).toContain("data-footer-field=\"additional-mean-shift\"");
+    expect(evidencePage).toContain("data-footer-field=\"adjusted-mean\"");
+    expect(evidencePage).not.toContain("report-page--evidence-flow");
+  });
+
+  it("uses a paginated flow layout when bounded evidence exceeds representative page-one capacity", () => {
+    const request = representativeCurrentUiRequest();
+    const eightRows = Array.from({ length: 8 }, (_, index) => ({
+      ...request.engineeringEvidence.factorSetup.rows[0],
+      itemNumber: index + 1,
+      factorName: `Factor ${index + 1}`,
+    }));
+    const html = renderAssumptionResultsPdfHtml({
+      ...request,
+      engineeringEvidence: {
+        ...request.engineeringEvidence,
+        factorSetup: { ...request.engineeringEvidence.factorSetup, rows: eightRows },
+      },
+    });
+
+    expect(html).toContain('class="report-page report-page--evidence report-page--evidence-flow"');
+    expect(html).toMatch(/\.report-page--evidence\.report-page--evidence-flow\s*{[^}]*break-inside:\s*auto;[^}]*height:\s*auto;[^}]*min-height:\s*180mm;[^}]*page-break-inside:\s*auto;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-top\s*{[^}]*height:\s*auto;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-lower-grid\s*{[^}]*display:\s*grid;[^}]*position:\s*static;/);
+    expect(html).toMatch(/\.report-page--evidence-flow\s+\.evidence-panel\s*{[^}]*height:\s*auto;[^}]*position:\s*static;[^}]*width:\s*auto;/);
   });
 });
 

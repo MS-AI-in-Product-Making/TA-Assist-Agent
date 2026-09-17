@@ -7,6 +7,7 @@ import {
   assumptionResultsPdfRouteRequestSchema,
   type AssumptionResultsPdfRouteRequest,
 } from "./assumption-results-pdf-contract.js";
+import { renderAssumptionResultsPdfEvidenceHtml } from "./assumption-results-pdf-evidence-renderer.js";
 
 const PDF_BROWSER_DEFAULT_TIMEOUT_MS = 15_000;
 const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
@@ -161,8 +162,28 @@ function renderGuidance(items: AssumptionResultsPdfRouteRequest["processGuidance
         </ol>`;
 }
 
+function renderPriorityGuidance(request: AssumptionResultsPdfRouteRequest): string {
+  const definitions = request.priorityDefinitions ?? [];
+  const recommendation = request.priorityRecommendation;
+  if (recommendation === undefined && definitions.length === 0) return "";
+  return `<div class="process-priority-guidance">${recommendation === undefined ? "" : `
+        <div class="process-priority-recommendation">
+          <strong>Recommended priority ${escapeHtml(recommendation.selectedPriority)}</strong>
+          <span>Final priority requires Microsoft ME/DM alignment.</span>
+        </div>`}
+        <dl class="process-priority-definitions" aria-label="V3 priority definitions">${definitions.map((definition) => `
+          <div data-priority="${escapeHtml(definition.priority)}">
+            <dt><strong>${escapeHtml(definition.priority)}</strong> ${escapeHtml(definition.title)}</dt>
+            <dd>${escapeHtml(definition.message)}</dd>
+          </div>`).join("")}
+        </dl>
+      </div>`;
+}
+
 export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteRequest): string {
   const request = assumptionResultsPdfRouteRequestSchema.parse(input);
+  const hasV3PriorityGuidance = request.priorityRecommendation !== undefined
+    || (request.priorityDefinitions?.length ?? 0) > 0;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -173,6 +194,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     * { box-sizing: border-box; }
     html { color: #1f2933; font-family: "Segoe UI", sans-serif; font-size: 8pt; line-height: 1.3; overflow-wrap: anywhere; }
     body { margin: 0; }
+    .report-page--decision { break-before: page; }
     .report-page--action { break-before: page; }
     header { border-bottom: 2px solid #176b75; margin-bottom: 4mm; padding-bottom: 2.5mm; }
     h1 { color: #123c47; font-size: 19pt; margin: 0 0 2mm; }
@@ -215,6 +237,60 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .pareto-point { fill: #fff; stroke: #a3342d; stroke-width: 2; }
     .guidance { border-left: 2px solid #6a7b83; padding-left: 3mm; }
     .guidance--warning { border-color: #b45309; }
+    .report-page--evidence {
+      height: 180mm;
+      box-sizing: border-box;
+      position: relative;
+      break-after: page;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+    }
+    .report-page--evidence h1 { margin-bottom: 1mm; }
+    .report-page--evidence .evidence-top { height: 76mm; left: 0; min-height: 0; position: absolute; right: 0; top: 0; }
+    .report-page--evidence .factor-setup-panel { min-height: 0; }
+    .report-page--evidence .factor-setup-panel table { table-layout: fixed; font-size: 7.4pt; }
+    .report-page--evidence .factor-setup-panel th,
+    .report-page--evidence .factor-setup-panel td { padding: 0.75mm 1.1mm; line-height: 1.15; }
+    .report-page--evidence .evidence-lower-grid {
+      bottom: 0;
+      left: 0;
+      min-height: 0;
+      position: absolute;
+      right: 0;
+      top: 78mm;
+    }
+    .report-page--evidence .evidence-panel { border: 1px solid #b8c4c8; min-height: 0; padding: 2mm; position: absolute; }
+    .report-page--evidence .evidence-panel svg { display: block; height: auto; max-width: 100%; width: 100%; }
+    .report-page--evidence .evidence-panel--chain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; left: 0; top: 0; width: calc(48% - 1.5mm); }
+    .report-page--evidence .evidence-panel--chain svg { height: 100%; max-height: 100%; min-height: 0; }
+    .report-page--evidence .evidence-panel--chain svg text { font-size: 8px; }
+    .report-page--evidence .evidence-panel--curve { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; right: 0; top: 0; width: calc(52% - 1.5mm); }
+    .report-page--evidence .evidence-panel--curve svg { height: 100%; max-height: 100%; min-height: 0; }
+    .report-page--evidence .evidence-panel--summary { bottom: 0; left: 0; right: 0; top: 58mm; }
+    .report-page--evidence .dimension-note, .report-page--evidence .curve-note { color: #52616b; margin: 0 0 1.5mm; }
+    .report-page--evidence .response-summary-grid {
+      display: grid;
+      gap: 1.4mm;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .report-page--evidence .response-summary-grid > .response-summary-table { margin-top: 0; }
+    .report-page--evidence .response-summary-table {
+      font-size: 7.6pt;
+      margin-top: 1.5mm;
+      table-layout: fixed;
+    }
+    .report-page--evidence .response-summary-table th,
+    .report-page--evidence .response-summary-table td { padding: 0.35mm 1mm; line-height: 1.05; }
+    .report-page--evidence .summary-value--pass { color: #176b3a; font-weight: 700; }
+    .report-page--evidence .summary-value--warning { color: #b45309; font-weight: 700; }
+    .report-page--evidence .summary-value--fail { color: #a3342d; font-weight: 700; }
+    .report-page--evidence.report-page--evidence-flow { break-inside: auto; height: auto; min-height: 180mm; page-break-inside: auto; position: static; }
+    .report-page--evidence-flow .evidence-top { height: auto; position: static; }
+    .report-page--evidence-flow .evidence-lower-grid { display: grid; gap: 3mm; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 3mm; position: static; }
+    .report-page--evidence-flow .evidence-panel { height: auto; position: static; width: auto; }
+    .report-page--evidence-flow .evidence-panel--summary { grid-column: 1 / -1; }
+    .report-page--evidence-flow .response-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .report-page--evidence-flow .evidence-panel svg { height: auto; }
     .report-page--action h2 { margin: 2.5mm 0 1.2mm; }
     .report-page--action p { margin-top: .6mm; }
     .action-grid { display: grid; gap: 1.5mm 5mm; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -230,12 +306,19 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .priority-table th:nth-child(1) { width: 9%; }
     .priority-table th:nth-child(2) { width: 17%; }
     .priority-table th:nth-child(3) { width: 16%; }
+    .process-priority-guidance { margin-top: 2mm; }
+    .process-priority-recommendation { align-items: baseline; display: flex; flex-wrap: wrap; gap: 1.5mm 4mm; margin-bottom: 1.5mm; }
+    .process-priority-recommendation span { color: #52616b; }
+    .process-priority-definitions { display: grid; gap: 1.5mm 3mm; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 2mm; }
+    .process-priority-definitions dt { color: #123c47; }
+    .process-priority-definitions dd { margin: .5mm 0 0; }
     .guidance-grid { display: grid; gap: 2mm 4mm; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .guidance-grid > li { margin-bottom: 0; }
   </style>
 </head>
 <body>
   <main>
+${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence)}
     <div class="report-page report-page--decision">
       <header>
         <h1>TA Results Interpretation (based on Assumptions)</h1>
@@ -255,7 +338,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     <div class="report-page report-page--action">
       <section><h2>Suggested Action Sequence</h2>${renderActionItems(request.actionItems)}</section>
       <section><h2>Tolerance Adjustment Priority</h2>${renderContributors(request.contributors)}</section>
-      <section><h2>TA Process and Requirements</h2><p>${escapeHtml(request.processGuidanceContext)}</p>${renderGuidance(request.processGuidance)}</section>
+      <section><h2>TA Process and Requirements</h2>${hasV3PriorityGuidance ? "<p>V3</p>" : ""}<p>${escapeHtml(request.processGuidanceContext)}</p>${renderPriorityGuidance(request)}${renderGuidance(request.processGuidance)}</section>
     </div>
   </main>
 </body>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { F7SessionSnapshot } from "./api/f7-client";
 import { buildAssumptionResultsInterpretation } from "./assumption-results-interpretation";
+import type { ProcessRequirementComponentCategory } from "@ai-assist/contracts";
 
 type NarrativeRuleLike = { readonly ruleId: string };
 type NarrativeActionLike = { readonly optionId: string };
@@ -78,6 +79,33 @@ function equalityBoundarySnapshot(): F7SessionSnapshot {
       },
     }],
   };
+}
+
+function enhancedInterpretationSnapshotWithCategories(
+  categories: readonly ProcessRequirementComponentCategory[],
+): F7SessionSnapshot {
+  const snapshot = enhancedInterpretationSnapshot();
+  return {
+    ...snapshot,
+    factors: categories.map((componentCategory, index) => ({
+      factorCandidate: { factorCandidateId: `factor-0${index + 1}`, factorName: `Factor 0${index + 1}` },
+      setup: { confirmed: true },
+      evidence: {
+        worksheetName: "Anonymous_TA",
+        tableId: "factor-table",
+        sourceRow: index + 1,
+        factorName: `Factor 0${index + 1}`,
+        unit: "mm",
+        designNominal: 0.03,
+        upperTolerance: 0.3,
+        lowerTolerance: -0.3,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        distribution: "Normal",
+        componentCategory,
+      },
+    })),
+  } as unknown as F7SessionSnapshot;
 }
 
 describe("assumption results enhanced interpretation", () => {
@@ -293,5 +321,28 @@ describe("assumption results enhanced interpretation", () => {
 
     expect(result.status).toBe("unavailable");
     expect(result.processGuidance?.entries.map((entry) => entry.entryId)).toContain("requirement-input-completeness");
+  });
+
+  it("projects real session V3 priority recommendation and definitions without mixing category mappings into actions", () => {
+    const result = buildAssumptionResultsInterpretation(enhancedInterpretationSnapshotWithCategories([
+      "battery-cts",
+      "cover-fit-and-function",
+    ]));
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") return;
+    expect(result.processGuidance.status).toBe("available");
+    if (result.processGuidance.status !== "available") return;
+    expect(result.processGuidance.priorityRecommendation).toEqual({
+      selectedPriority: "P0",
+      matchedEntryIds: [
+        "priority-recommendation-battery-cts",
+        "priority-recommendation-cover-fit-and-function",
+      ],
+      requiresMeDmAlignment: true,
+    });
+    expect(result.processGuidance.priorityDefinitions.map(({ priority }) => priority)).toEqual(["P0", "P1", "P2", "P3"]);
+    expect(result.processGuidance.entries.map(({ entryId }) => entryId)).not.toContain("priority-recommendation-battery-cts");
+    expect(result.processGuidance.entries.map(({ entryId }) => entryId)).not.toContain("priority-recommendation-cover-fit-and-function");
   });
 });

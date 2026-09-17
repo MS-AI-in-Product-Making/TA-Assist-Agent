@@ -29,6 +29,10 @@ import {
   type DimensionChainManualLayout,
   type DimensionChainOrientation,
 } from "./dimension-chain";
+import type {
+  DimensionChainReportFactor,
+  DimensionChainReportProjection,
+} from "../assumption-results-pdf-evidence";
 
 const props = withDefaults(defineProps<{
   readonly factors: readonly DimensionChainFactor[];
@@ -45,6 +49,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   "reverse-all": [];
   "factor-sign-change": [changes: readonly { factorId: string; sign: 1 | -1 }[]];
+  "report-projection-change": [projection: DimensionChainReportProjection];
 }>();
 
 const AXIS_PADDING = 64;
@@ -100,6 +105,84 @@ const currentSignature = computed(() => props.sourceSignature ?? dimensionChainS
 const stale = computed(() => (
   generatedFactors.value !== undefined && currentSignature.value !== generatedSourceSignature.value
 ));
+
+function finiteRecord(input: Readonly<Record<string, number>>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => Number.isFinite(value)),
+  );
+}
+
+function projectionManualLayout(targetOrientation: DimensionChainOrientation) {
+  const layout = manualLayouts[targetOrientation];
+  return {
+    boundaryOffsets: finiteRecord(layout.boundaryOffsets),
+    laneOffsets: finiteRecord(layout.laneOffsets),
+    ...(Number.isFinite(layout.closureStartOffset) ? { closureStartOffset: layout.closureStartOffset } : {}),
+    ...(Number.isFinite(layout.closureEndOffset) ? { closureEndOffset: layout.closureEndOffset } : {}),
+    ...(Number.isFinite(layout.closureLaneOffset) ? { closureLaneOffset: layout.closureLaneOffset } : {}),
+  };
+}
+
+function projectionFactors(factors: readonly DimensionChainFactor[]): readonly DimensionChainReportFactor[] {
+  return factors.map((factor): DimensionChainReportFactor => ({
+    id: factor.id,
+    itemNumber: factor.itemNumber,
+    name: factor.name,
+    designNominal: factor.designNominal,
+    upperTolerance: factor.upperTolerance,
+    lowerTolerance: factor.lowerTolerance,
+    longTermSafetyFactor: factor.longTermSafetyFactor,
+    sigmaLevel: factor.sigmaLevel,
+    distribution: factor.distribution as DimensionChainReportFactor["distribution"],
+  }));
+}
+
+const reportProjection = computed<DimensionChainReportProjection>(() => {
+  if (!generatedFactors.value || stale.value) {
+    return {
+      status: "fallback",
+      sourceSignature: currentSignature.value,
+    };
+  }
+  return {
+    status: "generated",
+    sourceSignature: generatedSourceSignature.value,
+    orientation: orientation.value,
+    factors: projectionFactors(generatedFactors.value),
+    manualLayout: projectionManualLayout(orientation.value),
+    reversedFactorIds: generatedFactors.value
+      .map((factor) => factor.id)
+      .filter((factorId) => reversedArrowFactorIds.has(factorId)),
+    closureDirection: closureArrowReversed.value ? "end-to-start" : "start-to-end",
+  };
+});
+
+function isProjectionDeferredByInteraction(
+  activeInteraction: DimensionChainInteraction | undefined,
+): activeInteraction is Extract<DimensionChainInteraction, { kind: "guide" | "arrow" | "closure-guide" | "closure-arrow" }> {
+  return activeInteraction?.kind === "guide"
+    || activeInteraction?.kind === "arrow"
+    || activeInteraction?.kind === "closure-guide"
+    || activeInteraction?.kind === "closure-arrow";
+}
+
+let deferredProjection: DimensionChainReportProjection | undefined;
+let suppressProjectionEmission = false;
+let skipProjectionSignature: string | undefined;
+let skipProjectionEpoch = 0;
+
+function setSkipProjectionSignature(signature: string): void {
+  skipProjectionSignature = signature;
+  const epoch = ++skipProjectionEpoch;
+  Promise.resolve().then(() => {
+    if (skipProjectionEpoch === epoch) skipProjectionSignature = undefined;
+  });
+}
+
+function flushProjection(projection: DimensionChainReportProjection): void {
+  emit("report-projection-change", projection);
+}
+
 const geometry = computed(() => generatedGeometry.value);
 const logicalDisplaySegments = computed(() => {
   const value = geometry.value;
@@ -258,6 +341,23 @@ const selectionBox = computed(() => {
     height: Math.abs(selectionEnd.value.y - selectionStart.value.y),
   };
 });
+
+watch(reportProjection, (projection) => {
+  const signature = JSON.stringify(projection);
+  if (skipProjectionSignature === signature) {
+    skipProjectionSignature = undefined;
+    return;
+  }
+  if (suppressProjectionEmission) {
+    deferredProjection = projection;
+    return;
+  }
+  if (isProjectionDeferredByInteraction(interaction.value)) {
+    deferredProjection = projection;
+    return;
+  }
+  flushProjection(projection);
+}, { immediate: true, flush: "sync" });
 
 function clampZoom(value: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
@@ -796,6 +896,8 @@ function onPointerMove(event: PointerEvent): void {
 function finishInteraction(cancel = false, release = true): void {
   const activeInteraction = interaction.value;
   if (!activeInteraction) return;
+  const deferredInteraction = isProjectionDeferredByInteraction(activeInteraction);
+  if (deferredInteraction) suppressProjectionEmission = true;
   if (
     cancel
     && (
@@ -834,6 +936,13 @@ function finishInteraction(cancel = false, release = true): void {
   selectionEnd.value = undefined;
   if (activeInteraction.kind === "select") selectionMode.value = false;
   if (release) canvasElement.value?.releasePointerCapture?.(activeInteraction.pointerId);
+  if (deferredInteraction) {
+    suppressProjectionEmission = false;
+    const projection = deferredProjection ?? reportProjection.value;
+    deferredProjection = undefined;
+    setSkipProjectionSignature(JSON.stringify(projection));
+    flushProjection(projection);
+  }
 }
 
 function onPointerUp(event: PointerEvent): void {
