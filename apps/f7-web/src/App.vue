@@ -11,6 +11,7 @@ import ReportPanel from "./components/ReportPanel.vue";
 import TAResultsInterpretation from "./components/TAResultsInterpretation.vue";
 import {
   type AssumptionResultsEngineeringEvidence,
+  type DimensionChainVisual,
   type EngineeringEvidenceEnvelope,
   type EngineeringEvidenceWorkbookIdentity,
   snapshotPlainDto,
@@ -29,6 +30,13 @@ const activeMeasurementStage = ref<"measurement" | "capability" | "distribution"
 const editingFactorSetup = ref(false);
 const measurementEntryMode = ref<"import" | "individual">("import");
 const measurementImportSuccessMessage = ref("");
+const blockedMeasurementFactors = ref<readonly { readonly factorId: string; readonly message: string }[]>([]);
+const automaticAnalysisProgress = ref<{
+  readonly factorIds: readonly string[];
+  readonly activeFactorId: string;
+  readonly completedCount: number;
+}>();
+let measurementTemplateDownloadRequestToken = 0;
 const reportRetryAvailable = ref(false);
 const reportPdfBusy = ref(false);
 const reportPdfError = ref("");
@@ -52,9 +60,20 @@ interface SessionEngineeringEvidence {
 }
 
 const cachedEngineeringEvidence = shallowRef<Readonly<SessionEngineeringEvidence> | undefined>();
+const factorInputTable = ref<{ captureDimensionChainVisual: () => DimensionChainVisual | Promise<DimensionChainVisual> }>();
+const cachedDimensionChainVisual = shallowRef<DimensionChainVisual>();
 
-function generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<globalThis.Blob> {
-  return client.generateAssumptionResultsPdf(request);
+async function captureDimensionChainVisual(): Promise<DimensionChainVisual> {
+  return await factorInputTable.value?.captureDimensionChainVisual()
+    ?? cachedDimensionChainVisual.value
+    ?? { status: "empty" };
+}
+
+async function generateAssumptionResultsPdf(request: Omit<AssumptionResultsPdfRequest, "dimensionChainVisual">): Promise<globalThis.Blob> {
+  return await client.generateAssumptionResultsPdf({
+    ...request,
+    dimensionChainVisual: await captureDimensionChainVisual(),
+  });
 }
 
 function workbookIdentityForSession(session: { readonly workbook: { readonly workbookContentHash: string; readonly fileName: string }; readonly selectedWorksheetNames: readonly string[] }): EngineeringEvidenceWorkbookIdentity {
@@ -73,6 +92,7 @@ function sameWorkbookIdentity(left: EngineeringEvidenceWorkbookIdentity, right: 
 
 function clearCachedEngineeringEvidence(): void {
   cachedEngineeringEvidence.value = undefined;
+  cachedDimensionChainVisual.value = undefined;
 }
 
 function onEngineeringEvidenceChange(envelope: EngineeringEvidenceEnvelope | undefined): void {
@@ -139,7 +159,11 @@ async function downloadReportPdf(): Promise<void> {
     const report = store.report.value;
     if (requestToken !== reportPdfRequestToken || store.session.value?.sessionId !== sessionId) return;
     if (!report || report.sessionId !== sessionId) throw new Error("The governed report is unavailable.");
-    const pdf = await client.generateReportPdf({ sessionId, report });
+    const pdf = await client.generateReportPdf({
+      sessionId,
+      report,
+      dimensionChainVisual: await captureDimensionChainVisual(),
+    });
     if (requestToken !== reportPdfRequestToken || store.session.value?.sessionId !== sessionId) return;
     const objectUrl = globalThis.URL.createObjectURL(pdf);
     const anchor = globalThis.document.createElement("a");
@@ -181,6 +205,10 @@ const simulationReady = computed(() => {
   ));
 });
 
+const pendingMeasuredFitCount = computed(() => store.session.value?.factors.filter((factor) => (
+  factor.sourceMode === "MEASURED" && factor.distributionApproval === undefined
+)).length ?? 0);
+
 const measuredDatasetPresent = computed(() => store.session.value?.factors.some((factor) => factor.measurementPasteResult?.dataset !== undefined) ?? false);
 
 const measurementImportPanelVisible = computed(() => {
@@ -193,6 +221,7 @@ const measurementImportPanelVisible = computed(() => {
 
 watch(() => store.session.value?.sessionId ?? "", (nextSessionId, previousSessionId) => {
   if (!nextSessionId || nextSessionId === previousSessionId) return;
+  if (previousSessionId) blockedMeasurementFactors.value = [];
   measurementEntryMode.value = measuredDatasetPresent.value ? "individual" : "import";
 }, { immediate: true });
 
@@ -258,6 +287,7 @@ async function swallowHandledError(operation: () => Promise<void>): Promise<void
 
 async function importWorkbookFile(file: File): Promise<void> {
   fitActionFactorId.value = "";
+  measurementTemplateDownloadRequestToken += 1;
   reportPdfRequestToken += 1;
   reportPdfBusy.value = false;
   reportPdfError.value = "";
@@ -412,12 +442,18 @@ function onMeasurementEntryModeChange(mode: "import" | "individual"): void {
   if (mode === measurementEntryMode.value) return;
   store.cancelMeasurementImport();
   measurementImportSuccessMessage.value = "";
+  measurementTemplateDownloadRequestToken += 1;
   measurementEntryMode.value = mode;
 }
 
 async function onDownloadMeasurementTemplate(): Promise<void> {
+  const requestToken = ++measurementTemplateDownloadRequestToken;
   await swallowHandledError(async () => {
-    const download = await store.downloadMeasurementTemplate();
+    const download = await store.downloadMeasurementTemplate().catch((error: unknown) => {
+      if (requestToken !== measurementTemplateDownloadRequestToken) store.clearError();
+      throw error;
+    });
+    if (requestToken !== measurementTemplateDownloadRequestToken) return;
     const blob = new globalThis.Blob([Uint8Array.from(download.bytes).buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
@@ -433,20 +469,62 @@ async function onDownloadMeasurementTemplate(): Promise<void> {
   });
 }
 
+function onCloseMeasurementImport(): void {
+  store.cancelMeasurementImport();
+  measurementImportSuccessMessage.value = "";
+  measurementTemplateDownloadRequestToken += 1;
+}
+
 async function onPreviewMeasurementImport(file: File): Promise<void> {
   measurementImportSuccessMessage.value = "";
   await swallowHandledError(async () => {
     await store.previewMeasurementImport(file);
+    const preview = store.measurementImportPreview.value;
+    if (!preview) return;
+    const blockedFactors = preview.factors.flatMap((factor) => factor.status === "blocked"
+      ? [{
+          factorId: factor.factorId,
+          message: factor.diagnostics[0]?.displayMessage ?? "Measurement validation is blocked.",
+        }]
+      : []);
+    if (blockedFactors.length > 0) {
+      blockedMeasurementFactors.value = blockedFactors;
+      return;
+    }
+    const previewFactorIds = new Set(preview.factors.map((factor) => factor.factorId));
+    blockedMeasurementFactors.value = blockedMeasurementFactors.value.filter((factor) => !previewFactorIds.has(factor.factorId));
   });
 }
 
 async function onCommitMeasurementImport(): Promise<void> {
   const replacementCount = store.measurementImportPreview.value?.replacementCount ?? 0;
   const factorCount = store.measurementImportPreview.value?.factorCount ?? 0;
+  const previewFactorIds = new Set(store.measurementImportPreview.value?.factors.map((factor) => factor.factorId) ?? []);
   await swallowHandledError(async () => {
     await store.commitMeasurementImport();
+    blockedMeasurementFactors.value = blockedMeasurementFactors.value.filter((factor) => !previewFactorIds.has(factor.factorId));
     const label = factorCount === 1 ? "dataset" : "datasets";
     measurementImportSuccessMessage.value = `Ready. Imported ${factorCount} measured ${label} with ${replacementCount} replacement${replacementCount === 1 ? "" : "s"}.`;
+    const factorIds = store.session.value?.factors.flatMap((factor) => (
+      factor.sourceMode === "MEASURED"
+      && factor.measurementPasteResult?.status === "ready"
+      && factor.distributionApproval === undefined
+      && factor.evidence
+        ? [factor.evidence.factorId]
+        : []
+    )) ?? [];
+    try {
+      for (const [index, factorId] of factorIds.entries()) {
+        automaticAnalysisProgress.value = {
+          factorIds,
+          activeFactorId: factorId,
+          completedCount: index,
+        };
+        await store.fitDistribution(factorId);
+      }
+    } finally {
+      automaticAnalysisProgress.value = undefined;
+    }
   });
 }
 
@@ -487,6 +565,7 @@ async function onPaste(payload: {
   let saved = false;
   await swallowHandledError(async () => {
     await store.pasteMeasurements(payload);
+    blockedMeasurementFactors.value = blockedMeasurementFactors.value.filter((factor) => factor.factorId !== payload.factorId);
     saved = true;
   });
   onSaved(saved);
@@ -504,9 +583,22 @@ async function onFitDistribution(factorId: string): Promise<void> {
 
 async function openMonteCarlo(): Promise<void> {
   if (!simulationReady.value || store.isBusy.value) return;
+  cachedDimensionChainVisual.value = undefined;
+  const dimensionChainVisual = factorInputTable.value?.captureDimensionChainVisual() ?? { status: "empty" };
+  try {
+    if (dimensionChainVisual instanceof Promise) {
+      cachedDimensionChainVisual.value = await dimensionChainVisual;
+    } else {
+      cachedDimensionChainVisual.value = dimensionChainVisual;
+    }
+  } catch {
+    cachedDimensionChainVisual.value = undefined;
+    return;
+  }
   activeMeasurementFactorId.value = "";
   activeMeasurementStage.value = "monteCarlo";
-  if (store.session.value?.monteCarloResult) await openReport();
+  const report = store.session.value?.monteCarloResult ? openReport() : undefined;
+  await report;
 }
 
 async function onRunMonteCarlo(request: {
@@ -692,19 +784,25 @@ async function openReport(): Promise<void> {
           :action="store.busyAction.value === 'downloadMeasurementTemplate' || store.busyAction.value === 'previewMeasurementImport' || store.busyAction.value === 'commitMeasurementImport' ? store.busyAction.value : null"
           :mode="measurementEntryMode"
           :success-message="measurementImportSuccessMessage || null"
+          :monte-carlo-ready="simulationReady"
           @download="onDownloadMeasurementTemplate"
           @upload="onPreviewMeasurementImport"
           @confirm="onCommitMeasurementImport"
           @cancel="onCancelMeasurementImport"
+          @close-import="onCloseMeasurementImport"
           @mode-change="onMeasurementEntryModeChange"
+          @open-monte-carlo="openMonteCarlo"
         />
 
         <FactorInputTable
+          ref="factorInputTable"
           v-if="!activeMeasurementFactorId && (activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && (store.session.value.status === 'factor_setup' || store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :busy="store.isBusy.value"
           :editing-setup="editingFactorSetup"
           :measurement-entry-mode="measurementEntryMode"
+          :blocked-measurement-factors="blockedMeasurementFactors"
+          :automatic-analysis-progress="automaticAnalysisProgress"
           @confirm-factors="onConfirmFactors"
           @edit-setup="onEditFactorSetup"
           @set-mode="onSetMode"
@@ -768,7 +866,7 @@ async function openReport(): Promise<void> {
           <p>
             {{ simulationReady
               ? "All factor models are governed and ready for system simulation."
-              : "Complete Distribution Fit for each measured factor to automatically select its final Monte Carlo distribution." }}
+              : `Complete Distribution Fit for each measured factor to automatically select its final Monte Carlo distribution. ${pendingMeasuredFitCount} measured factor${pendingMeasuredFitCount === 1 ? "" : "s"} remain.` }}
           </p>
           <button
             v-if="simulationReady"

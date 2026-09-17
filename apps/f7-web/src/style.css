@@ -656,13 +656,35 @@ textarea {
   gap: 10px;
 }
 
+.measurement-process-flow {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.measurement-entry-mode {
+  display: grid;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.measurement-entry-mode-label {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
 .measurement-entry-tabs {
   display: inline-flex;
   width: fit-content;
   max-width: 100%;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 5px;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgb(26 39 52 / 8%);
 }
 
 .measurement-entry-tab {
@@ -680,8 +702,70 @@ textarea {
 }
 
 .measurement-entry-tab.is-selected {
-  background: #eef2f7;
+  background: #dfe9f3;
+  color: #17324d;
   font-weight: 700;
+  box-shadow: inset 0 -2px 0 #356b93;
+}
+
+.measurement-flow-arrow {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  color: var(--ink-soft);
+}
+
+.measurement-flow-next {
+  display: grid;
+  justify-items: start;
+  min-height: 36px;
+  padding-block: 5px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.measurement-flow-next small {
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.measurement-import-dialog {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.measurement-import-dialog-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.measurement-import-dialog-header h2 {
+  margin-bottom: 4px;
+}
+
+.measurement-import-dialog-header p {
+  margin-bottom: 0;
+  font-size: 0.82rem;
+}
+
+.measurement-import-dialog-close {
+  display: inline-flex;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
 }
 
 .measurement-import-toolbar {
@@ -695,25 +779,59 @@ textarea {
   margin: 0;
 }
 
-.measurement-import-actions {
-  display: inline-flex;
-  gap: 8px;
+.measurement-import-identity p:first-child {
+  overflow-wrap: anywhere;
 }
 
-.icon-action-button {
+.measurement-import-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.measurement-import-step {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  border-top: 3px solid var(--line-strong);
+  padding: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.measurement-import-step strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.measurement-import-step.is-locked {
+  opacity: 0.62;
+}
+
+.measurement-import-step.is-ready {
+  border-top-color: var(--success);
+}
+
+.measurement-import-action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  gap: 6px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
+  padding: 7px 10px;
   background: #fff;
   color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
   cursor: pointer;
 }
 
-.icon-action-button:disabled {
+.measurement-import-action-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -831,10 +949,40 @@ textarea {
 }
 
 .source-mode-readonly {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+}
+
+.source-mode-readonly > .factor-workspace-button {
+  grid-column: 2;
+}
+
+.source-mode-readonly > span:not(.factor-workspace-warning-indicator):not(.factor-workspace-blocked-indicator) {
+  grid-column: 2;
+}
+
+.source-mode-readonly > .factor-workspace-warning-indicator {
+  grid-column: 3;
+  justify-self: start;
+}
+
+.source-mode-readonly > .factor-workspace-blocked-indicator {
+  grid-column: 3;
+  justify-self: start;
+}
+
+.factor-workspace-warning-indicator {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.factor-workspace-blocked-indicator {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .divider {
@@ -973,6 +1121,22 @@ textarea {
   .workbook-file-button {
     width: 108px;
   }
+
+  .measurement-process-flow {
+    display: grid;
+    justify-items: start;
+    width: 100%;
+  }
+
+  .measurement-flow-arrow {
+    margin: -2px 0 -2px 18px;
+    transform: rotate(90deg);
+  }
+
+  .measurement-flow-next {
+    width: 100%;
+    white-space: normal;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1007,13 +1171,101 @@ textarea {
 }
 
 .factor-workspace-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   flex: 0 0 auto;
+  min-width: 100px;
   margin-top: 0;
   white-space: nowrap;
 }
 
+.automatic-analysis-feedback {
+  margin: 0 0 8px;
+}
+
+.automatic-analysis-feedback p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.automatic-analysis-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #dfe4eb;
+}
+
+.automatic-analysis-bar span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: worksheet-analysis-progress 1.4s ease-in-out infinite;
+}
+
+.automatic-analysis-spinner {
+  flex: 0 0 auto;
+  animation: worksheet-analysis-spin 0.9s linear infinite;
+}
+
+.factor-workspace-button[data-measured-state="empty"] {
+  background: #fff;
+  border-color: #5f6d80;
+  color: #16253d;
+}
+
+.factor-workspace-button[data-measured-state="ready"] {
+  background: #f0f7f5;
+  border-color: #0d7a69;
+  color: #0d6a5c;
+}
+
+.factor-workspace-button[data-measured-state="warning"] {
+  background: #fff8e8;
+  border-color: #b54708;
+  color: #694600;
+}
+
+.factor-workspace-button[data-measured-state="blocked"] {
+  background: #fff1ef;
+  border-color: #b5392f;
+  color: #9f2f28;
+}
+
 .factor-workspace-button:not(:disabled):hover {
   background: var(--ink);
+  color: #fff;
+}
+
+.factor-workspace-button[data-measured-state="empty"]:not(:disabled):hover {
+  background: #4f5c6d;
+  border-color: #4f5c6d;
+  color: #fff;
+}
+
+.factor-workspace-button[data-measured-state="ready"]:not(:disabled):hover {
+  background: #096555;
+  border-color: #096555;
+  color: #fff;
+}
+
+.factor-workspace-button[data-measured-state="warning"]:not(:disabled):hover {
+  background: #b65312;
+  border-color: #b65312;
+  color: #fff;
+}
+
+.factor-workspace-button[data-measured-state="blocked"]:not(:disabled):hover {
+  background: #962d26;
+  border-color: #962d26;
   color: #fff;
 }
 
@@ -1590,6 +1842,20 @@ textarea {
   margin: 14px 0;
   border-top: 1px solid var(--line);
   padding-top: 10px;
+}
+
+.measurement-workspace-warnings {
+  margin: 14px 0 0;
+  border-left: 3px solid var(--danger);
+  padding: 9px 12px;
+  background: #fff1f2;
+  color: var(--danger);
+  font-size: 0.84rem;
+}
+
+.measurement-workspace-warnings ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }
 
 .specification-evidence-header {
@@ -2295,6 +2561,49 @@ textarea {
 .factor-table-centered tbody select,
 .factor-table-centered tbody output {
   text-align: center;
+}
+
+.factor-measured-comparison-row {
+  background: #f4f6f8;
+  border-top: 1px solid var(--line);
+}
+
+.factor-table-centered tbody td.factor-setup-rowspan-cell {
+  background: var(--panel);
+  vertical-align: middle;
+}
+
+.factor-table-centered tbody td.factor-measured-rowspan-cell {
+  background: #f4f6f8;
+  vertical-align: middle;
+}
+
+.factor-measured-comparison-metric {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.factor-measured-comparison-metric span {
+  display: grid;
+  grid-template-columns: minmax(32px, auto) minmax(0, 1fr);
+  gap: 3px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.factor-measured-comparison-metric strong {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .factor-spec-input {
@@ -4037,6 +4346,12 @@ textarea {
   }
 
   .measurement-metric-group .capability-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .measurement-import-actions {
     grid-template-columns: 1fr;
   }
 }

@@ -76,6 +76,7 @@ export type F7MeasurementImportPreviewClaim =
 export interface F7MeasurementImportRegistry {
   registerTemplate(request: {
     readonly sessionId: string;
+    readonly templateId?: string;
     readonly createAuthority: (input: {
       readonly templateId: string;
       readonly sessionGeneration: number;
@@ -338,10 +339,6 @@ export function createF7MeasurementImportRegistry(dependencies: {
     if (!record) return { status: "not_found" };
     if (record.sessionId !== sessionId) return { status: "session_mismatch" };
     if (nowMs >= record.expiresAtMs) return { status: "expired" };
-    const session = sessions.get(sessionId);
-    if (!session || session.currentTemplateId !== templateId || session.generation !== record.sessionGeneration) {
-      return { status: "stale" };
-    }
     return { status: "available", record };
   };
 
@@ -354,7 +351,13 @@ export function createF7MeasurementImportRegistry(dependencies: {
       }
 
       const session = readSession(sessionId);
-      const templateId = nextOpaqueId("templateId");
+      const requestedTemplateId = request?.templateId;
+      const templateId = requestedTemplateId === undefined
+        ? nextOpaqueId("templateId")
+        : validateOpaqueId(requestedTemplateId, "templateId");
+      if (requestedTemplateId !== undefined && previewRecords.has(templateId)) {
+        throw fixedError("templateId must be unique across active registry records.");
+      }
       const sessionGeneration = session.generation + 1;
       const expiresAtMs = nowMs + F7_MEASUREMENT_IMPORT_PREVIEW_TTL_MS;
       const expiresAt = isoFromEpochMs(expiresAtMs, "expiresAt");
@@ -533,8 +536,6 @@ export function createF7MeasurementImportRegistry(dependencies: {
       const session = sessions.get(sessionId);
       if (
         !session
-        || session.currentTemplateId !== record.templateId
-        || session.generation !== record.sessionGeneration
         || session.currentPreviewId !== previewId
         || session.previewGeneration !== record.previewGeneration
       ) {

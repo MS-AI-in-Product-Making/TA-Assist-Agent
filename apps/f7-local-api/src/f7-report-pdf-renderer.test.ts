@@ -13,6 +13,7 @@ import {
 
 const HASH = "a".repeat(64);
 const RUN_SEED = `${"0".repeat(60)}3039`;
+const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function reportFixture(): F7ReportProjection {
   return {
@@ -170,6 +171,29 @@ function reportFixture(): F7ReportProjection {
     markdown: "# F7 report",
   };
 }
+
+describe("Dimension Chain Web visual", () => {
+  it("replaces the reconstructed final-report chain with the captured image", () => {
+    const html = renderF7ReportPdfHtml(reportFixture(), {
+      status: "image",
+      mediaType: "image/png",
+      dataUrl: PNG_DATA_URL,
+      width: 1,
+      height: 1,
+    });
+
+    expect(html).toContain("data-dimension-chain-visual");
+    expect(html).not.toContain("data-dimension-chain-page");
+  });
+
+  it("renders no image or reconstructed chain for an empty Web visual", () => {
+    const html = renderF7ReportPdfHtml(reportFixture(), { status: "empty" });
+
+    expect(html).toContain("data-dimension-chain-visual-empty");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("data-dimension-chain-page");
+  });
+});
 
 function reportWithoutAnalysisFixture(): F7ReportProjection {
   return {

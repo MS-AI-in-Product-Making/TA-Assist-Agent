@@ -43,7 +43,7 @@ Uploading runs a dry preview and opens an unframed review section. The review re
 
 `Confirm import` is enabled only when all current Factors are present and ready. If any dataset will be replaced, the button text and confirmation copy state the replacement count. Canceling or switching views discards the preview and leaves the session unchanged.
 
-After commit, the page reports the imported Factor count and refreshes the existing session snapshot. Each imported row shows `MEASURED`, `Ready`, and `Open workspace` without a separate bulk-import status model.
+After commit, the page reports the imported Factor count, closes the import dialog, and refreshes the existing session snapshot. It then sequentially runs the governed Distribution Fit for every ready measured Factor so each acceptable proposed model receives its automatic distribution approval. Step 3 becomes available only after all measured Factors have an approved distribution; failures remain governed and the page reports how many Factors still require approval. Each imported row shows `MEASURED`, `Ready`, and `Open workspace` without a separate bulk-import status model.
 
 ## Excel Template
 

@@ -497,7 +497,7 @@ describe("TAResultsInterpretation", () => {
         contributionPercent: item.contributionPercent,
         cumulativePercent: item.cumulativePercent,
       })),
-      processGuidanceContext: "Evaluated against the current TA worksheet and analysis state.",
+      processGuidanceContext: "Priority review requirements and timing.",
       priorityRecommendation: {
         selectedPriority: "P0",
         requiresMeDmAlignment: true,
@@ -915,7 +915,8 @@ describe("TAResultsInterpretation", () => {
     const processGuidance = wrapper.get("[data-process-guidance]");
     expect(processGuidance.text()).toContain("TA Process and Requirements");
     expect(processGuidance.text()).not.toContain("F0 Process Guidance");
-    expect(processGuidance.text()).toContain("Evaluated against the current TA worksheet and analysis state.");
+    expect(processGuidance.text()).not.toContain("Evaluated against the current TA worksheet and analysis state.");
+    expect(processGuidance.find("[data-process-guidance-context]").exists()).toBe(false);
     expect(processGuidance.text()).not.toContain("Triggered by");
     expect(processGuidance.get("[data-process-guidance-version]").text()).toBe("V3");
     expect(processGuidance.get("[data-process-priority-recommendation]").text()).toContain("Recommended priority P0");
@@ -941,6 +942,19 @@ describe("TAResultsInterpretation", () => {
       "P2 governed component definition.",
       "P3 governed component definition.",
     ]);
+    expect(processGuidance.findAll("[data-priority-review-requirement]").map((item) => item.text())).toEqual([
+      "P0 & P1Share with Microsoft for review at ASR.",
+      "P2 & P3Share with Microsoft for review before tooling starts.",
+    ]);
+    expect(processGuidance.get("[data-priority-review-notes]").text()).not.toContain(
+      "Rank priorities according to the prioritization rule in section 2.3.2.",
+    );
+    expect(processGuidance.get("[data-priority-review-notes]").text()).toContain(
+      "After tooling trials and builds, update the analysis with real-part data and share it with Microsoft for review.",
+    );
+    expect(processGuidance.get("[data-priority-review-notes]").text()).toContain(
+      "Subsystem vendors must share all CTT and CTS characteristics with the ODM partner and Microsoft for review as part of DFM.",
+    );
     expect(processGuidance.findAll("[data-process-guidance-entry]")).toHaveLength(6);
     expect(processGuidance.get("ol").classes()).toContain("process-guidance-list");
     expect(processGuidance.get("ol").classes()).toContain("action-sequence");

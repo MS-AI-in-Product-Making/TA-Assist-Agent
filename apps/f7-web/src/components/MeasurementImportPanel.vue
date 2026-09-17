@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload } from "lucide-vue-next";
+import { ArrowRight, CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload, X } from "lucide-vue-next";
 import { computed, nextTick, ref, watch, type DeepReadonly } from "vue";
 import type { F7MeasurementImportPreviewResponse, F7SessionSnapshot } from "../api/f7-client";
 
@@ -29,27 +29,35 @@ type PreviewFactor = {
   }[];
 };
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly preview: DeepReadonly<F7MeasurementImportPreviewResponse> | null;
   readonly busy: boolean;
   readonly action: MeasurementImportAction;
   readonly mode: MeasurementEntryMode;
   readonly successMessage: string | null;
-}>();
+  readonly monteCarloReady?: boolean;
+}>(), {
+  monteCarloReady: false,
+});
 
 const emit = defineEmits<{
   download: [];
   upload: [file: File];
   confirm: [];
   cancel: [];
+  "close-import": [];
   "mode-change": [mode: MeasurementEntryMode];
+  "open-monte-carlo": [];
 }>();
 
 const fileInput = ref<HTMLInputElement>();
-const reviewHeading = ref<HTMLElement>();
-const importTab = ref<HTMLButtonElement>();
-const individualTab = ref<HTMLButtonElement>();
+const reviewHeading = ref<globalThis.HTMLElement>();
+const importTab = ref<globalThis.HTMLButtonElement>();
+const individualTab = ref<globalThis.HTMLButtonElement>();
+const importDialogOpen = ref(props.preview !== null);
+const closeDialogButton = ref<globalThis.HTMLButtonElement>();
+const importDialog = ref<globalThis.HTMLElement>();
 
 const factorCountLabel = computed(() => `${props.session.factors.length} Factor${props.session.factors.length === 1 ? "" : "s"}`);
 const selectedWorksheetName = computed(() => props.session.selectedWorksheetNames[0] ?? "No worksheet selected");
@@ -60,8 +68,16 @@ const globalDiagnostics = computed(() => props.preview?.diagnostics.filter((diag
 
 watch(() => props.preview?.previewId, async (nextPreviewId, previousPreviewId) => {
   if (!nextPreviewId || nextPreviewId === previousPreviewId) return;
+  importDialogOpen.value = true;
   await nextTick();
   reviewHeading.value?.focus();
+});
+
+watch(() => props.successMessage, async (nextMessage, previousMessage) => {
+  if (!nextMessage || nextMessage === previousMessage) return;
+  importDialogOpen.value = false;
+  await nextTick();
+  importTab.value?.focus();
 });
 
 function openFilePicker(): void {
@@ -72,19 +88,52 @@ function openFilePicker(): void {
 function onFileChange(event: Event): void {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
-  if (!file) return;
+  if (!file || props.busy) {
+    input.value = "";
+    return;
+  }
   emit("upload", file);
   input.value = "";
 }
 
 async function selectMode(mode: MeasurementEntryMode): Promise<void> {
-  if (mode === props.mode) return;
-  emit("mode-change", mode);
+  if (props.busy) return;
+  if (mode === "import") importDialogOpen.value = true;
+  else importDialogOpen.value = false;
+  if (mode !== props.mode) emit("mode-change", mode);
   await nextTick();
-  (mode === "import" ? importTab.value : individualTab.value)?.focus();
+  if (mode === "import") closeDialogButton.value?.focus();
+  else individualTab.value?.focus();
 }
 
-function onTabKeydown(event: KeyboardEvent, mode: MeasurementEntryMode): void {
+function closeImportDialog(): void {
+  if (props.busy) return;
+  importDialogOpen.value = false;
+  emit("close-import");
+  nextTick(() => importTab.value?.focus());
+}
+
+function trapImportDialogFocus(event: globalThis.KeyboardEvent): void {
+  const focusable = [...(importDialog.value?.querySelectorAll<globalThis.HTMLElement>(
+    "button:not(:disabled), input:not(:disabled):not([tabindex='-1'])",
+  ) ?? [])];
+  if (focusable.length === 0) {
+    event.preventDefault();
+    importDialog.value?.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && globalThis.document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && globalThis.document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+function onTabKeydown(event: globalThis.KeyboardEvent, mode: MeasurementEntryMode): void {
   if (event.key === "ArrowRight" || event.key === "ArrowDown") {
     event.preventDefault();
     selectMode(mode === "import" ? "individual" : "import");
@@ -121,82 +170,161 @@ function replacementCopy(count: number): string {
 </script>
 
 <template>
-  <section class="workbench-panel measurement-import-panel" aria-label="Bulk measurement import">
-    <div class="measurement-entry-tabs" role="tablist" aria-label="Measurement entry mode">
+  <section class="workbench-panel measurement-import-panel" aria-label="Measurement input">
+    <div class="measurement-process-flow" data-measurement-process-flow>
+      <div class="measurement-entry-mode" data-measurement-entry-choice>
+        <span
+          id="measurement-entry-mode-label"
+          class="measurement-entry-mode-label"
+          data-measurement-entry-mode-label
+        >Measurement Input Mode</span>
+        <div
+          class="measurement-entry-tabs"
+          role="tablist"
+          aria-labelledby="measurement-entry-mode-label"
+        >
+          <button
+            id="measurement-entry-import-tab"
+            ref="importTab"
+            type="button"
+            role="tab"
+            class="measurement-entry-tab"
+            :class="mode === 'import' ? 'is-selected' : ''"
+            :aria-selected="mode === 'import' ? 'true' : 'false'"
+            aria-controls="measurement-entry-import-panel"
+            :tabindex="mode === 'import' ? 0 : -1"
+            @click="selectMode('import')"
+            @keydown="onTabKeydown($event, 'import')"
+          >
+            Excel Bulk Import
+          </button>
+          <button
+            id="measurement-entry-individual-tab"
+            ref="individualTab"
+            type="button"
+            role="tab"
+            class="measurement-entry-tab"
+            :class="mode === 'individual' ? 'is-selected' : ''"
+            :aria-selected="mode === 'individual' ? 'true' : 'false'"
+            aria-controls="measurement-entry-individual-panel"
+            :tabindex="mode === 'individual' ? 0 : -1"
+            @click="selectMode('individual')"
+            @keydown="onTabKeydown($event, 'individual')"
+          >
+            Web Factor Entry
+          </button>
+        </div>
+      </div>
+      <ArrowRight
+        class="measurement-flow-arrow"
+        data-measurement-flow-arrow
+        :size="22"
+        aria-hidden="true"
+      />
       <button
-        id="measurement-entry-import-tab"
-        ref="importTab"
         type="button"
-        role="tab"
-        class="measurement-entry-tab"
-        :class="mode === 'import' ? 'is-selected' : ''"
-        :aria-selected="mode === 'import' ? 'true' : 'false'"
-        aria-controls="measurement-entry-import-panel"
-        :tabindex="mode === 'import' ? 0 : -1"
-        @click="selectMode('import')"
-        @keydown="onTabKeydown($event, 'import')"
+        class="measurement-flow-next action-button"
+        data-open-monte-carlo-flow
+        :disabled="busy || !monteCarloReady"
+        :aria-describedby="monteCarloReady ? undefined : 'measurement-flow-locked'"
+        @click="emit('open-monte-carlo')"
       >
-        Import Data
-      </button>
-      <button
-        id="measurement-entry-individual-tab"
-        ref="individualTab"
-        type="button"
-        role="tab"
-        class="measurement-entry-tab"
-        :class="mode === 'individual' ? 'is-selected' : ''"
-        :aria-selected="mode === 'individual' ? 'true' : 'false'"
-        aria-controls="measurement-entry-individual-panel"
-        :tabindex="mode === 'individual' ? 0 : -1"
-        @click="selectMode('individual')"
-        @keydown="onTabKeydown($event, 'individual')"
-      >
-        Enter Individually
+        <span>Monte Carlo Calculation &amp; Report</span>
+        <small v-if="!monteCarloReady" id="measurement-flow-locked">Locked</small>
       </button>
     </div>
 
     <div
-      v-if="mode === 'import'"
+      v-if="!importDialogOpen"
       id="measurement-entry-import-panel"
       role="tabpanel"
       aria-labelledby="measurement-entry-import-tab"
-      data-measurement-import-surface
+      hidden
+    />
+
+    <div
+      v-if="mode === 'import' && importDialogOpen"
+      class="confirmation-backdrop"
+      @click.self="closeImportDialog"
+      @keydown.esc.prevent="closeImportDialog"
+      @keydown.tab="trapImportDialogFocus"
     >
+      <section
+        ref="importDialog"
+        class="confirmation-dialog measurement-import-dialog"
+        data-measurement-import-dialog
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="measurement-import-dialog-title"
+        tabindex="-1"
+      >
+        <div class="measurement-import-dialog-header">
+          <div>
+            <h2 id="measurement-import-dialog-title">Excel Bulk Import</h2>
+            <p>Complete both steps using a template generated from the current Factor setup.</p>
+          </div>
+          <button
+            ref="closeDialogButton"
+            type="button"
+            class="measurement-import-dialog-close"
+            data-close-measurement-import
+            aria-label="Close Excel bulk import"
+            :disabled="busy"
+            @click="closeImportDialog"
+          >
+            <X :size="18" aria-hidden="true" />
+          </button>
+        </div>
+        <div
+          id="measurement-entry-import-panel"
+          role="tabpanel"
+          aria-labelledby="measurement-entry-import-tab"
+          data-measurement-import-surface
+        >
     <div class="measurement-import-toolbar">
       <div class="measurement-import-identity">
         <p><strong>{{ session.workbook.fileName }}</strong></p>
         <p class="subtle">{{ selectedWorksheetName }} · {{ factorCountLabel }}</p>
       </div>
       <div class="measurement-import-actions">
-        <button
-          type="button"
-          class="icon-action-button"
-          data-download-measurement-template
-          aria-label="Download measurement template"
-          title="Download measurement template"
-          :disabled="busy"
-          @click="emit('download')"
-        >
-          <Download :size="16" aria-hidden="true" />
-          <span class="sr-only">Download measurement template</span>
-        </button>
-        <button
-          type="button"
-          class="icon-action-button"
-          data-upload-measurement-workbook
-          aria-label="Upload completed measurement workbook"
-          title="Upload completed measurement workbook"
-          :disabled="busy"
-          @click="openFilePicker"
-        >
-          <Upload :size="16" aria-hidden="true" />
-          <span class="sr-only">Upload completed measurement workbook</span>
-        </button>
+        <div class="measurement-import-step">
+          <strong>Step 1</strong>
+          <span>Download the template generated from the current Factors.</span>
+          <button
+            type="button"
+            class="measurement-import-action-button"
+            data-download-measurement-template
+            aria-label="Download measurement template"
+            title="Download measurement template"
+            :disabled="busy"
+            @click="emit('download')"
+          >
+            <Download :size="16" aria-hidden="true" />
+            <span>Download Template</span>
+          </button>
+        </div>
+        <div class="measurement-import-step is-ready">
+          <strong>Step 2</strong>
+          <span>Upload a completed .xlsx based on the Step 1 template.</span>
+          <button
+            type="button"
+            class="measurement-import-action-button"
+            data-upload-measurement-workbook
+            aria-label="Upload completed measurement workbook"
+            title="Upload completed measurement workbook"
+            :disabled="busy"
+            @click="openFilePicker"
+          >
+            <Upload :size="16" aria-hidden="true" />
+            <span>Upload Completed File</span>
+          </button>
+        </div>
         <input
           ref="fileInput"
           data-measurement-import-file
           type="file"
           class="sr-only"
+          tabindex="-1"
           accept=".xlsx"
           :disabled="busy"
           @change="onFileChange"
@@ -325,6 +453,8 @@ function replacementCopy(count: number): string {
         </button>
       </div>
     </section>
+        </div>
+      </section>
     </div>
   </section>
 </template>

@@ -10,7 +10,12 @@ export type OoxmlWorksheetVisibility = "visible" | "hidden" | "veryHidden";
 export interface OoxmlWorksheetInfo { readonly worksheetName: string; readonly worksheetIndex: number; readonly visibility: OoxmlWorksheetVisibility; readonly relationshipId: string; readonly partName: string; }
 export interface OoxmlWorkbook { readonly worksheets: ReadonlyMap<string, OoxmlWorksheet>; readonly worksheetNames: ReadonlySet<string>; readonly worksheetInventory: readonly OoxmlWorksheetInfo[]; }
 export interface OoxmlCellWindow { readonly maxRow: number; readonly maxColumn: string; }
-export interface OoxmlReadOptions { readonly skipInvalidWorksheets?: boolean; }
+export interface OoxmlReadOptions {
+  readonly skipInvalidWorksheets?: boolean;
+  readonly maxCellsPerWorksheet?: number;
+  readonly maxTotalCells?: number;
+  readonly maxWorksheetDomNodes?: number;
+}
 
 const ARCHIVE_SUMMARY = "Workbook-catalog archive cannot be processed.";
 export const MAX_DOM_NODES_PER_PART = 50_000;
@@ -20,6 +25,8 @@ export const MAX_IMAGES_PER_WORKBOOK = 256;
 export const MAX_SHARED_STRINGS = 10_000;
 export const MAX_ROWS_PER_WORKSHEET = 10_000;
 const MAX_WINDOW_DOM_NODES_PER_PART = 250_000;
+const MAX_CONFIGURABLE_CELLS = 54_000;
+const MAX_CONFIGURABLE_DOM_NODES = 324_000;
 const DRAWINGML_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const SPREADSHEET_DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const OFFICE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -89,6 +96,12 @@ const OOXML_NAMESPACE_FAMILIES: readonly OoxmlNamespaceFamily[] = [
 
 function archiveError(): Error {
   return createTypedError({ code: "validation_error", summary: ARCHIVE_SUMMARY, suggestedAction: "Provide a supported workbook archive.", affectedInputReferences: ["workbook-structure"] });
+}
+
+function governedBudget(value: number | undefined, fallback: number, ceiling: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < 1 || value > ceiling) throw archiveError();
+  return value;
 }
 
 function isElement(element: Element | null | undefined, namespace: string, localName: string): element is Element {
@@ -223,7 +236,7 @@ function splitCellReference(reference: string): { readonly column: string; reado
   return { column: match[1]!, row: Number(match[2]) };
 }
 
-function readCells(document: Document, strings: readonly string[], family: OoxmlNamespaceFamily, budget: CellBudget, cellWindow?: OoxmlCellWindow): OoxmlCell[] {
+function readCells(document: Document, strings: readonly string[], family: OoxmlNamespaceFamily, budget: CellBudget, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlCell[] {
   const cells: OoxmlCell[] = [];
   const rows = new Set<string>();
   const references = new Set<string>();
@@ -269,7 +282,8 @@ function readCells(document: Document, strings: readonly string[], family: Ooxml
         throw archiveError();
       }
       if (!type && children.length === 0 && cell.hasAttribute("s")) continue;
-      if (cells.length >= MAX_CELLS_PER_WORKSHEET || budget.total >= MAX_TOTAL_CELLS) throw archiveError();
+      if (cells.length >= (options?.maxCellsPerWorksheet ?? MAX_CELLS_PER_WORKSHEET)
+        || budget.total >= (options?.maxTotalCells ?? MAX_TOTAL_CELLS)) throw archiveError();
       const cached = text(valueNode);
       const formula = formulaNode ? `=${text(formulaNode)}` : undefined;
       let value = cached;
@@ -370,6 +384,15 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
 
 export function readOoxmlWorkbookFromSafeZip(parts: SafeZipParts, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlWorkbook {
   try {
+    const maxCellsPerWorksheet = governedBudget(options?.maxCellsPerWorksheet, MAX_CELLS_PER_WORKSHEET, MAX_CONFIGURABLE_CELLS);
+    const maxTotalCells = governedBudget(options?.maxTotalCells, MAX_TOTAL_CELLS, MAX_CONFIGURABLE_CELLS);
+    const maxWorksheetDomNodes = governedBudget(options?.maxWorksheetDomNodes, MAX_WINDOW_DOM_NODES_PER_PART, MAX_CONFIGURABLE_DOM_NODES);
+    const resolvedOptions: OoxmlReadOptions = {
+      ...options,
+      maxCellsPerWorksheet,
+      maxTotalCells,
+      maxWorksheetDomNodes,
+    };
     const workbook = parseXml(parts.get("xl/workbook.xml")!);
     const relationships = parseXml(parts.get("xl/_rels/workbook.xml.rels")!);
     const workbookRoot = workbook.documentElement;
@@ -394,7 +417,10 @@ export function readOoxmlWorkbookFromSafeZip(parts: SafeZipParts, worksheetNames
     if (sheets.length !== 1 || !sheetsElement) throw archiveError();
     const cellBudget: CellBudget = { total: 0 };
     const imageBudget = { value: 0 };
-    const worksheetDomBudget = cellWindow ? { maxNodes: MAX_WINDOW_DOM_NODES_PER_PART, maxDepth: MAX_DOM_DEPTH } : undefined;
+    const worksheetDomBudget = cellWindow ? {
+      maxNodes: maxWorksheetDomNodes,
+      maxDepth: MAX_DOM_DEPTH,
+    } : undefined;
     const requestedWorksheets = worksheetNames ? new Set(worksheetNames) : undefined;
     const workbookWorksheetNames = new Set<string>();
     const worksheetInventory: OoxmlWorksheetInfo[] = [];
@@ -420,11 +446,11 @@ export function readOoxmlWorkbookFromSafeZip(parts: SafeZipParts, worksheetNames
         worksheets.set(name, {
           name,
           partName,
-          cells: readCells(worksheet, strings, family, cellBudget, cellWindow),
+          cells: readCells(worksheet, strings, family, cellBudget, cellWindow, resolvedOptions),
           images: includeImages ? readImages(worksheet, partName, parts, family, imageBudget) : [],
         });
       } catch (error) {
-        if (!options?.skipInvalidWorksheets) throw error;
+        if (!resolvedOptions.skipInvalidWorksheets) throw error;
       }
     }
     return { worksheets, worksheetNames: workbookWorksheetNames, worksheetInventory };

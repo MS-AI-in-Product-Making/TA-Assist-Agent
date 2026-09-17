@@ -188,6 +188,34 @@ function createPreview(status: "ready" | "blocked"): F7MeasurementImportPreviewR
 }
 
 describe("MeasurementImportPanel", () => {
+  it("connects the exclusive input mode group to the Monte Carlo next action", async () => {
+    const wrapper = mount(MeasurementImportPanel, {
+      props: {
+        session: createSession(),
+        preview: null,
+        busy: false,
+        action: null,
+        mode: "import",
+        successMessage: null,
+        monteCarloReady: false,
+      },
+    });
+
+    expect(wrapper.get("[data-measurement-process-flow]").exists()).toBe(true);
+    expect(wrapper.get("[data-measurement-entry-choice]").findAll("[role='tab']")).toHaveLength(2);
+    expect(wrapper.findAll("[role='tab'][aria-selected='true']")).toHaveLength(1);
+    expect(wrapper.get("[data-measurement-flow-arrow]").attributes("aria-hidden")).toBe("true");
+
+    const nextAction = wrapper.get("[data-open-monte-carlo-flow]");
+    expect(nextAction.text()).toContain("Monte Carlo Calculation & Report");
+    expect(nextAction.attributes("disabled")).toBeDefined();
+
+    await wrapper.setProps({ monteCarloReady: true });
+    expect(nextAction.attributes("disabled")).toBeUndefined();
+    await nextAction.trigger("click");
+    expect(wrapper.emitted("open-monte-carlo")).toEqual([[]]);
+  });
+
   it("renders keyboard-accessible segmented tabs, moves focus, and hides the import surface in individual mode", async () => {
     const wrapper = mount(MeasurementImportPanel, {
       attachTo: document.body,
@@ -203,7 +231,10 @@ describe("MeasurementImportPanel", () => {
 
     const tabs = wrapper.findAll("[role='tab']");
     expect(tabs).toHaveLength(2);
-    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
+    expect(wrapper.get("section").attributes("aria-label")).toBe("Measurement input");
+    expect(wrapper.get("[data-measurement-entry-mode-label]").text()).toBe("Measurement Input Mode");
+    expect(tabs.map((tab) => tab.text())).toEqual(["Excel Bulk Import", "Web Factor Entry"]);
+    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toBe("Excel Bulk Import");
 
     await wrapper.get("[role='tab'][aria-selected='true']").trigger("keydown", { key: "ArrowRight" });
 
@@ -216,25 +247,66 @@ describe("MeasurementImportPanel", () => {
     wrapper.unmount();
   });
 
-  it("shows worksheet identity, factor count, accessible import actions, xlsx restriction, and busy states", () => {
+  it("opens a two-step dialog and allows upload before downloading while requiring the Step 1 template", async () => {
     const wrapper = mount(MeasurementImportPanel, {
+      attachTo: document.body,
       props: {
         session: createSession(),
         preview: null,
-        busy: true,
-        action: "previewMeasurementImport",
+        busy: false,
+        action: null,
         mode: "import",
         successMessage: null,
       },
     });
+
+    expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+
+    const dialog = wrapper.get("[data-measurement-import-dialog]");
+    expect(dialog.attributes("aria-modal")).toBe("true");
+    expect(dialog.text()).toContain("Step 1");
+    expect(dialog.text()).toContain("Download Template");
+    expect(dialog.text()).toContain("Step 2");
+    expect(dialog.text()).toContain("Upload Completed File");
+    expect(dialog.text()).toContain("based on the Step 1 template");
+    expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get("[data-measurement-import-file]").attributes("disabled")).toBeUndefined();
+
+    await wrapper.get("[data-download-measurement-template]").trigger("click");
+    expect(wrapper.emitted("download")).toHaveLength(1);
+
+    await wrapper.get("[data-close-measurement-import]").trigger("click");
+    expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false);
+    expect(wrapper.emitted("close-import")).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("shows worksheet identity, factor count, accessible import actions, xlsx restriction, and busy states", async () => {
+    const wrapper = mount(MeasurementImportPanel, {
+      props: {
+        session: createSession(),
+        preview: null,
+        busy: false,
+        action: null,
+        mode: "import",
+        successMessage: null,
+      },
+    });
+
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await wrapper.setProps({ busy: true, action: "previewMeasurementImport" });
 
     expect(wrapper.text()).toContain("demo.xlsx");
     expect(wrapper.text()).toContain("Anonymous_TA");
     expect(wrapper.text()).toContain("1 Factor");
     expect(wrapper.get("[data-download-measurement-template]").attributes("aria-label")).toContain("Download measurement template");
     expect(wrapper.get("[data-download-measurement-template]").attributes("title")).toContain("Download measurement template");
+    expect(wrapper.get("[data-download-measurement-template]").text()).toBe("Download Template");
     expect(wrapper.get("[data-upload-measurement-workbook]").attributes("aria-label")).toContain("Upload completed measurement workbook");
+    expect(wrapper.get("[data-upload-measurement-workbook]").text()).toBe("Upload Completed File");
     expect(wrapper.get("input[type='file']").attributes("accept")).toBe(".xlsx");
+    expect(wrapper.get("input[type='file']").attributes("tabindex")).toBe("-1");
     expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeDefined();
   });
 

@@ -55,6 +55,7 @@ const INTERNAL_REFERENCE = "f7-local-api";
 
 const IMPORT_RAW_LIMIT_BYTES = 22_370_000;
 const JSON_ROUTE_LIMIT_BYTES = 1_100_000;
+const PDF_JSON_ROUTE_LIMIT_BYTES = 1_600_000;
 const IMPORT_WORKBOOK_LIMIT_BYTES = 16 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2_500_000;
 const MAX_MEASUREMENT_IMPORT_COMMIT_RESPONSE_BYTES = IMPORT_RAW_LIMIT_BYTES;
@@ -375,7 +376,7 @@ function safeMeasurementTemplateFileName(worksheetName: string): string {
     .replace(/_+/g, "_")
     .replace(/^[._-]+|[._-]+$/g, "")
     .slice(0, 120);
-  return `F7_Measurements_${sanitized || "Worksheet"}.xlsx`;
+  return `TA_Measurements_${sanitized || "Worksheet"}.xlsx`;
 }
 
 function writeXlsx(response: ServerResponse, bytes: Uint8Array, worksheetName: string): void {
@@ -401,15 +402,6 @@ function readMeasurementTemplateIdentity(bytes: Uint8Array): { readonly template
     if (error instanceof HttpRouteError) throw error;
     rejectBadRequest();
   }
-}
-
-function staleMeasurementImport(): never {
-  throw new HttpRouteError(409, {
-    code: "prerequisite_not_ready",
-    summary: "The measurement import template is stale.",
-    suggestedAction: "Download a new template for the current F7 session and retry.",
-    affectedInputReferences: ["f7-measurement-import"],
-  });
 }
 
 function rejectMeasurementImportPreview(status: "not_found" | "expired" | "stale" | "blocked" | "consumed" | "session_mismatch"): never {
@@ -441,7 +433,6 @@ function previewWarning(
 function factorWarnings(
   factor: { readonly factorId: string; readonly factorName: string; readonly lowerSpecLimit: number; readonly upperSpecLimit: number; readonly limitStatus: "VALID" | "CROSSES_ZERO" },
   dataset: { readonly observations: ReadonlyArray<{ readonly value: number; readonly disposition: string }> },
-  advisoryCount: number,
 ): F7MeasurementImportDiagnostic[] {
   const warnings: F7MeasurementImportDiagnostic[] = [];
   if (factor.limitStatus === "CROSSES_ZERO") {
@@ -455,13 +446,6 @@ function factorWarnings(
       "sample_validation_failure",
       factor,
       `${outOfSpecCount} included measurement${outOfSpecCount === 1 ? " is" : "s are"} outside the Factor specification.`,
-    ));
-  }
-  if (advisoryCount > 0) {
-    warnings.push(previewWarning(
-      "sample_validation_failure",
-      factor,
-      `${advisoryCount} governed dataset validation advisor${advisoryCount === 1 ? "y" : "ies"} require review.`,
     ));
   }
   return warnings;
@@ -551,32 +535,31 @@ async function handleRequest(
     });
     if (!routeRequest.success) rejectBadRequest();
     const { templateId, safeParts } = readMeasurementTemplateIdentity(workbookBytes);
-    const resolved = measurementImportRegistry.resolveTemplate({
-      sessionId: routeRequest.data.body.sessionId,
-      templateId,
-    });
-    if (resolved.status === "session_mismatch" || resolved.status === "not_found") rejectBadRequest();
-    if (resolved.status !== "available") staleMeasurementImport();
-
     const currentContext = service.getMeasurementImportAuthority({
       sessionId: routeRequest.data.body.sessionId,
       templateId,
     });
-    if (currentContext.authority.authorityDigest !== resolved.authority.authorityDigest
-      || currentContext.authority.sessionStateDigest !== resolved.authority.sessionStateDigest
-      || currentContext.authority.manifest.factorSetDigest !== resolved.authority.manifest.factorSetDigest) {
-      staleMeasurementImport();
-    }
+    measurementImportRegistry.registerTemplate({
+      sessionId: routeRequest.data.body.sessionId,
+      templateId,
+      createAuthority: () => currentContext,
+    });
 
     const snapshot = service.getSession(routeRequest.data.body.sessionId);
-    const parsedTemplate = parseF7MeasurementTemplate(workbookBytes, resolved.authority, new Date().toISOString(), safeParts);
+    const parsedTemplate = parseF7MeasurementTemplate(
+      workbookBytes,
+      currentContext.authority,
+      new Date().toISOString(),
+      safeParts,
+      { allowPriorSessionIdentity: true },
+    );
     const stateByFactorId = new Map(snapshot.factors.flatMap((state) =>
       state.evidence ? [[state.evidence.factorId, state] as const] : []));
     let factorPreviews: F7MeasurementImportFactorPreview[];
 
     if (parsedTemplate.status === "ready") {
       factorPreviews = parsedTemplate.datasets.map((dataset, index) => {
-        const factor = resolved.authority.manifest.factors[index]!;
+        const factor = currentContext.authority.manifest.factors[index]!;
         const factorState = stateByFactorId.get(factor.factorId);
         const evidence = factorState?.evidence;
         if (!evidence) rejectBadRequest();
@@ -592,13 +575,13 @@ async function handleRequest(
           status: validation.status,
           replacesExistingFactor,
           diagnostics: [],
-          warnings: factorWarnings(factor, dataset, validation.advisoryIssues.length),
+          warnings: factorWarnings(factor, dataset),
           dataset,
           validation,
         };
       });
     } else {
-      factorPreviews = resolved.authority.manifest.factors.map((factor) => ({
+      factorPreviews = currentContext.authority.manifest.factors.map((factor) => ({
         factorId: factor.factorId,
         factorName: factor.factorName,
         unit: factor.unit,
@@ -632,9 +615,9 @@ async function handleRequest(
           previewId,
           sessionId: routeRequest.data.body.sessionId,
           expiresAt,
-          sessionStateDigest: resolved.authority.sessionStateDigest,
-          factorSetDigest: resolved.authority.manifest.factorSetDigest,
-          authority: resolved.authority,
+          sessionStateDigest: currentContext.authority.sessionStateDigest,
+          factorSetDigest: currentContext.authority.manifest.factorSetDigest,
+          authority: currentContext.authority,
           replacementFactorIds,
           factors: readyFactors.map((factor) => ({
             factorId: factor.factorId,
@@ -655,8 +638,8 @@ async function handleRequest(
     const preview = f7MeasurementImportPreviewResponseSchema.parse({
       previewId: stored.previewId,
       expiresAt: stored.expiresAt,
-      sessionStateDigest: resolved.authority.sessionStateDigest,
-      factorSetDigest: resolved.authority.manifest.factorSetDigest,
+      sessionStateDigest: currentContext.authority.sessionStateDigest,
+      factorSetDigest: currentContext.authority.manifest.factorSetDigest,
       status: readyFactors.length === factorPreviews.length ? "ready" : "blocked",
       factorCount: publicFactorPreviews.length,
       replacementFactorIds,
@@ -858,7 +841,7 @@ async function handleRequest(
   }
 
   if (method === "POST" && pathname === "/f7/report/pdf") {
-    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const body = await readStrictJsonObject(request, PDF_JSON_ROUTE_LIMIT_BYTES);
     const routeRequest = f7ReportPdfRouteRequestSchema.safeParse(body);
     if (!routeRequest.success) rejectBadRequest();
     try {
@@ -877,6 +860,9 @@ async function handleRequest(
     const pdfBytes = await reportPdfRenderer.render({
       sessionId: routeRequest.data.sessionId,
       report: authoritativeReport,
+      ...(routeRequest.data.dimensionChainVisual === undefined
+        ? {}
+        : { dimensionChainVisual: routeRequest.data.dimensionChainVisual }),
     });
     if (pdfBytes.length === 0 || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
       throw new Error("Report renderer returned invalid PDF bytes.");
@@ -891,7 +877,7 @@ async function handleRequest(
   }
 
   if (method === "POST" && pathname === "/f7/assumption-results/pdf") {
-    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const body = await readStrictJsonObject(request, PDF_JSON_ROUTE_LIMIT_BYTES);
     const routeRequest = assumptionResultsPdfRouteRequestSchema.safeParse(body);
     if (!routeRequest.success) rejectBadRequest();
     let sessionSnapshot;

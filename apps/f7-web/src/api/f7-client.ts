@@ -30,7 +30,7 @@ import type {
   F7WorksheetConfirmRouteRequest,
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
-import type { AssumptionResultsEngineeringEvidence } from "../assumption-results-pdf-evidence";
+import type { AssumptionResultsEngineeringEvidence, DimensionChainVisual } from "../assumption-results-pdf-evidence";
 import {
   f7AnalysisResultSchema,
   f7MeasurementImportPreviewResponseSchema,
@@ -190,6 +190,7 @@ type AssumptionResultsPdfActionItem =
 
 export type AssumptionResultsPdfRequest = {
   readonly sessionId: string;
+  readonly dimensionChainVisual: DimensionChainVisual;
   readonly workbookName: string;
   readonly worksheetName: string;
   readonly resultJudgment: {
@@ -266,6 +267,7 @@ export interface F7Client {
   generateReportPdf(request: {
     readonly sessionId: string;
     readonly report: DeepReadonly<F7ReportProjection>;
+    readonly dimensionChainVisual: DimensionChainVisual;
   }): Promise<Blob>;
   generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<Blob>;
   getSession(sessionId: F7SessionRouteParams["sessionId"]): Promise<F7SessionSnapshot>;

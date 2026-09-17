@@ -16,6 +16,16 @@ export type DimensionChainReportOrientation = "horizontal" | "vertical";
 export type DimensionChainReportStatus = "generated" | "fallback";
 export type DimensionChainClosureDirection = "start-to-end" | "end-to-start";
 
+export type DimensionChainVisual =
+  | { readonly status: "empty" }
+  | {
+      readonly status: "image";
+      readonly mediaType: "image/png";
+      readonly dataUrl: string;
+      readonly width: number;
+      readonly height: number;
+    };
+
 export interface DimensionChainReportFactor {
   readonly id: string;
   readonly itemNumber: number;
