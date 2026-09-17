@@ -15,7 +15,7 @@ const allowedCommands = [
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
   "npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact>",
-  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -163,6 +163,23 @@ describe("Design Optimization skill contract", () => {
     expect(internal).not.toContain("Confirm analysis context");
     expect(internal).not.toContain("Confirm optimization targets");
     expect(internal).not.toContain("two separate `vscode_askQuestions` calls");
+  });
+
+  it("captures and passes the governed analysis request context without prompting", () => {
+    const { internal } = splitSkillSections(readSkill());
+    const entrySkill = readFileSync(path.join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+
+    for (const skill of [entrySkill, internal]) {
+      expect(skill).toContain("analysis request context");
+      expect(skill).toContain("requestedAt");
+      expect(skill).toContain("utcOffsetMinutes");
+      expect(skill).toContain('source: `vscode`');
+      expect(skill).toContain("Do not prompt the user for analysis request context");
+    }
+    expect(internal).toContain("Capture the analysis request context once when the workflow-start request is received");
+    expect(internal).toContain("Preserve the same analysis request context for the entire workbook run");
+    expect(internal).toContain("Pass the serialized strict JSON with `--analysis-request-context <strict-json>`");
+    expect(internal).toContain("Analysis Context and Optimization Targets are separate optional engineering inputs");
   });
 
   it("defines v4 sequential optimization governance for Step2 stop and Step3 approval boundaries", () => {

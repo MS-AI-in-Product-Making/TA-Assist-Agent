@@ -51,6 +51,12 @@ The remainder of this document is machine-facing execution contract text. Litera
 - When a required command is moved to the background, retain the execution handle and continue retrieving its result until the command reaches a terminal state or requests input.
 - Do not send a final response while a required command is still running. Provide a progress update and keep the workflow active instead.
 
+### Governed analysis request context
+
+Capture the analysis request context once when the workflow-start request is received. Record exactly `requestedAt` as the workflow-start request instant with an explicit offset, `utcOffsetMinutes` as the VS Code host offset at that instant, and source: `vscode`. Do not prompt the user for analysis request context. Validate the three-field strict object through the controlled analysis request context contract before execution.
+
+Preserve the same analysis request context for the entire workbook run. Never refresh it from a later command time, infer it from artifact timestamps, or replace it during a resumed phase. Analysis Context and Optimization Targets are separate optional engineering inputs; the governed analysis request context does not change their standard-path `NOT_PROVIDED` decisions.
+
 ## Entry mode 1 - TA workbook
 
 ### Phase W0 - Validate workbook and F0 capabilities
@@ -155,7 +161,7 @@ Preserve each optional input decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJEC
 
 ### Phase W9 - Run and validate F6
 
-Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Pass the workflow-locked language tag with `--language <locked-language-tag>`. Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`. On the standard workbook path, omit `--analysis-context` and `--optimization-targets` and keep both decisions fixed at `NOT_PROVIDED`. Existing-artifact entry mode may still validate or reuse already-supplied caller-authorized inputs. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
+Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Pass the workflow-locked language tag with `--language <locked-language-tag>`. Pass the serialized strict JSON with `--analysis-request-context <strict-json>`, using the unchanged workflow-start analysis request context. Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`. On the standard workbook path, omit `--analysis-context` and `--optimization-targets` and keep both decisions fixed at `NOT_PROVIDED`. Existing-artifact entry mode may still validate or reuse already-supplied caller-authorized inputs. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
 Validate current-run `Feature6-Optimization.json` as `f6-optimization-v4` with `f6OptimizationResultSchema` and validate the hash-bound `Feature6-Report.md` and `Feature6-Report.pdf` only through their recorded SHA-256 values before presentation. Validate the PDF signature, run summary, manifest, five-file `f6-artifact-set-v3` output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, interaction language, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, built-in policy IDs/ratios/side-Cpk trigger/F4 scenario references, required multimodal reference, and `reportSummary`. f6-artifact-set-v3 remains the five-file publication contract. PDF rendering or validation failure fails closed and must not publish or present a Markdown-only successful run. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject legacy optimization artifacts as unsupported rather than converting or presenting them. Never parse Markdown to derive disposition.
 
@@ -213,9 +219,9 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>`
 - `npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact>`
-- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
+- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
 
-The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the accepted W8 model artifact to the final allowed command on the standard workbook path. Existing-artifact entry mode may still validate the documented V2 caller input pairs without changing the standard workbook prompt policy.
+The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the captured analysis request context and accepted W8 model artifact to the final allowed command on the standard workbook path. Existing-artifact entry mode may still validate the documented V2 caller input pairs without changing the standard workbook prompt policy.
 
 W4A does not add F3 ADO commands to this local runner list. When W4A is entered, use drawing-governance as the required sub-skill authority for local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
 

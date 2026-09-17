@@ -23,6 +23,12 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 - If no path is supplied, ask for exactly one workbook path.
 - Never infer a workbook from editor state, prior runs, uploads, or similarly named files.
 
+## Analysis Request Context
+
+Capture the analysis request context once when the workflow-start request is received. Record `requestedAt` as that request instant with an explicit offset, record `utcOffsetMinutes` from the VS Code host, and record source: `vscode`. Do not prompt the user for analysis request context. Preserve the same analysis request context for the entire workbook run and pass it to Design Optimization without reconstructing or refreshing it at a later phase.
+
+Analysis Context and Optimization Targets are separate optional engineering inputs. Capturing the analysis request context does not change their standard-path `NOT_PROVIDED` decisions.
+
 ## Execution Continuity
 
 - A tool timeout or background transition is not a command failure. Treat only a terminal nonzero exit, a structured failed result, or a governed validation failure as failure.
