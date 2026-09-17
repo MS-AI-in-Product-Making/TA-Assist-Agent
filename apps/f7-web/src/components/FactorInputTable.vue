@@ -1704,11 +1704,11 @@ function onModeChange(factorId: string, event: Event): void {
         </tbody>
         <tfoot data-factor-response-summary aria-label="F4 response summary">
           <tr class="factor-response-summary-row" data-summary-design-row>
-            <th colspan="2">Design Nominal:</th>
+            <th colspan="4">Design Nominal:</th>
             <td data-factor-column="design-nominal"><output data-summary-design-nominal>{{ formatSummary(displayedResponseSummary.designNominal) }}</output></td>
             <td data-factor-column="upper-tolerance"><output data-summary-upper-tolerance>{{ formatSigned(displayedResponseSummary.upperTolerance) }}</output></td>
             <td data-factor-column="lower-tolerance"><output data-summary-lower-tolerance>{{ formatSummary(displayedResponseSummary.lowerTolerance) }}</output></td>
-            <th colspan="4">Mean Response:</th>
+            <th colspan="3">Mean Response:</th>
             <td data-factor-column="mean"><output data-summary-mean-response>{{ formatSummary(displayedResponseSummary.meanResponse) }}</output></td>
             <td data-factor-column="tolerance"><output data-summary-tolerance>± {{ formatSummary(displayedResponseSummary.tolerance) }}</output></td>
             <td data-factor-column="one-sigma"><output data-summary-rss-sigma>{{ formatSummary(displayedResponseSummary.rssSigma) }}</output></td>
@@ -1717,7 +1717,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="3"></td>
           </tr>
           <tr class="factor-response-summary-row factor-mean-shift-row">
-            <th colspan="9"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
+            <th colspan="10"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
             <td data-factor-column="mean">
               <input
                 id="additional-mean-shift"
@@ -1732,7 +1732,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td colspan="7"></td>
           </tr>
           <tr class="factor-response-summary-row factor-adjusted-mean-row">
-            <th colspan="9">Adjusted Mean:</th>
+            <th colspan="10">Adjusted Mean:</th>
             <td data-factor-column="mean"><output data-summary-adjusted-mean>{{ formatSummary(displayedResponseSummary.adjustedMean) }}</output></td>
             <td colspan="7"></td>
           </tr>

@@ -266,7 +266,48 @@ function mountWithFastStubs(props: {
   });
 }
 
+function tableColumnStart(cell: Element): number {
+  const row = cell.parentElement;
+  if (!row) throw new Error("Expected table cell to have a parent row");
+  const precedingCells = Array.from(row.children).slice(0, Array.from(row.children).indexOf(cell));
+  return precedingCells.reduce((total, precedingCell) => total + Number(precedingCell.getAttribute("colspan") ?? 1), 0);
+}
+
 describe("FactorInputTable engineering evidence event", () => {
+  it("keeps every response-summary footer row aligned with all factor headers", () => {
+    const wrapper = mountWithFastStubs({
+      session: createSession({ status: "measurement_entry" }),
+      busy: false,
+      editingSetup: false,
+    });
+
+    const headerCount = wrapper.findAll("#factor-setup-table > thead > tr > th").length;
+    const footerRows = wrapper.findAll("[data-factor-response-summary] > tr");
+    const columnKeys = wrapper.findAll("#factor-setup-table > colgroup > col")
+      .map((column) => column.attributes("data-column-key"));
+
+    expect(headerCount).toBe(18);
+    expect(footerRows).toHaveLength(3);
+    for (const row of footerRows) {
+      const span = row.element.children.length === 0
+        ? 0
+        : Array.from(row.element.children).reduce(
+            (total, cell) => total + Number(cell.getAttribute("colspan") ?? 1),
+            0,
+          );
+      expect(span).toBe(headerCount);
+    }
+
+    expect(tableColumnStart(wrapper.get("[data-summary-design-nominal]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("designNominal"));
+    expect(tableColumnStart(wrapper.get("[data-summary-mean-response]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+    expect(tableColumnStart(wrapper.get("#additional-mean-shift").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+    expect(tableColumnStart(wrapper.get("[data-summary-adjusted-mean]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+  });
+
   it("emits a session-bound envelope for engineering evidence", () => {
     const wrapper = mount(FactorInputTable, {
       props: {
