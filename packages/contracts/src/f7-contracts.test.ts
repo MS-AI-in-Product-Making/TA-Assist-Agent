@@ -966,6 +966,42 @@ describe("F7 report contracts", () => {
 });
 
 describe("F7 phase 1 factor contracts", () => {
+  it("accepts governed optional Factor traceability overrides", () => {
+    const confirmation = {
+      factorCandidateId: SHA256,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      confirmed: true,
+    } as const;
+
+    expect(f7FactorSetupConfirmationSchema.parse(confirmation)).toEqual(confirmation);
+    expect(f7FactorSetupConfirmationSchema.parse({
+      ...confirmation,
+      partNumber: "PN-OVERRIDE",
+      dimId: "DIM-OVERRIDE",
+    })).toMatchObject({
+      partNumber: "PN-OVERRIDE",
+      dimId: "DIM-OVERRIDE",
+    });
+    expect(f7FactorSetupConfirmationSchema.parse({
+      ...confirmation,
+      partNumber: null,
+      dimId: null,
+    })).toMatchObject({ partNumber: null, dimId: null });
+
+    for (const field of ["partNumber", "dimId"] as const) {
+      expect(f7FactorSetupConfirmationSchema.safeParse({
+        ...confirmation,
+        [field]: "   ",
+      }).success).toBe(false);
+      expect(f7FactorSetupConfirmationSchema.safeParse({
+        ...confirmation,
+        [field]: "x".repeat(301),
+      }).success).toBe(false);
+    }
+  });
+
   it("governs editable signed nominal and bilateral tolerances", () => {
     const subtractive = {
       factorCandidateId: SHA256,

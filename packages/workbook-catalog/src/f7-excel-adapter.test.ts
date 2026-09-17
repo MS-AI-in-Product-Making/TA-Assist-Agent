@@ -497,6 +497,57 @@ describe("F7 interim excel adapter", () => {
     expect(withoutImportedMetadata.factors[0]?.factorId).toBe(firstFactor.factorId);
   });
 
+  it("applies editable Factor traceability overrides during confirmation", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true, factorImportColumns: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const confirmations = confirmCandidates(extracted);
+
+    const preserved = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations,
+    }).factors[0]!;
+    expect(preserved).toMatchObject({ partNumber: "PN-1", dimId: "DIM-1" });
+
+    const replaced = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmations.map((confirmation, index) => index === 0
+        ? { ...confirmation, partNumber: "PN-ENTERED", dimId: "DIM-ENTERED" }
+        : confirmation),
+    }).factors[0]!;
+    expect.soft(replaced).toMatchObject({ partNumber: "PN-ENTERED", dimId: "DIM-ENTERED" });
+
+    const cleared = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmations.map((confirmation, index) => index === 0
+        ? { ...confirmation, partNumber: null, dimId: null }
+        : confirmation),
+    }).factors[0]!;
+    expect.soft(cleared).not.toHaveProperty("partNumber");
+    expect.soft(cleared).not.toHaveProperty("dimId");
+
+    const userFactorId = "b".repeat(64);
+    const userAdded = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: [confirmations[0]!, {
+        factorCandidateId: userFactorId,
+        factorName: "User stack gap",
+        partNumber: "PN-USER",
+        dimId: "DIM-USER",
+        userAdded: true,
+        designNominal: 0.4,
+        upperTolerance: 0.08,
+        lowerTolerance: -0.04,
+        confirmed: true,
+      }],
+    }).factors[1]!;
+    expect.soft(userAdded).toMatchObject({ partNumber: "PN-USER", dimId: "DIM-USER" });
+  });
+
   it("keeps candidate and confirmed factor identity independent of part number and DIM ID display values", () => {
     const identityContext = {
       workbookContentHash: "a".repeat(64),

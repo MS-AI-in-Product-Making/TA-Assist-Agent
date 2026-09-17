@@ -292,6 +292,8 @@ export const f7FactorSetupConfirmationSchema = z
   .object({
     factorCandidateId: sha256LowerSchema,
     factorName: z.string().trim().min(1).optional(),
+    partNumber: factorTraceabilitySchema.nullable().optional(),
+    dimId: factorTraceabilitySchema.nullable().optional(),
     userAdded: z.literal(true).optional(),
     componentCategory: processRequirementComponentCategorySchema.optional(),
     ...editableFactorSpecificationFields,
