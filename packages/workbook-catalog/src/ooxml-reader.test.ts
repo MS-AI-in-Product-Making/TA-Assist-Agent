@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { typedErrorSchema } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { readOoxmlWorkbook } from "./ooxml-reader.js";
+import { readOoxmlWorkbook, readOoxmlWorkbookFromSafeZip } from "./ooxml-reader.js";
+import { readSafeZip } from "./zip-security.js";
 
 function expectArchiveError(action: () => unknown, rawMarker = "anonymous-private-marker"): void {
   try {
@@ -107,6 +108,18 @@ describe("OOXML workbook reader", () => {
     for (let index = 1; index <= 6; index += 1) xmlParts[`xl/worksheets/sheet${index}.xml`] = worksheetXml(1, 9_000, marker);
 
     expectArchiveError(() => readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts })), marker);
+  });
+
+  it("rejects reader budget overrides above the governed ceiling", () => {
+    const archive = createAnonymousWorkbookZip();
+
+    expectArchiveError(() => readOoxmlWorkbookFromSafeZip(
+      readSafeZip(archive),
+      undefined,
+      false,
+      { maxRow: 515, maxColumn: "CW" },
+      { maxCellsPerWorksheet: 54_001 },
+    ));
   });
 
   it("resolves worksheets through workbook relationships and reads supported cell values", () => {

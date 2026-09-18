@@ -39,7 +39,15 @@ const pdfStatus = ref("");
 let disposed = false;
 let generationToken = 0;
 const resultSummaryCaption = "Comparison of assumption-based RSS results with system specifications and derived targets";
-const processGuidanceContext = "Evaluated against the current TA worksheet and analysis state.";
+const processGuidanceContext = "Priority review requirements and timing.";
+const priorityReviewRequirements = [
+  { priorities: "P0 & P1", requirement: "Share with Microsoft for review at ASR." },
+  { priorities: "P2 & P3", requirement: "Share with Microsoft for review before tooling starts." },
+] as const;
+const priorityReviewNotes = [
+  "After tooling trials and builds, update the analysis with real-part data and share it with Microsoft for review.",
+  "Subsystem vendors must share all CTT and CTS characteristics with the ODM partner and Microsoft for review as part of DFM.",
+] as const;
 const outcomeLabel = "Expected result";
 const meanCenteringOutcomeContext = "after applying the recommended adjustment";
 const specificationOutcomeContext = "after applying both recommended limits";
@@ -690,12 +698,35 @@ async function handleGeneratePdf(): Promise<void> {
           data-process-guidance-version
         >V3</span>
       </div>
-      <p
-        class="process-guidance-context"
-        data-process-guidance-context
+      <section
+        class="priority-review-requirements"
+        aria-labelledby="priority-review-requirements-heading"
       >
-        {{ processGuidanceContext }}
-      </p>
+        <h4 id="priority-review-requirements-heading">
+          Priority Review Requirements
+        </h4>
+        <dl class="priority-review-grid">
+          <div
+            v-for="item in priorityReviewRequirements"
+            :key="item.priorities"
+            data-priority-review-requirement
+          >
+            <dt>{{ item.priorities }}</dt>
+            <dd>{{ item.requirement }}</dd>
+          </div>
+        </dl>
+        <ul
+          class="priority-review-notes"
+          data-priority-review-notes
+        >
+          <li
+            v-for="note in priorityReviewNotes"
+            :key="note"
+          >
+            {{ note }}
+          </li>
+        </ul>
+      </section>
       <div class="process-priority-guidance">
         <div
           v-if="processPriorityRecommendation"
@@ -1200,13 +1231,6 @@ async function handleGeneratePdf(): Promise<void> {
   margin-bottom: 6px;
 }
 
-.process-guidance-context {
-  margin-bottom: 10px;
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
 .process-guidance-version {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
@@ -1214,6 +1238,59 @@ async function handleGeneratePdf(): Promise<void> {
   color: var(--ink-soft);
   font-size: 0.72rem;
   font-weight: 750;
+}
+
+.priority-review-requirements {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  padding: 10px 12px;
+}
+
+.priority-review-requirements h4 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.priority-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.priority-review-grid > div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.priority-review-grid dt,
+.priority-review-grid dd {
+  margin: 0;
+}
+
+.priority-review-grid dt {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.priority-review-grid dd,
+.priority-review-notes {
+  color: var(--ink-soft);
+}
+
+.priority-review-notes {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.76rem;
+  line-height: 1.4;
 }
 
 .process-priority-guidance {
@@ -1304,6 +1381,7 @@ async function handleGeneratePdf(): Promise<void> {
 }
 
 @media (max-width: 640px) {
+  .priority-review-grid,
   .process-priority-definitions {
     grid-template-columns: 1fr;
   }

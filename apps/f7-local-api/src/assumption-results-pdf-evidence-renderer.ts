@@ -1,4 +1,5 @@
 import type { AssumptionResultsPdfRouteRequest } from "./assumption-results-pdf-contract.js";
+import { renderDimensionChainVisual, type DimensionChainVisual } from "./dimension-chain-visual.js";
 
 export type AssumptionResultsPdfEvidenceRequest = AssumptionResultsPdfRouteRequest["engineeringEvidence"];
 
@@ -330,7 +331,10 @@ function renderResponseSummary(summary: AssumptionResultsPdfEvidenceRequest["res
   </section>`;
 }
 
-export function renderAssumptionResultsPdfEvidenceHtml(input: AssumptionResultsPdfEvidenceRequest): string {
+export function renderAssumptionResultsPdfEvidenceHtml(
+  input: AssumptionResultsPdfEvidenceRequest,
+  dimensionChainVisual?: DimensionChainVisual,
+): string {
   const requiresFlowLayout = input.factorSetup.rows.length > 7
     || input.responseSummary.rssAndWorstCase.sigmaBands.length > 2;
   return `
@@ -364,7 +368,7 @@ export function renderAssumptionResultsPdfEvidenceHtml(input: AssumptionResultsP
         </section>
       </div>
       <div class="evidence-lower-grid">
-        ${renderDimensionChain(input)}
+        ${dimensionChainVisual === undefined ? renderDimensionChain(input) : `<section class="evidence-panel evidence-panel--chain"><h2>Dimension Chain</h2>${renderDimensionChainVisual(dimensionChainVisual)}</section>`}
         ${renderNormalCurve(input.responseDistribution)}
         ${renderResponseSummary(input.responseSummary)}
       </div>

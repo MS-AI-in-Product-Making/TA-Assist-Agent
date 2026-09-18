@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { isReactive } from "vue";
 import { f7ReportProjectionSchema } from "@ai-assist/contracts";
 import App from "./App.vue";
@@ -836,6 +836,78 @@ function measurementImportPreview(status: "ready" | "blocked" = "ready"): F7Meas
   } as F7MeasurementImportPreviewResponse;
 }
 
+type MeasurementImportPreviewFactor = F7MeasurementImportPreviewResponse["factors"][number];
+
+function measurementImportPreviewFactor(
+  factorId: string,
+  factorName: string,
+  status: "ready" | "blocked",
+  diagnostics?: MeasurementImportPreviewFactor["diagnostics"],
+): MeasurementImportPreviewFactor {
+  const factor = measurementImportPreview(status).factors[0]!;
+  return {
+    ...factor,
+    factorId,
+    factorName,
+    status,
+    diagnostics: diagnostics ?? factor.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      factorId,
+      factorName,
+      displayMessage: `${factorName} Measurements!B7 must be nonnegative.`,
+    })),
+    validation: {
+      ...factor.validation,
+      blockingIssues: factor.validation.blockingIssues.map((issue) => ({ ...issue, factorId })),
+    },
+  };
+}
+
+function measurementImportPreviewWithFactors(
+  factors: MeasurementImportPreviewFactor[],
+): F7MeasurementImportPreviewResponse {
+  const blockedFactorCount = factors.filter((factor) => factor.status === "blocked").length;
+  const diagnostics = factors.flatMap((factor) => factor.diagnostics);
+  return {
+    ...measurementImportPreview(blockedFactorCount > 0 ? "blocked" : "ready"),
+    factorCount: factors.length,
+    replacementFactorIds: factors.map((factor) => factor.factorId),
+    factors,
+    diagnostics,
+    readyFactorCount: factors.length - blockedFactorCount,
+    blockedFactorCount,
+    replacementCount: factors.length,
+    totalSampleCount: factors.reduce((total, factor) => total + factor.sampleCount, 0),
+    diagnosticCount: diagnostics.length,
+  };
+}
+
+function twoFactorMeasurementEntrySnapshot(): F7SessionSnapshot {
+  const initial = measurementEntrySnapshot();
+  const firstFactor = initial.factors[0]!;
+  return createSnapshot({
+    ...initial,
+    factors: [
+      firstFactor,
+      {
+        ...firstFactor,
+        factorCandidate: {
+          ...firstFactor.factorCandidate,
+          factorCandidateId: HASH_A,
+          factorName: "Second factor",
+        },
+        setup: { ...firstFactor.setup!, factorCandidateId: HASH_A },
+        evidence: {
+          ...firstFactor.evidence!,
+          factorCandidateId: HASH_A,
+          factorId: HASH_A,
+          factorName: "Second factor",
+        },
+      },
+    ],
+  });
+}
+
 function twoFactorReadySnapshot(): F7SessionSnapshot {
   const fitted = distributionFitSnapshot();
   const first = fitted.factors[0]!;
@@ -1091,10 +1163,12 @@ describe("F7 workbench shell", () => {
         longTermSafetyFactor: 1,
         sigmaLevel: 4,
         distribution: "Normal",
+        partNumber: null,
+        dimId: null,
         confirmed: true,
       }],
     });
-    await vi.waitFor(() => expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data"));
+    await vi.waitFor(() => expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Excel Bulk Import"));
     expect(wrapper.find("#confirm-factor-setup").exists()).toBe(false);
     expect(wrapper.get("[data-edit-factor-setup]").text()).toBe("Edit setup");
     expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
@@ -1183,7 +1257,7 @@ describe("F7 workbench shell", () => {
     expect(headers).toContain("% Cont. to σ");
     expect(wrapper.find("[data-factor-advanced-toggle]").exists()).toBe(false);
     expect(wrapper.get(".factor-table").classes()).not.toContain("show-advanced-columns");
-    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1500px");
+    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1770px");
     const expectHeaderLines = (key: string, lines: readonly string[]) => {
       const header = wrapper.get(`th[data-column-key='${key}']`);
       expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
@@ -1204,16 +1278,17 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find("input[id^='unit-']").exists()).toBe(false);
 
     const specificationInputs = wrapper.findAll("input.factor-spec-input");
-    expect(specificationInputs).toHaveLength(5);
+    expect(specificationInputs).toHaveLength(7);
     const numericInputs = wrapper.findAll(".factor-table input[type='number']");
     expect(numericInputs).toHaveLength(6);
     expect(numericInputs.every((input) => input.classes().includes("factor-number-input"))).toBe(true);
-    await specificationInputs[0]!.setValue("-2.05");
-    await specificationInputs[1]!.setValue("0.1");
-    await specificationInputs[2]!.setValue("-0.08");
-    await specificationInputs[3]!.setValue("2");
-    await specificationInputs[4]!.setValue("4");
-    const distribution = wrapper.get("select[aria-label='C-cover height Distribution']");
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    await factorRow.get("[data-factor-field='designNominal'] input").setValue("-2.05");
+    await factorRow.get("[data-factor-field='upperTolerance'] input").setValue("0.1");
+    await factorRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.08");
+    await factorRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("2");
+    await factorRow.get("[data-factor-field='sigmaLevel'] input").setValue("4");
+    const distribution = factorRow.get("[data-factor-field='distribution'] select");
     expect(distribution.findAll("option").map((option) => option.text())).toEqual([
       "Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta",
     ]);
@@ -1278,6 +1353,49 @@ describe("F7 workbench shell", () => {
     expect(STYLE_SOURCE).toMatch(/\.f4-metric-list dt\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s);
     expect(STYLE_SOURCE).toMatch(/\.f4-metric-list dd\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s);
     expect(STYLE_SOURCE).toMatch(/\.f4-readonly-field\.f4-compact-value\s*\{[^}]*text-align:\s*center/s);
+    expect(STYLE_SOURCE).toMatch(/\.source-mode-readonly\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+minmax\(0,\s*1fr\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.source-mode-readonly > \.factor-workspace-button\s*\{[^}]*grid-column:\s*2/s);
+    expect(STYLE_SOURCE).toMatch(/\.source-mode-readonly > \.factor-workspace-warning-indicator\s*\{[^}]*grid-column:\s*3/s);
+    const measuredStateRulePattern = /\.factor-workspace-button\[data-measured-state="([^"]+)"\]\s*\{([^}]*)\}/g;
+    const measuredStateRules = new Map(
+      [...STYLE_SOURCE.matchAll(measuredStateRulePattern)].map((match) => [match[1], match[2]]),
+    );
+    const measuredStateStyles = {
+      empty: { background: "#fff", borderColor: "#5f6d80", color: "#16253d" },
+      ready: { background: "#f0f7f5", borderColor: "#0d7a69", color: "#0d6a5c" },
+      warning: { background: "#fff8e8", borderColor: "#b54708", color: "#694600" },
+      blocked: { background: "#fff1ef", borderColor: "#b5392f", color: "#9f2f28" },
+    } as const;
+    expect([...measuredStateRules.keys()].sort()).toEqual(["blocked", "empty", "ready", "warning"]);
+    for (const [state, approved] of Object.entries(measuredStateStyles)) {
+      const declarationBody = measuredStateRules.get(state);
+      expect(declarationBody).toBeDefined();
+      expect(declarationBody).toMatch(new RegExp(`(?:^|;)\\s*background:\\s*${approved.background}\\s*(?:;|$)`));
+      expect(declarationBody).toMatch(new RegExp(`(?:^|;)\\s*border-color:\\s*${approved.borderColor}\\s*(?:;|$)`));
+      expect(declarationBody).toMatch(new RegExp(`(?:^|;)\\s*color:\\s*${approved.color}\\s*(?:;|$)`));
+    }
+    const measuredStateHoverStyles = [
+      ["empty", "#4f5c6d"],
+      ["ready", "#096555"],
+      ["warning", "#b65312"],
+      ["blocked", "#962d26"],
+    ] as const;
+    for (const [state, background] of measuredStateHoverStyles) {
+      expect(STYLE_SOURCE).toMatch(new RegExp(
+        `\\.factor-workspace-button\\[data-measured-state="${state}"\\]:not\\(:disabled\\):hover\\s*\\{[^}]*background:\\s*${background}[^}]*border-color:\\s*${background}[^}]*color:\\s*#fff`,
+        "s",
+      ));
+    }
+    expect(STYLE_SOURCE).toMatch(/\.source-mode-readonly > \.factor-workspace-blocked-indicator\s*\{[^}]*grid-column:\s*3[^}]*justify-self:\s*start/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-workspace-blocked-indicator\s*\{[^}]*color:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-measured-comparison-row\s*\{[^}]*background:\s*#[0-9a-f]+[^}]*border-top:\s*1px solid var\(--line\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-measured-comparison-metric\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)[^}]*width:\s*100%[^}]*min-width:\s*0[^}]*min-height:\s*[0-9]+px/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-measured-comparison-metric span\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(32px,\s*auto\)\s+minmax\(0,\s*1fr\)[^}]*gap:\s*[0-9]+px[^}]*align-items:\s*center[^}]*width:\s*100%[^}]*min-width:\s*0[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere[^}]*font-variant-numeric:\s*tabular-nums/s);
+    expect(STYLE_SOURCE).toMatch(/\.automatic-analysis-feedback p\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*gap:\s*6px[^}]*font-size:\s*0\.78rem[^}]*font-weight:\s*600/s);
+    expect(STYLE_SOURCE).toMatch(/\.automatic-analysis-bar\s*\{[^}]*height:\s*4px[^}]*overflow:\s*hidden[^}]*border-radius:\s*2px[^}]*background:\s*#dfe4eb/s);
+    expect(STYLE_SOURCE).toMatch(/\.automatic-analysis-bar span\s*\{[^}]*display:\s*block[^}]*width:\s*38%[^}]*height:\s*100%[^}]*background:\s*var\(--accent\)[^}]*animation:\s*worksheet-analysis-progress\s+1\.4s\s+ease-in-out\s+infinite/s);
+    expect(STYLE_SOURCE).toMatch(/\.automatic-analysis-spinner\s*\{[^}]*animation:\s*worksheet-analysis-spin\s+0\.9s\s+linear\s+infinite/s);
+    expect(STYLE_SOURCE).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\*\s*\{[^}]*animation:\s*none\s*!important\s*;?[^}]*\}\s*\}/s);
     expect(STYLE_SOURCE).toMatch(/\.factor-name-cell > :last-child\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*white-space:\s*normal/s);
     expect(STYLE_SOURCE).toMatch(/\.factor-item-actions\s*\{[^}]*flex-direction:\s*column/s);
     expect(STYLE_SOURCE).toMatch(/\.dimension-chain-label\s*\{[^}]*font-size:\s*0\.38rem/s);
@@ -1329,6 +1447,8 @@ describe("F7 workbench shell", () => {
         longTermSafetyFactor: 2,
         sigmaLevel: 4,
         distribution: "Uniform",
+        partNumber: null,
+        dimId: null,
         confirmed: true,
       }],
     });
@@ -1509,7 +1629,7 @@ describe("F7 workbench shell", () => {
     }));
     await vi.waitFor(() => expect(wrapper.find("[data-edit-factor-setup]").exists()).toBe(true));
     expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
-    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
+    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Excel Bulk Import");
   });
 
   it("3a.1) toggles each Design Nominal value between positive and negative", async () => {
@@ -1561,27 +1681,30 @@ describe("F7 workbench shell", () => {
     expect(addedRow.findAll(".factor-item-actions .factor-row-control").map((button) => button.text())).toEqual(["−", "+"]);
     expect((addedRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
     const initialSpecifications = addedRow.findAll("input.factor-spec-input");
-    expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "1", "4"]);
+    expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "", "", "1", "4"]);
     expect((addedRow.get("select.factor-distribution-select").element as HTMLSelectElement).value).toBe("Normal");
-    expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", ""]);
+    expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", "1.3333", ""]);
     expect(addedRow.find("[role='alert']").exists()).toBe(false);
 
-    expect(initialSpecifications[1]!.attributes("min")).toBeUndefined();
-    expect(initialSpecifications[2]!.attributes("max")).toBeUndefined();
-    await initialSpecifications[0]!.setValue("0");
-    await initialSpecifications[1]!.setValue("-0.1");
-    await initialSpecifications[2]!.setValue("-0.3");
+    const addedNominal = addedRow.get("[data-factor-field='designNominal'] input");
+    const addedUpperTolerance = addedRow.get("[data-factor-field='upperTolerance'] input");
+    const addedLowerTolerance = addedRow.get("[data-factor-field='lowerTolerance'] input");
+    expect(addedUpperTolerance.attributes("min")).toBeUndefined();
+    expect(addedLowerTolerance.attributes("max")).toBeUndefined();
+    await addedNominal.setValue("0");
+    await addedUpperTolerance.setValue("-0.1");
+    await addedLowerTolerance.setValue("-0.3");
     expect(addedRow.get("[data-factor-field='upperTolerance']").text()).toContain("+Tolerance must be non-negative.");
     expect(addedRow.get("[data-factor-field='lowerTolerance']").find("[role='alert']").exists()).toBe(false);
-    await initialSpecifications[1]!.setValue("0.3");
-    await initialSpecifications[2]!.setValue("0.1");
+    await addedUpperTolerance.setValue("0.3");
+    await addedLowerTolerance.setValue("0.1");
     expect(addedRow.get("[data-factor-field='upperTolerance']").find("[role='alert']").exists()).toBe(false);
     expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be non-positive.");
-    await initialSpecifications[1]!.setValue("0.1");
+    await addedUpperTolerance.setValue("0.1");
     expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be less than +Tolerance.");
-    await initialSpecifications[0]!.setValue("");
-    await initialSpecifications[1]!.setValue("");
-    await initialSpecifications[2]!.setValue("");
+    await addedNominal.setValue("");
+    await addedUpperTolerance.setValue("");
+    await addedLowerTolerance.setValue("");
     expect(addedRow.find("[role='alert']").exists()).toBe(false);
 
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.57");
@@ -1599,12 +1722,11 @@ describe("F7 workbench shell", () => {
     expect(rows[1]!.get("button[aria-label='Move C-cover height down']").attributes("disabled")).toBeDefined();
 
     await addedRow.get("input[aria-label='New factor name']").setValue("User stack gap");
-    const addedSpecifications = addedRow.findAll("input.factor-spec-input");
-    await addedSpecifications[0]!.setValue("0.4");
-    await addedSpecifications[1]!.setValue("0.08");
-    await addedSpecifications[2]!.setValue("-0.04");
-    await addedSpecifications[3]!.setValue("1");
-    await addedSpecifications[4]!.setValue("4");
+    await addedNominal.setValue("0.4");
+    await addedUpperTolerance.setValue("0.08");
+    await addedLowerTolerance.setValue("-0.04");
+    await addedRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("1");
+    await addedRow.get("[data-factor-field='sigmaLevel'] input").setValue("4");
     await addedRow.get("select.factor-distribution-select").setValue("Normal");
 
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
@@ -1687,7 +1809,7 @@ describe("F7 workbench shell", () => {
     expect(blankRow.get(".factor-item-number").text()).toBe("1");
     expect((blankRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
     expect(blankRow.findAll("input.factor-spec-input").map((input) => (input.element as HTMLInputElement).value)).toEqual([
-      "", "", "", "1", "4",
+      "", "", "", "", "", "1", "4",
     ]);
     expect(wrapper.find("[data-empty-factor-setup]").exists()).toBe(false);
     expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
@@ -1715,10 +1837,9 @@ describe("F7 workbench shell", () => {
 
     const restoredBlankRow = wrapper.get(".factor-table tbody tr");
     await restoredBlankRow.get("input[aria-label='New factor name']").setValue("Replacement factor");
-    const blankSpecifications = restoredBlankRow.findAll("input.factor-spec-input");
-    await blankSpecifications[0]!.setValue("1");
-    await blankSpecifications[1]!.setValue("0.1");
-    await blankSpecifications[2]!.setValue("-0.1");
+    await restoredBlankRow.get("[data-factor-field='designNominal'] input").setValue("1");
+    await restoredBlankRow.get("[data-factor-field='upperTolerance'] input").setValue("0.1");
+    await restoredBlankRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.1");
     const clearedLsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
     const clearedUsl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
     await clearedLsl.setValue("0.8");
@@ -1801,34 +1922,36 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll("col[data-factor-column-index]").map((column) => column.attributes("style"))).toEqual([
       "width: 64px;",
       "width: 150px;",
+      "width: 112px;",
+      "width: 100px;",
       "width: 88px;",
       "width: 72px;",
       "width: 72px;",
       "width: 96px;",
       "width: 58px;",
       "width: 88px;",
-      "width: 140px;",
-      "width: 68px;",
-      "width: 72px;",
-      "width: 60px;",
+      "width: 94px;",
+      "width: 116px;",
+      "width: 94px;",
+      "width: 94px;",
       "width: 80px;",
       "width: 250px;",
       "width: 70px;",
       "width: 72px;",
     ]);
 
-    const specificationInputs = wrapper.findAll("input.factor-spec-input");
-    await specificationInputs[1]!.setValue("0.123456");
-    await specificationInputs[2]!.setValue("-0.1");
-    await specificationInputs[3]!.setValue("1");
-    await specificationInputs[4]!.setValue("3");
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    await factorRow.get("[data-factor-field='upperTolerance'] input").setValue("0.123456");
+    await factorRow.get("[data-factor-field='lowerTolerance'] input").setValue("-0.1");
+    await factorRow.get("[data-factor-field='longTermSafetyFactor'] input").setValue("1");
+    await factorRow.get("[data-factor-field='sigmaLevel'] input").setValue("3");
 
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-0.5817");
     expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.1117");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0372");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
 
-    const designColumn = wrapper.get("col[data-factor-column-index='2']");
+    const designColumn = wrapper.get("col[data-factor-column-index='4']");
     expect(designColumn.attributes("style")).toContain("width: 88px");
     const resizeHandle = wrapper.get("[aria-label='Resize Design Nominal column']");
     await resizeHandle.trigger("pointerdown", { clientX: 200, pointerId: 1 });
@@ -1874,6 +1997,51 @@ describe("F7 workbench shell", () => {
 
     expect(wrapper.get("tbody .status-chip").text()).toBe("ready");
     expect(wrapper.get("tbody .status-chip").classes()).toContain("chip-ready");
+  });
+
+  it("4b) flags committed import warnings beside Open workspace and shows their details inside", async () => {
+    const warningSnapshot = phaseReadySnapshot();
+    const client = createMockClient(warningSnapshot, { importWorkbook: warningSnapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const workspaceButton = wrapper.get(`[data-open-measurement='${HASH_C}']`);
+    const warning = workspaceButton.element.nextElementSibling;
+    expect(warning?.textContent).toBe("Warning");
+    expect(warning?.classList).toContain("factor-workspace-warning-indicator");
+
+    await openMeasurementWorkspace(wrapper);
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    expect(workspace.get("[data-measurement-workspace-warnings]").text()).toContain(
+      "2 included measurements are outside the Factor specification.",
+    );
+  });
+
+  it("4c) does not flag a measured Factor whose imported values are within specification", async () => {
+    const ready = phaseReadySnapshot();
+    const cleanDataset = {
+      ...ready.factors[0]!.measurementPasteResult!.dataset!,
+      observations: [
+        { originalRow: 1, value: 0.54, disposition: "included" as const },
+        { originalRow: 2, value: 0.58, disposition: "included" as const },
+      ],
+    };
+    const cleanSnapshot = createSnapshot({
+      ...ready,
+      factors: ready.factors.map((factor) => ({
+        ...factor,
+        input: { mode: "MEASURED" as const, dataset: cleanDataset },
+        measurementPasteResult: {
+          ...factor.measurementPasteResult!,
+          dataset: cleanDataset,
+        },
+      })),
+    });
+    const client = createMockClient(cleanSnapshot, { importWorkbook: cleanSnapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.find(".factor-workspace-warning-indicator").exists()).toBe(false);
   });
 
   it("5) only a measured factor can open its dedicated measurement workspace", async () => {
@@ -1946,7 +2114,9 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     await wrapper.get("input[value='BASELINE_ASSUMPTION']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "BASELINE_ASSUMPTION" });
-    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
+    const emptyWorkspaceButton = wrapper.get("button[aria-label='Measured Data: No measured data for C-cover height']");
+    expect(emptyWorkspaceButton.attributes("data-open-measurement")).toBe(HASH_C);
+    expect(emptyWorkspaceButton.attributes("data-measured-state")).toBe("empty");
   });
 
   it("5b) nominal sign controls its direction color and zero is a neutral Assembly Shift", async () => {
@@ -2000,9 +2170,9 @@ describe("F7 workbench shell", () => {
     await editFactorSetup(wrapper);
     vi.mocked(client.confirmFactors).mockClear();
 
-    const factorInputs = wrapper.get(".factor-table tbody tr").findAll("input.factor-spec-input");
-    const upperTolerance = factorInputs[1]!;
-    const lowerTolerance = factorInputs[2]!;
+    const factorRow = wrapper.get(".factor-table tbody tr");
+    const upperTolerance = factorRow.get("[data-factor-field='upperTolerance'] input");
+    const lowerTolerance = factorRow.get("[data-factor-field='lowerTolerance'] input");
     await upperTolerance.setValue("-0.1");
     expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("+Tolerance must be non-negative.");
@@ -2038,10 +2208,12 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await wrapper.findAll("[role='tab']")[1]!.trigger("click");
 
-    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
+    const emptyWorkspaceButton = wrapper.get("button[aria-label='Measured Data: No measured data for C-cover height']");
+    expect(emptyWorkspaceButton.attributes("data-open-measurement")).toBe(HASH_C);
+    expect(emptyWorkspaceButton.attributes("data-measured-state")).toBe("empty");
     await wrapper.get("input[value='MEASURED']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "MEASURED" });
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
+    expect(wrapper.get("button[aria-label='Measured Data: No measured data for C-cover height']").attributes("data-measured-state")).toBe("empty");
   });
 
   it("6) uses an indexed measurement table with automatic audit defaults and no MSA or outlier controls", async () => {
@@ -2089,6 +2261,37 @@ describe("F7 workbench shell", () => {
       factorId: HASH_C,
     }));
     expect(workspace.find(".measurement-grid").exists()).toBe(true);
+  });
+
+  it("shows imported Excel observations from the first measurement row without leading empty rows", async () => {
+    const imported = phaseReadySnapshot();
+    const factor = imported.factors[0]!;
+    const dataset = {
+      ...factor.measurementPasteResult!.dataset!,
+      sourceReference: "TA_Measurements.xlsx#Measurements",
+      observations: factor.measurementPasteResult!.dataset!.observations.map((observation) => ({
+        ...observation,
+        originalRow: observation.originalRow + 12,
+      })),
+    };
+    const snapshot = createSnapshot({
+      ...imported,
+      factors: [{
+        ...factor,
+        input: { mode: "MEASURED", dataset },
+        measurementPasteResult: { ...factor.measurementPasteResult!, dataset },
+      }],
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    expect((workspace.get("input[data-measurement-row='1']").element as HTMLInputElement).value).toBe("-0.01");
+    expect((workspace.get("input[data-measurement-row='2']").element as HTMLInputElement).value).toBe("0.01");
+    expect(workspace.find("tr[data-missing-value='true']").exists()).toBe(false);
   });
 
   it("serializes ordered measurements with generated sequence metadata", async () => {
@@ -3009,7 +3212,11 @@ describe("F7 workbench shell", () => {
     expect(headerButtons.map((button) => button.text())).toEqual(["Back to factors", "Download PDF Report"]);
     await wrapper.get("[data-download-report-pdf]").trigger("click");
 
-    await vi.waitFor(() => expect(generateReportPdf).toHaveBeenCalledWith({ sessionId: "session-01", report }));
+    await vi.waitFor(() => expect(generateReportPdf).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      report,
+      dimensionChainVisual: { status: "empty" },
+    }));
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:f7-report");
@@ -4000,13 +4207,13 @@ describe("F7 workbench shell", () => {
       props: { client: createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() }) },
     });
     await uploadWorkbook(importWrapper);
-    expect(importWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
+    expect(importWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Excel Bulk Import");
 
     const individualWrapper = mount(App, {
       props: { client: createMockClient(phaseReadySnapshot(), { importWorkbook: phaseReadySnapshot() }) },
     });
     await uploadWorkbook(individualWrapper);
-    expect(individualWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Enter Individually");
+    expect(individualWrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Web Factor Entry");
   });
 
   it("forwards measurement import events while mode switching discards preview without mutating the session", async () => {
@@ -4020,7 +4227,10 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
 
     await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeUndefined();
     await wrapper.get("[data-download-measurement-template]").trigger("click");
+    await vi.waitFor(() => expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1));
     await uploadMeasurementImportFile(wrapper);
     await wrapper.get("[role='tab'][aria-selected='true']").trigger("keydown", { key: "ArrowRight" });
 
@@ -4034,35 +4244,332 @@ describe("F7 workbench shell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows committed measured readiness from the refreshed snapshot and preserves open workspace access", async () => {
+  it("keeps bulk upload available when the optional template download fails", async () => {
     const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
-    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
-    vi.mocked(client.commitMeasurementImport).mockResolvedValue(phaseReadySnapshot());
+    vi.mocked(client.downloadMeasurementTemplate).mockRejectedValue(new Error("download failed"));
     const wrapper = mount(App, { props: { client } });
 
     await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await wrapper.get("[data-download-measurement-template]").trigger("click");
+
+    await vi.waitFor(() => expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1));
+    expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeUndefined();
+  });
+
+  it("ignores a template download that completes after the import dialog closes", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    let resolveDownload!: (download: { fileName: string; bytes: Uint8Array }) => void;
+    vi.mocked(client.downloadMeasurementTemplate).mockImplementation(() => new Promise((resolve) => {
+      resolveDownload = resolve;
+    }));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    void wrapper.get("[data-download-measurement-template]").trigger("click");
+    await vi.waitFor(() => expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1));
+    await wrapper.get("[data-close-measurement-import]").trigger("click");
+    resolveDownload({ fileName: "measurements.xlsx", bytes: new Uint8Array([80, 75]) });
+    await flushPromises();
+
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeUndefined();
+  });
+
+  it("closes the import dialog after a successful commit and preserves open workspace access", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
+    vi.mocked(client.commitMeasurementImport).mockResolvedValue(phaseReadySnapshot());
+    vi.mocked(client.fitDistribution).mockResolvedValue(approvedDistributionSnapshot());
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:measurement-template"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
     await uploadMeasurementImportFile(wrapper);
     await wrapper.get("[data-confirm-measurement-import]").trigger("click");
 
+    await vi.waitFor(() => expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false));
+    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Excel Bulk Import");
+    expect(wrapper.text()).not.toContain("MEASURED");
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).text()).toBe("Measured Data");
+    expect(document.activeElement).toBe(wrapper.get("[role='tab'][aria-selected='true']").element);
+    await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      factorId: HASH_C,
+    }));
     await vi.waitFor(() => {
-      expect(wrapper.text()).toContain("Ready");
+      const monteCarloStep = wrapper.findAll(".workflow-steps li")[2]!;
+      expect(monteCarloStep.text()).toContain("Available");
+      expect(monteCarloStep.get("[data-workflow-open-monte-carlo]").attributes("disabled")).toBeUndefined();
     });
-    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toContain("Import Data");
-    expect(wrapper.text()).toContain("MEASURED");
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
-    expect(wrapper.find("[data-measurement-import-success]").exists()).toBe(true);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows sequential automatic analysis progress after measurement import", async () => {
+    const initial = twoFactorMeasurementEntrySnapshot();
+    const committed = twoFactorReadySnapshot();
+    const client = createMockClient(initial, { importWorkbook: initial });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreviewWithFactors([
+      measurementImportPreviewFactor(HASH_C, "C-cover height", "ready"),
+      measurementImportPreviewFactor(HASH_A, "Second factor", "ready"),
+    ]));
+    vi.mocked(client.commitMeasurementImport).mockResolvedValue(committed);
+    let resolveFirstFit!: (snapshot: F7SessionSnapshot) => void;
+    let resolveSecondFit!: (snapshot: F7SessionSnapshot) => void;
+    vi.mocked(client.fitDistribution)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstFit = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecondFit = resolve; }));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("#measurement-entry-import-tab").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-confirm-measurement-import]").trigger("click");
+
+    await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledTimes(1));
+    expect(wrapper.get("[data-automatic-analysis-progress]").text()).toBe("Analyzing measured data 1 / 2");
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).text()).toContain("Analyzing");
+    expect(wrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Queued");
+
+    resolveFirstFit(committed);
+    await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledTimes(2));
+    expect(wrapper.get("[data-automatic-analysis-progress]").text()).toBe("Analyzing measured data 2 / 2");
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).text()).toBe("Measured Data");
+    expect(wrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toContain("Analyzing");
+
+    resolveSecondFit(committed);
+    await vi.waitFor(() => expect(wrapper.find("[data-automatic-analysis-progress]").exists()).toBe(false));
+  });
+
+  it("clears automatic analysis progress and stops the queue when a fit fails", async () => {
+    const initial = twoFactorMeasurementEntrySnapshot();
+    const committed = twoFactorReadySnapshot();
+    const client = createMockClient(initial, { importWorkbook: initial });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreviewWithFactors([
+      measurementImportPreviewFactor(HASH_C, "C-cover height", "ready"),
+      measurementImportPreviewFactor(HASH_A, "Second factor", "ready"),
+    ]));
+    vi.mocked(client.commitMeasurementImport).mockResolvedValue(committed);
+    vi.mocked(client.fitDistribution).mockRejectedValue({
+      code: "request_failed",
+      summary: "Automatic analysis failed.",
+      suggestedAction: "Review the Factor data and retry.",
+      affectedInputReferences: [HASH_C],
+    });
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("#measurement-entry-import-tab").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-confirm-measurement-import]").trigger("click");
+
+    await vi.waitFor(() => expect(wrapper.find("[data-automatic-analysis-progress]").exists()).toBe(false));
+    expect(client.fitDistribution).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("Automatic analysis failed."));
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).text()).toBe("Measured Data");
+    expect(wrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Measured Data");
   });
 
   it("cancels the preview locally without committing", async () => {
     const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
     vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("blocked"));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:measurement-template"),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const wrapper = mount(App, { props: { client } });
 
     await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await wrapper.get("[data-download-measurement-template]").trigger("click");
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-upload-measurement-workbook]").attributes("disabled")).toBeUndefined();
+    });
     await uploadMeasurementImportFile(wrapper);
     await wrapper.get("[data-cancel-measurement-import]").trigger("click");
 
     expect(client.commitMeasurementImport).not.toHaveBeenCalled();
     expect(wrapper.find("[data-measurement-import-review]").exists()).toBe(false);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("retains blocked measurement button state only for blocked preview Factors", async () => {
+    const twoFactorSession = twoFactorMeasurementEntrySnapshot();
+    const client = createMockClient(twoFactorSession, { importWorkbook: twoFactorSession });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreviewWithFactors([
+      measurementImportPreviewFactor(HASH_C, "C-cover height", "blocked"),
+      measurementImportPreviewFactor(HASH_A, "Second factor", "ready"),
+    ]));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("#measurement-entry-import-tab").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+
+    const blockedButton = wrapper.get(`button[data-open-measurement='${HASH_C}']`);
+    expect(blockedButton.attributes("data-measured-state")).toBe("blocked");
+    expect(blockedButton.attributes("title")).toContain("C-cover height Measurements!B7 must be nonnegative.");
+    expect(wrapper.get(`button[data-open-measurement='${HASH_A}']`).attributes("data-measured-state")).toBe("empty");
+  });
+
+  it("retains the exact fallback reason when a blocked preview Factor has no diagnostics", async () => {
+    const session = measurementEntrySnapshot();
+    const client = createMockClient(session, { importWorkbook: session });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreviewWithFactors([
+      measurementImportPreviewFactor(HASH_C, "C-cover height", "blocked", []),
+    ]));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("title")).toBe("Measurement validation is blocked.");
+  });
+
+  it("retains blocked measurement button state after closing the import dialog", async () => {
+    const session = measurementEntrySnapshot();
+    const client = createMockClient(session, { importWorkbook: session });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("blocked"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-close-measurement-import]").trigger("click");
+
+    expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false);
+    expect(wrapper.get("button[aria-label='Measured Data: validation is blocked; correction or re-upload is required for C-cover height']").attributes("data-measured-state")).toBe("blocked");
+  });
+
+  it("clears retained blocked measurement state after a successful Web Factor Entry save", async () => {
+    const session = measurementEntrySnapshot();
+    const client = createMockClient(session, {
+      importWorkbook: session,
+      pasteMeasurements: phaseReadySnapshot(),
+    });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("blocked"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-close-measurement-import]").trigger("click");
+    const blockedButton = wrapper.get(`button[data-open-measurement='${HASH_C}']`);
+    expect(blockedButton.attributes("data-measured-state")).toBe("blocked");
+
+    await blockedButton.trigger("click");
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("input[data-measurement-row='1']").setValue("0.494");
+    await workspace.get("input[data-measurement-row='2']").setValue("0.503");
+
+    await vi.waitFor(() => expect(client.pasteMeasurements).toHaveBeenCalled());
+    await workspace.get("button[data-close-measurement]").trigger("click");
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).not.toBe("blocked");
+    expect(wrapper.find(".factor-workspace-blocked-indicator").exists()).toBe(false);
+  });
+
+  it("retains unrelated blocked Factor IDs when a corrected ready preview clears only its included Factor", async () => {
+    const session = twoFactorMeasurementEntrySnapshot();
+    const client = createMockClient(session, { importWorkbook: session });
+    vi.mocked(client.previewMeasurementImport)
+      .mockResolvedValueOnce(measurementImportPreviewWithFactors([
+        measurementImportPreviewFactor(HASH_C, "C-cover height", "blocked"),
+        measurementImportPreviewFactor(HASH_A, "Second factor", "blocked"),
+      ]))
+      .mockResolvedValueOnce(measurementImportPreview("ready"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-cancel-measurement-import]").trigger("click");
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).toBe("blocked");
+    expect(wrapper.get(`button[data-open-measurement='${HASH_A}']`).attributes("data-measured-state")).toBe("blocked");
+
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper, new File([new Uint8Array([11, 12])], "corrected-measurements.xlsx"));
+
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).toBe("empty");
+    expect(wrapper.get(`button[data-open-measurement='${HASH_A}']`).attributes("data-measured-state")).toBe("blocked");
+  });
+
+  it("retains a captured blocked Factor after commit failure and clears it after successful commit", async () => {
+    const readySession = phaseReadySnapshot();
+    const readyFactor = readySession.factors[0]!;
+    const readyPasteResult = readyFactor.measurementPasteResult!;
+    const blockedSession = createSnapshot({
+      ...readySession,
+      status: "measurement_entry",
+      factors: [{
+        ...readyFactor,
+        measurementPasteResult: {
+          ...readyPasteResult,
+          status: "blocked",
+          validation: {
+            ...readyPasteResult.validation,
+            status: "blocked",
+            blockingIssues: [{ reason: "sample_count_below_minimum", factorId: HASH_C, rowNumbers: [1, 2] }],
+          },
+        },
+      }],
+    });
+    const client = createMockClient(blockedSession, { importWorkbook: blockedSession });
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
+    vi.mocked(client.commitMeasurementImport)
+      .mockRejectedValueOnce({ code: "request_failed", summary: "commit failed" })
+      .mockResolvedValueOnce(readySession);
+    vi.mocked(client.getSession).mockRejectedValueOnce(new Error("reconciliation failed"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("#measurement-entry-import-tab").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).toBe("blocked");
+    await wrapper.get("[data-confirm-measurement-import]").trigger("click");
+
+    await vi.waitFor(() => expect(client.commitMeasurementImport).toHaveBeenCalledTimes(1));
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).toBe("blocked");
+
+    await vi.waitFor(() => expect(wrapper.get("#measurement-entry-import-tab").attributes("disabled")).toBeUndefined());
+    await wrapper.get("#measurement-entry-import-tab").trigger("click");
+    await uploadMeasurementImportFile(wrapper, new File([new Uint8Array([13, 14])], "retry-measurements.xlsx"));
+    await wrapper.get("[data-confirm-measurement-import]").trigger("click");
+
+    await vi.waitFor(() => expect(client.commitMeasurementImport).toHaveBeenCalledTimes(2));
+    expect(wrapper.get(`button[data-open-measurement='${HASH_C}']`).attributes("data-measured-state")).not.toBe("blocked");
+  });
+
+  it("retains blocked measurement button state only until the session ID is replaced", async () => {
+    const firstSession = measurementEntrySnapshot();
+    const replacementSession = createSnapshot({ ...measurementEntrySnapshot(), sessionId: "session-02" });
+    const client = createMockClient(firstSession);
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(firstSession)
+      .mockResolvedValueOnce(replacementSession);
+    vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("blocked"));
+    const wrapper = mount(App, { props: { client } });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await uploadMeasurementImportFile(wrapper);
+    await wrapper.get("[data-close-measurement-import]").trigger("click");
+    expect(wrapper.get("button[data-measured-state='blocked']").attributes("data-open-measurement")).toBe(HASH_C);
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "replacement.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+
+    await vi.waitFor(() => expect(client.importWorkbook).toHaveBeenCalledTimes(2));
+    expect(wrapper.find("button[data-measured-state='blocked']").exists()).toBe(false);
+    expect(wrapper.get("button[aria-label='Measured Data: No measured data for C-cover height']").attributes("data-open-measurement")).toBe(HASH_C);
   });
 });

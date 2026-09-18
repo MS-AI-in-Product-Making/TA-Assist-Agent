@@ -1,5 +1,6 @@
 import { DOMParser, type Element } from "@xmldom/xmldom";
 import {
+  F7_MEASUREMENT_IMPORT_MAX_FACTORS,
   F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS,
   f7MeasurementDatasetSchema,
   f7MeasurementImportAuthoritySchema,
@@ -12,10 +13,10 @@ import { validateF7MeasurementDataset } from "./f7-dataset-validation.js";
 import { normalizeF7Factor } from "./f7-factor-normalization.js";
 import { hashF7MeasurementDatasetContent } from "./f7-measurement-parser.js";
 import { F7_MEASUREMENT_TEMPLATE_LAYOUT } from "./f7-measurement-template.js";
-import { MAX_DOM_DEPTH, MAX_TOTAL_CELLS, readOoxmlWorkbookFromSafeZip, type OoxmlCell } from "./ooxml-reader.js";
+import { MAX_DOM_DEPTH, readOoxmlWorkbookFromSafeZip, type OoxmlCell } from "./ooxml-reader.js";
 import { MAX_XML_PART_BYTES, readSafeZip, type SafeZipParts } from "./zip-security.js";
 
-const ALLOWED_PARTS = new Set([
+const REQUIRED_PARTS = new Set([
   "[Content_Types].xml",
   "_rels/.rels",
   "xl/_rels/workbook.xml.rels",
@@ -24,11 +25,20 @@ const ALLOWED_PARTS = new Set([
   "xl/worksheets/sheet1.xml",
   "xl/worksheets/sheet2.xml",
 ]);
+const ALLOWED_PARTS = new Set([
+  ...REQUIRED_PARTS,
+  "docMetadata/LabelInfo.xml",
+  "docProps/app.xml",
+  "docProps/core.xml",
+  "xl/sharedStrings.xml",
+  "xl/theme/theme1.xml",
+]);
 const STRUCTURES = new Set(["UNORDERED_SAMPLE", "ORDERED_INDIVIDUALS", "RATIONAL_SUBGROUP"]);
 const ESTIMATORS = new Set(["RANGE_D2", "S_C4"]);
 const NUMERIC_LITERAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 const XML_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-const MAX_RAW_DOM_NODES = 250_000;
+const MAX_TEMPLATE_RAW_CELLS = F7_MEASUREMENT_IMPORT_MAX_FACTORS * (F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity + 15) + F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity + 2_000;
+const MAX_RAW_DOM_NODES = MAX_TEMPLATE_RAW_CELLS * 6;
 const CANONICAL_POSITIVE_INTEGER = /^[1-9]\d*$/;
 const ALLOWED_CELL_TYPES = new Set([undefined, "n", "str", "s", "inlineStr", "b", "e", "d"]);
 const ALLOWED_INLINE_STRING_CHILDREN = new Set(["t", "r"]);
@@ -64,11 +74,29 @@ interface PendingDiagnostic {
   readonly insertion: number;
 }
 
+interface MeasurementLayout {
+  readonly kind: "current" | "legacy";
+  readonly firstMeasurementRow: number;
+  readonly lastMeasurementRow: number;
+}
+
+const CURRENT_MEASUREMENT_LAYOUT: MeasurementLayout = {
+  kind: "current",
+  firstMeasurementRow: F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow,
+  lastMeasurementRow: F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow,
+};
+const LEGACY_MEASUREMENT_LAYOUT: MeasurementLayout = {
+  kind: "legacy",
+  firstMeasurementRow: 15,
+  lastMeasurementRow: 15 + F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity - 1,
+};
+
 export function parseF7MeasurementTemplate(
   bytes: Uint8Array,
   authorityInput: F7MeasurementImportAuthority,
   importedAt: string,
   safeParts?: SafeZipParts,
+  options: { readonly allowPriorSessionIdentity?: boolean } = {},
 ): F7MeasurementTemplateParseResult {
   const authority = f7MeasurementImportAuthoritySchema.parse(authorityInput);
   const diagnostics: PendingDiagnostic[] = [];
@@ -109,7 +137,8 @@ export function parseF7MeasurementTemplate(
     addDiagnostic("unsupported_workbook_content", "Workbook archive is not a supported F7 measurement template.");
     return blocked(diagnostics);
   }
-  if (parts.size !== ALLOWED_PARTS.size || Array.from(parts.keys()).some((part) => !ALLOWED_PARTS.has(part))) {
+  if (Array.from(REQUIRED_PARTS).some((part) => !parts.has(part))
+    || Array.from(parts.keys()).some((part) => !ALLOWED_PARTS.has(part))) {
     addDiagnostic("unsupported_workbook_content", "Workbook contains parts outside the controlled F7 template allowlist.");
     return blocked(diagnostics);
   }
@@ -145,8 +174,16 @@ export function parseF7MeasurementTemplate(
       [F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName, F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName],
       false,
       {
-        maxRow: Math.max(14, F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + authority.manifest.factors.length - 1),
-        maxColumn: columnName(Math.max(14, authority.manifest.factors.length + 2)),
+        maxRow: Math.max(
+          LEGACY_MEASUREMENT_LAYOUT.lastMeasurementRow,
+          F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + authority.manifest.factors.length - 1,
+        ),
+        maxColumn: columnName(Math.max(17, authority.manifest.factors.length + 2)),
+      },
+      {
+        maxCellsPerWorksheet: MAX_TEMPLATE_RAW_CELLS,
+        maxTotalCells: MAX_TEMPLATE_RAW_CELLS,
+        maxWorksheetDomNodes: MAX_RAW_DOM_NODES,
       },
     );
   } catch {
@@ -173,30 +210,36 @@ export function parseF7MeasurementTemplate(
 
   const visibleCells = cellMap(visible.cells);
   const manifestCells = cellMap(manifestSheet.cells);
+  const measurementLayout = visibleCells.get("A12")?.value === "Measurement Structure"
+    ? LEGACY_MEASUREMENT_LAYOUT
+    : CURRENT_MEASUREMENT_LAYOUT;
   checkManifestLabels(manifestCells, addDiagnostic);
-  checkManifestIdentity(authority, manifestCells, addDiagnostic);
-  checkFactorManifest(authority, manifestCells, addDiagnostic);
-  checkImmutableVisibleCells(authority, visibleCells, addDiagnostic);
+  checkManifestIdentity(authority, manifestCells, addDiagnostic, options.allowPriorSessionIdentity === true, measurementLayout.kind === "legacy");
+  checkFactorManifest(authority, manifestCells, addDiagnostic, measurementLayout.kind === "legacy");
+  checkImmutableVisibleCells(authority, visibleCells, addDiagnostic, measurementLayout);
   checkFactorColumns(authority, visibleCells, addDiagnostic);
-  checkOutsideMeasurementArea(authority, visibleCells, addDiagnostic);
+  checkOutsideMeasurementArea(authority, visibleCells, addDiagnostic, measurementLayout);
   if (diagnostics.length > 0) return blocked(diagnostics);
 
   const datasets: F7MeasurementDataset[] = [];
   authority.manifest.factors.forEach((factor, factorIndex) => {
     const column = factor.coordinates.measurementColumn;
-    const structureCell = visibleCells.get(`${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.measurementStructure}`);
+    const structureCell = measurementLayout.kind === "legacy"
+      ? visibleCells.get(`${column}12`)
+      : manifestCells.get(`O${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + factorIndex}`);
     const structure = structureCell?.value as Structure | undefined;
     if (!structure || !STRUCTURES.has(structure)) {
       addDiagnostic("invalid_enum", "Measurement Structure must use a controlled template value.", {
         factorIndex,
-        sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}12`,
-        rowNumber: 12,
+        sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!O${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + factorIndex}`,
+        rowNumber: F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + factorIndex,
       });
       return;
     }
 
-    const subgroupCell = visibleCells.get(`${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.subgroupSize}`);
-    const estimatorCell = visibleCells.get(`${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.estimator}`);
+    const configRow = F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest.factorsStartRow + factorIndex;
+    const subgroupCell = measurementLayout.kind === "legacy" ? visibleCells.get(`${column}13`) : manifestCells.get(`P${configRow}`);
+    const estimatorCell = measurementLayout.kind === "legacy" ? visibleCells.get(`${column}14`) : manifestCells.get(`Q${configRow}`);
     let rationalSubgroupConfig: { subgroupSize: number; estimator: Estimator } | undefined;
     if (structure === "RATIONAL_SUBGROUP") {
       const subgroupSize = subgroupCell ? Number(subgroupCell.value) : Number.NaN;
@@ -204,17 +247,17 @@ export function parseF7MeasurementTemplate(
       if (!Number.isInteger(subgroupSize) || subgroupSize < 2 || subgroupSize > 25 || !estimator || !ESTIMATORS.has(estimator)) {
         addDiagnostic("missing_structure_configuration", "Rational subgroup requires subgroup size 2-25 and a controlled estimator.", {
           factorIndex,
-          sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}13`,
-          rowNumber: 13,
+          sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!P${configRow}`,
+          rowNumber: configRow,
         });
         return;
       }
       rationalSubgroupConfig = { subgroupSize, estimator };
-    } else if (subgroupCell || (estimatorCell?.value && estimatorCell.value !== "RANGE_D2")) {
+    } else if ((subgroupCell && !isBlank(subgroupCell.value)) || (estimatorCell?.value && estimatorCell.value !== "RANGE_D2")) {
       addDiagnostic("missing_structure_configuration", "Subgroup configuration is allowed only for rational subgroup data.", {
         factorIndex,
-        sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}13`,
-        rowNumber: 13,
+        sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!P${configRow}`,
+        rowNumber: configRow,
       });
       return;
     }
@@ -227,7 +270,7 @@ export function parseF7MeasurementTemplate(
       subgroup?: string;
     }> = [];
     const diagnosticCountBeforeMeasurements = diagnostics.length;
-    for (let row = F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow; row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow; row += 1) {
+    for (let row = measurementLayout.firstMeasurementRow; row <= measurementLayout.lastMeasurementRow; row += 1) {
       const reference = `${column}${row}`;
       const cell = rawCells.get(reference);
       if (!cell || isBlank(cell.value)) continue;
@@ -283,7 +326,7 @@ export function parseF7MeasurementTemplate(
 
     if (structure === "RATIONAL_SUBGROUP" && rationalSubgroupConfig && observations.length % rationalSubgroupConfig.subgroupSize !== 0) {
       const firstIncompleteIndex = observations.length - (observations.length % rationalSubgroupConfig.subgroupSize);
-      const row = observations[firstIncompleteIndex]?.originalRow ?? F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow;
+      const row = observations[firstIncompleteIndex]?.originalRow ?? measurementLayout.firstMeasurementRow;
       addDiagnostic("incomplete_subgroup", "Rational subgroup measurements must form complete contiguous blocks.", {
         factorIndex,
         sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${row}`,
@@ -298,7 +341,7 @@ export function parseF7MeasurementTemplate(
       unit: factor.unit,
       structure,
       ...(rationalSubgroupConfig ? { rationalSubgroupConfig } : {}),
-      sourceReference: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow}:${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow}`,
+      sourceReference: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${measurementLayout.firstMeasurementRow}:${column}${measurementLayout.lastMeasurementRow}`,
       importedAt,
       msaStatus: "unknown" as const,
       observations,
@@ -348,6 +391,8 @@ function checkManifestIdentity(
   authority: ParsedAuthority,
   cells: ReadonlyMap<string, OoxmlCell>,
   add: (reason: DiagnosticReason, message: string, options?: { sheetCell?: string; rowNumber?: number }) => void,
+  allowPriorSessionIdentity: boolean,
+  legacyLayout: boolean,
 ): void {
   const expected = [
     ["B2", authority.manifest.contractId],
@@ -364,6 +409,8 @@ function checkManifestIdentity(
     ["B13", authority.authorityDigest],
   ] as const;
   expected.forEach(([reference, value], index) => {
+    if (legacyLayout && ["B9", "B11", "B12", "B13"].includes(reference)) return;
+    if (allowPriorSessionIdentity && (reference === "B12" || reference === "B13")) return;
     if (cells.get(reference)?.value === value) return;
     add(index <= 2 ? "invalid_template_identity" : "stale_template", "Template manifest does not match current server authority.", {
       sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!${reference}`,
@@ -393,6 +440,7 @@ function checkFactorManifest(
   authority: ParsedAuthority,
   cells: ReadonlyMap<string, OoxmlCell>,
   add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+  legacyLayout: boolean,
 ): void {
   const seen = new Map<string, number>();
   for (let index = 0; index < authority.manifest.factors.length; index += 1) {
@@ -423,8 +471,13 @@ function checkFactorManifest(
       expected.immutableCoordinateDigest,
     ];
     expectedValues.forEach((value, columnIndex) => {
+      if (legacyLayout && columnIndex === 13) return;
       const reference = `${columnName(columnIndex + 1)}${row}`;
-      if (cells.get(reference)?.value !== value) add("changed_locked_cell", "A locked manifest cell was changed.", { factorIndex: index, sheetCell: `_F7_MANIFEST!${reference}`, rowNumber: row });
+      const actualValue = cells.get(reference)?.value;
+      const matches = columnIndex >= 5 && columnIndex <= 9
+        ? lockedNumericValueMatches(actualValue, Number(value))
+        : actualValue === value;
+      if (!matches) add("changed_locked_cell", "A locked manifest cell was changed.", { factorIndex: index, sheetCell: `_F7_MANIFEST!${reference}`, rowNumber: row });
     });
   }
   for (const cell of cells.values()) {
@@ -439,27 +492,63 @@ function checkImmutableVisibleCells(
   authority: ParsedAuthority,
   cells: ReadonlyMap<string, OoxmlCell>,
   add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+  layout: MeasurementLayout,
 ): void {
-  if (cells.get("A1")?.value !== "F7 Measurement Import Template") add("changed_locked_cell", "The locked template title was changed.", {
+  const expectedTitle = layout.kind === "legacy" ? "F7 Measurement Import Template" : "TA Measurement Import Template";
+  if (cells.get("A1")?.value !== expectedTitle) add("changed_locked_cell", "The locked template title was changed.", {
     sheetCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!A1`,
     rowNumber: 1,
   });
-  const labels = ["Factor Name", "Part Number", "DIM ID", "Design Nominal |abs|", "+ Tol", "- Tol", "Factor LSL", "Factor USL", "Specification Source", "Limit Status", "Measurement Structure", "Subgroup Size", "Estimator"];
+  const labels = ["Factor Name", "Part Number", "DIM ID", "Design Nominal |abs|", "+ Tol", "- Tol", "Factor LSL", "Factor USL", "Specification Source", "Limit Status",
+    ...(layout.kind === "legacy" ? ["Measurement Structure", "Subgroup Size", "Estimator"] : [])];
   labels.forEach((label, index) => {
     const row = index + 2;
     if (cells.get(`A${row}`)?.value !== label) add("changed_locked_cell", "A locked template label was changed.", { sheetCell: `Measurements!A${row}`, rowNumber: row });
   });
+  const measurementHeaderRow = F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementHeaderRow;
+  if (layout.kind === "current") {
+    if (cells.get(`A${measurementHeaderRow}`)?.value !== "Sequence") add("changed_locked_cell", "The locked measurement sequence header was changed.", {
+      sheetCell: `Measurements!A${measurementHeaderRow}`,
+      rowNumber: measurementHeaderRow,
+    });
+    for (let row = layout.firstMeasurementRow; row <= layout.lastMeasurementRow; row += 1) {
+      const expectedSequence = String(row - layout.firstMeasurementRow + 1);
+      if (cells.get(`A${row}`)?.value === expectedSequence) continue;
+      add("changed_locked_cell", "A locked measurement sequence number was changed.", {
+        sheetCell: `Measurements!A${row}`,
+        rowNumber: row,
+      });
+      break;
+    }
+  }
   authority.manifest.factors.forEach((factor, factorIndex) => {
     const column = factor.coordinates.measurementColumn;
+    if (layout.kind === "current" && cells.get(`${column}${measurementHeaderRow}`)?.value !== `${factor.factorName} Measurement`) add("changed_locked_cell", "A locked Factor measurement header was changed.", {
+      factorIndex,
+      sheetCell: `Measurements!${column}${measurementHeaderRow}`,
+      rowNumber: measurementHeaderRow,
+    });
     const expected = new Map<number, string>([
       [2, factor.factorName], [3, factor.partNumber ?? ""], [4, factor.dimId ?? ""],
       [5, String(Math.abs(factor.designNominal))], [6, String(factor.upperTolerance)], [7, String(factor.lowerTolerance)],
       [8, String(factor.lowerSpecLimit)], [9, String(factor.upperSpecLimit)], [10, factor.specificationSource], [11, factor.limitStatus],
     ]);
     expected.forEach((value, row) => {
-      if (cells.get(`${column}${row}`)?.value !== value) add("changed_locked_cell", "A locked Factor metadata cell was changed.", { factorIndex, sheetCell: `Measurements!${column}${row}`, rowNumber: row });
+      const actualValue = cells.get(`${column}${row}`)?.value;
+      const matches = row >= 5 && row <= 9
+        ? lockedNumericValueMatches(actualValue, Number(value))
+        : actualValue === value;
+      if (!matches) add("changed_locked_cell", "A locked Factor metadata cell was changed.", { factorIndex, sheetCell: `Measurements!${column}${row}`, rowNumber: row });
     });
   });
+}
+
+function lockedNumericValueMatches(actual: string | undefined, expected: number): boolean {
+  if (actual === undefined || !NUMERIC_LITERAL.test(actual)) return false;
+  const actualNumber = Number(actual);
+  if (!Number.isFinite(actualNumber)) return false;
+  const scale = Math.max(1, Math.abs(actualNumber), Math.abs(expected));
+  return Math.abs(actualNumber - expected) <= Number.EPSILON * 8 * scale;
 }
 
 function checkFactorColumns(
@@ -487,13 +576,18 @@ function checkOutsideMeasurementArea(
   authority: ParsedAuthority,
   cells: ReadonlyMap<string, OoxmlCell>,
   add: (reason: DiagnosticReason, message: string, options?: { factorIndex?: number; sheetCell?: string; rowNumber?: number }) => void,
+  layout: MeasurementLayout,
 ): void {
   const factorIndexByColumn = new Map(authority.manifest.factors.map((factor, index) => [factor.coordinates.measurementColumn, index]));
   for (const cell of cells.values()) {
     const location = splitReference(cell.reference);
     const factorIndex = factorIndexByColumn.get(location.column);
-    if (factorIndex !== undefined && location.row > F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow && !isBlank(cell.value)) {
-      add("unsupported_workbook_content", "Nonblank measurement content exists outside the reserved 500-row area.", { factorIndex, sheetCell: `Measurements!${cell.reference}`, rowNumber: location.row });
+    if (location.row > layout.lastMeasurementRow && !isBlank(cell.value)) {
+      add("unsupported_workbook_content", "Nonblank measurement content exists outside the reserved 500-row area.", {
+        ...(factorIndex === undefined ? {} : { factorIndex }),
+        sheetCell: `Measurements!${cell.reference}`,
+        rowNumber: location.row,
+      });
     }
   }
 }
@@ -639,7 +733,7 @@ function inspectRawWorksheet(
       }
     }
   }
-  if (result.size > MAX_TOTAL_CELLS) throw new Error("Cell budget exceeded");
+  if (result.size > MAX_TEMPLATE_RAW_CELLS) throw new Error("Cell budget exceeded");
   return Object.freeze({ cells: result });
 }
 
@@ -811,11 +905,11 @@ function isMeasurementCellReference(authority: ParsedAuthority, reference: strin
 function isAllowedVisibleCellReference(authority: ParsedAuthority, reference: string): boolean {
   const { column, row } = splitReference(reference);
   if (!column || row === 0) return false;
-  if (column === "A") return row >= 1 && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.estimator;
+  if (column === "A") return row >= 1 && row <= LEGACY_MEASUREMENT_LAYOUT.lastMeasurementRow;
   const factorIndex = factorIndexForColumn(authority, column);
   if (factorIndex === undefined) return false;
   return row >= F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows.factorName
-    && row <= F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow;
+    && row <= LEGACY_MEASUREMENT_LAYOUT.lastMeasurementRow;
 }
 
 function isAllowedManifestRow(authority: ParsedAuthority, row: number): boolean {
@@ -828,7 +922,7 @@ function isAllowedManifestCellReference(authority: ParsedAuthority, reference: s
   const { column, row } = splitReference(reference);
   if (!column || row === 0 || !isAllowedManifestRow(authority, row)) return false;
   if (row >= 2 && row <= 13) return column === "A" || column === "B";
-  return columnIndex(column) >= columnIndex("A") && columnIndex(column) <= columnIndex("N");
+  return columnIndex(column) >= columnIndex("A") && columnIndex(column) <= columnIndex("Q");
 }
 
 function splitReference(reference: string): { column: string; row: number } {

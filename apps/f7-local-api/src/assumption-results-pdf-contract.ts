@@ -1,5 +1,6 @@
 import { loadProcessRequirements } from "@ai-assist/knowledge-base/process-requirements";
 import { z } from "zod";
+import { dimensionChainVisualSchema } from "./dimension-chain-visual.js";
 
 const shortText = z.string().min(1).max(300);
 const displayText = z.string().min(1).max(2_000);
@@ -314,6 +315,7 @@ const engineeringEvidenceSchema = z.object({
 
 export const assumptionResultsPdfRouteRequestSchema = z.object({
   sessionId: z.string().min(1).max(200),
+  dimensionChainVisual: dimensionChainVisualSchema.optional(),
   workbookName: z.string().min(1).max(300),
   worksheetName: z.string().min(1).max(300),
   resultJudgment: resultJudgmentSchema,

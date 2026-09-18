@@ -26,6 +26,7 @@ import {
 } from "../measurement-structure";
 import { defaultCpkRule } from '../capability-guidance';
 import { buildCapabilityGuidance as builder } from '../capability-guidance';
+import { measurementWorkspaceWarnings } from "../measurement-workspace-warnings";
 
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
@@ -57,6 +58,9 @@ const form = reactive({
 });
 
 const selectedFactor = computed(() => props.session.factors.find((factor) => factor.evidence?.factorId === props.factorId));
+const workspaceWarnings = computed(() => selectedFactor.value
+  ? measurementWorkspaceWarnings(selectedFactor.value)
+  : []);
 
 function measurementValues(factorId: string): string[] {
   const dataset = props.session.factors
@@ -68,11 +72,11 @@ function measurementValues(factorId: string): string[] {
     ...dataset.observations.map((observation) => observation.originalRow),
     ...dataset.rejectionSummaries.map((summary) => summary.rowNumber),
   );
-  const headerRows = maximumSourceRow > dataset.originalRowCount ? 1 : 0;
+  const leadingSourceRows = Math.max(0, maximumSourceRow - dataset.originalRowCount);
   const values = Array<string>(dataset.originalRowCount).fill("");
   for (const observation of dataset.observations) {
     if (observation.disposition !== "included") continue;
-    const rowIndex = observation.originalRow - headerRows - 1;
+    const rowIndex = observation.originalRow - leadingSourceRows - 1;
     if (rowIndex >= 0 && rowIndex < values.length) values[rowIndex] = String(observation.value);
   }
   while (values.at(-1) === "") values.pop();
@@ -462,6 +466,17 @@ onBeforeUnmount(() => {
         <small>{{ measurementReady ? activeStage === "distribution" ? "Current" : "Available" : "Locked" }}</small>
       </li>
     </ol>
+    <section
+      v-if="workspaceWarnings.length > 0"
+      class="measurement-workspace-warnings"
+      data-measurement-workspace-warnings
+      aria-label="Measurement warnings"
+    >
+      <strong>Warning</strong>
+      <ul>
+        <li v-for="warning in workspaceWarnings" :key="warning">{{ warning }}</li>
+      </ul>
+    </section>
     <section class="specification-evidence" aria-label="Excel specification limits">
       <div class="specification-evidence-header">
         <div class="specification-evidence-summary">

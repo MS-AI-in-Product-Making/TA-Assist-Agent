@@ -6,6 +6,11 @@ import {
   type F7ReportSpecificationSourceCells,
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
+import {
+  buildFactorMeasuredComparison,
+  evaluateFactorMeasurementWarnings,
+  hasFactorMeasurementWarning,
+} from "@ai-assist/f7-statistics";
 import { loadInterpretationRules } from "@ai-assist/knowledge-base/interpretation-rules";
 import { buildF7EngineeringNarrative } from "@ai-assist/product-language/f7-engineering-narrative";
 
@@ -487,6 +492,14 @@ export function createF7ReportProjection(
   }
 
   const manifestByFactorId = new Map(simulation.factorManifest.map((entry) => [entry.factorId, entry]));
+  const setupSigmas = parsedSnapshot.factors.flatMap((factor) => {
+    const oneSigma = factor.evidence?.oneSigma;
+    return oneSigma !== undefined && Number.isFinite(oneSigma) && oneSigma > 0 ? [oneSigma] : [];
+  });
+  const maxSetupSigma = Math.max(0, ...setupSigmas);
+  const setupWeightTotal = maxSetupSigma === 0
+    ? 0
+    : setupSigmas.reduce((total, oneSigma) => total + (oneSigma / maxSetupSigma) ** 2, 0);
   const factors = parsedSnapshot.factors.map((factorState) => {
     const evidence = factorState.evidence;
     const sourceMode = factorState.sourceMode;
@@ -525,15 +538,71 @@ export function createF7ReportProjection(
         ? [factorState.input.dataset.sourceReference]
         : []),
     ])];
+    const readyMeasuredDataset = sourceMode === "MEASURED"
+      && factorState.measurementPasteResult?.status === "ready"
+      ? factorState.measurementPasteResult.dataset
+      : undefined;
+    const measuredComparison = readyMeasuredDataset === undefined
+      ? undefined
+      : buildFactorMeasuredComparison({
+          mean: evidence.calculatedMean,
+          tolerance: evidence.tolerance,
+          oneSigma: evidence.oneSigma,
+          sigmaLevel: evidence.sigmaLevel,
+          lowerSpecLimit: evidence.lowerSpecLimit,
+          upperSpecLimit: evidence.upperSpecLimit,
+          dataset: readyMeasuredDataset,
+        });
+    const projectComparisonMetric = (metric: { actual: number | undefined; delta: number | undefined }) => (
+      metric.actual === undefined || metric.delta === undefined
+        ? undefined
+        : { actual: metric.actual, delta: metric.delta }
+    );
+    const measurementComparison = measuredComparison === undefined
+      ? undefined
+      : {
+          mean: { actual: measuredComparison.mean.actual, delta: measuredComparison.mean.delta },
+          ...(projectComparisonMetric(measuredComparison.tolerance) === undefined
+            ? {}
+            : { tolerance: projectComparisonMetric(measuredComparison.tolerance)! }),
+          ...(projectComparisonMetric(measuredComparison.oneSigma) === undefined
+            ? {}
+            : { oneSigma: projectComparisonMetric(measuredComparison.oneSigma)! }),
+          ...(projectComparisonMetric(measuredComparison.cpk) === undefined
+            ? {}
+            : { cpk: projectComparisonMetric(measuredComparison.cpk)! }),
+        };
+    const measurementWarning = readyMeasuredDataset === undefined
+      ? false
+      : hasFactorMeasurementWarning(evaluateFactorMeasurementWarnings({
+          lowerSpecLimit: evidence.lowerSpecLimit,
+          upperSpecLimit: evidence.upperSpecLimit,
+          observations: readyMeasuredDataset.observations,
+        }));
     return {
       factorId: evidence.factorId,
       factorName: evidence.factorName,
+      ...(evidence.partNumber === undefined ? {} : { partNumber: evidence.partNumber }),
+      ...(evidence.dimId === undefined ? {} : { dimId: evidence.dimId }),
       designNominal: evidence.designNominal,
       upperTolerance: evidence.upperTolerance,
       lowerTolerance: evidence.lowerTolerance,
       longTermSafetyFactor: evidence.longTermSafetyFactor,
       sigmaLevel: evidence.sigmaLevel,
       setupDistribution: evidence.distribution,
+      setupMean: evidence.calculatedMean,
+      setupTolerance: evidence.tolerance,
+      setupOneSigma: evidence.oneSigma,
+      setupCpk: evidence.sigmaLevel / 3,
+      percentContributionToSigma: maxSetupSigma === 0 || setupWeightTotal === 0
+        ? 0
+        : (evidence.oneSigma / maxSetupSigma) ** 2 / setupWeightTotal,
+      ...(measurementComparison === undefined ? {} : { measurementComparison }),
+      sampleCount: readyMeasuredDataset?.observations.filter(({ disposition }) => disposition === "included").length ?? 0,
+      readiness: sourceMode === "BASELINE_ASSUMPTION" || readyMeasuredDataset !== undefined
+        ? "ready" as const
+        : "pending" as const,
+      measurementWarning,
       loopCoefficient: evidence.loopCoefficient,
       sourceMode,
       approvedDistribution,

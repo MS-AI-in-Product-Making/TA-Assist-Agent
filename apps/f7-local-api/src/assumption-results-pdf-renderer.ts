@@ -264,6 +264,8 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
     .report-page--evidence .evidence-panel--chain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; left: 0; top: 0; width: calc(48% - 1.5mm); }
     .report-page--evidence .evidence-panel--chain svg { height: 100%; max-height: 100%; min-height: 0; }
     .report-page--evidence .evidence-panel--chain svg text { font-size: 8px; }
+    .dimension-chain-visual, .dimension-chain-visual-empty { display: flex; align-items: center; justify-content: center; min-height: 0; height: 100%; margin: 0; }
+    .dimension-chain-visual img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
     .report-page--evidence .evidence-panel--curve { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 55mm; right: 0; top: 0; width: calc(52% - 1.5mm); }
     .report-page--evidence .evidence-panel--curve svg { height: 100%; max-height: 100%; min-height: 0; }
     .report-page--evidence .evidence-panel--summary { bottom: 0; left: 0; right: 0; top: 58mm; }
@@ -318,7 +320,7 @@ export function renderAssumptionResultsPdfHtml(input: AssumptionResultsPdfRouteR
 </head>
 <body>
   <main>
-${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence)}
+${renderAssumptionResultsPdfEvidenceHtml(request.engineeringEvidence, request.dimensionChainVisual)}
     <div class="report-page report-page--decision">
       <header>
         <h1>TA Results Interpretation (based on Assumptions)</h1>

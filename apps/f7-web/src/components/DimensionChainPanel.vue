@@ -32,6 +32,7 @@ import {
 import type {
   DimensionChainReportFactor,
   DimensionChainReportProjection,
+  DimensionChainVisual,
 } from "../assumption-results-pdf-evidence";
 
 const props = withDefaults(defineProps<{
@@ -288,6 +289,7 @@ const viewZoom = ref(1);
 const selectionMode = ref(false);
 const dimensionChainVisible = ref(true);
 const canvasElement = ref<HTMLElement>();
+const svgElement = ref<SVGSVGElement>();
 type DimensionChainInteraction =
   | { readonly kind: "pan" | "select"; readonly pointerId: number }
   | {
@@ -341,6 +343,88 @@ const selectionBox = computed(() => {
     height: Math.abs(selectionEnd.value.y - selectionStart.value.y),
   };
 });
+
+async function encodeImageUrl(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error("Unable to load the Dimension Chain background image.");
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string"
+      ? resolve(reader.result)
+      : reject(new Error("Unable to encode the Dimension Chain background image."));
+    reader.onerror = () => reject(new Error("Unable to encode the Dimension Chain background image."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function captureReportVisual(): DimensionChainVisual | Promise<DimensionChainVisual> {
+  if (!backgroundUrl.value && (!geometry.value || !dimensionChainVisible.value)) return { status: "empty" };
+  const source = svgElement.value;
+  if (!source) return { status: "empty" };
+  const clone = source.cloneNode(true) as SVGSVGElement;
+  return captureSvgReportVisual(clone);
+}
+
+async function captureSvgReportVisual(clone: SVGSVGElement): Promise<DimensionChainVisual> {
+  const background = clone.querySelector("image[data-dimension-chain-background]");
+  if (background && backgroundUrl.value) background.setAttribute("href", await encodeImageUrl(backgroundUrl.value));
+  const styles = [...document.styleSheets].flatMap((sheet) => {
+    try {
+      return [...sheet.cssRules].map((rule) => rule.cssText);
+    } catch {
+      return [];
+    }
+  }).join("\n");
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = styles;
+  clone.prepend(style);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const width = Math.max(1, Math.round(canvasWidth.value));
+  const height = Math.max(1, Math.round(canvasHeight.value));
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  const svgUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" }));
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const candidate = new Image();
+      candidate.onload = () => resolve(candidate);
+      candidate.onerror = () => reject(new Error("Unable to render the Dimension Chain image."));
+      candidate.src = svgUrl;
+    });
+    let scale = Math.min(1, 1600 / width, 1000 / height);
+    const canvas = document.createElement("canvas");
+    let outputWidth = 1;
+    let outputHeight = 1;
+    let dataUrl = "";
+    do {
+      outputWidth = Math.max(1, Math.round(width * scale));
+      outputHeight = Math.max(1, Math.round(height * scale));
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Unable to create the Dimension Chain image.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, outputWidth, outputHeight);
+      context.drawImage(image, 0, 0, outputWidth, outputHeight);
+      dataUrl = canvas.toDataURL("image/png");
+      scale *= 0.75;
+    } while (dataUrl.length > 700_000 && outputWidth > 240 && outputHeight > 160);
+    if (dataUrl.length > 700_000) throw new Error("The Dimension Chain image is too complex to include in the PDF.");
+    return {
+      status: "image",
+      mediaType: "image/png",
+      dataUrl,
+      width: outputWidth,
+      height: outputHeight,
+    };
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
+defineExpose({ captureReportVisual });
 
 watch(reportProjection, (projection) => {
   const signature = JSON.stringify(projection);
@@ -1278,6 +1362,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
       @lostpointercapture="onLostPointerCapture"
     >
       <svg
+        ref="svgElement"
         data-dimension-chain-svg
         :data-orientation="orientation"
         :data-view-x="viewX"

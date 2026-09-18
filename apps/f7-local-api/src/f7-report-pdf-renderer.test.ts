@@ -12,7 +12,9 @@ import {
 } from "./f7-report-pdf-renderer.js";
 
 const HASH = "a".repeat(64);
+const HASH_B = "b".repeat(64);
 const RUN_SEED = `${"0".repeat(60)}3039`;
+const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function reportFixture(): F7ReportProjection {
   return {
@@ -75,22 +77,65 @@ function reportFixture(): F7ReportProjection {
         targetStatus: "below_target",
       },
       normalModel: { status: "available", lowerTailDpm: 14_000, upperTailDpm: 91_500, totalDpm: 105_500, expectedYield: 0.8945 },
-      factorManifest: [{ factorId: HASH, family: "normal", sourceMode: "BASELINE_ASSUMPTION" }],
+      factorManifest: [
+        { factorId: HASH, family: "normal", sourceMode: "MEASURED" },
+        { factorId: HASH_B, family: "uniform", sourceMode: "BASELINE_ASSUMPTION" },
+      ],
     },
-    factors: [{
-      factorId: HASH,
-      factorName: "Factor <A>",
-      designNominal: 1,
-      upperTolerance: 0.2,
-      lowerTolerance: -0.2,
-      longTermSafetyFactor: 1,
-      sigmaLevel: 3,
-      setupDistribution: "Normal",
-      loopCoefficient: 1,
-      sourceMode: "BASELINE_ASSUMPTION",
-      approvedDistribution: "normal",
-      sourceReferences: ["TA!G14"],
-    }],
+    factors: [
+      {
+        factorId: HASH,
+        factorName: "Factor <A>",
+        partNumber: "PN <100>",
+        dimId: "DIM & 1",
+        designNominal: 1,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 3,
+        setupDistribution: "Normal",
+        setupMean: 1.01,
+        setupTolerance: 0.2,
+        setupOneSigma: 0.05,
+        setupCpk: 1,
+        percentContributionToSigma: 0.625,
+        measurementComparison: {
+          mean: { actual: 1.02, delta: 0.01 },
+          tolerance: { actual: 0.18, delta: -0.02 },
+          oneSigma: { actual: 0.06, delta: 0.01 },
+          cpk: { actual: 0.9, delta: -0.1 },
+        },
+        sampleCount: 32,
+        readiness: "ready",
+        measurementWarning: true,
+        loopCoefficient: 1,
+        sourceMode: "MEASURED",
+        approvedDistribution: "normal",
+        sourceReferences: ["TA!G14"],
+      },
+      {
+        factorId: HASH_B,
+        factorName: "Factor & B",
+        designNominal: -2,
+        upperTolerance: 0.3,
+        lowerTolerance: -0.1,
+        longTermSafetyFactor: 1.5,
+        sigmaLevel: 4,
+        setupDistribution: "Uniform",
+        setupMean: -1.9,
+        setupTolerance: 0.3,
+        setupOneSigma: 0.04,
+        setupCpk: 4 / 3,
+        percentContributionToSigma: 0.375,
+        sampleCount: 0,
+        readiness: "ready",
+        measurementWarning: false,
+        loopCoefficient: -1,
+        sourceMode: "BASELINE_ASSUMPTION",
+        approvedDistribution: "uniform",
+        sourceReferences: ["TA!G15"],
+      },
+    ],
     analysis: {
       status: "available",
       provenance: {
@@ -165,11 +210,37 @@ function reportFixture(): F7ReportProjection {
       methodIds: { simulation: "F7_MONTE_CARLO_V1", histogram: "F7_HISTOGRAM_FD_V1", normalFit: "F7_NORMAL_MOMENT_FIT_V1" },
       seed: RUN_SEED,
       iterations: 10_000,
-      factorManifest: [{ factorId: HASH, family: "normal", sourceMode: "BASELINE_ASSUMPTION" }],
+      factorManifest: [
+        { factorId: HASH, family: "normal", sourceMode: "MEASURED" },
+        { factorId: HASH_B, family: "uniform", sourceMode: "BASELINE_ASSUMPTION" },
+      ],
     },
     markdown: "# F7 report",
   };
 }
+
+describe("Dimension Chain Web visual", () => {
+  it("replaces the reconstructed final-report chain with the captured image", () => {
+    const html = renderF7ReportPdfHtml(reportFixture(), {
+      status: "image",
+      mediaType: "image/png",
+      dataUrl: PNG_DATA_URL,
+      width: 1,
+      height: 1,
+    });
+
+    expect(html).toContain("data-dimension-chain-visual");
+    expect(html).not.toContain("data-dimension-chain-page");
+  });
+
+  it("renders no image or reconstructed chain for an empty Web visual", () => {
+    const html = renderF7ReportPdfHtml(reportFixture(), { status: "empty" });
+
+    expect(html).toContain("data-dimension-chain-visual-empty");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("data-dimension-chain-page");
+  });
+});
 
 function reportWithoutAnalysisFixture(): F7ReportProjection {
   return {
@@ -191,6 +262,10 @@ function decodeHtmlAttribute(value: string): string {
     .replaceAll("&amp;", "&");
 }
 
+function visibleHtmlText(value: string): string {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 describe("F7 report PDF renderer", () => {
   it("renders the governed report in Web order with chart, comparison, and F0 evidence", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
@@ -206,6 +281,8 @@ describe("F7 report PDF renderer", () => {
     const orderedHeadings = [
       "Engineering Inputs",
       "Factor Setup",
+      "Setup Inputs",
+      "Measurement Analysis",
       "Dimension Chain",
       "Governed result",
       "Monte Carlo output distribution",
@@ -222,24 +299,58 @@ describe("F7 report PDF renderer", () => {
       previousIndex = headingIndex;
     }
 
-    const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
-    expect(factorSetupTable).toBeDefined();
-    for (const heading of [
+    const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+    expect(setupInputsTable).toBeDefined();
+    expect(measurementAnalysisTable).toBeDefined();
+    const setupHeadings = [...(setupInputsTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    const analysisHeadings = [...(measurementAnalysisTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    expect(setupHeadings).toEqual([
       "Item",
       "Factor",
-      "Design nominal",
-      "Upper tolerance",
-      "Lower tolerance",
-      "Long-term safety factor",
-      "Sigma level",
-      "Setup distribution",
-      "Source mode",
-    ]) {
-      expect(factorSetupTable).toContain(`<th>${heading}</th>`);
+      "Part Number",
+      "DIM ID",
+      "Design Nominal",
+      "+Tol",
+      "-Tol",
+      "Long-term Safety Factor",
+      "Sigma Level",
+      "Distribution",
+    ]);
+    expect(analysisHeadings).toEqual([
+      "Item",
+      "Factor",
+      "Mean",
+      "Tolerance",
+      "1σ",
+      "Cpk",
+      "% Contribution to σ",
+      "Source Mode",
+      "Sample Count",
+      "Readiness",
+    ]);
+    expect(setupInputsTable).toContain("PN &lt;100&gt;");
+    expect(setupInputsTable).toContain("DIM &amp; 1");
+    expect(setupInputsTable?.match(/>Missing</g)).toHaveLength(2);
+    expect(setupInputsTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(setupInputsTable?.indexOf("Factor &amp; B") ?? -1);
+    expect(measurementAnalysisTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(measurementAnalysisTable?.indexOf("Factor &amp; B") ?? -1);
+    expect(html.indexOf("data-factor-setup-inputs")).toBeLessThan(html.indexOf("data-factor-measurement-analysis"));
+    expect(html.indexOf("data-factor-measurement-analysis")).toBeLessThan(html.indexOf("Dimension Chain"));
+    expect(html.indexOf("Dimension Chain")).toBeLessThan(html.indexOf("Governed result"));
+
+    const measurementAnalysisText = visibleHtmlText(measurementAnalysisTable ?? "");
+    for (const metricValue of ["Setup 1.01", "Actual 1.02", "Δ +0.01", "Setup ±0.2", "Actual ±3σ 0.18", "Δ -0.02", "Setup 0.05", "Actual 0.06", "Setup 1", "Actual 0.9"]) {
+      expect(measurementAnalysisText).toContain(metricValue);
     }
-    for (const value of ["<td>1</td>", "<td>Factor &lt;A&gt;</td>", "<td>0.2</td>", "<td>-0.2</td>", "<td>3</td>", "<td>Normal</td>", "<td>Baseline assumption</td>"]) {
-      expect(factorSetupTable).toContain(value);
-    }
+    expect(measurementAnalysisTable).toContain("62.5%");
+    expect(measurementAnalysisTable).toContain("37.5%");
+    expect(measurementAnalysisTable).toContain("Measured Data");
+    expect(measurementAnalysisTable).toContain("Baseline Assumption");
+    expect(measurementAnalysisTable).toContain("Warning");
+    expect(measurementAnalysisTable).toContain(">32<");
+    expect(measurementAnalysisTable).toContain(">0<");
+    expect(measurementAnalysisTable).toContain("Ready");
+    expect(measurementAnalysisTable).toMatch(/Factor &amp; B.*>0<.*status-ready">Ready/s);
 
     expect(html).toContain("data-monte-carlo-chart");
     expect(html).toContain("data-monte-carlo-bin");
@@ -362,6 +473,10 @@ describe("F7 report PDF renderer", () => {
 
     expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
     expect(html).toContain("thead { display: table-header-group; }");
+    expect(html).toContain("[data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; font-size: 8.2pt; }");
+    expect(html).toContain("[data-factor-setup-inputs] tr, [data-factor-measurement-analysis] tr { break-inside: avoid; page-break-inside: avoid; }");
+    expect(html).toContain(".metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }");
+    expect(html).toContain("[data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: auto; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
     expect(dimensionChainPages.length).toBeGreaterThan(5);
@@ -436,9 +551,12 @@ describe("F7 report PDF renderer", () => {
     const nominalLabels = [...(dimensionChain ?? "").matchAll(/<text class="dimension-chain-metadata"[^>]*><tspan>Item \d+<\/tspan><tspan dx="10">([^<]+)<\/tspan>/g)]
       .map((match) => match[1] ?? "");
     const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
     const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
       .flatMap((row) => [...row[1]!.matchAll(/<td>([^<]+)<\/td>/g)].map((cell) => cell[1] ?? ""))
-      .filter((_, index) => index % 9 === 0 || index % 9 >= 2 && index % 9 <= 6);
+      .filter((_, index) => index % 10 === 0 || index % 10 >= 4 && index % 10 <= 8);
+    const measurementNumericValues = [...(measurementAnalysisTable ?? "").matchAll(/<span class="metric-value">([^<]+)<\/span>/g)]
+      .map((match) => match[1] ?? "");
 
     expect(dimensionChain).toBeDefined();
     expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
@@ -450,6 +568,38 @@ describe("F7 report PDF renderer", () => {
     expect(factorSetupNumericCells.every((value) => value.length <= 16)).toBe(true);
     expect(factorSetupNumericCells).toContain("1.8e308");
     expect(factorSetupNumericCells).toContain("-1.8e308");
+    expect(measurementNumericValues.length).toBeGreaterThan(0);
+    expect(measurementNumericValues.every((value) => value.length <= 16)).toBe(true);
+  });
+
+  it("allows measurement metric lines to wrap within fixed table cells", () => {
+    const html = renderF7ReportPdfHtml(reportFixture());
+    const metricLineRule = html.match(/\.metric-line\s*\{([^}]*)\}/)?.[1];
+
+    expect(metricLineRule).toBeDefined();
+    expect(metricLineRule).toMatch(/display:\s*grid/);
+    expect(metricLineRule).toMatch(/white-space:\s*normal/);
+    expect(metricLineRule).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(metricLineRule).not.toMatch(/white-space:\s*nowrap/);
+  });
+
+  it("renders em dashes for absent optional measured metrics without inventing values", () => {
+    const report = reportFixture();
+    const measuredFactor = report.factors[0]!;
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: [{
+        ...measuredFactor,
+        measurementComparison: {
+          mean: measuredFactor.measurementComparison!.mean,
+        },
+      }],
+    });
+    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+
+    expect(measurementAnalysisTable).toBeDefined();
+    expect(measurementAnalysisTable?.match(/<span class="metric-label">Actual<\/span><span class="metric-value">—<\/span>/g)).toHaveLength(3);
+    expect(measurementAnalysisTable?.match(/<span class="metric-label">Δ<\/span><span class="metric-value">—<\/span>/g)).toHaveLength(3);
   });
 
   it("places Setup Mean on a new label row when it overlaps every reference row", () => {

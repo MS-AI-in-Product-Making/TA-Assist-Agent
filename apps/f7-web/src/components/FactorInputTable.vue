@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /* global PointerEvent, window */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
-import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
+import { ArrowLeftRight, ArrowRightLeft, LoaderCircle } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
-import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
-import type { Distribution, ProcessRequirementComponentCategory } from "@ai-assist/contracts";
+import type { Distribution } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
 import {
   buildConfirmedEngineeringEvidence,
   type AssumptionResultsEngineeringEvidence,
   type AssumptionResultsCurrentCalculationInput,
   type DimensionChainReportProjection,
+  type DimensionChainVisual,
   type EngineeringEvidenceEnvelope,
   type EngineeringEvidenceWorkbookIdentity,
   snapshotPlainDto,
@@ -18,6 +18,11 @@ import {
 import DimensionChainPanel from "./DimensionChainPanel.vue";
 import ResponseDistributionCurve from "./ResponseDistributionCurve.vue";
 import type { DimensionChainFactor } from "./dimension-chain";
+import { measurementWorkspaceWarnings } from "../measurement-workspace-warnings";
+import {
+  buildFactorMeasuredComparison,
+  type FactorMeasuredComparison,
+} from "../factor-measured-comparison";
 
 const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Normal",
@@ -28,25 +33,7 @@ const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Beta",
 ];
 
-const COMPONENT_CATEGORY_LABELS = {
-  "battery-cts": "Battery CTS",
-  "z-axis-or-around-xy-clearance": "Z-axis or around-XY clearance",
-  "glass-tdm-gap-or-z-step": "Glass/TDM gap or Z-step",
-  "thermal-module-critical-path": "Thermal module critical path",
-  "pcb-critical-clearance-or-alignment": "PCB critical clearance or alignment",
-  "cover-fit-and-function": "Cover fit and function",
-  "hinge-trackpad-button-or-sensor": "Hinge, trackpad, button, or sensor",
-  "cable-routing": "Cable routing",
-  "external-port-kickstand-logo-or-ssd": "External port, kickstand, logo, or SSD",
-  "pcb-component-or-fastener": "PCB component or fastener",
-  "engagement-or-assembly-feature": "Engagement or assembly feature",
-  "foam-or-gasket-sealing-cushioning-or-nvh": "Foam or gasket sealing, cushioning, or NVH",
-} satisfies Readonly<Record<ProcessRequirementComponentCategory, string>>;
-
-const COMPONENT_CATEGORY_OPTIONS = processRequirementComponentCategorySchema.options.map((value) => ({
-  value,
-  label: COMPONENT_CATEGORY_LABELS[value],
-}));
+const TRACEABILITY_MAX_LENGTH = 300;
 
 const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distribution>> = {
   Normal: "normal",
@@ -62,6 +49,12 @@ const props = defineProps<{
   readonly busy: boolean;
   readonly editingSetup: boolean;
   readonly measurementEntryMode?: "import" | "individual";
+  readonly blockedMeasurementFactors?: readonly { factorId: string; message: string }[];
+  readonly automaticAnalysisProgress?: {
+    readonly factorIds: readonly string[];
+    readonly activeFactorId: string;
+    readonly completedCount: number;
+  } | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -74,7 +67,8 @@ const emit = defineEmits<{
       readonly longTermSafetyFactor: number;
       readonly sigmaLevel: number;
       readonly distribution: F7SetupDistribution;
-      readonly componentCategory?: ProcessRequirementComponentCategory;
+      readonly partNumber: string | null;
+      readonly dimId: string | null;
       readonly factorName?: string;
       readonly userAdded?: true;
     }>,
@@ -87,23 +81,25 @@ const emit = defineEmits<{
 }>();
 
 interface FactorSpecificationDraft {
+  partNumber: string;
+  dimId: string;
   designNominal: number | "";
   upperTolerance: number | "";
   lowerTolerance: number | "";
   longTermSafetyFactor: number | "";
   sigmaLevel: number | "";
   distribution: F7SetupDistribution | "";
-  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 interface CompleteFactorSpecificationDraft {
+  partNumber: string;
+  dimId: string;
   designNominal: number;
   upperTolerance: number;
   lowerTolerance: number;
   longTermSafetyFactor: number;
   sigmaLevel: number;
   distribution: F7SetupDistribution;
-  componentCategory: ProcessRequirementComponentCategory | "";
 }
 
 type FactorSpecificationField = keyof FactorSpecificationDraft;
@@ -146,6 +142,9 @@ const factorOrder = reactive(props.session.factors.map((factor) => factor.factor
 const dimensionChainResetRevision = ref(0);
 let addedFactorSequence = 0;
 const setupEditable = computed(() => props.editingSetup);
+const blockedMeasurementFactorsById = computed(() => new Map(
+  (props.blockedMeasurementFactors ?? []).map((factor) => [factor.factorId, factor.message]),
+));
 
 const activeFactors = computed(() => {
   if (!setupEditable.value) return props.session.factors;
@@ -161,16 +160,18 @@ const activeFactors = computed(() => {
 const baseColumns = [
   { key: "index", label: "Item", lines: ["Item"], defaultWidth: 64, minWidth: 58 },
   { key: "factor", label: "Factor", lines: ["Factor"], defaultWidth: 150, minWidth: 105 },
+  { key: "partNumber", label: "Part Number", lines: ["Part", "Number"], defaultWidth: 112, minWidth: 96 },
+  { key: "dimId", label: "DIM ID", lines: ["DIM", "ID"], defaultWidth: 100, minWidth: 88 },
   { key: "designNominal", label: "Design Nominal", lines: ["Design", "Nominal"], defaultWidth: 88, minWidth: 78 },
   { key: "upperTolerance", label: "+ Tolerance", lines: ["+", "Tol"], defaultWidth: 72, minWidth: 66 },
   { key: "lowerTolerance", label: "- Tolerance", lines: ["-", "Tol"], defaultWidth: 72, minWidth: 66 },
   { key: "longTermSafetyFactor", label: "Long Term/Safety Factor", lines: ["Long Term/", "Safety Factor"], defaultWidth: 96, minWidth: 88 },
   { key: "sigmaLevel", label: "σ Level", lines: ["σ", "Level"], defaultWidth: 58, minWidth: 54 },
   { key: "distribution", label: "Distribution", lines: ["Distribution"], defaultWidth: 88, minWidth: 80 },
-  { key: "componentCategory", label: "Component category", lines: ["Component", "category"], defaultWidth: 140, minWidth: 124 },
-  { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 68, minWidth: 62 },
-  { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 72, minWidth: 66 },
-  { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 60, minWidth: 56 },
+  { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 94, minWidth: 88 },
+  { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 116, minWidth: 108 },
+  { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 94, minWidth: 88 },
+  { key: "cpk", label: "Cpk", lines: ["Cpk"], defaultWidth: 94, minWidth: 88 },
   { key: "contribution", label: "% Cont. to σ", lines: ["% Cont. to σ"], defaultWidth: 80, minWidth: 72 },
   { key: "sourceMode", label: "Source Mode", lines: ["Source Mode"], defaultWidth: 250, minWidth: 220 },
   { key: "sampleCount", label: "Sample Count", lines: ["Sample Count"], defaultWidth: 70, minWidth: 64 },
@@ -224,6 +225,71 @@ function factorNameFor(factor: DeepReadonly<F7FactorState>): string {
   return factorNames[factor.factorCandidate.factorCandidateId] ?? factor.factorCandidate.factorName;
 }
 
+type MeasurementWorkspaceState = "empty" | "ready" | "warning" | "blocked";
+
+interface MeasurementWorkspacePresentation {
+  readonly state: MeasurementWorkspaceState;
+  readonly label: string;
+  readonly blockedMessage: string;
+}
+
+function measurementWorkspaceLabel(state: MeasurementWorkspaceState): string {
+  const labels: Readonly<Record<MeasurementWorkspaceState, string>> = {
+    empty: "Measured Data: No measured data",
+    ready: "Measured Data: passed validation",
+    warning: "Measured Data: passed validation with warnings; you can continue",
+    blocked: "Measured Data: validation is blocked; correction or re-upload is required",
+  };
+  return labels[state];
+}
+
+const measurementWorkspacePresentations = computed(() => new Map(
+  activeFactors.value.flatMap((factor) => {
+    const factorId = factor.evidence?.factorId;
+    if (factorId === undefined) return [];
+    const warnings = measurementWorkspaceWarnings(factor);
+    const blockedMessage = blockedMeasurementFactorsById.value.get(factorId) ?? "Measurement validation is blocked.";
+    const state: MeasurementWorkspaceState = factor.measurementPasteResult?.status === "blocked"
+      || blockedMeasurementFactorsById.value.has(factorId)
+      ? "blocked"
+      : factor.measurementPasteResult?.status !== "ready"
+        ? "empty"
+        : warnings.length > 0
+          ? "warning"
+          : "ready";
+    return [[factorId, {
+      state,
+      label: `${measurementWorkspaceLabel(state)} for ${factorNameFor(factor)}`,
+      blockedMessage,
+    } satisfies MeasurementWorkspacePresentation] as const];
+  }),
+));
+
+function measurementWorkspacePresentation(factorId: string): MeasurementWorkspacePresentation {
+  return measurementWorkspacePresentations.value.get(factorId) ?? {
+    state: "empty",
+    label: measurementWorkspaceLabel("empty"),
+    blockedMessage: "Measurement validation is blocked.",
+  };
+}
+
+function automaticAnalysisState(factorId: string): "analyzing" | "queued" | undefined {
+  const progress = props.automaticAnalysisProgress;
+  if (!progress) return undefined;
+  if (progress.activeFactorId === factorId) return "analyzing";
+  const factorIndex = progress.factorIds.indexOf(factorId);
+  return factorIndex >= progress.completedCount ? "queued" : undefined;
+}
+
+function workspaceButtonLabel(factorId: string): string {
+  const state = automaticAnalysisState(factorId);
+  const factor = activeFactors.value.find((candidate) => candidate.evidence?.factorId === factorId);
+  const factorName = factor ? factorNameFor(factor) : "Factor";
+  if (state === "analyzing") return `Analyzing measured data for ${factorName}`;
+  if (state === "queued") return `Measured Data queued for automatic analysis for ${factorName}`;
+  return measurementWorkspacePresentation(factorId).label;
+}
+
 function isUserAdded(factor: DeepReadonly<F7FactorState>): boolean {
   return factor.factorCandidate.userAdded === true;
 }
@@ -238,13 +304,14 @@ function addFactor(afterFactor?: DeepReadonly<F7FactorState>): void {
   const sourceRow = Math.max(0, ...activeFactors.value.map((factor) => factor.factorCandidate.sourceRow)) + 1;
   factorNames[factorCandidateId] = "";
   setupDraft[factorCandidateId] = {
+    partNumber: "",
+    dimId: "",
     designNominal: "",
     upperTolerance: "",
     lowerTolerance: "",
     longTermSafetyFactor: 1,
     sigmaLevel: 4,
     distribution: "Normal",
-    componentCategory: "",
   };
   addedFactors.push({
     factorCandidate: {
@@ -303,17 +370,40 @@ function draftFor(
   return setupDraft[candidateId]!;
 }
 
+type TraceabilityField = "partNumber" | "dimId";
+
+function traceabilityValue(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+  field: TraceabilityField,
+): string {
+  if (factor.setup && Object.prototype.hasOwnProperty.call(factor.setup, field)) {
+    return factor.setup[field] ?? "";
+  }
+  if (factor.evidence && Object.prototype.hasOwnProperty.call(factor.evidence, field)) {
+    return factor.evidence[field] ?? "";
+  }
+  return factor.factorCandidate[field] ?? "";
+}
+
+function traceabilityDisplayValue(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+  field: TraceabilityField,
+): string {
+  return traceabilityValue(factor, field) || "Missing";
+}
+
 function initialDraftFor(
   factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
 ): FactorSpecificationDraft {
   return {
+    partNumber: traceabilityValue(factor, "partNumber"),
+    dimId: traceabilityValue(factor, "dimId"),
     designNominal: factor.setup?.designNominal ?? factor.factorCandidate.designNominal,
     upperTolerance: factor.setup?.upperTolerance ?? factor.factorCandidate.upperTolerance,
     lowerTolerance: factor.setup?.lowerTolerance ?? factor.factorCandidate.lowerTolerance,
     longTermSafetyFactor: factor.setup?.longTermSafetyFactor ?? factor.evidence?.longTermSafetyFactor ?? factor.factorCandidate.longTermSafetyFactor ?? 1,
     sigmaLevel: factor.setup?.sigmaLevel ?? factor.evidence?.sigmaLevel ?? factor.factorCandidate.sigmaLevel ?? 4,
     distribution: factor.setup?.distribution ?? factor.evidence?.distribution ?? factor.factorCandidate.distribution,
-    componentCategory: factor.setup?.componentCategory ?? factor.evidence?.componentCategory ?? "",
   };
 }
 
@@ -370,13 +460,14 @@ function importedSnapshot(): FactorEditSnapshot {
     drafts: Object.fromEntries(importedFactors.map((factor) => [
       factor.factorCandidate.factorCandidateId,
       {
+        partNumber: factor.factorCandidate.partNumber ?? "",
+        dimId: factor.factorCandidate.dimId ?? "",
         designNominal: factor.factorCandidate.designNominal,
         upperTolerance: factor.factorCandidate.upperTolerance,
         lowerTolerance: factor.factorCandidate.lowerTolerance,
         longTermSafetyFactor: factor.factorCandidate.longTermSafetyFactor ?? 1,
         sigmaLevel: factor.factorCandidate.sigmaLevel ?? 4,
         distribution: factor.factorCandidate.distribution,
-        componentCategory: "",
       } satisfies FactorSpecificationDraft,
     ])),
     names: {},
@@ -506,6 +597,12 @@ function clearAllFactors(): void {
 
 function specificationErrors(draft: FactorSpecificationDraft): Partial<Record<FactorSpecificationField, string>> {
   const errors: Partial<Record<FactorSpecificationField, string>> = {};
+  if (draft.partNumber.trim().length > TRACEABILITY_MAX_LENGTH) {
+    errors.partNumber = `Part Number must be ${TRACEABILITY_MAX_LENGTH} characters or fewer.`;
+  }
+  if (draft.dimId.trim().length > TRACEABILITY_MAX_LENGTH) {
+    errors.dimId = `DIM ID must be ${TRACEABILITY_MAX_LENGTH} characters or fewer.`;
+  }
   if (typeof draft.designNominal !== "number" || !Number.isFinite(draft.designNominal)) {
     errors.designNominal = "Design Nominal must be a finite number.";
   }
@@ -670,6 +767,44 @@ function calculatedValues(factor: DeepReadonly<F7SessionSnapshot["factors"][numb
   };
 }
 
+function factorSigmaLevel(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): number {
+  return factor.setup?.sigmaLevel
+    ?? factor.evidence?.sigmaLevel
+    ?? numericDraftValue(candidateDraft(factor).sigmaLevel);
+}
+
+const factorMeasuredComparisons = computed(() => {
+  if (setupEditable.value) return new Map<string, FactorMeasuredComparison>();
+  return new Map(activeFactors.value.flatMap((factor) => {
+    const dataset = factor.measurementPasteResult?.dataset;
+    if (
+      factor.sourceMode !== "MEASURED"
+      || factor.measurementPasteResult?.status !== "ready"
+      || !dataset
+      || !factor.evidence
+    ) return [];
+    const calculated = calculatedValues(factor);
+    const comparison = buildFactorMeasuredComparison({
+      mean: calculated.mean,
+      tolerance: calculated.tolerance,
+      oneSigma: calculated.oneSigma,
+      sigmaLevel: factorSigmaLevel(factor),
+      lowerSpecLimit: factor.evidence.lowerSpecLimit,
+      upperSpecLimit: factor.evidence.upperSpecLimit,
+      dataset,
+    });
+    return comparison
+      ? [[factor.factorCandidate.factorCandidateId, comparison] as const]
+      : [];
+  }));
+});
+
+function factorMeasuredComparison(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+): FactorMeasuredComparison | undefined {
+  return factorMeasuredComparisons.value.get(factor.factorCandidate.factorCandidateId);
+}
+
 const sumOfSigmaSquares = computed(() => activeFactors.value.reduce((total, factor) => (
   total + calculatedValues(factor).oneSigma ** 2
 ), 0));
@@ -785,6 +920,13 @@ const currentSessionKey = computed(() => JSON.stringify({
 }));
 
 const latestDimensionChainProjection = shallowRef<Readonly<DimensionChainProjectionCacheEntry> | undefined>();
+const dimensionChainPanel = ref<{ captureReportVisual: () => DimensionChainVisual | Promise<DimensionChainVisual> }>();
+
+function captureDimensionChainVisual(): DimensionChainVisual | Promise<DimensionChainVisual> {
+  return dimensionChainPanel.value?.captureReportVisual() ?? { status: "empty" };
+}
+
+defineExpose({ captureDimensionChainVisual });
 
 const currentSessionProjection = computed<DimensionChainReportProjection | undefined>(() => {
   const cached = latestDimensionChainProjection.value;
@@ -898,6 +1040,14 @@ function formatSigned(value: number): string {
   return value > 0 ? `+${formatSummary(value)}` : formatSummary(value);
 }
 
+function formatComparisonValue(value: number | undefined): string {
+  return value === undefined ? "—" : formatSummary(value);
+}
+
+function formatComparisonDelta(value: number | undefined): string {
+  return value === undefined ? "—" : formatSigned(value);
+}
+
 function hideDraftCalculation(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): boolean {
   return isUserAdded(factor) && !isCompleteSpecification(candidateDraft(factor));
 }
@@ -938,8 +1088,8 @@ function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][numbe
     : "pending";
 }
 
-function componentCategoryLabel(category: ProcessRequirementComponentCategory | "" | undefined): string {
-  return COMPONENT_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ?? "Not classified";
+function nullableTraceability(value: string): string | null {
+  return value.trim() || null;
 }
 
 function submitSetup(): void {
@@ -957,7 +1107,8 @@ function submitSetup(): void {
       longTermSafetyFactor: draft.longTermSafetyFactor,
       sigmaLevel: draft.sigmaLevel,
       distribution: draft.distribution,
-      ...(draft.componentCategory ? { componentCategory: draft.componentCategory } : {}),
+      partNumber: nullableTraceability(draft.partNumber),
+      dimId: nullableTraceability(draft.dimId),
       ...(isUserAdded(factor) ? {
         factorName: factorNameFor(factor).trim(),
         userAdded: true as const,
@@ -1049,6 +1200,19 @@ function onModeChange(factorId: string, event: Event): void {
         </button>
       </div>
     </div>
+    <div
+      v-if="automaticAnalysisProgress"
+      class="automatic-analysis-feedback"
+      data-automatic-analysis-feedback
+      role="status"
+      aria-live="polite"
+    >
+      <p>
+        <LoaderCircle class="automatic-analysis-spinner" :size="14" aria-hidden="true" />
+        <span data-automatic-analysis-progress>Analyzing measured data {{ automaticAnalysisProgress.completedCount + 1 }} / {{ automaticAnalysisProgress.factorIds.length }}</span>
+      </p>
+      <div class="automatic-analysis-bar" data-automatic-analysis-bar aria-hidden="true"><span></span></div>
+    </div>
     <p v-if="setupEditable && activeFactors.length === 0" class="subtle" data-empty-factor-setup>
       No factors. Add a Factor, restore imported factors, or undo the last action.
     </p>
@@ -1095,8 +1259,13 @@ function onModeChange(factorId: string, event: Event): void {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(factor, index) in activeFactors" :key="factor.factorCandidate.factorCandidateId">
-            <td class="factor-index-cell">
+          <template v-for="(factor, index) in activeFactors" :key="factor.factorCandidate.factorCandidateId">
+          <tr>
+            <td
+              class="factor-index-cell"
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div v-if="setupEditable" class="factor-item-controls">
                 <span class="factor-item-number">{{ index + 1 }}</span>
                 <div class="factor-item-actions">
@@ -1120,7 +1289,10 @@ function onModeChange(factorId: string, event: Event): void {
               </div>
               <span v-else>{{ index + 1 }}</span>
             </td>
-            <td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-name-cell">
                 <div v-if="setupEditable" class="factor-move-controls">
                   <button
@@ -1151,7 +1323,60 @@ function onModeChange(factorId: string, event: Event): void {
                 <div v-else>{{ factorNameFor(factor) }}</div>
               </div>
             </td>
-            <td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
+              <div class="factor-field" data-factor-part-number>
+                <input
+                  v-if="setupEditable"
+                  v-model="candidateDraft(factor).partNumber"
+                  type="text"
+                  :maxlength="TRACEABILITY_MAX_LENGTH"
+                  class="factor-spec-input"
+                  :aria-label="`${factorNameFor(factor) || 'New factor'} Part Number`"
+                  :aria-invalid="specificationFieldError(candidateDraft(factor), 'partNumber') ? 'true' : undefined"
+                  :aria-describedby="specificationFieldError(candidateDraft(factor), 'partNumber') ? `${factor.factorCandidate.factorCandidateId}-part-number-error` : undefined"
+                  :disabled="busy"
+                >
+                <span v-else>{{ traceabilityDisplayValue(factor, "partNumber") }}</span>
+                <small
+                  v-if="setupEditable && specificationFieldError(candidateDraft(factor), 'partNumber')"
+                  :id="`${factor.factorCandidate.factorCandidateId}-part-number-error`"
+                  class="factor-spec-error"
+                  role="alert"
+                >{{ specificationFieldError(candidateDraft(factor), "partNumber") }}</small>
+              </div>
+            </td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
+              <div class="factor-field" data-factor-dim-id>
+                <input
+                  v-if="setupEditable"
+                  v-model="candidateDraft(factor).dimId"
+                  type="text"
+                  :maxlength="TRACEABILITY_MAX_LENGTH"
+                  class="factor-spec-input"
+                  :aria-label="`${factorNameFor(factor) || 'New factor'} DIM ID`"
+                  :aria-invalid="specificationFieldError(candidateDraft(factor), 'dimId') ? 'true' : undefined"
+                  :aria-describedby="specificationFieldError(candidateDraft(factor), 'dimId') ? `${factor.factorCandidate.factorCandidateId}-dim-id-error` : undefined"
+                  :disabled="busy"
+                >
+                <span v-else>{{ traceabilityDisplayValue(factor, "dimId") }}</span>
+                <small
+                  v-if="setupEditable && specificationFieldError(candidateDraft(factor), 'dimId')"
+                  :id="`${factor.factorCandidate.factorCandidateId}-dim-id-error`"
+                  class="factor-spec-error"
+                  role="alert"
+                >{{ specificationFieldError(candidateDraft(factor), "dimId") }}</small>
+              </div>
+            </td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="designNominal">
                 <div v-if="setupEditable" class="factor-nominal-input">
                   <input
@@ -1181,7 +1406,10 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "designNominal") }}</small>
               </div>
             </td>
-            <td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="upperTolerance">
                 <input
                   v-if="setupEditable"
@@ -1200,7 +1428,10 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "upperTolerance") }}</small>
               </div>
             </td>
-            <td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="lowerTolerance">
                 <input
                   v-if="setupEditable"
@@ -1219,7 +1450,11 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "lowerTolerance") }}</small>
               </div>
             </td>
-            <td data-column-key="longTermSafetyFactor">
+            <td
+              data-column-key="longTermSafetyFactor"
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="longTermSafetyFactor">
                 <input
                   v-if="setupEditable"
@@ -1239,7 +1474,11 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "longTermSafetyFactor") }}</small>
               </div>
             </td>
-            <td data-column-key="sigmaLevel">
+            <td
+              data-column-key="sigmaLevel"
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="sigmaLevel">
                 <input
                   v-if="setupEditable"
@@ -1259,7 +1498,10 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "sigmaLevel") }}</small>
               </div>
             </td>
-            <td>
+            <td
+              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
+            >
               <div class="factor-field" data-factor-field="distribution">
                 <select
                   v-if="setupEditable"
@@ -1280,43 +1522,57 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "distribution") }}</small>
               </div>
             </td>
-            <td data-column-key="componentCategory">
-              <div class="factor-field" data-factor-field="componentCategory">
-                <select
-                  v-if="setupEditable"
-                  v-model="candidateDraft(factor).componentCategory"
-                  data-component-category
-                  class="factor-distribution-select factor-component-category-select"
-                  :aria-label="`${factorNameFor(factor)} Component category`"
-                  :disabled="busy"
-                >
-                  <option value="">Not classified</option>
-                  <option v-for="option in COMPONENT_CATEGORY_OPTIONS" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-                <span v-else>{{ componentCategoryLabel(factor.setup?.componentCategory ?? factor.evidence?.componentCategory) }}</span>
-              </div>
-            </td>
             <td><output :aria-label="`${factorNameFor(factor)} Mean`">{{ formatFactorCalculation(factor, calculatedValues(factor).mean) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
+            <td><output :aria-label="`${factorNameFor(factor)} Cpk`">{{ formatSummary(factorSigmaLevel(factor) / 3) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
-            <td data-column-key="sourceMode">
+            <td
+              data-column-key="sourceMode"
+              :class="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 'factor-measured-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 2 : undefined"
+            >
               <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
                 <template v-if="props.measurementEntryMode === 'import'">
                   <div class="source-mode-readonly">
-                    <span>{{ factor.sourceMode }}</span>
+                    <span v-if="factor.sourceMode !== 'MEASURED'">{{ factor.sourceMode }}</span>
                     <button
                       v-if="factor.sourceMode === 'MEASURED'"
                       type="button"
                       class="factor-workspace-button"
                       :data-open-measurement="factor.evidence.factorId"
+                      :data-measured-state="measurementWorkspacePresentation(factor.evidence.factorId).state"
+                      :data-analysis-state="automaticAnalysisState(factor.evidence.factorId)"
+                      :aria-label="workspaceButtonLabel(factor.evidence.factorId)"
+                      :title="measurementWorkspacePresentation(factor.evidence.factorId).state === 'blocked'
+                        ? measurementWorkspacePresentation(factor.evidence.factorId).blockedMessage
+                        : workspaceButtonLabel(factor.evidence.factorId)"
                       :disabled="busy"
                       @click="emit('openMeasurement', factor.evidence.factorId)"
                     >
-                      Open workspace
+                      <LoaderCircle
+                        v-if="automaticAnalysisState(factor.evidence.factorId) === 'analyzing'"
+                        class="automatic-analysis-spinner"
+                        data-analysis-spinner
+                        :size="14"
+                        aria-hidden="true"
+                      />
+                      {{ automaticAnalysisState(factor.evidence.factorId) === "analyzing"
+                        ? "Analyzing"
+                        : automaticAnalysisState(factor.evidence.factorId) === "queued"
+                          ? "Queued"
+                          : "Measured Data" }}
                     </button>
+                    <span
+                      v-if="factor.sourceMode === 'MEASURED' && measurementWorkspacePresentation(factor.evidence.factorId).state === 'warning'"
+                      class="factor-workspace-warning-indicator"
+                      role="status"
+                    >Warning</span>
+                    <span
+                      v-else-if="factor.sourceMode === 'MEASURED' && measurementWorkspacePresentation(factor.evidence.factorId).state === 'blocked'"
+                      class="factor-workspace-blocked-indicator"
+                      role="status"
+                    >Action required</span>
                   </div>
                 </template>
                 <fieldset v-else class="source-mode-options">
@@ -1348,38 +1604,120 @@ function onModeChange(factorId: string, event: Event): void {
                       type="button"
                       class="factor-workspace-button"
                       :data-open-measurement="factor.evidence.factorId"
-                      :disabled="busy || factor.sourceMode !== 'MEASURED'"
+                      :data-measured-state="measurementWorkspacePresentation(factor.evidence.factorId).state"
+                      :data-analysis-state="automaticAnalysisState(factor.evidence.factorId)"
+                      :aria-label="workspaceButtonLabel(factor.evidence.factorId)"
+                      :title="measurementWorkspacePresentation(factor.evidence.factorId).state === 'blocked'
+                        ? measurementWorkspacePresentation(factor.evidence.factorId).blockedMessage
+                        : workspaceButtonLabel(factor.evidence.factorId)"
+                      :disabled="busy"
                       @click="emit('openMeasurement', factor.evidence.factorId)"
                     >
-                      Open workspace
+                      <LoaderCircle
+                        v-if="automaticAnalysisState(factor.evidence.factorId) === 'analyzing'"
+                        class="automatic-analysis-spinner"
+                        data-analysis-spinner
+                        :size="14"
+                        aria-hidden="true"
+                      />
+                      {{ automaticAnalysisState(factor.evidence.factorId) === "analyzing"
+                        ? "Analyzing"
+                        : automaticAnalysisState(factor.evidence.factorId) === "queued"
+                          ? "Queued"
+                          : "Measured Data" }}
                     </button>
+                    <span
+                      v-if="measurementWorkspacePresentation(factor.evidence.factorId).state === 'warning'"
+                      class="factor-workspace-warning-indicator"
+                      role="status"
+                    >Warning</span>
+                    <span
+                      v-else-if="measurementWorkspacePresentation(factor.evidence.factorId).state === 'blocked'"
+                      class="factor-workspace-blocked-indicator"
+                      role="status"
+                    >Action required</span>
                   </div>
                 </fieldset>
               </div>
             </td>
-            <td data-column-key="sampleCount">{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
-            <td data-column-key="readiness">
+            <td
+              data-column-key="sampleCount"
+              :class="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 'factor-measured-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 2 : undefined"
+            >
+              {{ factorMeasuredComparison(factor) && props.measurementEntryMode !== "import" ? "" : (factor.measurementPasteResult?.dataset?.analyzedCount ?? "-") }}
+            </td>
+            <td
+              data-column-key="readiness"
+              :class="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 'factor-measured-rowspan-cell' : ''"
+              :rowspan="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 2 : undefined"
+            >
+              <span
+                v-if="!factorMeasuredComparison(factor) || props.measurementEntryMode === 'import'"
+                class="status-chip"
+                :class="factorReadiness(factor) === 'ready' ? 'chip-ready' : 'chip-pending'"
+              >
+                {{ factorReadiness(factor) }}
+              </span>
+            </td>
+          </tr>
+          <tr
+            v-if="factorMeasuredComparison(factor)"
+            class="factor-measured-comparison-row"
+            :data-factor-measured-comparison="factor.evidence?.factorId"
+            :aria-label="`Actual measured comparison for ${factorNameFor(factor)}`"
+          >
+            <td>
+              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="mean">
+                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.mean.actual) }}</span>
+                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.mean.delta) }}</span>
+              </div>
+            </td>
+            <td>
+              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="tolerance">
+                <span><strong>Actual</strong> ±3σ {{ formatComparisonValue(factorMeasuredComparison(factor)?.tolerance.actual) }}</span>
+                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.tolerance.delta) }}</span>
+              </div>
+            </td>
+            <td>
+              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="oneSigma">
+                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.oneSigma.actual) }}</span>
+                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.oneSigma.delta) }}</span>
+              </div>
+            </td>
+            <td>
+              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="cpk">
+                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.cpk.actual) }}</span>
+                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.cpk.delta) }}</span>
+              </div>
+            </td>
+            <td></td>
+            <td v-if="props.measurementEntryMode !== 'import'" data-column-key="sourceMode"></td>
+            <td v-if="props.measurementEntryMode !== 'import'" data-column-key="sampleCount">{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
+            <td v-if="props.measurementEntryMode !== 'import'" data-column-key="readiness">
               <span class="status-chip" :class="factorReadiness(factor) === 'ready' ? 'chip-ready' : 'chip-pending'">
                 {{ factorReadiness(factor) }}
               </span>
             </td>
           </tr>
+          </template>
         </tbody>
         <tfoot data-factor-response-summary aria-label="F4 response summary">
           <tr class="factor-response-summary-row" data-summary-design-row>
-            <th colspan="2">Design Nominal:</th>
+            <th colspan="4">Design Nominal:</th>
             <td data-factor-column="design-nominal"><output data-summary-design-nominal>{{ formatSummary(displayedResponseSummary.designNominal) }}</output></td>
             <td data-factor-column="upper-tolerance"><output data-summary-upper-tolerance>{{ formatSigned(displayedResponseSummary.upperTolerance) }}</output></td>
             <td data-factor-column="lower-tolerance"><output data-summary-lower-tolerance>{{ formatSummary(displayedResponseSummary.lowerTolerance) }}</output></td>
-            <th colspan="4">Mean Response:</th>
+            <th colspan="3">Mean Response:</th>
             <td data-factor-column="mean"><output data-summary-mean-response>{{ formatSummary(displayedResponseSummary.meanResponse) }}</output></td>
             <td data-factor-column="tolerance"><output data-summary-tolerance>± {{ formatSummary(displayedResponseSummary.tolerance) }}</output></td>
             <td data-factor-column="one-sigma"><output data-summary-rss-sigma>{{ formatSummary(displayedResponseSummary.rssSigma) }}</output></td>
+            <td data-factor-column="cpk"></td>
             <td data-factor-column="contribution"><output data-summary-contribution>{{ formatPercent(displayedResponseSummary.contribution) }}</output></td>
             <td colspan="3"></td>
           </tr>
           <tr class="factor-response-summary-row factor-mean-shift-row">
-            <th colspan="9"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
+            <th colspan="10"><label for="additional-mean-shift">Additional Mean Shift ▸</label></th>
             <td data-factor-column="mean">
               <input
                 id="additional-mean-shift"
@@ -1391,12 +1729,12 @@ function onModeChange(factorId: string, event: Event): void {
                 :disabled="busy"
               >
             </td>
-            <td colspan="6"></td>
+            <td colspan="7"></td>
           </tr>
           <tr class="factor-response-summary-row factor-adjusted-mean-row">
-            <th colspan="9">Adjusted Mean:</th>
+            <th colspan="10">Adjusted Mean:</th>
             <td data-factor-column="mean"><output data-summary-adjusted-mean>{{ formatSummary(displayedResponseSummary.adjustedMean) }}</output></td>
-            <td colspan="6"></td>
+            <td colspan="7"></td>
           </tr>
         </tfoot>
       </table>
@@ -1484,6 +1822,7 @@ function onModeChange(factorId: string, event: Event): void {
         </div>
       </section>
       <DimensionChainPanel
+        ref="dimensionChainPanel"
         :key="dimensionChainResetRevision"
         :factors="dimensionChainFactors"
         :valid="setupIsValid"

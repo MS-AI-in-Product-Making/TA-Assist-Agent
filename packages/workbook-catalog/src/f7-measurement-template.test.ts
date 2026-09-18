@@ -159,8 +159,9 @@ describe("F7 measurement template authority", () => {
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn).toBe(2);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementCapacity).toBe(500);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBe(15);
-    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(514);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.measurementHeaderRow).toBe(12);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow).toBe(13);
+    expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.lastMeasurementRow).toBe(512);
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.factorRows).toEqual({
       factorName: 2,
       partNumber: 3,
@@ -172,9 +173,6 @@ describe("F7 measurement template authority", () => {
       upperSpecLimit: 9,
       specificationSource: 10,
       limitStatus: 11,
-      measurementStructure: 12,
-      subgroupSize: 13,
-      estimator: 14,
     });
     expect(F7_MEASUREMENT_TEMPLATE_LAYOUT.manifest).toEqual({
       contractIdCell: "_F7_MANIFEST!B2",
@@ -253,9 +251,9 @@ describe("F7 measurement template authority", () => {
     expect(firstFactor?.coordinates.upperSpecLimitCell).toBe("Measurements!B9");
     expect(firstFactor?.coordinates.specificationSourceCell).toBe("Measurements!B10");
     expect(firstFactor?.coordinates.limitStatusCell).toBe("Measurements!B11");
-    expect(firstFactor?.coordinates.measurementStructureCell).toBe("Measurements!B12");
-    expect(firstFactor?.coordinates.subgroupSizeCell).toBe("Measurements!B13");
-    expect(firstFactor?.coordinates.estimatorCell).toBe("Measurements!B14");
+    expect(firstFactor?.coordinates.measurementStructureCell).toBe("_F7_MANIFEST!O16");
+    expect(firstFactor?.coordinates.subgroupSizeCell).toBe("_F7_MANIFEST!P16");
+    expect(firstFactor?.coordinates.estimatorCell).toBe("_F7_MANIFEST!Q16");
     expect(firstFactor?.coordinates.measurementColumn).toBe("B");
     expect(firstFactor?.coordinates.firstMeasurementCell).toBe(`Measurements!B${F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow}`);
     expect(secondFactor?.coordinates.measurementColumn).toBe("C");

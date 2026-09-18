@@ -284,7 +284,10 @@ describe("createF7MeasurementImportRegistry", () => {
       }),
     });
     expect(second.sessionGeneration).toBe(2);
-    expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: first.templateId })).toEqual({ status: "stale" });
+    expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: first.templateId })).toMatchObject({
+      status: "available",
+      sessionGeneration: 1,
+    });
     expect(registry.resolveTemplate({ sessionId: SESSION_ID, templateId: second.templateId })).toMatchObject({
       status: "available",
       sessionGeneration: 2,
@@ -574,7 +577,7 @@ describe("createF7MeasurementImportRegistry", () => {
     }).status).toBe("claimed");
   });
 
-  it("rejects preview batches whose session, authority, or template binding does not match the current template generation", () => {
+  it("rejects mismatched preview bindings while allowing an earlier compatible template generation", () => {
     const registry = createF7MeasurementImportRegistry({
       now: () => BASE_TIME,
       createId: createIdSource(["1".repeat(32), "2".repeat(32), "3".repeat(32), "4".repeat(32), "5".repeat(32)]),
@@ -615,7 +618,7 @@ describe("createF7MeasurementImportRegistry", () => {
         expectedMeasurementImportRevision: 1,
       }),
     });
-    expect(() => registry.storePreview({
+    const earlierPreview = registry.storePreview({
       sessionId: SESSION_ID,
       templateId: template.templateId,
       createStoredBatch: ({ previewId, expiresAt }) => makeStoredBatch({
@@ -623,7 +626,9 @@ describe("createF7MeasurementImportRegistry", () => {
         expiresAt,
         authority: template.authority,
       }),
-    })).toThrow(/stale/i);
+    });
+    expect(earlierPreview.sessionGeneration).toBe(1);
+    expect(earlierPreview.storedBatch.authority.manifest.templateId).toBe(template.templateId);
   });
 
   it("rejects forged preview authority payloads even when ids and authority digest are replayed", () => {

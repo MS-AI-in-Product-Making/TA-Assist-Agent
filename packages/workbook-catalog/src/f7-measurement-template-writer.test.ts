@@ -79,6 +79,7 @@ describe("generateF7MeasurementTemplate", () => {
 
     const worksheet = workbook.worksheets.get("Measurements");
     expect(worksheet?.cells).toEqual(expect.arrayContaining([
+      { reference: "A1", value: "TA Measurement Import Template" },
       { reference: "A2", value: "Factor Name" },
       { reference: "A3", value: "Part Number" },
       { reference: "A4", value: "DIM ID" },
@@ -89,9 +90,6 @@ describe("generateF7MeasurementTemplate", () => {
       { reference: "A9", value: "Factor USL" },
       { reference: "A10", value: "Specification Source" },
       { reference: "A11", value: "Limit Status" },
-      { reference: "A12", value: "Measurement Structure" },
-      { reference: "A13", value: "Subgroup Size" },
-      { reference: "A14", value: "Estimator" },
       { reference: "B2", value: "Width" },
       { reference: "B5", value: "0.05" },
       { reference: "B6", value: "0.1" },
@@ -100,16 +98,21 @@ describe("generateF7MeasurementTemplate", () => {
       { reference: "B9", value: "0.15" },
       { reference: "B10", value: "Derived" },
       { reference: "B11", value: "CROSSES_ZERO" },
-      { reference: "B12", value: "UNORDERED_SAMPLE" },
-      { reference: "B14", value: "RANGE_D2" },
     ]));
     expect(worksheet?.cells).toContainEqual({ reference: "B3", value: "" });
     expect(worksheet?.cells).toContainEqual({ reference: "B4", value: "" });
-    expect(worksheet?.cells).not.toContainEqual(expect.objectContaining({ reference: "B13" }));
 
     const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
-    expect(sheet1).toContain('<row r="15"/>');
-    expect(sheet1).toContain('<row r="514"/>');
+    expect(sheet1).not.toContain("Subgroup Size");
+    expect(sheet1).not.toContain("Estimator");
+    expect(worksheet?.cells).toEqual(expect.arrayContaining([
+      { reference: "A12", value: "Sequence" },
+      { reference: "B12", value: "Width Measurement" },
+      { reference: "A13", value: "1" },
+      { reference: "A512", value: "500" },
+    ]));
+    expect(sheet1).toContain('<row r="13"');
+    expect(sheet1).toContain('<row r="512"');
   });
 
   it("writes locked manifest fields and factor digests into the hidden manifest sheet", () => {
@@ -138,6 +141,9 @@ describe("generateF7MeasurementTemplate", () => {
       { reference: "F16", value: "-0.05" },
       { reference: "M16", value: authority.manifest.factors[0]!.immutableValueDigest },
       { reference: "N16", value: authority.manifest.factors[0]!.immutableCoordinateDigest },
+      { reference: "O16", value: "UNORDERED_SAMPLE" },
+      { reference: "P16", value: "" },
+      { reference: "Q16", value: "RANGE_D2" },
       { reference: "A17", value: "e".repeat(64) },
       { reference: "C17", value: "PN-200" },
       { reference: "D17", value: "DIM-200" },
@@ -151,24 +157,39 @@ describe("generateF7MeasurementTemplate", () => {
     const styles = new TextDecoder().decode(parts.get("xl/styles.xml")!);
 
     expect(sheet1).toContain('<sheetProtection sheet="1" objects="1" scenarios="1" password="DA7A"/>');
-    expect(sheet1).toContain('<pane state="frozen" ySplit="14" topLeftCell="A15" activePane="bottomLeft"/>');
-    expect(sheet1).toContain('sqref="B12:B12"');
-    expect(sheet1).toContain('sqref="B14:B14"');
-    expect(sheet1).toContain('<c r="B12" t="inlineStr" s="1"><is><t>UNORDERED_SAMPLE</t></is></c>');
-    expect(sheet1).toContain('<c r="B14" t="inlineStr" s="1"><is><t>RANGE_D2</t></is></c>');
-    expect(sheet1).toContain('<row r="15"/>');
-    expect(sheet1).toContain('<row r="514"/>');
-    expect(sheet1).toContain('<protectedRange name="MeasurementsInput" sqref="B13:B13 B15:B514"/>');
+    expect(sheet1).toContain('<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>');
+    expect(sheet1).toContain('<pane state="frozen" ySplit="12" topLeftCell="A13" activePane="bottomLeft"/>');
+    expect(sheet1).not.toContain("<dataValidations");
+    expect(sheet1).toContain('<protectedRange name="MeasurementsInput" sqref="B13:B512"/>');
+    expect(sheet1).toContain('<col min="1" max="1" width="24" customWidth="1"/>');
+    expect(sheet1).toContain('<col min="2" max="2" width="18" customWidth="1"/>');
+    expect(styles).toContain('<borders count="2">');
+    expect(styles).toContain('<left style="thin"><color rgb="FF000000"/></left>');
+    expect(styles).not.toContain('rgb="FFD1D5DB"');
+    expect(styles).toContain('<fgColor rgb="FFE5E7EB"/>');
+    expect(styles).toContain('<fgColor rgb="FFEFF6FF"/>');
+    expect(styles).toContain('<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>');
+    expect(styles).toContain('<dxfs count="0"/>');
+    expect(styles).toContain('<alignment horizontal="center" vertical="center" wrapText="1"/>');
+    expect(sheet1).not.toContain("<conditionalFormatting");
     expect(sheet1).toContain('<c r="B3" t="inlineStr" s="0"><is><t></t></is></c>');
     expect(sheet1).toContain('<c r="B4" t="inlineStr" s="0"><is><t></t></is></c>');
-    expect(sheet1).not.toContain('<col min="2" max="2" width="12" style="1"');
-    expect(sheet1).not.toContain("<mergeCells");
+    expect(sheet1).not.toContain("F7 Measurement Import Template");
+    expect(sheet1).not.toMatch(/<t>[^<]*F7/);
+    expect(sheet1).not.toMatch(/[\u4e00-\u9fff]/);
     expect(sheet1.indexOf("<sheetProtection")).toBeLessThan(sheet1.indexOf("<protectedRanges>"));
-    expect(sheet1.indexOf("<protectedRanges>")).toBeLessThan(sheet1.indexOf("<dataValidations"));
+    expect(sheet1.indexOf("<autoFilter")).toBeLessThan(sheet1.indexOf("<mergeCells"));
     expect(sheet1).not.toContain('showDropDown="1"');
     expect(styles).toContain('<protection locked="0"/>');
     expect(styles).toContain('<protection locked="1"/>');
-    expect(styles).toContain('<alignment horizontal="center"/><protection locked="0"/>');
+  });
+
+  it("materializes blank measurement inputs with the white unlocked cell style", () => {
+    const archive = generateF7MeasurementTemplate(makeAuthority());
+    const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
+
+    expect(sheet1).toContain('<c r="B13" s="1"/>');
+    expect(sheet1).toContain('<c r="B512" s="1"/>');
   });
 
   it("rejects invalid XML controls and accepts XML escaping safely", () => {
@@ -200,13 +221,10 @@ describe("generateF7MeasurementTemplate", () => {
     const parts = readSafeZip(archive);
     expect(parts.size).toBe(7);
     const sheet1 = new TextDecoder().decode(parts.get("xl/worksheets/sheet1.xml")!);
-    expect(sheet1).toContain('sqref="B13:CW13 B15:CW514"');
-    expect(sheet1).toContain('sqref="B12:CW12"');
-    expect(sheet1).toContain('sqref="B14:CW14"');
-    const workbook = readOoxmlWorkbook(archive);
-    expect(workbook.worksheets.get("Measurements")?.cells).toEqual(expect.arrayContaining([
-      { reference: "CW2", value: "Factor 100" },
-    ]));
+    expect(sheet1).toContain('sqref="B13:CW512"');
+    expect(sheet1).toContain('<mergeCells count="1"><mergeCell ref="A1:CW1"/></mergeCells>');
+    expect(sheet1).toContain('<c r="CW2" t="inlineStr" s="3"><is><t>Factor 100</t></is></c>');
+    expect(sheet1).toContain('<c r="CW512" s="1"/>');
   });
 });
 

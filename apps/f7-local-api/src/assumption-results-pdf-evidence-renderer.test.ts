@@ -210,6 +210,28 @@ function expectSamePoint(
 }
 
 describe("renderAssumptionResultsPdfEvidenceHtml", () => {
+  it("uses the captured Web visual instead of reconstructing a Dimension Chain", () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence(), {
+      status: "image",
+      mediaType: "image/png",
+      dataUrl,
+      width: 1,
+      height: 1,
+    });
+
+    expect(html).toContain("data-dimension-chain-visual");
+    expect(html).not.toContain("<svg data-dimension-chain");
+  });
+
+  it("renders no image or reconstructed chain for an empty Web visual", () => {
+    const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence(), { status: "empty" });
+
+    expect(html).toContain("data-dimension-chain-visual-empty");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<svg data-dimension-chain");
+  });
+
   it("renders fallback dimension labels from factorSetup rows", () => {
     const html = renderAssumptionResultsPdfEvidenceHtml(buildEvidence({
       dimensionChain: {

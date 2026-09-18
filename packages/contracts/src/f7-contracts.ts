@@ -292,6 +292,8 @@ export const f7FactorSetupConfirmationSchema = z
   .object({
     factorCandidateId: sha256LowerSchema,
     factorName: z.string().trim().min(1).optional(),
+    partNumber: factorTraceabilitySchema.nullable().optional(),
+    dimId: factorTraceabilitySchema.nullable().optional(),
     userAdded: z.literal(true).optional(),
     componentCategory: processRequirementComponentCategorySchema.optional(),
     ...editableFactorSpecificationFields,
@@ -2159,21 +2161,126 @@ export const f7ReportSummarySchema = z
   .strict()
   .superRefine(requireLowerSpecLessThanUpperSpec);
 
+const f7ReportPairedMetricSchema = z
+  .object({
+    actual: finiteNumberSchema,
+    delta: finiteNumberSchema,
+  })
+  .strict();
+
+const f7ReportMeasurementComparisonSchema = z
+  .object({
+    mean: f7ReportPairedMetricSchema,
+    tolerance: f7ReportPairedMetricSchema.optional(),
+    oneSigma: f7ReportPairedMetricSchema.optional(),
+    cpk: f7ReportPairedMetricSchema.optional(),
+  })
+  .strict();
+
 export const f7ReportFactorSchema = z
   .object({
     factorId: sha256LowerSchema,
     factorName: z.string().min(1),
+    partNumber: factorTraceabilitySchema.optional(),
+    dimId: factorTraceabilitySchema.optional(),
     loopCoefficient: f7LoopCoefficientSchema,
     sourceMode: f7FactorSourceModeSchema,
     ...editableFactorSpecificationFields,
     longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor,
     sigmaLevel: f7FactorCalculationControlFields.sigmaLevel,
     setupDistribution: f7ToleranceDistributionSchema,
+    setupMean: finiteNumberSchema,
+    setupTolerance: finitePositiveNumberSchema,
+    setupOneSigma: finitePositiveNumberSchema,
+    setupCpk: finitePositiveNumberSchema,
+    percentContributionToSigma: z.number().finite().min(0).max(1),
+    measurementComparison: f7ReportMeasurementComparisonSchema.optional(),
+    sampleCount: z.number().int().nonnegative(),
+    readiness: z.enum(["ready", "pending"]),
+    measurementWarning: z.boolean(),
     approvedDistribution: f7DistributionCandidateFamilySchema,
     sourceReferences: z.array(z.string().min(1)).min(1),
   })
   .strict()
-  .superRefine(requireValidEditableFactorSpecification);
+  .superRefine((factor, context) => {
+    requireValidEditableFactorSpecification(factor, context);
+    if (factor.sourceMode === "BASELINE_ASSUMPTION") {
+      if (factor.readiness !== "ready") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode requires ready readiness",
+          path: ["readiness"],
+        });
+      }
+      if (factor.sampleCount !== 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode requires sampleCount to be zero",
+          path: ["sampleCount"],
+        });
+      }
+      if (factor.measurementComparison !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode cannot include measurementComparison",
+          path: ["measurementComparison"],
+        });
+      }
+      if (factor.measurementWarning) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode cannot include measurementWarning",
+          path: ["measurementWarning"],
+        });
+      }
+    }
+    if (factor.readiness === "pending") {
+      if (factor.sampleCount !== 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness requires sampleCount to be zero",
+          path: ["sampleCount"],
+        });
+      }
+      if (factor.measurementComparison !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness cannot include measurementComparison",
+          path: ["measurementComparison"],
+        });
+      }
+      if (factor.measurementWarning) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness cannot include measurementWarning",
+          path: ["measurementWarning"],
+        });
+      }
+    }
+    if (factor.sampleCount > 0 && factor.readiness !== "ready") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "positive sampleCount requires ready readiness",
+        path: ["sampleCount"],
+      });
+    }
+    if (factor.measurementComparison !== undefined
+      && (factor.readiness !== "ready" || factor.sampleCount === 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "measurementComparison requires ready readiness and a positive sampleCount",
+        path: ["measurementComparison"],
+      });
+    }
+    if (factor.measurementWarning
+      && (factor.readiness !== "ready" || factor.sampleCount === 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "measurementWarning requires ready measured data",
+        path: ["measurementWarning"],
+      });
+    }
+  });
 
 export const f7ReportSpecificationSourceCellsSchema = z
   .object({

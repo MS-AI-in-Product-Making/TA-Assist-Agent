@@ -237,6 +237,8 @@ export function createF7SessionStore(client: F7Client) {
       readonly longTermSafetyFactor: number;
       readonly sigmaLevel: number;
       readonly distribution: F7SetupDistribution;
+      readonly partNumber: string | null;
+      readonly dimId: string | null;
       readonly factorName?: string;
       readonly userAdded?: true;
     }>, systemSpecification: F7SystemSpecificationInput): Promise<void> {

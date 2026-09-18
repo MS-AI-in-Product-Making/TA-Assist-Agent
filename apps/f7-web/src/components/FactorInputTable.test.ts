@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, isReactive } from "vue";
 import { describe, expect, it } from "vitest";
-import { processRequirementComponentCategorySchema } from "@ai-assist/contracts";
+import type { F7FactorInput } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
 import FactorInputTable from "./FactorInputTable.vue";
 
 const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
+const COMPONENT_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/components/FactorInputTable.vue"), "utf8");
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
@@ -246,6 +247,13 @@ function mountWithFastStubs(props: {
   readonly session: F7SessionSnapshot;
   readonly busy: boolean;
   readonly editingSetup: boolean;
+  readonly measurementEntryMode?: "import" | "individual";
+  readonly blockedMeasurementFactors?: readonly { factorId: string; message: string }[];
+  readonly automaticAnalysisProgress?: {
+    readonly factorIds: readonly string[];
+    readonly activeFactorId: string;
+    readonly completedCount: number;
+  } | undefined;
 }) {
   return mount(FactorInputTable, {
     props,
@@ -258,7 +266,48 @@ function mountWithFastStubs(props: {
   });
 }
 
+function tableColumnStart(cell: Element): number {
+  const row = cell.parentElement;
+  if (!row) throw new Error("Expected table cell to have a parent row");
+  const precedingCells = Array.from(row.children).slice(0, Array.from(row.children).indexOf(cell));
+  return precedingCells.reduce((total, precedingCell) => total + Number(precedingCell.getAttribute("colspan") ?? 1), 0);
+}
+
 describe("FactorInputTable engineering evidence event", () => {
+  it("keeps every response-summary footer row aligned with all factor headers", () => {
+    const wrapper = mountWithFastStubs({
+      session: createSession({ status: "measurement_entry" }),
+      busy: false,
+      editingSetup: false,
+    });
+
+    const headerCount = wrapper.findAll("#factor-setup-table > thead > tr > th").length;
+    const footerRows = wrapper.findAll("[data-factor-response-summary] > tr");
+    const columnKeys = wrapper.findAll("#factor-setup-table > colgroup > col")
+      .map((column) => column.attributes("data-column-key"));
+
+    expect(headerCount).toBe(18);
+    expect(footerRows).toHaveLength(3);
+    for (const row of footerRows) {
+      const span = row.element.children.length === 0
+        ? 0
+        : Array.from(row.element.children).reduce(
+            (total, cell) => total + Number(cell.getAttribute("colspan") ?? 1),
+            0,
+          );
+      expect(span).toBe(headerCount);
+    }
+
+    expect(tableColumnStart(wrapper.get("[data-summary-design-nominal]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("designNominal"));
+    expect(tableColumnStart(wrapper.get("[data-summary-mean-response]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+    expect(tableColumnStart(wrapper.get("#additional-mean-shift").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+    expect(tableColumnStart(wrapper.get("[data-summary-adjusted-mean]").element.closest("td")!))
+      .toBe(columnKeys.indexOf("mean"));
+  });
+
   it("emits a session-bound envelope for engineering evidence", () => {
     const wrapper = mount(FactorInputTable, {
       props: {
@@ -818,14 +867,92 @@ describe("FactorInputTable engineering evidence event", () => {
 });
 
 describe("FactorInputTable measurement entry modes", () => {
-  function createModeSession(): F7SessionSnapshot {
+  function createModeSession(
+    mutateMeasuredFactor?: (factor: F7SessionSnapshot["factors"][number]) => F7SessionSnapshot["factors"][number],
+  ): F7SessionSnapshot {
     const base = createSession({ status: "measurement_entry" });
     const baseline = base.factors[0]!;
+    const measuredFactor = mutateMeasuredFactor?.({
+      ...baseline,
+      factorCandidate: {
+        ...baseline.factorCandidate,
+        factorCandidateId: HASH_D,
+        factorName: "Measured factor",
+      },
+      setup: baseline.setup
+        ? {
+            ...baseline.setup,
+            factorCandidateId: HASH_D,
+          }
+        : baseline.setup,
+      evidence: baseline.evidence
+        ? {
+            ...baseline.evidence,
+            factorCandidateId: HASH_D,
+            factorId: HASH_A,
+            factorName: "Measured factor",
+          }
+        : baseline.evidence,
+      sourceMode: "MEASURED",
+      input: {
+        mode: "MEASURED",
+        dataset: {
+          factorId: HASH_A,
+          unit: "mm",
+          structure: "ORDERED_INDIVIDUALS",
+          sourceReference: "import-01",
+          importedAt: "2026-09-16T08:00:00.000Z",
+          msaStatus: "unknown",
+          observations: [
+            { originalRow: 1, value: 0.11, disposition: "included" },
+            { originalRow: 2, value: 0.12, disposition: "included" },
+          ],
+          missingRowCount: 0,
+          rejectionSummaries: [],
+          originalRowCount: 2,
+          analyzedCount: 2,
+          contentHash: HASH_C,
+        },
+      },
+      measurementPasteResult: {
+        status: "ready",
+        factorId: HASH_A,
+        dataset: {
+          factorId: HASH_A,
+          unit: "mm",
+          structure: "ORDERED_INDIVIDUALS",
+          sourceReference: "import-01",
+          importedAt: "2026-09-16T08:00:00.000Z",
+          msaStatus: "unknown",
+          observations: [
+            { originalRow: 1, value: 0.11, disposition: "included" },
+            { originalRow: 2, value: 0.12, disposition: "included" },
+          ],
+          missingRowCount: 0,
+          rejectionSummaries: [],
+          originalRowCount: 2,
+          analyzedCount: 2,
+          contentHash: HASH_C,
+        },
+        validation: {
+          status: "ready",
+          blockingIssues: [],
+          advisoryIssues: [],
+          candidateEligibility: {
+            normal: "eligible",
+            lognormal: "eligible",
+            weibull: "eligible",
+            gamma: "eligible",
+            uniform: "eligible_with_boundary_warning",
+          },
+        },
+      },
+    });
     return {
       ...base,
       factors: [
         baseline,
-        {
+        measuredFactor ?? {
           ...baseline,
           factorCandidate: {
             ...baseline.factorCandidate,
@@ -905,7 +1032,181 @@ describe("FactorInputTable measurement entry modes", () => {
     };
   }
 
-  it("shows textual source modes and no radios in import mode", () => {
+  function workspaceButton(wrapper: ReturnType<typeof mountWithFastStubs>) {
+    return wrapper.get(`[data-open-measurement='${HASH_A}']`);
+  }
+
+  function expectWorkspaceButtonState(
+    wrapper: ReturnType<typeof mountWithFastStubs>,
+    state: "empty" | "ready" | "warning" | "blocked",
+    indicator: "none" | "warning" | "blocked",
+    expectedBlockedTitle = "Measurement validation is blocked.",
+  ): void {
+    const expectedLabels = {
+      empty: "Measured Data: No measured data",
+      ready: "Measured Data: passed validation",
+      warning: "Measured Data: passed validation with warnings; you can continue",
+      blocked: "Measured Data: validation is blocked; correction or re-upload is required",
+    } as const;
+    const button = workspaceButton(wrapper);
+    const expectedLabel = `${expectedLabels[state]} for Measured factor`;
+    expect(button.attributes("data-measured-state")).toBe(state);
+    expect(button.attributes("aria-label")).toBe(expectedLabel);
+    expect(button.attributes("title")).toBe(state === "blocked" ? expectedBlockedTitle : expectedLabel);
+    expect(button.text()).toBe("Measured Data");
+    expect(wrapper.find(".factor-workspace-warning-indicator").exists()).toBe(indicator === "warning");
+    expect(wrapper.find(".factor-workspace-blocked-indicator").exists()).toBe(indicator === "blocked");
+  }
+
+  function measuredComparisonSession(
+    observations: NonNullable<NonNullable<F7SessionSnapshot["factors"][number]["measurementPasteResult"]>["dataset"]>["observations"],
+  ): F7SessionSnapshot {
+    return createModeSession((factor) => ({
+      ...factor,
+      evidence: {
+        ...factor.evidence!,
+        calculatedMean: 1,
+        tolerance: 0.1,
+        oneSigma: 0.025,
+        lowerSpecLimit: 0.8,
+        upperSpecLimit: 1.2,
+      },
+      measurementPasteResult: {
+        ...factor.measurementPasteResult!,
+        dataset: {
+          ...factor.measurementPasteResult!.dataset!,
+          observations,
+          originalRowCount: observations.length,
+          analyzedCount: observations.filter((observation) => observation.disposition === "included").length,
+        },
+      },
+    }));
+  }
+
+  it("renders measured comparison after Setup with Cpk and explicit Actual and delta metrics", () => {
+    const wrapper = mountWithFastStubs({
+      session: measuredComparisonSession([
+        { originalRow: 1, value: 0.9, disposition: "included" },
+        { originalRow: 2, value: 1, disposition: "included" },
+        { originalRow: 3, value: 1.1, disposition: "included" },
+      ]),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+
+    const headers = wrapper.findAll("#factor-setup-table thead th").map((header) => header.attributes("aria-label"));
+    expect(headers.slice(headers.indexOf("1σ"), headers.indexOf("% Cont. to σ") + 1)).toEqual([
+      "1σ",
+      "Cpk",
+      "% Cont. to σ",
+    ]);
+    const expectedComparisonColumns = {
+      mean: { defaultWidth: 94, minWidth: 88 },
+      tolerance: { defaultWidth: 116, minWidth: 108 },
+      oneSigma: { defaultWidth: 94, minWidth: 88 },
+      cpk: { defaultWidth: 94, minWidth: 88 },
+    } as const;
+    for (const [key, widths] of Object.entries(expectedComparisonColumns)) {
+      expect(COMPONENT_SOURCE).toContain(
+        `{ key: "${key}", label:`,
+      );
+      expect(COMPONENT_SOURCE).toMatch(new RegExp(
+        `\\{ key: "${key}",[^\\n]+defaultWidth: ${widths.defaultWidth}, minWidth: ${widths.minWidth} \\}`,
+      ));
+      expect(wrapper.get(`col[data-column-key='${key}']`).attributes("style")).toContain(`${widths.defaultWidth}px`);
+    }
+    expect(wrapper.get("#factor-setup-table").attributes("style")).toContain("min-width: 1770px");
+
+    const comparison = wrapper.get(`[data-factor-measured-comparison='${HASH_A}']`);
+    const setupRow = comparison.element.previousElementSibling;
+    expect(setupRow?.querySelector("output[aria-label='Measured factor Cpk']")?.textContent).toBe("1.3333");
+    expect(setupRow?.nextElementSibling).toBe(comparison.element);
+    expect(setupRow?.querySelector(`[data-open-measurement='${HASH_A}']`)?.textContent?.trim()).toBe("Measured Data");
+    expect(comparison.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(false);
+    const setupCells = [...(setupRow?.querySelectorAll("td") ?? [])];
+    expect(setupCells.slice(0, 10).every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
+    expect(setupCells.slice(0, 10).every((cell) => cell.classList.contains("factor-setup-rowspan-cell"))).toBe(true);
+    const measuredRowspanCells = setupCells.slice(-3);
+    expect(measuredRowspanCells.map((cell) => cell.getAttribute("data-column-key"))).toEqual([
+      "sourceMode",
+      "sampleCount",
+      "readiness",
+    ]);
+    expect(measuredRowspanCells.every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
+    expect(measuredRowspanCells.every((cell) => cell.classList.contains("factor-measured-rowspan-cell"))).toBe(true);
+    expect(measuredRowspanCells[1]?.textContent?.trim()).toBe("3");
+    expect(measuredRowspanCells[2]?.textContent?.trim()).toBe("ready");
+    expect(comparison.attributes("aria-label")).toContain("Measured factor");
+    expect(comparison.findAll("td")).toHaveLength(5);
+
+    expect(comparison.get("[data-measured-comparison-metric='mean']").text()).toContain("Actual 1");
+    expect(comparison.get("[data-measured-comparison-metric='mean']").text()).toContain("Δ 0");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance']").text()).toContain("Actual ±3σ 0.3");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance']").text()).toContain("Δ +0.2");
+    expect(comparison.get("[data-measured-comparison-metric='oneSigma']").text()).toContain("Actual 0.1");
+    expect(comparison.get("[data-measured-comparison-metric='oneSigma']").text()).toContain("Δ +0.075");
+    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Actual 0.6667");
+    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Δ -0.6667");
+  });
+
+  it("omits measured comparison for baseline, unready, editing, and no included finite data", () => {
+    const baselineWrapper = mountWithFastStubs({
+      session: createSession({ status: "measurement_entry" }),
+      busy: false,
+      editingSetup: false,
+    });
+    expect(baselineWrapper.find("td[rowspan]").exists()).toBe(false);
+    const unreadyWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({ ...factor, measurementPasteResult: undefined })),
+      busy: false,
+      editingSetup: false,
+    });
+    const editingWrapper = mountWithFastStubs({
+      session: measuredComparisonSession([
+        { originalRow: 1, value: 0.9, disposition: "included" },
+        { originalRow: 2, value: 1.1, disposition: "included" },
+      ]),
+      busy: false,
+      editingSetup: true,
+    });
+    const emptyWrapper = mountWithFastStubs({
+      session: measuredComparisonSession([
+        {
+          originalRow: 1,
+          value: 1,
+          disposition: "excluded",
+          reason: "OTHER",
+          operatorReference: "operator",
+          confirmed: true,
+        },
+      ]),
+      busy: false,
+      editingSetup: false,
+    });
+
+    expect(baselineWrapper.find("[data-factor-measured-comparison]").exists()).toBe(false);
+    expect(unreadyWrapper.find("[data-factor-measured-comparison]").exists()).toBe(false);
+    expect(editingWrapper.find("[data-factor-measured-comparison]").exists()).toBe(false);
+    expect(emptyWrapper.find("[data-factor-measured-comparison]").exists()).toBe(false);
+  });
+
+  it("renders unavailable measured comparison Cpk as an em dash for zero variation", () => {
+    const wrapper = mountWithFastStubs({
+      session: measuredComparisonSession([
+        { originalRow: 1, value: 1, disposition: "included" },
+        { originalRow: 2, value: 1, disposition: "included" },
+      ]),
+      busy: false,
+      editingSetup: false,
+    });
+
+    const comparison = wrapper.get(`[data-factor-measured-comparison='${HASH_A}']`);
+    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Actual —");
+    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Δ —");
+  });
+
+  it("omits the redundant measured source text and keeps baseline text in import mode", () => {
     const wrapper = mountWithFastStubs({
       session: createModeSession(),
       busy: false,
@@ -919,7 +1220,8 @@ describe("FactorInputTable measurement entry modes", () => {
     });
 
     expect(wrapper.text()).toContain("BASELINE_ASSUMPTION");
-    expect(wrapper.text()).toContain("MEASURED");
+    expect(wrapper.text()).not.toContain("MEASURED");
+    expect(wrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Measured Data");
     expect(wrapper.findAll("input[type='radio']")).toHaveLength(0);
   });
 
@@ -938,9 +1240,10 @@ describe("FactorInputTable measurement entry modes", () => {
 
     expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
     expect(wrapper.findAll("input[type='radio']").length).toBeGreaterThan(0);
+  expectWorkspaceButtonState(wrapper, "warning", "warning");
   });
 
-  it("keeps open workspace visible for measured factors in both modes", () => {
+  it("keeps the Measured Data workspace action visible in both modes", () => {
     const importWrapper = mountWithFastStubs({
       session: createModeSession(),
       busy: false,
@@ -964,153 +1267,418 @@ describe("FactorInputTable measurement entry modes", () => {
       measurementEntryMode: "individual";
     });
 
-    expect(importWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
-    expect(individualWrapper.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(true);
+    expect(importWrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Measured Data");
+    expect(individualWrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Measured Data");
+  });
+
+  it("renders the Measured Data button state and state-aware labels in import mode", () => {
+    const emptyWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({
+        ...factor,
+        measurementPasteResult: undefined,
+      })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+    const readyWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({
+        ...factor,
+        evidence: {
+          ...factor.evidence!,
+          lowerSpecLimit: 0.05,
+          upperSpecLimit: 0.2,
+        },
+        measurementPasteResult: {
+          ...factor.measurementPasteResult!,
+          dataset: {
+            ...factor.measurementPasteResult!.dataset!,
+            observations: [
+              { originalRow: 1, value: 0.11, disposition: "included" },
+              { originalRow: 2, value: 0.12, disposition: "included" },
+            ],
+          },
+        },
+      })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+    const warningWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({
+        ...factor,
+        measurementPasteResult: {
+          ...factor.measurementPasteResult!,
+          dataset: {
+            ...factor.measurementPasteResult!.dataset!,
+            observations: [
+              ...factor.measurementPasteResult!.dataset!.observations,
+              { originalRow: 3, value: 0.5, disposition: "included" },
+            ],
+          },
+        },
+      })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+    const blockedWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({
+        ...factor,
+        measurementPasteResult: {
+          ...factor.measurementPasteResult!,
+          status: "blocked",
+          dataset: {
+            ...factor.measurementPasteResult!.dataset!,
+            observations: [
+              ...factor.measurementPasteResult!.dataset!.observations,
+              { originalRow: 3, value: 0.5, disposition: "included" },
+            ],
+          },
+        },
+      })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+
+    expectWorkspaceButtonState(emptyWrapper, "empty", "none");
+    expectWorkspaceButtonState(readyWrapper, "ready", "none");
+    expectWorkspaceButtonState(warningWrapper, "warning", "warning");
+    expectWorkspaceButtonState(blockedWrapper, "blocked", "blocked");
+    expect(workspaceButton(emptyWrapper).attributes("aria-label")).toContain("No measured data");
+    expect(workspaceButton(readyWrapper).attributes("aria-label")).toContain("passed validation");
+  });
+
+  it("sets the Measured Data button state to blocked when an empty factor ID is supplied through the prop", () => {
+    const session = createModeSession((factor) => ({
+      ...factor,
+      measurementPasteResult: undefined,
+    }));
+    const emptyWrapper = mountWithFastStubs({
+      session,
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+    const blockedWrapper = mountWithFastStubs({
+      session,
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+      blockedMeasurementFactors: [{ factorId: HASH_A, message: "Action required" }],
+    });
+
+    expect(workspaceButton(emptyWrapper).attributes("data-measured-state")).toBe("empty");
+    expect(workspaceButton(blockedWrapper).attributes("data-measured-state")).toBe("blocked");
+    expect(blockedWrapper.get(".factor-workspace-blocked-indicator").text()).toBe("Action required");
+    expect(blockedWrapper.text()).not.toContain("Warning");
+  });
+
+  it("keeps the blocked Measured Data button state clickable through the prop in both modes", async () => {
+    const blockedMeasurementFactors = [{ factorId: HASH_A, message: "Action required" }] as const;
+    const importWrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+      blockedMeasurementFactors,
+    });
+    const individualWrapper = mountWithFastStubs({
+      session: createModeSession((factor) => {
+        const baselineInput: Extract<F7FactorInput, { mode: "BASELINE_ASSUMPTION" }> = factor.input?.mode === "BASELINE_ASSUMPTION"
+          ? factor.input
+          : {
+              mode: "BASELINE_ASSUMPTION",
+              baselineSampler: factor.evidence!.baselineSampler,
+            };
+        return {
+          ...factor,
+          sourceMode: "BASELINE_ASSUMPTION",
+          input: baselineInput,
+        };
+      }),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "individual",
+      blockedMeasurementFactors,
+    });
+
+    expectWorkspaceButtonState(importWrapper, "blocked", "blocked", "Action required");
+    expectWorkspaceButtonState(individualWrapper, "blocked", "blocked", "Action required");
+    expect(workspaceButton(importWrapper).attributes("disabled")).toBeUndefined();
+    expect(workspaceButton(individualWrapper).attributes("disabled")).toBeUndefined();
+
+    await workspaceButton(importWrapper).trigger("click");
+    await workspaceButton(individualWrapper).trigger("click");
+
+    expect(importWrapper.emitted("openMeasurement")?.at(-1)).toEqual([HASH_A]);
+    expect(individualWrapper.emitted("openMeasurement")?.at(-1)).toEqual([HASH_A]);
+  });
+
+  it("shows automatic measured analysis progress for active and queued Source Mode rows", async () => {
+    const queuedWrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: true,
+      editingSetup: false,
+      measurementEntryMode: "import",
+      automaticAnalysisProgress: {
+        factorIds: [HASH_C, HASH_A],
+        activeFactorId: HASH_C,
+        completedCount: 0,
+      },
+    });
+
+    const queuedFeedback = queuedWrapper.get("[data-automatic-analysis-feedback]");
+    expect(queuedFeedback.get("[data-automatic-analysis-progress]").text()).toBe("Analyzing measured data 1 / 2");
+    expect(queuedFeedback.find("[data-automatic-analysis-bar]").exists()).toBe(true);
+    expect(queuedFeedback.attributes("role")).toBe("status");
+    expect(queuedFeedback.attributes("aria-live")).toBe("polite");
+    expect(queuedFeedback.get(".automatic-analysis-spinner").attributes("aria-hidden")).toBe("true");
+    expect(queuedFeedback.get("[data-automatic-analysis-bar]").attributes("aria-hidden")).toBe("true");
+    expect(queuedFeedback.element.previousElementSibling).toBe(queuedWrapper.get(".factor-setup-heading").element);
+    expect(queuedFeedback.element.nextElementSibling).toBe(queuedWrapper.get(".table-scroll").element);
+    expect(queuedWrapper.find("thead [data-automatic-analysis-progress]").exists()).toBe(false);
+    expect(workspaceButton(queuedWrapper).text()).toBe("Queued");
+    expect(workspaceButton(queuedWrapper).attributes("aria-label")).toBe("Measured Data queued for automatic analysis for Measured factor");
+
+    const activeWrapper = mountWithFastStubs({
+      session: createModeSession(),
+      busy: true,
+      editingSetup: false,
+      measurementEntryMode: "import",
+      automaticAnalysisProgress: {
+        factorIds: [HASH_C, HASH_A],
+        activeFactorId: HASH_A,
+        completedCount: 1,
+      },
+    });
+
+    const activeFeedback = activeWrapper.get("[data-automatic-analysis-feedback]");
+    expect(activeFeedback.get("[data-automatic-analysis-progress]").text()).toBe("Analyzing measured data 2 / 2");
+    expect(activeFeedback.find("[data-automatic-analysis-bar]").exists()).toBe(true);
+    expect(activeWrapper.find("thead [data-automatic-analysis-progress]").exists()).toBe(false);
+    expect(workspaceButton(activeWrapper).text()).toContain("Analyzing");
+    expect(workspaceButton(activeWrapper).find("[data-analysis-spinner]").exists()).toBe(true);
+    expect(workspaceButton(activeWrapper).attributes("aria-label")).toBe("Analyzing measured data for Measured factor");
+
+    const measuredState = workspaceButton(activeWrapper).attributes("data-measured-state");
+    await activeWrapper.setProps({ automaticAnalysisProgress: undefined, busy: false });
+
+    expect(activeWrapper.find("[data-automatic-analysis-feedback]").exists()).toBe(false);
+    expect(workspaceButton(activeWrapper).text()).toBe("Measured Data");
+    expect(workspaceButton(activeWrapper).attributes("data-measured-state")).toBe(measuredState);
+    expect(workspaceButton(activeWrapper).attributes("disabled")).toBeUndefined();
   });
 });
 
-describe("FactorInputTable component category", () => {
-  const expectedOptions = [
-    ["", "Not classified"],
-    ["battery-cts", "Battery CTS"],
-    ["z-axis-or-around-xy-clearance", "Z-axis or around-XY clearance"],
-    ["glass-tdm-gap-or-z-step", "Glass/TDM gap or Z-step"],
-    ["thermal-module-critical-path", "Thermal module critical path"],
-    ["pcb-critical-clearance-or-alignment", "PCB critical clearance or alignment"],
-    ["cover-fit-and-function", "Cover fit and function"],
-    ["hinge-trackpad-button-or-sensor", "Hinge, trackpad, button, or sensor"],
-    ["cable-routing", "Cable routing"],
-    ["external-port-kickstand-logo-or-ssd", "External port, kickstand, logo, or SSD"],
-    ["pcb-component-or-fastener", "PCB component or fastener"],
-    ["engagement-or-assembly-feature", "Engagement or assembly feature"],
-    ["foam-or-gasket-sealing-cushioning-or-nvh", "Foam or gasket sealing, cushioning, or NVH"],
-  ] as const;
-
-  function editableSession(categorySource: "setup" | "evidence" | "blank"): F7SessionSnapshot {
+describe("FactorInputTable factor traceability", () => {
+  function traceabilitySession(source: "setup" | "evidence" | "candidate" | "missing"): F7SessionSnapshot {
     const session = createSession({ status: "factor_setup" });
     const factor = session.factors[0]!;
     session.factors = [{
       ...factor,
+      factorCandidate: {
+        ...factor.factorCandidate,
+        ...(source === "candidate" ? { partNumber: "PN-CANDIDATE", dimId: "DIM-CANDIDATE" } : {}),
+      },
       setup: factor.setup
         ? {
             ...factor.setup,
-            ...(categorySource === "setup" ? { componentCategory: "battery-cts" as const } : {}),
+            ...(source === "setup" ? { partNumber: "PN-SETUP", dimId: "DIM-SETUP" } : {}),
           }
         : factor.setup,
       evidence: factor.evidence
         ? {
             ...factor.evidence,
-            ...(categorySource === "evidence" ? { componentCategory: "cable-routing" as const } : {}),
+            ...(source === "evidence" ? { partNumber: "PN-EVIDENCE", dimId: "DIM-EVIDENCE" } : {}),
           }
         : factor.evidence,
     }];
     return session;
   }
 
-  it("renders the blank option plus every controlled component category with engineering labels", () => {
+  it("uses the exact leading columns and removes component category", () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("blank"),
+      session: traceabilitySession("missing"),
       busy: false,
-      editingSetup: true,
+      editingSetup: false,
     });
 
-    const select = wrapper.get("[data-component-category]");
-    const options = select.findAll("option").map((option) => [option.element.value, option.text()]);
-    expect(options).toEqual(expectedOptions.map((option) => [...option]));
-    expect(options.slice(1).map(([value]) => value)).toEqual(processRequirementComponentCategorySchema.options);
-    expect(wrapper.get("col[data-column-key='componentCategory']").attributes("style")).toContain("140px");
+    const columnKeys = wrapper.findAll("#factor-setup-table col").map((column) => column.attributes("data-column-key"));
+    expect(columnKeys.slice(0, 5)).toEqual(["index", "factor", "partNumber", "dimId", "designNominal"]);
+    expect(columnKeys).not.toContain("componentCategory");
+    expect(wrapper.find("[data-component-category]").exists()).toBe(false);
   });
 
   it.each([
-    ["setup", "battery-cts"],
-    ["evidence", "cable-routing"],
-  ] as const)("backfills an existing %s category", (categorySource, expectedCategory) => {
+    ["setup", "PN-SETUP", "DIM-SETUP"],
+    ["evidence", "PN-EVIDENCE", "DIM-EVIDENCE"],
+    ["candidate", "PN-CANDIDATE", "DIM-CANDIDATE"],
+    ["missing", "Missing", "Missing"],
+  ] as const)("displays %s traceability read-only", (source, expectedPartNumber, expectedDimId) => {
     const wrapper = mountWithFastStubs({
-      session: editableSession(categorySource),
+      session: traceabilitySession(source),
       busy: false,
-      editingSetup: true,
+      editingSetup: false,
     });
 
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe(expectedCategory);
+    expect(wrapper.get("[data-factor-part-number]").text()).toBe(expectedPartNumber);
+    expect(wrapper.get("[data-factor-dim-id]").text()).toBe(expectedDimId);
+    expect(wrapper.find("[data-factor-part-number] input").exists()).toBe(false);
+    expect(wrapper.find("[data-factor-dim-id] input").exists()).toBe(false);
   });
 
-  it("includes a selected category in confirmation payload and omits a blank category", async () => {
-    const selectedWrapper = mountWithFastStubs({
-      session: editableSession("blank"),
-      busy: false,
-      editingSetup: true,
-    });
-    await selectedWrapper.get("[data-component-category]").setValue("thermal-module-critical-path");
-    await selectedWrapper.get("#confirm-factor-setup").trigger("click");
-    expect(selectedWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.objectContaining({ componentCategory: "thermal-module-critical-path" }),
-    ]);
+  it.each([
+    [false, "Missing", "Missing"],
+    [true, "", ""],
+  ] as const)("keeps explicitly cleared current traceability empty when editingSetup is %s", (editingSetup, expectedPartNumber, expectedDimId) => {
+    const session = traceabilitySession("candidate");
+    const factor = session.factors[0]!;
+    session.factors = [{
+      ...factor,
+      setup: {
+        ...factor.setup!,
+        partNumber: undefined,
+      },
+      evidence: {
+        ...factor.evidence!,
+        dimId: undefined,
+      },
+    }];
 
-    const blankWrapper = mountWithFastStubs({
-      session: editableSession("blank"),
-      busy: false,
-      editingSetup: true,
-    });
-    await blankWrapper.get("#confirm-factor-setup").trigger("click");
-    expect(blankWrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.not.objectContaining({ componentCategory: expect.anything() }),
-    ]);
+    const wrapper = mountWithFastStubs({ session, busy: false, editingSetup });
+
+    if (editingSetup) {
+      expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe(expectedPartNumber);
+      expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe(expectedDimId);
+    } else {
+      expect(wrapper.get("[data-factor-part-number]").text()).toBe(expectedPartNumber);
+      expect(wrapper.get("[data-factor-dim-id]").text()).toBe(expectedDimId);
+    }
   });
 
-  it("resets category drafts when a new session reuses the same candidate ID", async () => {
+  it("edits imported and user-added traceability with empty drafts for new factors", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("setup"),
+      session: traceabilitySession("evidence"),
       busy: false,
       editingSetup: true,
     });
-    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
 
-    const replacementSession = editableSession("evidence");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe("PN-EVIDENCE");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe("DIM-EVIDENCE");
+    await wrapper.get("button[aria-label='Add factor after Factor A']").trigger("click");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='New factor Part Number']").element.value).toBe("");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='New factor DIM ID']").element.value).toBe("");
+  });
+
+  it("rebuilds traceability drafts from new session authority when candidate IDs are reused", async () => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    await wrapper.get("input[aria-label='Factor A Part Number']").setValue("PN-EDITED");
+    await wrapper.get("input[aria-label='Factor A DIM ID']").setValue("DIM-EDITED");
+
+    const replacementSession = traceabilitySession("evidence");
     replacementSession.sessionId = "session-02";
     await wrapper.setProps({ session: replacementSession });
 
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("cable-routing");
-    await wrapper.get("#confirm-factor-setup").trigger("click");
-    expect(wrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([
-      expect.objectContaining({ componentCategory: "cable-routing" }),
-    ]);
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']").element.value).toBe("PN-EVIDENCE");
+    expect(wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']").element.value).toBe("DIM-EVIDENCE");
   });
 
-  it("defaults user-added factors to blank and reset clears a manually selected category", async () => {
+  it("reset restores imported candidate traceability values", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("blank"),
+      session: traceabilitySession("candidate"),
       busy: false,
       editingSetup: true,
     });
-    const importedSelect = wrapper.get<HTMLSelectElement>("[data-component-category]");
-    await importedSelect.setValue("cover-fit-and-function");
+    const partNumber = wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']");
+    const dimId = wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']");
+    await partNumber.setValue("PN-EDITED");
+    await dimId.setValue("DIM-EDITED");
+
     await wrapper.get("[data-factor-reset]").trigger("click");
-    expect(wrapper.get<HTMLSelectElement>("[data-component-category]").element.value).toBe("");
 
-    await wrapper.get("button[aria-label='Add factor after Factor A']").trigger("click");
-    const selects = wrapper.findAll<HTMLSelectElement>("[data-component-category]");
-    expect(selects).toHaveLength(2);
-    expect(selects[1]!.element.value).toBe("");
+    expect(partNumber.element.value).toBe("PN-CANDIDATE");
+    expect(dimId.element.value).toBe("DIM-CANDIDATE");
   });
 
-  it("preserves category changes through undo and redo snapshots", async () => {
+  it("preserves traceability draft edits through undo and redo snapshots", async () => {
     const wrapper = mountWithFastStubs({
-      session: editableSession("evidence"),
+      session: traceabilitySession("evidence"),
       busy: false,
       editingSetup: true,
     });
-    const category = () => wrapper.get<HTMLSelectElement>("[data-component-category]").element.value;
-
-    await wrapper.get("[data-component-category]").setValue("pcb-component-or-fastener");
+    const partNumber = wrapper.get<HTMLInputElement>("input[aria-label='Factor A Part Number']");
+    const dimId = wrapper.get<HTMLInputElement>("input[aria-label='Factor A DIM ID']");
+    await partNumber.setValue("PN-EDITED");
+    await dimId.setValue("DIM-EDITED");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("pcb-component-or-fastener");
 
     await wrapper.get("[data-factor-undo]").trigger("click");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("cable-routing");
+    expect(partNumber.element.value).toBe("PN-EDITED");
+    expect(dimId.element.value).toBe("DIM-EVIDENCE");
+
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(partNumber.element.value).toBe("PN-EVIDENCE");
+    expect(dimId.element.value).toBe("DIM-EVIDENCE");
 
     await wrapper.get("[data-factor-redo]").trigger("click");
     await wrapper.vm.$nextTick();
-    expect(category()).toBe("pcb-component-or-fastener");
+    await wrapper.get("[data-factor-redo]").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(partNumber.element.value).toBe("PN-EDITED");
+    expect(dimId.element.value).toBe("DIM-EDITED");
+  });
+
+  it.each([
+    ["Part Number", "partNumber"],
+    ["DIM ID", "dimId"],
+  ] as const)("limits %s to 300 characters and blocks confirmation for longer controlled drafts", async (label, field) => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    const input = wrapper.get<HTMLInputElement>(`input[aria-label='Factor A ${label}']`);
+    expect(input.attributes("maxlength")).toBe("300");
+
+    await input.setValue("X".repeat(301));
+
+    expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    const error = wrapper.get(`[data-factor-${field === "partNumber" ? "part-number" : "dim-id"}] [role='alert']`);
+    expect(error.text()).toBe(`${label} must be 300 characters or fewer.`);
+    expect(input.attributes("aria-invalid")).toBe("true");
+    expect(input.attributes("aria-describedby")).toBe(error.attributes("id"));
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+    expect(wrapper.emitted("confirmFactors")).toBeUndefined();
+  });
+
+  it("emits trimmed nullable traceability and no component category", async () => {
+    const wrapper = mountWithFastStubs({
+      session: traceabilitySession("setup"),
+      busy: false,
+      editingSetup: true,
+    });
+    await wrapper.get("input[aria-label='Factor A Part Number']").setValue("   ");
+    await wrapper.get("input[aria-label='Factor A DIM ID']").setValue("  DIM-EDITED  ");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+
+    expect(wrapper.emitted("confirmFactors")?.at(-1)?.[0]).toEqual([{
+      factorCandidateId: HASH_B,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal",
+      partNumber: null,
+      dimId: "DIM-EDITED",
+    }]);
   });
 });

@@ -34,9 +34,6 @@ const FACTOR_ROW_MAP = Object.freeze({
   upperSpecLimit: 9,
   specificationSource: 10,
   limitStatus: 11,
-  measurementStructure: 12,
-  subgroupSize: 13,
-  estimator: 14,
 });
 
 const MANIFEST_COORDINATES = Object.freeze({
@@ -59,9 +56,10 @@ export const F7_MEASUREMENT_TEMPLATE_LAYOUT = Object.freeze({
   visibleSheetName: "Measurements",
   manifestSheetName: "_F7_MANIFEST",
   firstFactorColumn: 2,
-  firstMeasurementRow: 15,
+  measurementHeaderRow: 12,
+  firstMeasurementRow: 13,
   measurementCapacity: F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS,
-  lastMeasurementRow: 15 + F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS - 1,
+  lastMeasurementRow: 13 + F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS - 1,
   factorRows: FACTOR_ROW_MAP,
   manifest: MANIFEST_COORDINATES,
 });
@@ -245,7 +243,7 @@ function validateFactorAlignment(
   if (!nearlyEqualAtScale(factor.upperSpecLimit, expectedLimits.upper, scale)) throw requestError(INPUT_SUMMARY);
 }
 
-function buildFactorCoordinates(column: string): F7MeasurementImportFactorCoordinates {
+function buildFactorCoordinates(column: string, factorIndex: number): F7MeasurementImportFactorCoordinates {
   return {
     factorNameCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.factorName}`,
     partNumberCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.partNumber}`,
@@ -257,9 +255,9 @@ function buildFactorCoordinates(column: string): F7MeasurementImportFactorCoordi
     upperSpecLimitCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.upperSpecLimit}`,
     specificationSourceCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.specificationSource}`,
     limitStatusCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.limitStatus}`,
-    measurementStructureCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.measurementStructure}`,
-    subgroupSizeCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.subgroupSize}`,
-    estimatorCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${FACTOR_ROW_MAP.estimator}`,
+    measurementStructureCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!O${MANIFEST_COORDINATES.factorsStartRow + factorIndex}`,
+    subgroupSizeCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!P${MANIFEST_COORDINATES.factorsStartRow + factorIndex}`,
+    estimatorCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.manifestSheetName}!Q${MANIFEST_COORDINATES.factorsStartRow + factorIndex}`,
     measurementColumn: column,
     firstMeasurementCell: `${F7_MEASUREMENT_TEMPLATE_LAYOUT.visibleSheetName}!${column}${F7_MEASUREMENT_TEMPLATE_LAYOUT.firstMeasurementRow}`,
   };
@@ -346,7 +344,7 @@ function projectManifestFactor(factor: ParsedFactorEvidence, index: number): F7M
     upperSpecLimit: normalizeNegativeZero(factor.upperSpecLimit),
     specificationSource: factorSource,
     limitStatus,
-    coordinates: buildFactorCoordinates(column),
+    coordinates: buildFactorCoordinates(column, index),
   };
   return {
     ...projected,

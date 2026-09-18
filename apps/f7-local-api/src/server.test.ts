@@ -174,11 +174,14 @@ function addReadyMeasurements(bytes: Uint8Array, factorCount: number): Uint8Arra
     let edited = sheet;
     for (let offset = 0; offset < 20; offset += 1) {
       const row = 15 + offset;
-      const cells = Array.from({ length: factorCount }, (_, factorIndex) => {
+      for (let factorIndex = 0; factorIndex < factorCount; factorIndex += 1) {
         const column = String.fromCharCode("B".charCodeAt(0) + factorIndex);
-        return `<c r="${column}${row}" s="1"><v>${factorIndex + 1 + offset / 100}</v></c>`;
-      }).join("");
-      edited = edited.replace(`<row r="${row}"/>`, `<row r="${row}">${cells}</row>`);
+        const reference = `${column}${row}`;
+        edited = edited.replace(
+          `<c r="${reference}" s="1"/>`,
+          `<c r="${reference}" s="1"><v>${factorIndex + 1 + offset / 100}</v></c>`,
+        );
+      }
     }
     return edited;
   });
@@ -764,7 +767,7 @@ describe("f7 local server", () => {
 
     expect(download.status).toBe(200);
     expect(download.headers["content-type"]).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    expect(download.headers["content-disposition"]).toBe('attachment; filename="F7_Measurements_Anonymous_TA.xlsx"');
+    expect(download.headers["content-disposition"]).toBe('attachment; filename="TA_Measurements_Anonymous_TA.xlsx"');
     expect(download.headers["cache-control"]).toBe("no-store");
     expect(download.headers["x-content-type-options"]).toBe("nosniff");
     expect(download.rawBytes.subarray(0, 2).toString("ascii")).toBe("PK");
@@ -781,7 +784,7 @@ describe("f7 local server", () => {
       },
     });
 
-    expect(preview.status).toBe(200);
+    expect(preview.status, JSON.stringify(preview.json)).toBe(200);
     expect(preview.headers["cache-control"]).toBe("no-store");
     const parsed = f7MeasurementImportPreviewResponseSchema.parse(preview.json);
     expect(parsed).toMatchObject({
@@ -795,6 +798,8 @@ describe("f7 local server", () => {
       diagnosticCount: 0,
     });
     expect(parsed.factors.every((factor) => factor.sampleCount === 20 && factor.status === "ready")).toBe(true);
+    expect(parsed.factors.flatMap((factor) => factor.warnings)
+      .some((warning) => warning.displayMessage.includes("governed dataset validation"))).toBe(false);
     expect(JSON.stringify(preview.json)).not.toContain('"authority"');
     expect(parsed.factors.every((factor) => !("dataset" in factor))).toBe(true);
     expect(JSON.stringify(preview.json)).not.toContain('"dataset"');
@@ -804,6 +809,78 @@ describe("f7 local server", () => {
       { kind: "f7.measurements.import-template", status: 200 },
       { kind: "f7.measurements.import-preview", status: 200 },
     ]);
+  });
+
+  it("accepts a completed template after a newer template was downloaded for the same Factor authority", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const firstDownload = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+    await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+
+    const preview = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "completed-earlier-template.xlsx",
+        workbookBase64: Buffer.from(addReadyMeasurements(firstDownload.rawBytes, snapshot.factors.length)).toString("base64"),
+      },
+    });
+
+    expect(preview.status, JSON.stringify(preview.json)).toBe(200);
+    expect(preview.json).toMatchObject({ status: "ready", readyFactorCount: snapshot.factors.length });
+  });
+
+  it("accepts a completed template after the in-memory import registry restarts", async () => {
+    const service = createRouteService();
+    const snapshot = prepareMeasurementImportSession(service);
+    const firstServer = createF7LocalServer({ service });
+    openServers.push(firstServer);
+    const firstAddress = await listenF7LocalServer(firstServer, 0);
+    const download = await httpJson({
+      port: firstAddress.port,
+      method: "POST",
+      path: "/f7/measurements/import-template",
+      body: { sessionId: snapshot.sessionId },
+    });
+    await new Promise<void>((resolve) => firstServer.close(() => resolve()));
+    openServers.splice(openServers.indexOf(firstServer), 1);
+
+    let restartedId = 100;
+    const restartedRegistry = createF7MeasurementImportRegistry({
+      now: () => Date.parse("2026-09-16T08:00:00.000Z"),
+      createId: () => (++restartedId).toString(16).padStart(32, "0"),
+    });
+    const restartedServer = createF7LocalServer({ service, measurementImportRegistry: restartedRegistry });
+    openServers.push(restartedServer);
+    const restartedAddress = await listenF7LocalServer(restartedServer, 0);
+    const preview = await httpJson({
+      port: restartedAddress.port,
+      method: "POST",
+      path: "/f7/measurements/import-preview",
+      body: {
+        sessionId: snapshot.sessionId,
+        fileName: "completed-after-restart.xlsx",
+        workbookBase64: Buffer.from(addReadyMeasurements(download.rawBytes, snapshot.factors.length)).toString("base64"),
+      },
+    });
+
+    expect(preview.status, JSON.stringify(preview.json)).toBe(200);
+    expect(preview.json).toMatchObject({ status: "ready", readyFactorCount: snapshot.factors.length });
   });
 
   it("sanitizes a Unicode worksheet name in the XLSX attachment header", async () => {
@@ -822,7 +899,7 @@ describe("f7 local server", () => {
 
     expect(download.status).toBe(200);
     expect(download.headers["content-disposition"]).toBe(
-      'attachment; filename="F7_Measurements_Mesure_TA.xlsx"',
+      'attachment; filename="TA_Measurements_Mesure_TA.xlsx"',
     );
   });
 
@@ -891,7 +968,7 @@ describe("f7 local server", () => {
     expectRequestEnvelope(tooLarge, 413);
   });
 
-  it("rejects wrong-session templates and stale server authority", async () => {
+  it("accepts templates by matching Factor authority across sessions and session mode changes", async () => {
     const service = createRouteService();
     const first = prepareMeasurementImportSession(service);
     const second = prepareMeasurementImportSession(service);
@@ -915,7 +992,8 @@ describe("f7 local server", () => {
         workbookBase64: firstDownload.rawBytes.toString("base64"),
       },
     });
-    expectRequestEnvelope(wrongOwner, 400);
+    expect(wrongOwner.status).toBe(200);
+    expect(wrongOwner.json).toMatchObject({ status: "blocked", factorCount: second.factors.length });
 
     const firstFactorId = first.factors[0]?.evidence?.factorId;
     expect(firstFactorId).toBeDefined();
@@ -924,19 +1002,37 @@ describe("f7 local server", () => {
       factorId: firstFactorId!,
       mode: "BASELINE_ASSUMPTION",
     });
-    const stale = await httpJson({
+    const compatible = await httpJson({
       port: address.port,
       method: "POST",
       path: "/f7/measurements/import-preview",
       body: {
         sessionId: first.sessionId,
-        fileName: "stale.xlsx",
-        workbookBase64: firstDownload.rawBytes.toString("base64"),
+        fileName: "compatible.xlsx",
+        workbookBase64: Buffer.from(addReadyMeasurements(firstDownload.rawBytes, first.factors.length)).toString("base64"),
       },
     });
-    expect(stale.status).toBe(409);
-    expect(stale.headers["cache-control"]).toBe("no-store");
-    expect((stale.json as { code: string }).code).toBe("prerequisite_not_ready");
+    expect(compatible.status).toBe(200);
+    expect(compatible.headers["cache-control"]).toBe("no-store");
+    expect(compatible.json).toMatchObject({ status: "ready", readyFactorCount: first.factors.length });
+
+    const commit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/measurements/import-commit",
+      body: {
+        sessionId: first.sessionId,
+        previewId: (compatible.json as { previewId: string }).previewId,
+        replacementFactorIds: [],
+        confirmed: true,
+      },
+    });
+    expect(commit.status).toBe(200);
+    const committed = f7AnalysisResultSchema.parse(commit.json);
+    expect(committed.snapshot.factors.every((factor) =>
+      factor.sourceMode === "MEASURED"
+      && factor.measurementPasteResult?.status === "ready"
+      && factor.measurementPasteResult.dataset?.observations.length === 20)).toBe(true);
   });
 
   it("returns bounded parser diagnostics for tampering and preserves the exact session snapshot", async () => {
