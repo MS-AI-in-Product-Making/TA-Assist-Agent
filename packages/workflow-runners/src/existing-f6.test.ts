@@ -129,7 +129,7 @@ describe("validateExistingF6", () => {
     const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
     const result = runF6FullValidation({}, {
       parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
-      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v3", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub(),
       renderFinalReportPdf: () => PDF,
@@ -140,7 +140,7 @@ describe("validateExistingF6", () => {
     const manifest = readJson(path.join(runRoot, "manifest.json"));
     expect(optimization.optimizationVersion).toBe("f6-optimization-v4");
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
-    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
+    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v4");
     expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
   });
 

@@ -299,6 +299,7 @@ function createVerifiedRun({
   optionalInputs = false,
   currentObservation = false,
   currentV3Blocked = false,
+  currentArtifactSetV4 = false,
   createOptimization,
   createFinalReport,
 } = {}) {
@@ -323,13 +324,13 @@ function createVerifiedRun({
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
     }),
     resolveLayout: () => ({
-      artifactSetVersion: "f6-artifact-set-v3",
+      artifactSetVersion: currentArtifactSetV4 ? "f6-artifact-set-v4" : "f6-artifact-set-v3",
       runId,
       runRoot,
       publishRoot: bundle.publishRoot,
       optimizationJsonName: "Feature6-Optimization.json",
-      finalReportMdName: "Feature6-Report.md",
-      finalReportPdfName: "Feature6-Report.pdf",
+      finalReportMdName: currentArtifactSetV4 ? "Anonymous - TA ENGINEERING ANALYSIS REPORT.md" : "Feature6-Report.md",
+      finalReportPdfName: currentArtifactSetV4 ? "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf" : "Feature6-Report.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     }),
@@ -464,8 +465,9 @@ describe("validateExistingF6Artifact", () => {
     });
   });
 
-  it("accepts a valid current v4 run with unchanged f6-artifact-set-v3", () => {
+  it("accepts a valid current v4 run with workbook-derived report names", () => {
     const { runRoot, bundle } = createVerifiedRun({
+      currentArtifactSetV4: true,
       createOptimization: createF6OptimizationV4,
       createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
     });
@@ -474,7 +476,7 @@ describe("validateExistingF6Artifact", () => {
     const manifest = readJson(path.join(runRoot, "manifest.json"));
     expect(optimization.optimizationVersion).toBe("f6-optimization-v4");
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
-    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
+    expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v4");
     expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
   });
 

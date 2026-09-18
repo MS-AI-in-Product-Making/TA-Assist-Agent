@@ -354,15 +354,26 @@ describe("runF6FullValidation", () => {
     });
   });
 
-  it("writes all five fixed artifacts and passes validated reports to the final report projection", () => {
+  it("writes all five workbook-derived artifacts and passes validated reports to the final report projection", () => {
     const context = setup();
+    context.deps.resolveLayout.mockReturnValue({
+      artifactSetVersion: "f6-artifact-set-v4",
+      runId: "2026-08-17T01-02-03-456Z",
+      runRoot: context.runRoot,
+      publishRoot: context.publishRoot,
+      optimizationJsonName: "Feature6-Optimization.json",
+      finalReportMdName: "Demo - TA ENGINEERING ANALYSIS REPORT.md",
+      finalReportPdfName: "Demo - TA ENGINEERING ANALYSIS REPORT.pdf",
+      runSummaryJsonName: "Feature6-Run-Summary.json",
+      manifestName: "manifest.json",
+    });
     const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
 
     expect(result.status).toBe("completed");
     expect(readdirSync(context.runRoot).sort()).toEqual([
+      "Demo - TA ENGINEERING ANALYSIS REPORT.md",
+      "Demo - TA ENGINEERING ANALYSIS REPORT.pdf",
       "Feature6-Optimization.json",
-      "Feature6-Report.md",
-      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -382,8 +393,8 @@ describe("runF6FullValidation", () => {
       publishRoot: context.publishRoot,
       requireMultimodalV3: true,
     });
-    expect(result.finalReportMdPath).toBe(path.join(context.runRoot, "Feature6-Report.md"));
-    expect(result.finalReportPdfPath).toBe(path.join(context.runRoot, "Feature6-Report.pdf"));
+    expect(result.finalReportMdPath).toBe(path.join(context.runRoot, "Demo - TA ENGINEERING ANALYSIS REPORT.md"));
+    expect(result.finalReportPdfPath).toBe(path.join(context.runRoot, "Demo - TA ENGINEERING ANALYSIS REPORT.pdf"));
     expect(readFileSync(result.finalReportPdfPath)).toEqual(PDF);
     expect(result).not.toHaveProperty("composedReportJsonPath");
     expect(result).not.toHaveProperty("composedReportMdPath");
@@ -402,7 +413,7 @@ describe("runF6FullValidation", () => {
       ...context.deps.loadBundle(),
       f3Report: updatedF3Report,
     });
-    context.deps.createFinalReport = vi.fn((input) => ({
+    context.deps.createFinalReport = vi.fn(() => ({
       ...context.finalReport,
       markdown: [
         "# F6 final report",
@@ -870,9 +881,9 @@ describe("F6 real artifact full flow", () => {
 
     expect(exitCode, lines.join("\n")).toBe(0);
     expect(readdirSync(runRoot).sort()).toEqual([
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
       "Feature6-Optimization.json",
-      "Feature6-Report.md",
-      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
@@ -882,11 +893,11 @@ describe("F6 real artifact full flow", () => {
     assertRunSummaryMatchesProjection(summary, manifest, cliResult);
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
-      finalReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Report.md")),
-      finalReportPdfSha256: artifactHash(path.join(runRoot, "Feature6-Report.pdf")),
+      finalReportMarkdownSha256: artifactHash(path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md")),
+      finalReportPdfSha256: artifactHash(path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf")),
     });
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
-    const finalMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
+    const finalMarkdown = readFileSync(path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md"), "utf8");
 
     expect(optimization.optimizationVersion).toBe("f6-optimization-v4");
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
@@ -896,13 +907,13 @@ describe("F6 real artifact full flow", () => {
     expect(finalMarkdown).toContain("Analysis-A");
     expect(finalMarkdown).toContain("# F6 final report");
     expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
-    expect(cliResult.finalReportMdPath).toBe(path.join(runRoot, "Feature6-Report.md"));
-    expect(cliResult.finalReportPdfPath).toBe(path.join(runRoot, "Feature6-Report.pdf"));
+    expect(cliResult.finalReportMdPath).toBe(path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md"));
+    expect(cliResult.finalReportPdfPath).toBe(path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf"));
     expect(cliResult).not.toHaveProperty("composedReportJsonPath");
     expect(cliResult).not.toHaveProperty("composedReportMdPath");
     expect(manifest).toEqual({
       contractVersion: "v1",
-      artifactSetVersion: "f6-artifact-set-v3",
+      artifactSetVersion: "f6-artifact-set-v4",
       featureId: "F6",
       status: "completed",
       runId: "2026-08-17T01-02-03-456Z",
@@ -921,8 +932,8 @@ describe("F6 real artifact full flow", () => {
       analysisRequestContext: REQUEST_CONTEXT,
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
-        finalReportMarkdown: "Feature6-Report.md",
-        finalReportPdf: "Feature6-Report.pdf",
+        finalReportMarkdown: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+        finalReportPdf: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
         runSummary: "Feature6-Run-Summary.json",
       },
     });
@@ -988,19 +999,20 @@ describe("F6 real artifact full flow", () => {
     expect(runDirectories).toHaveLength(1);
     const runRoot = path.join(outputRoot, runDirectories[0]);
     expect(readdirSync(runRoot).sort()).toEqual([
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
       "Feature6-Optimization.json",
-      "Feature6-Report.md",
-      "Feature6-Report.pdf",
       "Feature6-Run-Summary.json",
       "manifest.json",
     ]);
     const manifest = readJson(path.join(runRoot, "manifest.json"));
     expect(manifest).toMatchObject({
+      artifactSetVersion: "f6-artifact-set-v4",
       status: "completed",
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
-        finalReportMarkdown: "Feature6-Report.md",
-        finalReportPdf: "Feature6-Report.pdf",
+        finalReportMarkdown: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+        finalReportPdf: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
         runSummary: "Feature6-Run-Summary.json",
       },
     });

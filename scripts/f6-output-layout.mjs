@@ -75,7 +75,6 @@ function runStem(f5ArtifactRoot) {
 export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot, workbookFileName) {
   const roots = [parsed?.f2ArtifactRoot, parsed?.f3ArtifactRoot, parsed?.f4ArtifactRoot, parsed?.f5ArtifactRoot];
   roots.forEach((root, index) => validatePathValue(root, `F${index + 2} artifact root`));
-  const reportNames = createF6ReportFileNames(workbookFileName);
   const stem = runStem(parsed.f5ArtifactRoot);
   const controlledPublishRoot = outputRoot === undefined
     ? DEFAULT_PUBLISH_ROOT
@@ -98,6 +97,8 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   if (candidates.some((candidate) => !isContained(realPublishRoot, candidate))) {
     throw new Error("Feature 6 input and output roots must remain inside the publish root.");
   }
+  const resolvedWorkbookFileName = typeof workbookFileName === "function" ? workbookFileName() : workbookFileName;
+  const reportNames = createF6ReportFileNames(resolvedWorkbookFileName);
 
   const runId = now().toISOString().replace(/[:.]/g, "-");
   const normalizedBase = normalizedResultPath(outputBase);

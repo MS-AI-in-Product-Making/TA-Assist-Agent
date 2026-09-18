@@ -23,7 +23,7 @@ import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F6OptimizationRequest, F6OptimizationResult, RunContext } from "./types.js";
 
 interface F6Layout {
-  readonly artifactSetVersion: "f6-artifact-set-v3";
+  readonly artifactSetVersion: "f6-artifact-set-v3" | "f6-artifact-set-v4";
   readonly runId: string;
   readonly runRoot: string;
   readonly publishRoot: string;
