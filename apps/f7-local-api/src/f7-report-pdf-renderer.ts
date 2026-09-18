@@ -23,6 +23,7 @@ const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
   retryDelay: 100,
 } as const;
 const MAX_QUEUED_RENDERS = 3;
+const FACTOR_SETUP_MAX_FACTORS = 100;
 const DIMENSION_CHAIN_MIN_LENGTH = 36;
 const DIMENSION_CHAIN_MAX_LENGTH = 180;
 const DIMENSION_CHAIN_COMPRESSION_RATIO = 8;
@@ -94,6 +95,33 @@ function formatChartTick(value: number): string {
 
 function formatFixed(value: number, digits: number): string {
   return Number.isFinite(value) ? value.toFixed(digits) : "N/A";
+}
+
+function formatDensityNumber(value: number): string {
+  return Number(value.toFixed(6)).toString();
+}
+
+export function factorSetupDensityStyle(factorCount: number): string {
+  if (!Number.isInteger(factorCount) || factorCount <= 0 || factorCount > FACTOR_SETUP_MAX_FACTORS) {
+    throw new Error("Factor count must be an integer between 1 and 100.");
+  }
+  const scale = Math.min(1, 7 / factorCount);
+  const dimensions = [
+    ["table-font-size", 6.4, "pt"],
+    ["label-font-size", 5.8, "pt"],
+    ["cell-y", 2, "px"],
+    ["cell-x", 3, "px"],
+    ["h3-font-size", 10.5, "pt"],
+    ["h4-font-size", 9, "pt"],
+    ["h3-margin-top", 9, "px"],
+    ["h3-margin-bottom", 4, "px"],
+    ["h4-margin-top", 8, "px"],
+    ["h4-margin-bottom", 3, "px"],
+    ["table-margin", 7, "px"],
+  ] as const;
+  return dimensions
+    .map(([name, value, unit]) => `--factor-setup-${name}:${formatDensityNumber(value * scale)}${unit};`)
+    .join("");
 }
 
 function formatSigned(value: number, digits: number, suffix = ""): string {
@@ -316,8 +344,8 @@ function renderDimensionChain(report: F7ReportProjection): string {
 }
 
 function renderFactorSetupInputs(factors: readonly F7ReportFactor[]): string {
-  const rows = factors.map((factor, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${factor.partNumber === undefined ? "Missing" : escapeHtml(factor.partNumber)}</td><td>${factor.dimId === undefined ? "Missing" : escapeHtml(factor.dimId)}</td><td>${formatNumber(factor.designNominal)}</td><td>${formatNumber(factor.upperTolerance)}</td><td>${formatNumber(factor.lowerTolerance)}</td><td>${formatNumber(factor.longTermSafetyFactor)}</td><td>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td></tr>`).join("");
-  return `<h4>Setup Inputs</h4><table data-factor-setup-inputs><thead><tr><th>Item</th><th>Factor</th><th>Part Number</th><th>DIM ID</th><th>Design Nominal</th><th>+Tol</th><th>-Tol</th><th>Long-term Safety Factor</th><th>Sigma Level</th><th>Distribution</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const rows = factors.map((factor, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${formatNumber(factor.designNominal)}</td><td>${formatNumber(factor.upperTolerance)}</td><td>${formatNumber(factor.lowerTolerance)}</td><td>${formatNumber(factor.longTermSafetyFactor)}</td><td>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td></tr>`).join("");
+  return `<h4>Setup Inputs</h4><table data-factor-setup-inputs><thead><tr><th>Item</th><th>Factor</th><th>Design Nominal</th><th>+Tol</th><th>-Tol</th><th>Long-term Safety Factor</th><th>Sigma Level</th><th>Distribution</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function metricLine(label: string, value: string): string {
@@ -350,11 +378,11 @@ function renderFactorMeasurementAnalysis(factors: readonly F7ReportFactor[]): st
         : renderAnalysisMetric(setup, measured, options);
     return `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${metric(factor.setupMean, comparison?.mean)}</td><td>${metric(factor.setupTolerance, comparison?.tolerance, { tolerance: true })}</td><td>${metric(factor.setupOneSigma, comparison?.oneSigma)}</td><td>${metric(factor.setupCpk, comparison?.cpk)}</td><td>${formatNumber(factor.percentContributionToSigma * 100)}%</td><td>${formatNumber(factor.sampleCount, 0)}</td></tr>`;
   }).join("");
-  return `<div class="measurement-analysis-wrapper"><h4>Measurement Analysis</h4><table data-factor-measurement-analysis><thead><tr><th>Item</th><th>Factor</th><th>Mean</th><th>Tolerance</th><th>1σ</th><th>Cpk</th><th>% Contribution to σ</th><th>Sample Count</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<h4>Measurement Analysis</h4><table data-factor-measurement-analysis><thead><tr><th>Item</th><th>Factor</th><th>Mean</th><th>Tolerance</th><th>1σ</th><th>Cpk</th><th>% Contribution to σ</th><th>Sample Count</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderEngineeringInputs(report: F7ReportProjection, dimensionChainVisual?: DimensionChainVisual): string {
-  return `<section class="engineering-inputs page-break-after" data-engineering-inputs><p class="eyebrow">Governed analysis inputs</p><h2>Engineering Inputs</h2><h3>Factor Setup</h3>${renderFactorSetupInputs(report.factors)}${renderFactorMeasurementAnalysis(report.factors)}<h3>Dimension Chain</h3>${dimensionChainVisual === undefined ? renderDimensionChain(report) : renderDimensionChainVisual(dimensionChainVisual)}</section>`;
+  return `<section class="engineering-inputs page-break-after" data-engineering-inputs><p class="eyebrow">Governed analysis inputs</p><h2>Engineering Inputs</h2><div class="factor-setup-wrapper" style="${factorSetupDensityStyle(report.factors.length)}"><h3>Factor Setup</h3>${renderFactorSetupInputs(report.factors)}${renderFactorMeasurementAnalysis(report.factors)}</div><div class="dimension-chain-wrapper"><h3>Dimension Chain</h3>${dimensionChainVisual === undefined ? renderDimensionChain(report) : renderDimensionChainVisual(dimensionChainVisual)}</div></section>`;
 }
 
 function standardNormalCdf(value: number): number {
@@ -651,18 +679,20 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     .dimension-chain-visual, .dimension-chain-visual-empty { display: flex; align-items: center; justify-content: center; width: 100%; height: 105mm; margin: 7px 0 10px; overflow: hidden; }
     .dimension-chain-visual img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
     @page { size: A4 landscape; margin: 12mm; } * { box-sizing: border-box; } body { margin: 0; color: #182b3a; font: 9pt "Segoe UI", sans-serif; line-height: 1.42; } header { border-bottom: 4px solid #0b7a75; padding-bottom: 12px; margin-bottom: 16px; } h1 { margin: 0 0 5px; color: #102a43; font-size: 23pt; letter-spacing: 0; } h2 { margin: 16px 0 7px; color: #102a43; font-size: 13pt; break-after: avoid; } h3 { margin: 9px 0 4px; color: #183b56; font-size: 10.5pt; } p { margin: 4px 0; } table { border-collapse: collapse; width: 100%; margin: 7px 0; font-size: 8.2pt; } caption { color: #5c6b76; padding-bottom: 5px; text-align: left; } th, td { border: 1px solid #c8d1d8; padding: 5px 7px; text-align: left; vertical-align: top; overflow-wrap: anywhere; } thead { display: table-header-group; } thead th, tbody th { background: #edf0f3; } section, article, table, figure, .assessment-banner, .run-metadata { break-inside: avoid; } ol, ul { margin: 5px 0; padding-left: 20px; } .page-break { break-before: page; } .page-break-after { break-after: page; } .meta, .muted { color: #5c6b76; } .eyebrow, .assessment-label { margin: 0 0 3px; color: #48606f; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; } .badge, .status-chip { display: inline-block; margin-top: 7px; padding: 3px 8px; border-radius: 3px; font-weight: 700; } .pass, .chip-success { background: #dcefe9; color: #076b4b; } .review, .chip-blocked { background: #fbeceb; color: #a33a32; } .not-evaluable { background: #edf0f3; color: #52616b; } .engineering-inputs, .engineering-inputs table { break-inside: auto; } .engineering-inputs tr { break-inside: avoid; } [data-factor-setup-inputs] { table-layout: fixed; font-size: 7.4pt; } [data-factor-setup-inputs] th:first-child, [data-factor-setup-inputs] td:first-child { width: 5%; text-align: center; } [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: 10%; text-align: right; } [data-dimension-chain] { width: 100%; height: auto; max-height: none; } [data-dimension-chain] marker path { fill: currentColor; } .dimension-chain-zero-axis { stroke: #aab6be; stroke-width: 1; stroke-dasharray: 4 4; } .dimension-chain-node { fill: #536574; } .dimension-chain-segment, .dimension-chain-closure { fill: none; stroke-width: 3; } .dimension-chain-additive { color: #0b7a75; stroke: #0b7a75; } .dimension-chain-subtractive { color: #b6423a; stroke: #b6423a; } .dimension-chain-zero, .dimension-chain-zero-tick { fill: #fff; stroke: #6b4f8a; stroke-width: 2; } .dimension-chain-closure { color: #536574; stroke: #536574; stroke-dasharray: 6 4; } .dimension-chain-label { fill: #183b56; font: 11px "Segoe UI", sans-serif; font-weight: 600; } .dimension-chain-closure-label { fill: #536574; } .hero-result { border-left: 6px solid #0b7a75; padding: 9px 13px; background: #f3f6f7; } .hero-result h2 { margin: 0; } .hero-result strong { color: #102a43; font-size: 18pt; } .distribution-section { margin-top: 12px; } .distribution-figure { margin: 6px 0 12px; } svg { display: block; width: 100%; max-height: 84mm; background: #f8fafb; border: 1px solid #d4dce2; } .plot-grid { stroke: #dce3e8; stroke-width: 1; } .plot-axis, .plot-tick { stroke: #536574; stroke-width: 1; } .plot-tick-label, .plot-axis-label, .monte-carlo-reference-label { fill: #536574; font: 10px "Segoe UI", sans-serif; } .plot-axis-label { font-weight: 700; } .monte-carlo-bin-in-spec { fill: #4b82c3; } .monte-carlo-bin-out-of-spec { fill: #c94a45; } .monte-carlo-bin-mixed { fill: #8a98a4; } .monte-carlo-fit { fill: none; stroke: #123f63; stroke-width: 2.5; } .factor-setup-fit { fill: none; stroke: #0b7a75; stroke-width: 2.5; stroke-dasharray: 7 4; } .factor-setup-mean { stroke: #0b7a75; stroke-width: 1.5; stroke-dasharray: 3 3; } .monte-carlo-reference { stroke-width: 1.2; stroke-dasharray: 4 3; } .reference-lower-spec-limit, .reference-upper-spec-limit { stroke: #a33a32; } .reference-target { stroke: #6b4f8a; } .reference-mean { stroke: #123f63; } .reference-minus-target-sigma, .reference-plus-target-sigma { stroke: #b17c11; } .chart-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 6px; color: #4e606c; font-size: 7.5pt; } .chart-legend span { white-space: nowrap; } .chart-legend i { display: inline-block; width: 15px; height: 7px; margin-right: 4px; vertical-align: middle; } .legend-in-spec { background: #4b82c3; } .legend-out-of-spec { background: #c94a45; } .legend-mixed { background: #8a98a4; } .legend-monte-carlo { border-top: 2px solid #123f63; } .legend-setup { border-top: 2px dashed #0b7a75; } .legend-setup-mean { border-left: 2px dashed #0b7a75; } .legend-spec { border-left: 2px dashed #a33a32; } .legend-target { border-left: 2px dashed #b17c11; } .section-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; } .section-heading h2, .section-heading h3 { margin-top: 0; } .run-metadata { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 8px 0 0; } .run-metadata div { border: 1px solid #d2dbe1; padding: 6px; background: #f4f6f7; } .run-metadata dt { color: #5c6b76; font-size: 7.5pt; } .run-metadata dd { margin: 2px 0 0; color: #102a43; font-weight: 700; overflow-wrap: anywhere; } .web-report { border-top: 4px solid #0b7a75; padding-top: 10px; } .guidance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .guidance-grid article { border-left: 4px solid #71808b; padding: 9px 12px; background: #f4f5f6; } .guidance-grid article:last-child { border-left-color: #0b7a75; background: #eef5f7; } .applicability { color: #5c6b76; font-size: 8pt; } .assessment-banner { display: grid; grid-template-columns: 1fr 0.8fr; gap: 14px; align-items: center; border: 1px solid #ccd5dc; border-left: 6px solid #7b8790; padding: 10px 12px; background: #f4f5f6; margin-top: 12px; } .assessment-meets_target { border-left-color: #0b7a75; background: #edf7f4; } .assessment-below_target { border-left-color: #b6423a; background: #fbeceb; } .assessment-disclaimer { border-left: 1px solid #ccd5dc; padding-left: 13px; color: #4f606c; font-weight: 700; } footer { margin-top: 18px; border-top: 1px solid #ccd5dc; padding-top: 7px; color: #65737e; font-size: 7.5pt; }
-    .engineering-inputs h4 { margin: 8px 0 3px; color: #183b56; font-size: 9pt; break-after: avoid; }
-    [data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; font-size: 8.2pt; }
-    .measurement-analysis-wrapper { break-inside: avoid; page-break-inside: avoid; }
-    [data-factor-measurement-analysis] { table-layout: fixed; font-size: 6.4pt; line-height: 1.12; }
-    [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: 2px 3px; }
+    .engineering-inputs h4 { color: #183b56; break-after: avoid; }
+    .factor-setup-wrapper { width: 100%; break-inside: avoid; page-break-inside: avoid; }
+    .factor-setup-wrapper h3 { margin: var(--factor-setup-h3-margin-top) 0 var(--factor-setup-h3-margin-bottom); font-size: var(--factor-setup-h3-font-size); }
+    .factor-setup-wrapper h4 { margin: var(--factor-setup-h4-margin-top) 0 var(--factor-setup-h4-margin-bottom); font-size: var(--factor-setup-h4-font-size); }
+    .dimension-chain-wrapper { break-before: page; page-break-before: always; }
+    [data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: var(--factor-setup-table-font-size); line-height: 1.12; }
+    [data-factor-setup-inputs] th, [data-factor-setup-inputs] td, [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: var(--factor-setup-cell-y) var(--factor-setup-cell-x); }
     [data-factor-setup-inputs] tr, [data-factor-measurement-analysis] tr { break-inside: avoid; page-break-inside: avoid; }
     [data-factor-setup-inputs] th:first-child, [data-factor-setup-inputs] td:first-child, [data-factor-measurement-analysis] th:first-child, [data-factor-measurement-analysis] td:first-child { width: 4%; text-align: center; }
-    [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: auto; }
-    [data-factor-setup-inputs] th:nth-child(n+5):nth-child(-n+9), [data-factor-setup-inputs] td:nth-child(n+5):nth-child(-n+9), [data-factor-measurement-analysis] th:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] td:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] th:nth-child(8), [data-factor-measurement-analysis] td:nth-child(8) { text-align: right; }
+    [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { text-align: right; }
+    [data-factor-measurement-analysis] th:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] td:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] th:nth-child(8), [data-factor-measurement-analysis] td:nth-child(8) { text-align: right; }
     .metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }
     .metric-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px; white-space: normal; overflow-wrap: anywhere; }
-    [data-factor-measurement-analysis] .metric-label { font-size: 5.8pt; }
+    [data-factor-measurement-analysis] .metric-label { font-size: var(--factor-setup-label-font-size); }
     .metric-label { color: #5c6b76; font-weight: 600; }
     .metric-value { text-align: right; font-variant-numeric: tabular-nums; }
     .status-label { display: inline-block; width: fit-content; padding: 1px 4px; border-radius: 2px; font-size: 7.2pt; font-weight: 700; white-space: nowrap; }

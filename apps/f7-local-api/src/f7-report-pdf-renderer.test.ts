@@ -6,6 +6,7 @@ import {
 } from "./assumption-results-pdf-renderer.js";
 import {
   createF7ReportPdfRenderer,
+  factorSetupDensityStyle,
   renderF7ReportPdfHtml,
   safeF7ReportPdfFileName,
   safeUnicodeF7ReportPdfFileName,
@@ -267,6 +268,23 @@ function visibleHtmlText(value: string): string {
 }
 
 describe("F7 report PDF renderer", () => {
+  it("derives bounded Factor Setup density styles and rejects invalid values", () => {
+    expect(factorSetupDensityStyle(7)).toBe("--factor-setup-table-font-size:6.4pt;--factor-setup-label-font-size:5.8pt;--factor-setup-cell-y:2px;--factor-setup-cell-x:3px;--factor-setup-h3-font-size:10.5pt;--factor-setup-h4-font-size:9pt;--factor-setup-h3-margin-top:9px;--factor-setup-h3-margin-bottom:4px;--factor-setup-h4-margin-top:8px;--factor-setup-h4-margin-bottom:3px;--factor-setup-table-margin:7px;");
+    expect(factorSetupDensityStyle(14)).toBe("--factor-setup-table-font-size:3.2pt;--factor-setup-label-font-size:2.9pt;--factor-setup-cell-y:1px;--factor-setup-cell-x:1.5px;--factor-setup-h3-font-size:5.25pt;--factor-setup-h4-font-size:4.5pt;--factor-setup-h3-margin-top:4.5px;--factor-setup-h3-margin-bottom:2px;--factor-setup-h4-margin-top:4px;--factor-setup-h4-margin-bottom:1.5px;--factor-setup-table-margin:3.5px;");
+    expect(factorSetupDensityStyle(100)).toBe("--factor-setup-table-font-size:0.448pt;--factor-setup-label-font-size:0.406pt;--factor-setup-cell-y:0.14px;--factor-setup-cell-x:0.21px;--factor-setup-h3-font-size:0.735pt;--factor-setup-h4-font-size:0.63pt;--factor-setup-h3-margin-top:0.63px;--factor-setup-h3-margin-bottom:0.28px;--factor-setup-h4-margin-top:0.56px;--factor-setup-h4-margin-bottom:0.21px;--factor-setup-table-margin:0.49px;");
+
+    for (const style of [factorSetupDensityStyle(7), factorSetupDensityStyle(14), factorSetupDensityStyle(100)]) {
+      expect(style).not.toContain("zoom");
+      expect(style).not.toContain("--factor-setup-width");
+    }
+
+    for (const factorCount of [0, -1, 1.5, 101, Number.NaN]) {
+      expect(() => factorSetupDensityStyle(factorCount)).toThrowError(
+        "Factor count must be an integer between 1 and 100.",
+      );
+    }
+  });
+
   it("renders the governed report in Web order with chart, comparison, and F0 evidence", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
 
@@ -299,21 +317,28 @@ describe("F7 report PDF renderer", () => {
       previousIndex = headingIndex;
     }
 
-    const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
-    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
-    const measurementAnalysisWrapper = html.match(/<div class="measurement-analysis-wrapper">[\s\S]*?<\/table><\/div>/)?.[0];
+    const factorSetupWrapper = html.match(/<div class="factor-setup-wrapper" style="([^"]+)">[\s\S]*?<\/div>/)?.[0];
+    const setupInputsTable = factorSetupWrapper?.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    const measurementAnalysisTable = factorSetupWrapper?.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+    const dimensionChainWrapper = html.match(/<div class="dimension-chain-wrapper">[\s\S]*?<\/div>\s*<\/section>/)?.[0];
+    expect(factorSetupWrapper).toBeDefined();
+    expect(factorSetupWrapper).toContain("<h3>Factor Setup</h3>");
+    expect(factorSetupWrapper).toContain("style=\"--factor-setup-table-font-size:6.4pt;");
     expect(setupInputsTable).toBeDefined();
     expect(measurementAnalysisTable).toBeDefined();
-    expect(measurementAnalysisWrapper).toBeDefined();
-    expect(measurementAnalysisWrapper).toContain("<h4>Measurement Analysis</h4>");
-    expect(measurementAnalysisWrapper).toContain("<table data-factor-measurement-analysis>");
+    expect(factorSetupWrapper).not.toContain("measurement-analysis-wrapper");
+    expect(factorSetupWrapper?.indexOf("<h3>Factor Setup</h3>")).toBeLessThan(factorSetupWrapper?.indexOf("<h4>Setup Inputs</h4>") ?? -1);
+    expect(factorSetupWrapper?.indexOf("<h4>Setup Inputs</h4>")).toBeLessThan(factorSetupWrapper?.indexOf("<table data-factor-setup-inputs>") ?? -1);
+    expect(factorSetupWrapper?.indexOf("<table data-factor-setup-inputs>")).toBeLessThan(factorSetupWrapper?.indexOf("<h4>Measurement Analysis</h4>") ?? -1);
+    expect(factorSetupWrapper?.indexOf("<h4>Measurement Analysis</h4>")).toBeLessThan(factorSetupWrapper?.indexOf("<table data-factor-measurement-analysis>") ?? -1);
+    expect(dimensionChainWrapper).toBeDefined();
+    expect(dimensionChainWrapper).toContain("<h3>Dimension Chain</h3>");
+    expect(html.indexOf(factorSetupWrapper ?? "missing-factor-setup-wrapper")).toBeLessThan(html.indexOf(dimensionChainWrapper ?? "missing-dimension-chain-wrapper"));
     const setupHeadings = [...(setupInputsTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     const analysisHeadings = [...(measurementAnalysisTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     expect(setupHeadings).toEqual([
       "Item",
       "Factor",
-      "Part Number",
-      "DIM ID",
       "Design Nominal",
       "+Tol",
       "-Tol",
@@ -321,6 +346,8 @@ describe("F7 report PDF renderer", () => {
       "Sigma Level",
       "Distribution",
     ]);
+    expect(setupInputsTable).not.toContain("Part Number");
+    expect(setupInputsTable).not.toContain("DIM ID");
     expect(analysisHeadings).toEqual([
       "Item",
       "Factor",
@@ -331,13 +358,19 @@ describe("F7 report PDF renderer", () => {
       "% Contribution to σ",
       "Sample Count",
     ]);
-    expect(html).toContain(".measurement-analysis-wrapper { break-inside: avoid; page-break-inside: avoid; }");
-    expect(html).toContain("[data-factor-measurement-analysis] { table-layout: fixed; font-size: 6.4pt; line-height: 1.12; }");
-    expect(html).toContain("[data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: 2px 3px; }");
-    expect(html).toContain("[data-factor-measurement-analysis] .metric-label { font-size: 5.8pt; }");
-    expect(setupInputsTable).toContain("PN &lt;100&gt;");
-    expect(setupInputsTable).toContain("DIM &amp; 1");
-    expect(setupInputsTable?.match(/>Missing</g)).toHaveLength(2);
+    expect(html).toContain(".factor-setup-wrapper { width: 100%; break-inside: avoid; page-break-inside: avoid; }");
+    expect(html).not.toContain("zoom:");
+    expect(html).not.toContain("--factor-setup-width");
+    expect(html).toContain(".dimension-chain-wrapper { break-before: page; page-break-before: always; }");
+    expect(html).toContain(".factor-setup-wrapper h3 { margin: var(--factor-setup-h3-margin-top) 0 var(--factor-setup-h3-margin-bottom); font-size: var(--factor-setup-h3-font-size); }");
+    expect(html).toContain(".factor-setup-wrapper h4 { margin: var(--factor-setup-h4-margin-top) 0 var(--factor-setup-h4-margin-bottom); font-size: var(--factor-setup-h4-font-size); }");
+    expect(html).toContain("[data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: var(--factor-setup-table-font-size); line-height: 1.12; }");
+    expect(html).toContain("[data-factor-setup-inputs] th, [data-factor-setup-inputs] td, [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: var(--factor-setup-cell-y) var(--factor-setup-cell-x); }");
+    expect(html).toContain("[data-factor-measurement-analysis] .metric-label { font-size: var(--factor-setup-label-font-size); }");
+    expect(html).toContain("[data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { text-align: right; }");
+    expect(setupInputsTable).not.toContain("PN &lt;100&gt;");
+    expect(setupInputsTable).not.toContain("DIM &amp; 1");
+    expect(setupInputsTable).not.toContain("Missing");
     expect(setupInputsTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(setupInputsTable?.indexOf("Factor &amp; B") ?? -1);
     expect(measurementAnalysisTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(measurementAnalysisTable?.indexOf("Factor &amp; B") ?? -1);
     expect(html.indexOf("data-factor-setup-inputs")).toBeLessThan(html.indexOf("data-factor-measurement-analysis"));
@@ -480,10 +513,10 @@ describe("F7 report PDF renderer", () => {
 
     expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
     expect(html).toContain("thead { display: table-header-group; }");
-    expect(html).toContain("[data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; font-size: 8.2pt; }");
+    expect(html).toContain("[data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: var(--factor-setup-table-font-size); line-height: 1.12; }");
     expect(html).toContain("[data-factor-setup-inputs] tr, [data-factor-measurement-analysis] tr { break-inside: avoid; page-break-inside: avoid; }");
     expect(html).toContain(".metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }");
-    expect(html).toContain("[data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: auto; }");
+    expect(html).toContain("[data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { text-align: right; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
     expect(html).toContain(".engineering-inputs .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
     expect(dimensionChainPages.length).toBeGreaterThan(5);
@@ -561,7 +594,7 @@ describe("F7 report PDF renderer", () => {
     const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
     const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
       .flatMap((row) => [...row[1]!.matchAll(/<td>([^<]+)<\/td>/g)].map((cell) => cell[1] ?? ""))
-      .filter((_, index) => index % 10 === 0 || index % 10 >= 4 && index % 10 <= 8);
+      .filter((_, index) => index % 8 === 0 || index % 8 >= 2 && index % 8 <= 6);
     const measurementNumericValues = [...(measurementAnalysisTable ?? "").matchAll(/<span class="metric-value">([^<]+)<\/span>/g)]
       .map((match) => match[1] ?? "");
 
