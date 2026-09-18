@@ -2161,16 +2161,43 @@ export const f7ReportSummarySchema = z
   .strict()
   .superRefine(requireLowerSpecLessThanUpperSpec);
 
+const f7ReportPairedMetricSchema = z
+  .object({
+    actual: finiteNumberSchema,
+    delta: finiteNumberSchema,
+  })
+  .strict();
+
+const f7ReportMeasurementComparisonSchema = z
+  .object({
+    mean: f7ReportPairedMetricSchema,
+    tolerance: f7ReportPairedMetricSchema.optional(),
+    oneSigma: f7ReportPairedMetricSchema.optional(),
+    cpk: f7ReportPairedMetricSchema.optional(),
+  })
+  .strict();
+
 export const f7ReportFactorSchema = z
   .object({
     factorId: sha256LowerSchema,
     factorName: z.string().min(1),
+    partNumber: factorTraceabilitySchema.optional(),
+    dimId: factorTraceabilitySchema.optional(),
     loopCoefficient: f7LoopCoefficientSchema,
     sourceMode: f7FactorSourceModeSchema,
     ...editableFactorSpecificationFields,
     longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor,
     sigmaLevel: f7FactorCalculationControlFields.sigmaLevel,
     setupDistribution: f7ToleranceDistributionSchema,
+    setupMean: finiteNumberSchema,
+    setupTolerance: finitePositiveNumberSchema,
+    setupOneSigma: finitePositiveNumberSchema,
+    setupCpk: finitePositiveNumberSchema,
+    percentContributionToSigma: z.number().finite().min(0).max(1),
+    measurementComparison: f7ReportMeasurementComparisonSchema.optional(),
+    sampleCount: z.number().int().nonnegative(),
+    readiness: z.enum(["ready", "pending"]),
+    measurementWarning: z.boolean(),
     approvedDistribution: f7DistributionCandidateFamilySchema,
     sourceReferences: z.array(z.string().min(1)).min(1),
   })

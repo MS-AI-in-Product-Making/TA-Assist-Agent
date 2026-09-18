@@ -266,6 +266,8 @@ function createReportFixture(
     factors: [{
       factorId: SHA256,
       factorName: "Gap",
+      partNumber: "PN-1001",
+      dimId: "DIM-42",
       loopCoefficient: 1 as const,
       sourceMode: "MEASURED" as const,
       designNominal: 10,
@@ -274,6 +276,20 @@ function createReportFixture(
       longTermSafetyFactor: 1.5,
       sigmaLevel: 3,
       setupDistribution: "Normal" as const,
+      setupMean: 10.05,
+      setupTolerance: 0.3,
+      setupOneSigma: 0.1,
+      setupCpk: 1.2,
+      percentContributionToSigma: 0.4,
+      measurementComparison: {
+        mean: { actual: 10.04, delta: -0.01 },
+        tolerance: { actual: 0.28, delta: -0.02 },
+        oneSigma: { actual: 0.09, delta: -0.01 },
+        cpk: { actual: 1.3, delta: 0.1 },
+      },
+      sampleCount: 32,
+      readiness: "ready" as const,
+      measurementWarning: false,
       approvedDistribution: "normal" as const,
       sourceReferences: ["Analysis-A!A2", "clipboard"],
     }],
@@ -334,6 +350,14 @@ describe("F7 report contracts", () => {
       "longTermSafetyFactor",
       "sigmaLevel",
       "setupDistribution",
+      "setupMean",
+      "setupTolerance",
+      "setupOneSigma",
+      "setupCpk",
+      "percentContributionToSigma",
+      "sampleCount",
+      "readiness",
+      "measurementWarning",
     ] as const;
 
     for (const field of requiredSetupFields) {
@@ -351,6 +375,11 @@ describe("F7 report contracts", () => {
       ["lowerTolerance", Number.NEGATIVE_INFINITY],
       ["longTermSafetyFactor", Number.POSITIVE_INFINITY],
       ["sigmaLevel", Number.POSITIVE_INFINITY],
+      ["setupMean", Number.POSITIVE_INFINITY],
+      ["setupTolerance", Number.POSITIVE_INFINITY],
+      ["setupOneSigma", Number.POSITIVE_INFINITY],
+      ["setupCpk", Number.POSITIVE_INFINITY],
+      ["percentContributionToSigma", Number.POSITIVE_INFINITY],
     ] as const;
 
     for (const [field, invalidValue] of invalidNumericSetupFields) {
@@ -364,6 +393,141 @@ describe("F7 report contracts", () => {
       ...report,
       factors: [{ ...report.factors[0], setupDistribution: "normal" }],
     }).success).toBe(false);
+  });
+
+  it("accepts optional controlled traceability and measurement comparison fields", () => {
+    const report = createReportFixture();
+
+    expect(f7ReportProjectionSchema.safeParse(report).success).toBe(true);
+
+    const withoutOptionalFields = structuredClone(report);
+    delete (withoutOptionalFields.factors[0] as Partial<(typeof report.factors)[number]>).partNumber;
+    delete (withoutOptionalFields.factors[0] as Partial<(typeof report.factors)[number]>).dimId;
+    delete (withoutOptionalFields.factors[0] as Partial<(typeof report.factors)[number]>).measurementComparison;
+    expect(f7ReportProjectionSchema.safeParse(withoutOptionalFields).success).toBe(true);
+
+    const meanOnlyComparison = structuredClone(report);
+    meanOnlyComparison.factors[0]!.measurementComparison = {
+      mean: { actual: 10.04, delta: -0.01 },
+    };
+    expect(f7ReportProjectionSchema.safeParse(meanOnlyComparison).success).toBe(true);
+  });
+
+  it("rejects invalid report Factor traceability", () => {
+    const report = createReportFixture();
+
+    for (const [field, invalidValue] of [
+      ["partNumber", "   "],
+      ["partNumber", "P".repeat(301)],
+      ["partNumber", null],
+      ["dimId", "   "],
+      ["dimId", "D".repeat(301)],
+      ["dimId", null],
+    ] as const) {
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [{ ...report.factors[0], [field]: invalidValue }],
+      }).success).toBe(false);
+    }
+  });
+
+  it("rejects invalid required report Factor display state", () => {
+    const report = createReportFixture();
+
+    for (const [field, invalidValue] of [
+      ["setupTolerance", 0],
+      ["setupTolerance", -0.1],
+      ["setupOneSigma", 0],
+      ["setupOneSigma", -0.1],
+      ["setupCpk", 0],
+      ["setupCpk", -0.1],
+      ["percentContributionToSigma", -0.01],
+      ["percentContributionToSigma", 1.01],
+      ["sampleCount", -1],
+      ["sampleCount", 1.5],
+      ["readiness", "blocked"],
+      ["measurementWarning", "false"],
+    ] as const) {
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [{ ...report.factors[0], [field]: invalidValue }],
+      }).success).toBe(false);
+    }
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], readiness: "pending" }],
+    }).success).toBe(true);
+  });
+
+  it("requires strict complete measurement metric pairs and a mean comparison", () => {
+    const report = createReportFixture();
+    const comparison = report.factors[0]!.measurementComparison;
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{
+        ...report.factors[0],
+        measurementComparison: { tolerance: comparison.tolerance },
+      }],
+    }).success).toBe(false);
+
+    for (const metric of ["mean", "tolerance", "oneSigma", "cpk"] as const) {
+      for (const partialPair of [
+        { actual: comparison[metric]!.actual },
+        { delta: comparison[metric]!.delta },
+      ]) {
+        expect(f7ReportProjectionSchema.safeParse({
+          ...report,
+          factors: [{
+            ...report.factors[0],
+            measurementComparison: {
+              ...comparison,
+              [metric]: partialPair,
+            },
+          }],
+        }).success).toBe(false);
+      }
+
+      expect(f7ReportProjectionSchema.safeParse({
+        ...report,
+        factors: [{
+          ...report.factors[0],
+          measurementComparison: {
+            ...comparison,
+            [metric]: { ...comparison[metric], extra: true },
+          },
+        }],
+      }).success).toBe(false);
+    }
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{
+        ...report.factors[0],
+        measurementComparison: { ...comparison, extra: true },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects non-finite measurement comparison metrics", () => {
+    const report = createReportFixture();
+    const comparison = report.factors[0]!.measurementComparison;
+
+    for (const metric of ["mean", "tolerance", "oneSigma", "cpk"] as const) {
+      for (const field of ["actual", "delta"] as const) {
+        expect(f7ReportProjectionSchema.safeParse({
+          ...report,
+          factors: [{
+            ...report.factors[0],
+            measurementComparison: {
+              ...comparison,
+              [metric]: { ...comparison[metric], [field]: Number.NaN },
+            },
+          }],
+        }).success).toBe(false);
+      }
+    }
   });
 
   it("rejects report factors with zero-width tolerance ranges", () => {
