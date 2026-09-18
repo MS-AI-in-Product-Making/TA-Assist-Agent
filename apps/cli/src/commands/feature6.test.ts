@@ -70,6 +70,7 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
     mkdir(join(publishRoot, "f6-runs", "demo", "run-1"), { recursive: true }),
     writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md"), "# report\n", "utf8"),
     writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
+    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "manifest.json"), JSON.stringify({ artifactSetVersion: "f6-artifact-set-v3" }), "utf8"),
   ]);
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
@@ -94,6 +95,27 @@ describe("Feature 6 CLI command", () => {
     expect(result).toContain(`fullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}`);
     expect(result).toContain(`fullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}`);
     expect(result).not.toContain("\nreport: ");
+  });
+
+  it("labels validator-derived v4 report names with canonical absolute paths", async () => {
+    const reportBase = "Meara TP TA_20241030-v0 - test0918 - TA ENGINEERING ANALYSIS REPORT";
+    const outputDirectory = join(publishRoot, "f6-runs", "demo", "run-1");
+    const setup = await fixture(`console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/${reportBase}.md",finalReportPdfPath:"test/demo-output/f6-runs/demo/run-1/${reportBase}.pdf"}));\n`);
+    await Promise.all([
+      rm(join(outputDirectory, "Feature6-Report.md")),
+      rm(join(outputDirectory, "Feature6-Report.pdf")),
+      writeFile(join(outputDirectory, `${reportBase}.md`), "# report\n", "utf8"),
+      writeFile(join(outputDirectory, `${reportBase}.pdf`), Buffer.from("%PDF-1.7\nvalidated\n")),
+      writeFile(join(outputDirectory, "Feature6-Optimization.json"), JSON.stringify({ workbook: { fileName: "Meara TP TA_20241030-v0 - test0918.xlsx" } }), "utf8"),
+      writeFile(join(outputDirectory, "manifest.json"), JSON.stringify({ artifactSetVersion: "f6-artifact-set-v4" }), "utf8"),
+    ]);
+
+    const result = await runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Analysis-A"] },
+    );
+
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(outputDirectory, `${reportBase}.md`)}\nfullPdfReportPath: ${join(outputDirectory, `${reportBase}.pdf`)}\nstatus: completed`);
   });
 
   it("runs the repository runner with four roots, repeated worksheets, and optional evidence paths", async () => {

@@ -448,7 +448,8 @@ describe("workbench server security boundary", () => {
         baselineRunReference: "f4-run-current",
       };
       const reviewContextId = createReviewContextId(reviewContext);
-      const reportRelativePath = `runtime/workbench/runner-output/${sessionId}/production/f6/Feature6-Report.md`;
+      const reportBase = "Meara TP TA_20241030-v0 - test0918 - TA ENGINEERING ANALYSIS REPORT";
+      const reportRelativePath = `runtime/workbench/runner-output/${sessionId}/production/f6/${reportBase}.md`;
       const reportPath = join(rootDir, reportRelativePath);
       const reportBody = "# Final report\n\nValidated content.";
       await mkdir(dirname(reportPath), { recursive: true });
@@ -535,13 +536,13 @@ describe("workbench server security boundary", () => {
       const ok = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: auth.headers });
       expect(ok.statusCode).toBe(200);
       expect(ok.headers["content-type"]).toContain("text/markdown");
-      expect(ok.headers["content-disposition"]).toContain("attachment; filename=\"Feature6-Report.md\"");
+      expect(ok.headers["content-disposition"]).toContain(`attachment; filename="${reportBase}.md"`);
       expect(ok.body).toContain("Validated content.");
 
       const pdf = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/reports/f6.pdf`, headers: auth.headers });
       expect(pdf.statusCode).toBe(200);
       expect(pdf.headers["content-type"]).toContain("application/pdf");
-      expect(pdf.headers["content-disposition"]).toContain("attachment; filename=\"Feature6-Report.pdf\"");
+      expect(pdf.headers["content-disposition"]).toContain(`attachment; filename="${reportBase}.pdf"`);
       expect(pdf.rawPayload.subarray(0, 8).toString("utf8")).toBe("%PDF-1.7");
       expect(renderPdf).toHaveBeenCalledWith(expect.objectContaining({
         markdown: reportBody,

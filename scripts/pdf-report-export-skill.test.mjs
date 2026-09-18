@@ -9,13 +9,15 @@ describe("PDF Report Export skill", () => {
   it("defines required governed PDF publication behavior", () => {
     const skill = read(".github/skills/pdf-report-export/SKILL.md");
     expect(skill).toContain("name: pdf-report-export");
-    expect(skill).toContain("Feature6-Report.pdf");
+    expect(skill).toContain("<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.pdf");
+    expect(skill).toContain("f6-artifact-set-v4");
     expect(skill).toContain("f6-artifact-set-v3");
+    expect(skill).toContain("historical read-only");
     expect(skill).toContain("finalReportPdfSha256");
     expect(skill).toContain("fail closed");
-    expect(skill).toContain("Feature6-Report.md");
+    expect(skill).toContain("<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.md");
     expect(skill).toContain("English-only content in both reports regardless of the interaction language");
-    expect(skill).toContain("use their required workspace-relative links and do not include absolute paths");
+    expect(skill).toContain("exactly two validator-confirmed canonical absolute paths");
   });
 
   it("is required by the TA Assist Agent and Design Optimization workflows", () => {
@@ -23,7 +25,7 @@ describe("PDF Report Export skill", () => {
     const optimization = read(".github/skills/design-optimization/SKILL.md");
     expect(entry).toContain("REQUIRED SUB-SKILL: Use pdf-report-export");
     expect(optimization).toContain("REQUIRED SUB-SKILL: Use pdf-report-export");
-    expect(entry).toContain("Feature6-Report.pdf");
-    expect(optimization).toContain("Feature6-Report.pdf");
+    expect(entry).toContain("TA ENGINEERING ANALYSIS REPORT.pdf");
+    expect(optimization).toContain("TA ENGINEERING ANALYSIS REPORT.pdf");
   });
 });

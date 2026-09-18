@@ -45,6 +45,7 @@ async function fixture() {
     writeFile(join(f5Root, "Feature5-Report.json"), "{}", "utf8"),
     writeFile(join(outputDirectory, "Feature6-Report.md"), "# report\n", "utf8"),
     writeFile(join(outputDirectory, "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
+    writeFile(join(outputDirectory, "manifest.json"), JSON.stringify({ artifactSetVersion: "f6-artifact-set-v3" }), "utf8"),
   ]);
   return {
     base,
