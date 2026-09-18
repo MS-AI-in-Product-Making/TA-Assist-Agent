@@ -741,6 +741,20 @@ describe("createF7ReportProjection", () => {
     expect(report.factors[1]?.setupDistribution).not.toBe(MEASURED_CANDIDATE_SETUP.distribution);
   });
 
+  it("normalizes factor contributions from all report evidence regardless of setup confirmation", () => {
+    const snapshot = createSnapshot();
+    delete snapshot.factors[1]!.setup;
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+    const contributions = report.factors.map(({ percentContributionToSigma }) => percentContributionToSigma);
+
+    expect(contributions).toEqual([
+      expect.closeTo(0.01 / 0.0164, 12),
+      expect.closeTo(0.0064 / 0.0164, 12),
+    ]);
+    expect(contributions.reduce((total, contribution) => total + contribution, 0)).toBeCloseTo(1, 12);
+  });
+
   it("keeps a measured Factor pending without a ready paste result", () => {
     const snapshot = createSnapshot();
     const measuredFactor = snapshot.factors[1]!;

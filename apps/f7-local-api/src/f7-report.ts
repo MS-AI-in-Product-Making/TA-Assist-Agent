@@ -493,7 +493,7 @@ export function createF7ReportProjection(
 
   const manifestByFactorId = new Map(simulation.factorManifest.map((entry) => [entry.factorId, entry]));
   const setupVarianceTotal = parsedSnapshot.factors.reduce((total, factor) => {
-    const oneSigma = factor.setup?.confirmed === true ? factor.evidence?.oneSigma : undefined;
+    const oneSigma = factor.evidence?.oneSigma;
     return oneSigma === undefined ? total : total + oneSigma ** 2;
   }, 0);
   const factors = parsedSnapshot.factors.map((factorState) => {
