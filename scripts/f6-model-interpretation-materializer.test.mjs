@@ -31,10 +31,20 @@ function writeResponse(bundle, worksheetNames, mutate = (value) => value) {
   return responsePath;
 }
 
-it("materializes one current v3 artifact for five selected worksheets", () => {
+it("materializes one current v3 artifact from a terminal drawing-governance-v3 receipt", () => {
   const worksheetNames = ["Analysis-E", "Analysis-C", "Analysis-A", "Analysis-D", "Analysis-B"];
   const bundle = createF6ArtifactBundleFixture({ worksheetNames });
   cleanup.push(bundle.root);
+  rewriteFixtureJson(bundle.paths.f3, (value) => {
+    value.modelVersion = "drawing-governance-v3";
+    value.ado = {
+      status: "updated",
+      operation: "updated",
+      organization: "1ES4Devices",
+      project: "MechanicalEngineering",
+      workItemId: 1119364,
+    };
+  });
   const responsePath = writeResponse(bundle, worksheetNames);
 
   const npmExecutable = process.platform === "win32" ? process.execPath : "npm";

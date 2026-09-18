@@ -307,6 +307,28 @@ function sameStableValue(left, right) {
   return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
 }
 
+function firstMismatchPath(left, right, currentPath) {
+  if (Object.is(left, right)) return undefined;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) return `${currentPath}.length`;
+    for (let index = 0; index < left.length; index += 1) {
+      const mismatchPath = firstMismatchPath(left[index], right[index], `${currentPath}[${index}]`);
+      if (mismatchPath !== undefined) return mismatchPath;
+    }
+    return undefined;
+  }
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object") {
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (!Object.hasOwn(left, key) || !Object.hasOwn(right, key)) return `${currentPath}.${key}`;
+      const mismatchPath = firstMismatchPath(left[key], right[key], `${currentPath}.${key}`);
+      if (mismatchPath !== undefined) return mismatchPath;
+    }
+    return undefined;
+  }
+  return currentPath;
+}
+
 function buildExpectedContextSnapshot(f1Worksheet, f3Worksheet, tableId) {
   const f1Table = f1Worksheet.factorTables.find((table) => table.tableId === tableId);
   if (!f1Table) return undefined;
@@ -543,8 +565,12 @@ export function loadF5ArtifactBundle({
   if (imageObservationArtifact === undefined) return acceptedResult(baselineRequest);
 
   const observationReference = safeReference(imageObservationArtifact);
-  const observationFallback = (reasonCode) => acceptedResult(baselineRequest, {
-    observationFallback: { reasonCode, artifactReference: observationReference },
+  const observationFallback = (reasonCode, mismatchPath) => acceptedResult(baselineRequest, {
+    observationFallback: {
+      reasonCode,
+      artifactReference: observationReference,
+      ...(mismatchPath === undefined ? {} : { mismatchPath }),
+    },
   });
   const observationJson = readJson(path.resolve(imageObservationArtifact), observationReference);
   if (observationJson.rejection) {
@@ -569,7 +595,7 @@ export function loadF5ArtifactBundle({
       baselineRequest.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]),
     );
     const enrichedWorksheets = [];
-    for (const worksheetName of selection) {
+    for (const [worksheetIndex, worksheetName] of selection.entries()) {
       const baselineWorksheet = baselineByWorksheet.get(worksheetName);
       const observation = observationByWorksheet.get(worksheetName);
       const f1Worksheet = f1Worksheets.get(worksheetName);
@@ -586,9 +612,21 @@ export function loadF5ArtifactBundle({
       if (!baselineWorksheet
         || !observation
         || !expectedSnapshot
-        || !sameImageReference(observation.imageReference, imageReference)
-        || !sameStableValue(observation.contextSnapshot, expectedSnapshot)) {
-        return observationFallback("artifact_identity_mismatch");
+        || !sameImageReference(observation.imageReference, imageReference)) {
+        return observationFallback(
+          "artifact_identity_mismatch",
+          `worksheets[${worksheetIndex}].imageReference`,
+        );
+      }
+      if (!sameStableValue(observation.contextSnapshot, expectedSnapshot)) {
+        return observationFallback(
+          "artifact_identity_mismatch",
+          firstMismatchPath(
+            expectedSnapshot,
+            observation.contextSnapshot,
+            `worksheets[${worksheetIndex}].contextSnapshot`,
+          ),
+        );
       }
       enrichedWorksheets.push({
         ...baselineWorksheet,

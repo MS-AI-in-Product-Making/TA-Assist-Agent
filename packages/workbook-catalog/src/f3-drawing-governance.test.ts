@@ -85,6 +85,19 @@ describe("createF3DrawingGovernance", () => {
     });
   });
 
+  it("preserves source whitespace in Factor and part identity fields", () => {
+    const inputRow = row();
+    inputRow.actualFields.factorName = "Anonymous offset ";
+    inputRow.actualFields.partName = "Anonymous bracket ";
+
+    const report = createF3DrawingGovernance(requestWithRows([inputRow]));
+
+    expect(report.worksheets[0]?.rows[0]).toMatchObject({
+      factorDescription: "Anonymous offset ",
+      partSubsystem: "Anonymous bracket ",
+    });
+  });
+
   it("rejects blank or duplicate Factor ordinals at the F3 request boundary", () => {
     const blank = row();
     blank.factorOrdinal = { value: "", rawText: "" };

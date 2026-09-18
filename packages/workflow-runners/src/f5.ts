@@ -350,6 +350,9 @@ export function runF5Interpretation(
       reportMdPath: paths.reportMdPath,
       runSummaryPath: paths.runSummaryPath,
       manifestPath: paths.manifestPath,
+      ...(loaded.observationFallback === undefined ? {} : {
+        observationFallback: loaded.observationFallback,
+      }),
       ...(observationArtifact === undefined ? {} : { imageObservationsPath: paths.imageObservationsPath, observationArtifact }),
       report: result,
       summary: result.summary,

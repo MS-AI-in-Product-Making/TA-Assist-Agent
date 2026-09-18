@@ -2925,9 +2925,15 @@ describe("workbench server routes", () => {
           inputRevision: 1,
           activeAttempt: null,
           downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 1),
-          priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
-          artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
-        }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
+          priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
+          artifactRefs: [
+            { artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+            { artifactId: "f4-current-host-action", kind: "f4_calculation", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+          ],
+        }, artifactReferenceOps: { upsert: [
+          { artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT },
+          { artifactId: "f4-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: "f4/current-host-action.json", contentHash: "1".repeat(64), reviewContext: REVIEW_CONTEXT },
+        ] } }));
       } finally {
         await session.close();
       }
@@ -3011,9 +3017,10 @@ describe("workbench server routes", () => {
           },
         };
       const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
-      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
-      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "review_required" });
-      expect(runner).not.toHaveBeenCalled();
+      const writeResultResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } });
+        expect(writeResultResponse.statusCode, writeResultResponse.body).toBe(204);
+        expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "review_required" });
+        expect(runner).toHaveBeenCalledWith(expect.objectContaining({ stage: "f6_running" }));
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

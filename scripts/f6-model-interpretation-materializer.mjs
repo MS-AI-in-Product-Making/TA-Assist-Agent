@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import {
   drawingGovernanceResultV2Schema,
+  drawingGovernanceResultV3Schema,
   f2UserReportSchema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
@@ -37,6 +38,10 @@ const ARTIFACTS = Object.freeze({
 const DEFAULT_OUTPUT_ROOT = path.resolve("test", "demo-output");
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const readableDrawingGovernanceResultSchema = z.union([
+  drawingGovernanceResultV2Schema,
+  drawingGovernanceResultV3Schema,
+]);
 
 const responseSchema = z.object({
   contractVersion: z.literal("f6-model-interpretation-response-v1"),
@@ -236,7 +241,7 @@ function ensureOutputDirectory(outputRoot, workbookHash, targetId) {
 
 export function materializeF6ModelInterpretation(options) {
   const f2Loaded = readJsonArtifact(options.f2ArtifactRoot, ARTIFACTS.f2, f2UserReportSchema);
-  const f3Loaded = readJsonArtifact(options.f3ArtifactRoot, ARTIFACTS.f3, drawingGovernanceResultV2Schema);
+  const f3Loaded = readJsonArtifact(options.f3ArtifactRoot, ARTIFACTS.f3, readableDrawingGovernanceResultSchema);
   const f4Loaded = readJsonArtifact(options.f4ArtifactRoot, ARTIFACTS.f4, f4WorkflowCalculationResultSchema);
   const f5Loaded = readJsonArtifact(options.f5ArtifactRoot, ARTIFACTS.f5, f5DataInterpretationResultSchema);
   const { value: f2 } = f2Loaded;

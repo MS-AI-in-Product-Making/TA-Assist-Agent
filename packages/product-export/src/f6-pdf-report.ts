@@ -144,24 +144,6 @@ function unavailableGraph(className: string, caption: string): string {
   return `<figure class="${className}"><figcaption>${caption}</figcaption><p class="graph-unavailable">Insufficient numeric evidence</p></figure>`;
 }
 
-function drawingHealthGraph(headers: readonly string[], rows: readonly Tokens.TableCell[][]): string {
-  const drawingIndex = headers.indexOf("Drawing Number");
-  const dimIndex = headers.indexOf("DIM ID");
-  const missingDrawings = rows.filter((row) => cellText(row[drawingIndex]!).toUpperCase() === "MISSING").length;
-  const invalidDimIds = rows.filter((row) => {
-    const value = cellText(row[dimIndex]!);
-    return value.toUpperCase() === "MISSING" || /^\d$/u.test(value);
-  }).length;
-  const total = rows.length;
-  const incomplete = rows.filter((row) => {
-    const drawing = cellText(row[drawingIndex]!);
-    const dimId = cellText(row[dimIndex]!);
-    return drawing.toUpperCase() === "MISSING" || dimId.toUpperCase() === "MISSING" || /^\d$/u.test(dimId);
-  }).length;
-  const complete = Math.max(0, total - incomplete);
-  return `<section class="drawing-health" data-missing-drawings="${missingDrawings}" data-invalid-dim-ids="${invalidDimIds}"><div class="health-copy"><h2>Input integrity</h2><p>${complete} of ${total} Factors have complete drawing identifiers.</p></div><div class="health-measures"><span><strong>${missingDrawings}</strong> Missing drawings</span><span><strong>${invalidDimIds}</strong> DIM IDs to review</span></div></section>`;
-}
-
 function specificationRangeGraph(requirements: ReadonlyMap<string, string>, rows: readonly Tokens.TableCell[][]): string {
   const lowerSpec = numericValue(requirements.get("LSL") ?? "");
   const upperSpec = numericValue(requirements.get("USL") ?? "");
@@ -343,7 +325,14 @@ class F6PdfRenderer extends Renderer {
     this.analysisGridOpen = true;
     this.analysisPanelOpen = true;
     this.analysisPanelType = panelType;
-    return `${gridStart}${previousPanelEnd}<article class="analysis-panel analysis-panel--${panelType}"><h2>${content}</h2>\n`;
+    const stepLabels = new Map([
+      ["center", "Step 1"],
+      ["contributors", "Step 2"],
+      ["specifications", "Step 3"],
+    ]);
+    const stepLabel = stepLabels.get(panelType);
+    const heading = stepLabel === undefined ? content : `${content}<span class="step-label">${stepLabel}</span>`;
+    return `${gridStart}${previousPanelEnd}<article class="analysis-panel analysis-panel--${panelType}"><h2>${heading}</h2>\n`;
   }
 
   override link(token: Tokens.Link): string {
@@ -394,7 +383,8 @@ class F6PdfRenderer extends Renderer {
           if (index !== 0) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
           const comment = cellText(cell);
           const status = comment.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
-          return `<td><span class="comment comment--${status}">${escapeHtml(comment)}</span></td>`;
+          const displayComment = status === "fail" ? "CPK FAIL" : comment;
+          return `<td><span class="comment comment--${status}">${escapeHtml(displayComment)}</span></td>`;
         }).join("");
         return `<tr>${cells}</tr>`;
       }).join("");
@@ -527,7 +517,7 @@ const PRINT_CSS = `
   .factor-table th:nth-child(3),.factor-table td:nth-child(3) { width:6%; }
   .factor-table th:nth-child(4),.factor-table td:nth-child(4) { width:6%; }
   .factor-table th:nth-child(5),.factor-table td:nth-child(5) { width:6%; }
-  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:5%; }
+  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:3%; }
   .factor-table th:nth-child(7),.factor-table td:nth-child(7) { width:6%; text-align:right; }
   .factor-table th:nth-child(8),.factor-table td:nth-child(8) { width:6%; text-align:right; }
   .factor-table th:nth-child(9),.factor-table td:nth-child(9) { width:6%; text-align:right; }
@@ -536,7 +526,7 @@ const PRINT_CSS = `
   .factor-table th:nth-child(12),.factor-table td:nth-child(12) { width:6%; text-align:right; }
   .factor-table th:nth-child(13),.factor-table td:nth-child(13) { width:6%; text-align:right; }
   .factor-table th:nth-child(14),.factor-table td:nth-child(14) { width:6%; text-align:right; }
-  .factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:10%; }
+  .factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%; }
   .factor-table th:nth-child(2),.factor-table td:nth-child(2),.factor-table th:nth-child(5),.factor-table td:nth-child(5),.factor-table th:nth-child(6),.factor-table td:nth-child(6),.factor-table th:nth-child(15),.factor-table td:nth-child(15) { overflow-wrap:anywhere; }
   .factor-table tbody tr.missing td { background:var(--p-gray-242); }
   .status-missing { color:var(--p-dark-red); font-weight:800; } .status-warning { color:var(--p-orange); font-weight:800; } .status-complete { color:var(--p-black); font-weight:800; } .dim-id-review { color:var(--p-black); background:var(--p-yellow); font-weight:800; }
@@ -561,15 +551,17 @@ const PRINT_CSS = `
   .slide-summary { grid-template-columns:.72fr 1.28fr; grid-template-rows:64px 1fr; gap:14px 28px; }
   .slide-summary>h1 { grid-column:1/-1; align-self:start; margin:0; padding:0; border:0; color:var(--p-black); font:700 56px/.9 var(--st-display); text-transform:uppercase; letter-spacing:0; white-space:nowrap; }
   .slide-summary>h2 { display:none; }
-  .document-overview,.workbook-summary { align-self:stretch; width:100%; margin:0; overflow:hidden; border:2px solid var(--p-black); border-radius:24px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--p-white); font-size:22px; }
-  .document-overview::before,.workbook-summary::before { display:table-caption; padding:20px 26px; background:var(--p-white); color:var(--p-black); content:"Document Overview"; font:700 26px/1 var(--st-display); text-align:left; text-transform:uppercase; }
+  .document-overview,.workbook-summary { align-self:stretch; box-sizing:border-box; width:100%; margin:0; overflow:hidden; clip-path:inset(0 round 24px); border:2px solid var(--p-black); border-radius:24px; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--p-white); font-size:22px; }
+  .document-overview::before,.workbook-summary::before { display:table-caption; padding:20px 26px; background:var(--p-white); color:var(--p-black); content:"Document Overview"; font:700 26px/1 var(--st-display); text-align:center; text-transform:uppercase; }
   .workbook-summary::before { content:"Workbook Summary"; background:var(--p-white); color:var(--p-black); }
   .document-overview th,.workbook-summary th { padding:14px 20px; border:0; border-bottom:2px solid var(--p-black); background:var(--p-black); color:var(--p-white); font:800 18px/1 var(--st-meta); letter-spacing:.04em; text-transform:uppercase; }
   .document-overview td,.workbook-summary td { padding:9px 16px; border:0; border-bottom:1px solid rgba(0,0,0,.22); color:var(--p-black); font-size:17px; }
   .workbook-summary { align-self:start; }
   .workbook-summary td { white-space:nowrap; font-size:12px; line-height:1; }
   .workbook-summary td:nth-child(1) { white-space:nowrap; }
+  .workbook-summary td:nth-child(2) a { color:var(--raw-data); font-weight:700; }
   .workbook-summary .comment { display:inline-block; padding:3px 6px; border-radius:999px; background:var(--p-gray-210); color:var(--p-black); font:800 12px/1 var(--st-meta); text-transform:uppercase; }
+  .workbook-summary .comment--fail { color:var(--p-dark-red) !important; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { position:relative; display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
@@ -614,10 +606,11 @@ const PRINT_CSS = `
   .factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap; }
   .factor-table--dense th:nth-child(3),.factor-table--dense td:nth-child(3),.factor-table--dense th:nth-child(4),.factor-table--dense td:nth-child(4) { width:5.5%; }
   .factor-table--dense th:nth-child(5),.factor-table--dense td:nth-child(5) { width:7%; }
-  .factor-table--dense th:nth-child(6),.factor-table--dense td:nth-child(6),.factor-table--dense th:nth-child(7),.factor-table--dense td:nth-child(7),.factor-table--dense th:nth-child(8),.factor-table--dense td:nth-child(8),.factor-table--dense th:nth-child(9),.factor-table--dense td:nth-child(9),.factor-table--dense th:nth-child(12),.factor-table--dense td:nth-child(12),.factor-table--dense th:nth-child(13),.factor-table--dense td:nth-child(13),.factor-table--dense th:nth-child(14),.factor-table--dense td:nth-child(14) { width:5.5%; }
+  .factor-table--dense th:nth-child(6),.factor-table--dense td:nth-child(6) { width:3.5%; }
+  .factor-table--dense th:nth-child(7),.factor-table--dense td:nth-child(7),.factor-table--dense th:nth-child(8),.factor-table--dense td:nth-child(8),.factor-table--dense th:nth-child(9),.factor-table--dense td:nth-child(9),.factor-table--dense th:nth-child(12),.factor-table--dense td:nth-child(12),.factor-table--dense th:nth-child(13),.factor-table--dense td:nth-child(13),.factor-table--dense th:nth-child(14),.factor-table--dense td:nth-child(14) { width:5.5%; }
   .factor-table--dense th:nth-child(10),.factor-table--dense td:nth-child(10) { width:5%; }
   .factor-table--dense th:nth-child(11),.factor-table--dense td:nth-child(11) { width:4.5%; }
-  .factor-table--dense th:nth-child(15),.factor-table--dense td:nth-child(15) { width:10.5%; }
+  .factor-table--dense th:nth-child(15),.factor-table--dense td:nth-child(15) { width:12.5%; }
   .factor-table tbody tr.missing td { background:transparent; }
   .factor-table tbody tr.missing td:nth-child(5) { color:var(--p-dark-red); font-weight:700; }
   .guidance { display:inline-block; padding-left:8px; border-left:3px solid rgba(0,0,0,.38); }
@@ -637,12 +630,13 @@ const PRINT_CSS = `
   .analysis-panel--process li { margin:6px 0; color:var(--p-black); }
   .analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:18px; grid-column:2; grid-row:1; background:var(--p-white); }
   .analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-white); }
-  .analysis-panel--center { grid-column:1; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
-  .analysis-panel--contributors { grid-column:2; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
-  .analysis-panel--specifications { grid-column:3; grid-row:2; min-height:0; border:0; background:var(--p-white); color:var(--p-black); }
-  .analysis-panel--process>h2 { color:var(--raw-data); }
-  .analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation); }
+  .analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { height:220px; min-height:0; align-self:stretch; box-sizing:border-box; }
+  .analysis-panel--center { grid-column:1; grid-row:2; border:0; background:var(--p-white); color:var(--p-black); }
+  .analysis-panel--contributors { grid-column:2; grid-row:2; border:0; background:var(--p-white); color:var(--p-black); }
+  .analysis-panel--specifications { grid-column:3; grid-row:2; border:0; background:var(--p-white); color:var(--p-black); }
+  .analysis-panel--process>h2,.analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation); }
   .analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { color:var(--optimization); }
+  .step-label { display:inline-block; margin-left:10px; color:var(--p-black); font:800 13px/1 var(--st-meta); vertical-align:middle; }
   .analysis-panel--center,.analysis-panel--contributors { position:relative; overflow:visible; }
   .analysis-panel--center::after,.analysis-panel--contributors::after { content:"→"; position:absolute; top:50%; right:-20px; z-index:5; color:var(--optimization); font:800 26px/1 var(--st-meta); transform:translateY(-50%); }
   .analysis-panel--contributors:last-child::after { display:none; }

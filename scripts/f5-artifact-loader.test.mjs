@@ -1209,11 +1209,26 @@ describe("loadF5ArtifactBundle", () => {
     expect(result.request.worksheets.every((worksheet) => worksheet.imageObservations.length === 0)).toBe(true);
     expect(result.request.worksheets.every((worksheet) => !("contextSnapshot" in worksheet))).toBe(true);
     expect(result).not.toHaveProperty("observationArtifact");
-    expect(result.observationFallback).toEqual({
+    expect(result.observationFallback).toMatchObject({
       reasonCode: expect.stringMatching(/^artifact_(contract_invalid|identity_mismatch)$/),
       artifactReference: "observations.json",
     });
     expect(result.sourceReferences).not.toHaveProperty("observation");
+  });
+
+  it("reports the sanitized field path when a v2 snapshot factor name differs", () => {
+    const bundle = setupBundle();
+    const artifact = v2ObservationArtifact(bundle);
+    artifact.worksheets[0].contextSnapshot.rows[0].factorName += " ";
+    const observationPath = writeObservationArtifact(bundle, artifact);
+
+    const result = load(bundle, { imageObservationArtifact: observationPath });
+
+    expect(result.observationFallback).toEqual({
+      reasonCode: "artifact_identity_mismatch",
+      artifactReference: "observations.json",
+      mismatchPath: "worksheets[0].contextSnapshot.rows[0].factorName",
+    });
   });
 
   it("keeps baseline identity rejection authoritative when a v2 artifact is present", () => {

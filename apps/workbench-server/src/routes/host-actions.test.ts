@@ -190,7 +190,7 @@ async function createHarness(options: {
 }
 
 describe("surface write host action persistence", () => {
-  it("persists F3 v3 traceability before advancing review", async () => {
+  it("persists F3 v3 traceability before starting post-ADO F6 publication", async () => {
     const harness = await createHarness({ withReport: true });
     try {
       const response = await harness.app.inject({
@@ -203,10 +203,12 @@ describe("surface write host action persistence", () => {
       expect(response.statusCode, response.body).toBe(204);
       const persisted = await harness.readPersisted();
       const reportBytes = readFileSync(harness.reportPath);
-      expect(persisted.snapshot.state).toBe("review_required");
+      expect(persisted.snapshot.state).toBe("f6_running");
+      expect(persisted.snapshot.activeAttempt).toMatchObject({ status: "running", stage: "f6_running" });
       expect(persisted.reference?.contentHash).toBe(createHash("sha256").update(reportBytes).digest("hex"));
       expect(JSON.parse(reportBytes.toString("utf8")).modelVersion).toBe("drawing-governance-v3");
       expect(harness.enqueueActiveAttempt).toHaveBeenCalledTimes(1);
+      expect(harness.enqueueActiveAttempt).toHaveBeenCalledWith(expect.objectContaining({ state: "f6_running" }));
     } finally {
       await harness.app.close();
     }
