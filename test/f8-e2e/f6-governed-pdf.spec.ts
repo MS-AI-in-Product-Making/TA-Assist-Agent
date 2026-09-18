@@ -259,6 +259,9 @@ test("publishes one overview page plus one page per worksheet without overflow",
           && headerBox.right <= tableBox.right;
       })).toBe(true);
       expect(await table.evaluate((node) => getComputedStyle(node, "::before").textAlign)).toBe("center");
+      expect(await table.locator("th:last-child").evaluate((node) => (
+        Number.parseFloat(getComputedStyle(node).borderTopRightRadius)
+      ))).toBeGreaterThan(0);
     }
     const summaryWorksheetLink = overview.locator(".workbook-summary tbody tr:first-child td:nth-child(2) a");
     expect(await summaryWorksheetLink.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(0, 120, 212)");
@@ -331,6 +334,19 @@ test("publishes one overview page plus one page per worksheet without overflow",
     if (await ready.locator(".analysis-panel--specifications").count() > 0) {
       await expect(ready.locator(".analysis-panel--specifications .step-label")).toHaveText("Step 3");
     }
+    const optimizationHeadings = ready.locator(
+      ".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2",
+    );
+    expect(await optimizationHeadings.count()).toBeGreaterThanOrEqual(2);
+    expect(await optimizationHeadings.evaluateAll((headings) => headings.every((heading) => {
+      const headingBox = heading.getBoundingClientRect();
+      const stepBox = heading.querySelector(".step-label")?.getBoundingClientRect();
+      return getComputedStyle(heading).whiteSpace === "nowrap"
+        && heading.scrollWidth <= heading.clientWidth
+        && stepBox !== undefined
+        && stepBox.top < headingBox.bottom
+        && stepBox.bottom > headingBox.top;
+    }))).toBe(true);
 
     expect(await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
@@ -402,4 +418,50 @@ test("keeps all ten supported contributor rows visible", async ({ page }, testIn
   const panel = page.locator(".analysis-panel--contributors");
   await expect(panel.locator(".contribution-row")).toHaveCount(10);
   expect(await panel.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+});
+
+test("validates supplied governed report layout", async ({ page }, testInfo) => {
+  const acceptanceRoot = process.env.AI_TVA_F6_ACCEPTANCE_ROOT;
+  test.skip(acceptanceRoot === undefined || acceptanceRoot.length === 0, "No explicit governed acceptance root supplied.");
+  const validation = JSON.parse(execFileSync(process.execPath, [
+    path.resolve("scripts", "verify-current-f6.mjs"),
+    acceptanceRoot!,
+  ], { encoding: "utf8" })) as {
+    readonly status: string;
+    readonly outputDirectory: string;
+    readonly finalReportMarkdownPath: string;
+    readonly finalReportPdfPath?: string;
+  };
+  expect(validation.status).toBe("accepted");
+  if (validation.status !== "accepted" || validation.finalReportPdfPath === undefined) return;
+
+  await inspectPdf(validation.finalReportPdfPath);
+  const markdown = readFileSync(validation.finalReportMarkdownPath, "utf8");
+  const htmlPath = testInfo.outputPath("meara-v4-report.html");
+  writeFileSync(htmlPath, renderF6PdfHtml({
+    markdown,
+    sourceHash: createHash("sha256").update(markdown).digest("hex"),
+    baseHref: pathToFileURL(`${validation.outputDirectory}${path.sep}`).href,
+  }), "utf8");
+  await page.goto(pathToFileURL(htmlPath).href);
+
+  const headings = page.locator(
+    ".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2",
+  );
+  expect(await headings.count()).toBeGreaterThan(0);
+  expect(await headings.evaluateAll((nodes) => nodes.every((heading) => {
+    const headingBox = heading.getBoundingClientRect();
+    const stepBox = heading.querySelector(".step-label")?.getBoundingClientRect();
+    return getComputedStyle(heading).whiteSpace === "nowrap"
+      && heading.scrollWidth <= heading.clientWidth
+      && stepBox !== undefined
+      && stepBox.top < headingBox.bottom
+      && stepBox.bottom > headingBox.top;
+  }))).toBe(true);
+  for (const table of await page.locator(".document-overview,.workbook-summary").all()) {
+    expect(await table.locator("th:last-child").evaluate((node) => (
+      Number.parseFloat(getComputedStyle(node).borderTopRightRadius)
+    ))).toBeGreaterThan(0);
+  }
+  await page.screenshot({ path: testInfo.outputPath("meara-v4-report.png"), fullPage: true });
 });

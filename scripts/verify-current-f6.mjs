@@ -568,6 +568,7 @@ if (isDirectExecution()) {
     status: result.status,
     outputDirectory: result.outputDirectory,
     finalReportMarkdownPath: result.finalReportMarkdownPath,
+    finalReportPdfPath: result.finalReportPdfPath,
     reportSummary: result.reportSummary,
   } : result, null, 2));
   process.exitCode = result.status === "accepted" ? 0 : 1;
