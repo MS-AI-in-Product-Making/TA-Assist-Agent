@@ -2204,6 +2204,36 @@ export const f7ReportFactorSchema = z
   .strict()
   .superRefine((factor, context) => {
     requireValidEditableFactorSpecification(factor, context);
+    if (factor.sourceMode === "BASELINE_ASSUMPTION") {
+      if (factor.readiness !== "ready") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode requires ready readiness",
+          path: ["readiness"],
+        });
+      }
+      if (factor.sampleCount !== 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode requires sampleCount to be zero",
+          path: ["sampleCount"],
+        });
+      }
+      if (factor.measurementComparison !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode cannot include measurementComparison",
+          path: ["measurementComparison"],
+        });
+      }
+      if (factor.measurementWarning) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "baseline sourceMode cannot include measurementWarning",
+          path: ["measurementWarning"],
+        });
+      }
+    }
     if (factor.readiness === "pending") {
       if (factor.sampleCount !== 0) {
         context.addIssue({

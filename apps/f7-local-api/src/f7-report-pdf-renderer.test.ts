@@ -128,7 +128,7 @@ function reportFixture(): F7ReportProjection {
         setupCpk: 4 / 3,
         percentContributionToSigma: 0.375,
         sampleCount: 0,
-        readiness: "pending",
+        readiness: "ready",
         measurementWarning: false,
         loopCoefficient: -1,
         sourceMode: "BASELINE_ASSUMPTION",
@@ -350,7 +350,7 @@ describe("F7 report PDF renderer", () => {
     expect(measurementAnalysisTable).toContain(">32<");
     expect(measurementAnalysisTable).toContain(">0<");
     expect(measurementAnalysisTable).toContain("Ready");
-    expect(measurementAnalysisTable).toContain("Pending");
+    expect(measurementAnalysisTable).toMatch(/Factor &amp; B.*>0<.*status-ready">Ready/s);
 
     expect(html).toContain("data-monte-carlo-chart");
     expect(html).toContain("data-monte-carlo-bin");

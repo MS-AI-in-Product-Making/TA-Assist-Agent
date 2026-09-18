@@ -12,6 +12,7 @@ import {
   f7FactorConfirmRouteRequestSchema,
   f7FactorEvidenceSchema,
   f7FactorInputSchema,
+  f7ReportFactorSchema,
   f7DatasetValidationIssueSchema,
   f7DatasetValidationReasonSchema,
   f7DatasetValidationResultSchema,
@@ -344,6 +345,21 @@ describe("f7ReportFactorSchema status consistency", () => {
         factorManifest: [{ factorId: SHA256, family: "normal", sourceMode: "BASELINE_ASSUMPTION" }],
       },
     }).success).toBe(true);
+  });
+
+  it.each([
+    ["a nonzero sampleCount", { sampleCount: 1, measurementComparison: undefined, measurementWarning: false }],
+    ["measurementComparison", { sampleCount: 1, measurementWarning: false }],
+    ["measurementWarning", { sampleCount: 1, measurementComparison: undefined, measurementWarning: true }],
+  ] as const)("rejects baseline mode with %s", (_name, overrides) => {
+    const factor = {
+      ...createFactor(),
+      sourceMode: "BASELINE_ASSUMPTION" as const,
+      readiness: "ready" as const,
+      ...overrides,
+    };
+
+    expect(f7ReportFactorSchema.safeParse(factor).success).toBe(false);
   });
 
   it.each([
