@@ -301,8 +301,12 @@ describe("F7 report PDF renderer", () => {
 
     const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
     const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+    const measurementAnalysisWrapper = html.match(/<div class="measurement-analysis-wrapper">[\s\S]*?<\/table><\/div>/)?.[0];
     expect(setupInputsTable).toBeDefined();
     expect(measurementAnalysisTable).toBeDefined();
+    expect(measurementAnalysisWrapper).toBeDefined();
+    expect(measurementAnalysisWrapper).toContain("<h4>Measurement Analysis</h4>");
+    expect(measurementAnalysisWrapper).toContain("<table data-factor-measurement-analysis>");
     const setupHeadings = [...(setupInputsTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     const analysisHeadings = [...(measurementAnalysisTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     expect(setupHeadings).toEqual([
@@ -325,10 +329,12 @@ describe("F7 report PDF renderer", () => {
       "1σ",
       "Cpk",
       "% Contribution to σ",
-      "Source Mode",
       "Sample Count",
-      "Readiness",
     ]);
+    expect(html).toContain(".measurement-analysis-wrapper { break-inside: avoid; page-break-inside: avoid; }");
+    expect(html).toContain("[data-factor-measurement-analysis] { table-layout: fixed; font-size: 6.4pt; line-height: 1.12; }");
+    expect(html).toContain("[data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: 2px 3px; }");
+    expect(html).toContain("[data-factor-measurement-analysis] .metric-label { font-size: 5.8pt; }");
     expect(setupInputsTable).toContain("PN &lt;100&gt;");
     expect(setupInputsTable).toContain("DIM &amp; 1");
     expect(setupInputsTable?.match(/>Missing</g)).toHaveLength(2);
@@ -344,13 +350,14 @@ describe("F7 report PDF renderer", () => {
     }
     expect(measurementAnalysisTable).toContain("62.5%");
     expect(measurementAnalysisTable).toContain("37.5%");
-    expect(measurementAnalysisTable).toContain("Measured Data");
-    expect(measurementAnalysisTable).toContain("Baseline Assumption");
-    expect(measurementAnalysisTable).toContain("Warning");
+    expect(measurementAnalysisTable).not.toContain("<th>Source Mode</th>");
+    expect(measurementAnalysisTable).not.toContain("<th>Readiness</th>");
+    expect(measurementAnalysisTable).not.toContain("Measured Data");
+    expect(measurementAnalysisTable).not.toContain("Baseline Assumption");
+    expect(measurementAnalysisTable).not.toContain("status-ready");
+    expect(measurementAnalysisTable).not.toContain("status-warning");
     expect(measurementAnalysisTable).toContain(">32<");
     expect(measurementAnalysisTable).toContain(">0<");
-    expect(measurementAnalysisTable).toContain("Ready");
-    expect(measurementAnalysisTable).toMatch(/Factor &amp; B.*>0<.*status-ready">Ready/s);
 
     expect(html).toContain("data-monte-carlo-chart");
     expect(html).toContain("data-monte-carlo-bin");
