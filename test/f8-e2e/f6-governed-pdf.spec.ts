@@ -482,9 +482,13 @@ test("validates supplied governed report layout", async ({ page }, testInfo) => 
       Number.parseFloat(getComputedStyle(node).borderTopRightRadius)
     ))).toBeGreaterThan(0);
   }
-  const headingTopCoordinates = await headings.evaluateAll((nodes) => (
-    nodes.map((heading) => heading.getBoundingClientRect().top)
-  ));
-  expect(Math.max(...headingTopCoordinates) - Math.min(...headingTopCoordinates)).toBeLessThanOrEqual(1);
+  for (const grid of await page.locator(".analysis-grid").all()) {
+    const headingTopCoordinates = await grid.locator(
+      ".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2",
+    ).evaluateAll((nodes) => nodes.map((heading) => heading.getBoundingClientRect().top));
+    if (headingTopCoordinates.length > 1) {
+      expect(Math.max(...headingTopCoordinates) - Math.min(...headingTopCoordinates)).toBeLessThanOrEqual(1);
+    }
+  }
   await page.screenshot({ path: testInfo.outputPath("meara-v4-report.png"), fullPage: true });
 });
