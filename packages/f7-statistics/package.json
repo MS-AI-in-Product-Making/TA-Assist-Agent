@@ -10,6 +10,30 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./capability": {
+      "types": "./dist/capability.d.ts",
+      "import": "./dist/capability.js"
+    },
+    "./factor-measured-comparison": {
+      "types": "./dist/factor-measured-comparison.d.ts",
+      "import": "./dist/factor-measured-comparison.js"
+    },
+    "./measurement-diagnostics": {
+      "types": "./dist/measurement-diagnostics.d.ts",
+      "import": "./dist/measurement-diagnostics.js"
+    },
+    "./measurement-observation": {
+      "types": "./dist/measurement-observation.d.ts",
+      "import": "./dist/measurement-observation.js"
+    },
+    "./measurement-structure": {
+      "types": "./dist/measurement-structure.d.ts",
+      "import": "./dist/measurement-structure.js"
+    },
+    "./measurement-warnings": {
+      "types": "./dist/measurement-warnings.d.ts",
+      "import": "./dist/measurement-warnings.js"
     }
   },
   "dependencies": {

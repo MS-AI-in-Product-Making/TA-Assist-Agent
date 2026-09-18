@@ -5,4 +5,4 @@ export {
   type FactorMeasuredComparisonInput,
   type FactorMeasurementDataset,
   type FactorMeasurementObservation,
-} from "@ai-assist/f7-statistics";
+} from "@ai-assist/f7-statistics/factor-measured-comparison";

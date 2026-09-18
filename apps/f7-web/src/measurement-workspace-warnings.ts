@@ -1,7 +1,7 @@
 import {
   evaluateFactorMeasurementWarnings,
-  type FactorMeasurementDisposition,
-} from "@ai-assist/f7-statistics";
+} from "@ai-assist/f7-statistics/measurement-warnings";
+import type { FactorMeasurementDisposition } from "@ai-assist/f7-statistics/measurement-observation";
 
 interface MeasurementWarningFactor {
   readonly evidence?: {
