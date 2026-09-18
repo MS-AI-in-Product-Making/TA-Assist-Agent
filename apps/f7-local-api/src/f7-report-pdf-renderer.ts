@@ -105,7 +105,7 @@ export function factorSetupDensityStyle(factorCount: number): string {
   if (!Number.isInteger(factorCount) || factorCount <= 0 || factorCount > FACTOR_SETUP_MAX_FACTORS) {
     throw new Error("Factor count must be an integer between 1 and 100.");
   }
-  const scale = Math.min(1, 7 / factorCount);
+  const scale = factorCount <= 7 ? 1 : 6 / (factorCount - 1);
   const dimensions = [
     ["table-font-size", 6.4, "pt"],
     ["label-font-size", 5.8, "pt"],
