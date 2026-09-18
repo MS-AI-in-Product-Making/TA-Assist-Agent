@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { persistF3AdoTraceability, publishF3AdoTraceabilityArtifacts } from "./index.js";
+import { persistF3AdoTargetValidation, persistF3AdoTraceability, publishF3AdoTargetValidationArtifacts, publishF3AdoTraceabilityArtifacts } from "./index.js";
 
 const roots: string[] = [];
 
@@ -49,6 +49,48 @@ function receipt(workItemId = 1119604) {
 }
 
 describe("persistF3AdoTraceability", () => {
+  it("persists a validated existing target without claiming an ADO write", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "current-host-action.json");
+    const legacyContent = `${JSON.stringify(acceptedV2Report(), null, 2)}\n`;
+    writeFileSync(reportPath, legacyContent, "utf8");
+
+    const report = persistF3AdoTargetValidation({
+      f3Root,
+      reportPath,
+      targetIdentity: { organization: "1ES4Devices", project: "MechanicalEngineering", workItemId: 1121100 },
+      verifiedAt: "2026-09-17T13:30:12.000Z",
+    });
+
+    expect(report.ado).toEqual({
+      status: "target_validated",
+      organization: "1ES4Devices",
+      project: "MechanicalEngineering",
+      workItemId: 1121100,
+    });
+    expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
+  });
+
+  it("publishes a validated target across synchronized F3 artifacts", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "Feature3-Report.json");
+    writeFileSync(reportPath, `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+
+    const result = publishF3AdoTargetValidationArtifacts({
+      f3Root,
+      reportPath,
+      targetIdentity: { organization: "1ES4Devices", project: "MechanicalEngineering", workItemId: 1121100 },
+      verifiedAt: "2026-09-17T13:30:12.000Z",
+    });
+
+    expect(JSON.parse(readFileSync(reportPath, "utf8"))).toEqual(result.report);
+    expect(result.report.ado.status).toBe("target_validated");
+    expect(readFileSync(result.reminderPath, "utf8")).toContain("ADO status | confirmation_required");
+    expect(readFileSync(path.join(f3Root, "Feature3-Report.md"), "utf8")).toContain("ADO Work Item");
+  });
+
   it("fails closed without an explicit current report path and leaves legacy v2 unchanged", () => {
     const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
     roots.push(f3Root);

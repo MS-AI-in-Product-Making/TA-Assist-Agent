@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import {
   drawingGovernanceResultV2Schema,
+  drawingGovernanceResultV3Schema,
   f2UserReportSchema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
@@ -18,6 +19,13 @@ import {
   f6OptimizationTargetsSchema,
   f6SupplierCapabilityEvidenceSchema,
 } from "../packages/contracts/dist/contracts.js";
+
+const drawingGovernanceResultSchema = {
+  safeParse(value) {
+    const current = drawingGovernanceResultV3Schema.safeParse(value);
+    return current.success ? current : drawingGovernanceResultV2Schema.safeParse(value);
+  },
+};
 import { f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
@@ -516,7 +524,7 @@ export function loadF6ArtifactBundle({
 
   const f2Loaded = readArtifact(f2Root, ARTIFACTS.f2, f2UserReportSchema, hooks);
   if (f2Loaded.rejection) return f2Loaded.rejection;
-  const f3Loaded = readArtifact(f3Root, ARTIFACTS.f3, drawingGovernanceResultV2Schema, hooks);
+  const f3Loaded = readArtifact(f3Root, ARTIFACTS.f3, drawingGovernanceResultSchema, hooks);
   if (f3Loaded.rejection) return f3Loaded.rejection;
   const f4Loaded = readArtifact(f4Root, ARTIFACTS.f4, f4WorkflowCalculationResultSchema, hooks);
   if (f4Loaded.rejection) return f4Loaded.rejection;

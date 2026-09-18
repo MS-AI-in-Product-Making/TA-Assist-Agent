@@ -56,7 +56,24 @@ export interface PersistF3AdoTraceabilityInput {
   };
 }
 
+export interface PersistF3AdoTargetValidationInput {
+  readonly f3Root: string;
+  readonly reportPath?: string;
+  readonly targetIdentity: {
+    readonly organization: string;
+    readonly project: string;
+    readonly workItemId: number;
+  };
+  readonly verifiedAt: string;
+}
+
 export interface PublishF3AdoTraceabilityArtifactsInput extends PersistF3AdoTraceabilityInput {
+  readonly __internalFsOps?: Partial<F3AdoFsOps>;
+  readonly __internalFailPromotionAt?: number;
+  readonly __internalFailWithPath?: string;
+}
+
+export interface PublishF3AdoTargetValidationArtifactsInput extends PersistF3AdoTargetValidationInput {
   readonly __internalFsOps?: Partial<F3AdoFsOps>;
   readonly __internalFailPromotionAt?: number;
   readonly __internalFailWithPath?: string;
@@ -67,6 +84,7 @@ export interface WriteF3AdoReminderArtifactsInput {
   readonly adoOutcome?: AdoOutcomeInput;
   readonly reportPath?: string;
   readonly receipt?: PersistF3AdoTraceabilityInput["receipt"];
+  readonly targetValidation?: Pick<PersistF3AdoTargetValidationInput, "targetIdentity" | "verifiedAt">;
   readonly __internalFsOps?: Partial<F3AdoFsOps>;
   readonly __internalFailPromotionAt?: number;
   readonly __internalFailWithPath?: string;
@@ -79,6 +97,52 @@ export interface F3AdoReminderArtifactsResult {
 }
 
 type AcceptedDrawingGovernanceResultV3 = Exclude<DrawingGovernanceResultV3, { status: "input_rejected" }>;
+
+export function persistF3AdoTargetValidation(input: PersistF3AdoTargetValidationInput): AcceptedDrawingGovernanceResultV3 {
+  if (input.reportPath === undefined || input.reportPath.trim().length === 0) {
+    throw new Error("Feature 3 current report path is required for structured ADO target validation.");
+  }
+  const f3Root = path.resolve(input.f3Root);
+  const reportPath = path.resolve(input.reportPath);
+  const reportRelativePath = path.relative(f3Root, reportPath);
+  if (reportRelativePath.startsWith("..") || path.isAbsolute(reportRelativePath)) {
+    throw new Error("Feature 3 report path is outside the current writable root.");
+  }
+  if (!Number.isFinite(Date.parse(input.verifiedAt))) throw new Error("Surface target verifiedAt is invalid.");
+
+  const source = JSON.parse(readFileSync(reportPath, "utf8")) as unknown;
+  const existingV3 = drawingGovernanceResultV3Schema.safeParse(source);
+  if (existingV3.success) {
+    if (existingV3.data.status === "input_rejected") {
+      throw new Error("Cannot persist ADO target validation for an input_rejected Feature 3 report.");
+    }
+    const ado = existingV3.data.ado;
+    if (ado.status === "target_validated"
+      && ado.organization === input.targetIdentity.organization
+      && ado.project === input.targetIdentity.project
+      && ado.workItemId === input.targetIdentity.workItemId) return existingV3.data;
+    throw new Error("Current Feature 3 v3 traceability does not match the validated Surface target.");
+  }
+
+  const legacy = drawingGovernanceResultV2Schema.parse(source);
+  if (legacy.status === "input_rejected") {
+    throw new Error("Cannot persist ADO target validation for an input_rejected Feature 3 report.");
+  }
+  const report = drawingGovernanceResultV3Schema.parse({
+    ...legacy,
+    modelVersion: "drawing-governance-v3",
+    ado: {
+      status: "target_validated",
+      organization: input.targetIdentity.organization,
+      project: input.targetIdentity.project,
+      workItemId: input.targetIdentity.workItemId,
+    },
+  });
+  if (report.status === "input_rejected") {
+    throw new Error("Cannot persist ADO target validation for an input_rejected Feature 3 report.");
+  }
+  return report;
+}
 
 export function persistF3AdoTraceability(input: PersistF3AdoTraceabilityInput): AcceptedDrawingGovernanceResultV3 {
   if (input.reportPath === undefined || input.reportPath.trim().length === 0) {
@@ -136,6 +200,17 @@ export function publishF3AdoTraceabilityArtifacts(input: PublishF3AdoTraceabilit
   });
 }
 
+export function publishF3AdoTargetValidationArtifacts(input: PublishF3AdoTargetValidationArtifactsInput): F3AdoReminderArtifactsResult {
+  return writeF3AdoReminderArtifacts({
+    f3OutputRoot: input.f3Root,
+    targetValidation: { targetIdentity: input.targetIdentity, verifiedAt: input.verifiedAt },
+    ...(input.reportPath !== undefined ? { reportPath: input.reportPath } : {}),
+    ...(input.__internalFsOps !== undefined ? { __internalFsOps: input.__internalFsOps } : {}),
+    ...(input.__internalFailPromotionAt !== undefined ? { __internalFailPromotionAt: input.__internalFailPromotionAt } : {}),
+    ...(input.__internalFailWithPath !== undefined ? { __internalFailWithPath: input.__internalFailWithPath } : {}),
+  });
+}
+
 export function writeF3AdoReminderArtifacts(input: WriteF3AdoReminderArtifactsInput): F3AdoReminderArtifactsResult {
   const fsOps = createFsOps(input.__internalFsOps);
   const rootArg = ensureSafePathInput(input.f3OutputRoot, "Feature 3 output directory");
@@ -149,6 +224,29 @@ export function writeF3AdoReminderArtifacts(input: WriteF3AdoReminderArtifactsIn
     if (input.receipt !== undefined) {
       const reportJsonPath = resolveExplicitCurrentReportPath(resolvedRoot, input.reportPath, fsOps);
       const report = persistF3AdoTraceability({ f3Root: resolvedRoot, reportPath: reportJsonPath, receipt: input.receipt });
+      const reminderPath = path.join(resolvedRoot, "Feature3-ADO-Reminder.md");
+      const historyHtmlPath = path.join(resolvedRoot, "Feature3-ADO-History.html");
+      const reportMdPath = path.join(resolvedRoot, "Feature3-Report.md");
+      const renderingReport = toLegacyAdoRenderingReport(report);
+
+      persistArtifactsAtomically([
+        { targetPath: reminderPath, content: renderF3AdoReminder(renderingReport) },
+        { targetPath: historyHtmlPath, content: renderF3AdoHistoryHtml(renderingReport) },
+        { targetPath: reportJsonPath, content: `${JSON.stringify(report, null, 2)}\n` },
+        { targetPath: reportMdPath, content: renderPublishedF3Report(renderingReport, resolvedRoot) },
+      ], fsOps, promotionOptions(input));
+
+      return { reminderPath, historyHtmlPath, report };
+    }
+
+    if (input.targetValidation !== undefined) {
+      const reportJsonPath = resolveExplicitCurrentReportPath(resolvedRoot, input.reportPath, fsOps);
+      const report = persistF3AdoTargetValidation({
+        f3Root: resolvedRoot,
+        reportPath: reportJsonPath,
+        targetIdentity: input.targetValidation.targetIdentity,
+        verifiedAt: input.targetValidation.verifiedAt,
+      });
       const reminderPath = path.join(resolvedRoot, "Feature3-ADO-Reminder.md");
       const historyHtmlPath = path.join(resolvedRoot, "Feature3-ADO-History.html");
       const reportMdPath = path.join(resolvedRoot, "Feature3-Report.md");
@@ -353,12 +451,13 @@ function validateAdoOutcome(adoOutcome: AdoOutcomeInput | undefined) {
 }
 
 function toLegacyAdoRenderingReport(report: AcceptedDrawingGovernanceResultV3): DrawingGovernanceResultV2 {
+  const targetValidated = report.ado.status === "target_validated";
   return drawingGovernanceResultV2Schema.parse({
     ...report,
     modelVersion: "drawing-governance-v2",
     ado: {
-      status: report.ado.status,
-      ...(report.ado.status === "updated" ? { workItemReference: String(report.ado.workItemId) } : {}),
+      status: targetValidated ? "confirmation_required" : report.ado.status,
+      ...(report.ado.status === "updated" || targetValidated ? { workItemReference: String(report.ado.workItemId) } : {}),
       ...(report.ado.status === "blocked" || report.ado.status === "failed" ? { reasonCode: report.ado.reasonCode } : {}),
     },
   });

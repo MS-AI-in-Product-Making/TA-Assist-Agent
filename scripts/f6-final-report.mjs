@@ -446,7 +446,10 @@ function adoTraceabilityForReport(f3Report) {
 }
 
 function adoTraceabilityLink(ado) {
-  if (ado.status !== "updated" || !Number.isInteger(ado.workItemId) || ado.workItemId <= 0) return undefined;
+  if ((ado.status !== "updated" && ado.status !== "target_validated") || !Number.isInteger(ado.workItemId) || ado.workItemId <= 0) return undefined;
+  if (ado.status === "target_validated") {
+    return `[Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
+  }
   const operation = ado.operation === "created" ? "Created" : "Updated";
   return `[${operation} Work Item #${ado.workItemId}](https://dev.azure.com/${encodeURIComponent(ado.organization)}/${encodeURIComponent(ado.project)}/_workitems/edit/${ado.workItemId})`;
 }

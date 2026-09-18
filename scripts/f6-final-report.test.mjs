@@ -1710,6 +1710,29 @@ describe("createF6FinalReportProjection v3", () => {
     expect(noAdoSection).not.toContain("https://dev.azure.com/");
   });
 
+  it("renders a validated existing ADO target as a complete clickable work item", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f3Report = {
+      ...inputs.f3Report,
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "target_validated",
+        organization: "1ES4Devices",
+        project: "MechanicalEngineering",
+        workItemId: 1121100,
+      },
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(readySection).toContain("| ADO Traceability | COMPLETE |");
+    expect(readySection).toContain(
+      "[Work Item #1121100](https://dev.azure.com/1ES4Devices/MechanicalEngineering/_workitems/edit/1121100)",
+    );
+    expect(readySection).not.toContain("updated");
+  });
+
   it("URL-encodes validated ADO traceability organization and project names", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
     inputs.f3Report = {

@@ -6270,6 +6270,14 @@ export type AdoTraceabilityV3 =
     reasonCode?: undefined;
   }
   | {
+    status: "target_validated";
+    operation?: undefined;
+    organization: string;
+    project: string;
+    workItemId: number;
+    reasonCode?: undefined;
+  }
+  | {
     status: "updated";
     operation: "created" | "updated";
     organization: string;
@@ -6290,6 +6298,7 @@ const adoTraceabilityV3StatusSchema = z.enum([
   "not_requested",
   "draft_ready",
   "confirmation_required",
+  "target_validated",
   "updated",
   "blocked",
   "failed",
@@ -6302,6 +6311,14 @@ const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUni
     organization: z.undefined().optional(),
     project: z.undefined().optional(),
     workItemId: z.undefined().optional(),
+    reasonCode: z.undefined().optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("target_validated"),
+    operation: z.undefined().optional(),
+    organization: z.string().min(1),
+    project: z.string().min(1),
+    workItemId: z.number().int().positive(),
     reasonCode: z.undefined().optional(),
   }).strict(),
   z.object({
