@@ -25,6 +25,10 @@ let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
 const HOST_BINDING_KEY = "ta-assist.hostBinding";
 
+function currentUtcOffsetMinutes(): number {
+  return -new Date().getTimezoneOffset();
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (workspaceRoot === undefined) return;
@@ -103,11 +107,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 kind: "surface_reconcile",
                 state: "matching",
                 receipt: {
-                  status: "updated",
-                  workItemReference: claim.request.confirmation.workItemReference,
-                  commentReference: reconciliation.observedCommentReference,
-                  version: reconciliation.observedCommentVersion,
-                  contentHash: claim.request.previewIdentity.previewHash,
+                  operation: "updated",
+                  targetIdentity: claim.request.previewIdentity.targetIdentity,
+                  verifiedAt: new Date().toISOString(),
                 },
                 observedCommentReference: reconciliation.observedCommentReference,
                 observedCommentVersion: reconciliation.observedCommentVersion,
@@ -171,7 +173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const bindNewSession = async (requestedLanguage?: ReturnType<typeof resolveInteractionLanguage>) => {
     const interactionLanguage = requestedLanguage ?? resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
-    const launched = await launchNewWorkbench(workspaceRoot, processLauncher, interactionLanguage);
+    const launched = await launchNewWorkbench(workspaceRoot, processLauncher, interactionLanguage, currentUtcOffsetMinutes());
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
     activeInteractionLanguage = interactionLanguage;

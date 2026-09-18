@@ -27,6 +27,13 @@ export const taReportWorksheetDispositionSchema = z.object({
   disposition: taReportDispositionSchema,
 }).strict();
 
+export const taReportProcessCheckSchema = z.object({
+  checkId: nonEmptyStringSchema,
+  status: z.enum(["COMPLETE", "WARNING", "MISSING"]),
+  assessment: nonEmptyStringSchema,
+  details: z.array(nonEmptyStringSchema).optional(),
+}).strict();
+
 export const taEngineeringReportWorksheetProjectionSchema = z.object({
   worksheetName: nonEmptyStringSchema,
   toleranceLoopDescription: nonEmptyStringSchema,
@@ -36,6 +43,7 @@ export const taEngineeringReportWorksheetProjectionSchema = z.object({
   assumptions: z.array(nonEmptyStringSchema),
   clarifications: z.array(nonEmptyStringSchema),
   gatingEvidenceReferences: z.array(nonEmptyStringSchema),
+  processChecks: z.array(taReportProcessCheckSchema).optional(),
   metrics: z.object({
     mean: z.number().finite().optional(),
     rssSigma: z.number().finite().optional(),
@@ -79,6 +87,7 @@ export const taEngineeringReportProjectionSchema = z.object({
 
 export type TaReportDisposition = z.infer<typeof taReportDispositionSchema>;
 export type TaReportWorksheetDisposition = z.infer<typeof taReportWorksheetDispositionSchema>;
+export type TaReportProcessCheck = z.infer<typeof taReportProcessCheckSchema>;
 export type TaEngineeringReportWorksheetProjection = z.infer<typeof taEngineeringReportWorksheetProjectionSchema>;
 export type TaEngineeringReportProjectionContent = z.infer<typeof taEngineeringReportProjectionContentSchema>;
 export type TaEngineeringReportProjection = z.infer<typeof taEngineeringReportProjectionSchema>;

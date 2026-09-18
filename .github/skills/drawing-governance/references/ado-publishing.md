@@ -43,6 +43,14 @@ If any lookup is invalid, run candidate correction from Surface MCP results befo
 - The URL organization/project/ID must match the Surface readback target. Any parse, lookup, or mismatch failure must fail closed before any Surface write.
 - The URL is ephemeral validation input. Do not persist it in F3 JSON, reminder state, CLI arguments, preview payloads, or comments; persist only the validated ID where the existing contract permits `workItemReference`.
 
+### Current traceability persistence
+
+The current writable flow consumes the verified Surface readback receipt as `operation/targetIdentity/verifiedAt` and publishes `drawing-governance-v3`. It must not persist or pass the validation URL to the CLI. Construct report links only from the verified organization/project/workItemId identity. A previously published v3 identity is immutable: a different receipt must fail closed rather than replace it.
+
+For current v3 publication, read the complete validated F3 `relativePath/contentHash` only from the session artifact side table; never reconstruct it from a snapshot display ref. Missing or mismatched side-table evidence must fail closed before review advances.
+
+`--work-item-reference` is historical compatibility only for the reminder path. In this protocol, that means historical v2 compatibility. Historical v2 artifacts remain readable and are not inferred or upgraded outside the current writable flow.
+
 ## Capability checks
 
 Require Surface MCP capability for:

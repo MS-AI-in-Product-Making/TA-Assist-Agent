@@ -153,7 +153,12 @@ describe("f6 input drafts routes", () => {
     const rootDir = testRoot("workbench-server-f6-input-drafts-system-identity");
     await rm(rootDir, { recursive: true, force: true });
     try {
-      const createdStore = await createSessionStore({ rootDir, sessionId: SESSION_ID, interactionLanguage: ENGLISH_LOCK });
+      const createdStore = await createSessionStore({
+        rootDir,
+        sessionId: SESSION_ID,
+        interactionLanguage: ENGLISH_LOCK,
+        analysisRequestContext: { requestedAt: "2026-09-16T08:00:00.000Z", utcOffsetMinutes: 0, source: "web" },
+      });
       await createdStore.close();
       await seedSessionLineage(rootDir, SESSION_ID);
       const store = await openSessionStore({ rootDir, sessionId: SESSION_ID });

@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, validateF5MultimodalArtifactV4, worksheetSelectionPromptSchema, type F5MultimodalRequestFailureV4, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f5MultimodalArtifactV3Schema, f5MultimodalArtifactV4Schema, f5MultimodalWorksheetPairV3Schema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8SessionSnapshotSchema, validateF5MultimodalArtifactV3, validateF5MultimodalArtifactV4, worksheetSelectionPromptSchema, type AnalysisRequestContext, type F5MultimodalRequestFailureV4, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createReviewContextId, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError, f5MultimodalScopeEvaluationsSchema } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -79,6 +79,7 @@ type HostActionResult = ReturnType<typeof hostActionResultSchema.parse>;
 export interface StartWorkbenchServerOptions {
   readonly rootDir: string;
   readonly interactionLanguage?: InteractionLanguage;
+  readonly now?: () => Date;
   readonly port?: number;
   readonly webAssetsRoot?: string;
   readonly skipWebAssets?: boolean;
@@ -136,7 +137,7 @@ export interface ArtifactRegistry {
 }
 
 export interface SessionRegistry {
-  create(sessionId: string): Promise<F8SessionSnapshot>;
+  create(sessionId: string, analysisRequestContext: AnalysisRequestContext): Promise<F8SessionSnapshot>;
   read(sessionId: string): Promise<F8SessionSnapshot | undefined>;
   applyCommand(command: F8SessionCommand): Promise<F8SessionSnapshot>;
   readCommandReceipt(sessionId: string, commandId: string): Promise<F8SessionSnapshot | undefined>;
@@ -179,6 +180,7 @@ export interface AdoPreviewIdentity {
 
 export interface WorkbenchServerContext {
   readonly rootDir: string;
+  readonly now: () => Date;
   readonly auth: WorkbenchAuth;
   readonly sessions: SessionRegistry;
   readonly conversation: ConversationRegistry;
@@ -226,6 +228,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     options.orchestrator,
     options.allowInternalFixtureAutoConfirmation === true,
     options.interactionLanguage,
+    options.now,
     options.f6PdfService,
   );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
@@ -238,7 +241,11 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     testAuthenticate: { value: async (sessionId?: string) => {
       const authentication = auth.issueBrowserSession(sessionId as `${string}-${string}-${string}-${string}-${string}` | undefined);
       if (await context.sessions.read(authentication.sessionId) === undefined) {
-        await context.sessions.create(authentication.sessionId);
+        await context.sessions.create(authentication.sessionId, {
+          requestedAt: context.now().toISOString(),
+          utcOffsetMinutes: 0,
+          source: "web",
+        });
       }
       return authentication;
     }, enumerable: true },
@@ -322,10 +329,11 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined, f6PdfService: F6PdfService | undefined): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined, now: (() => Date) | undefined, f6PdfService: F6PdfService | undefined): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir, interactionLanguage);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
+  const currentTime = now ?? (() => new Date());
   const orchestrator = orchestratorOverride ?? createTaWorkbookOrchestrator(createTaRuntimeSkillFacades());
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
   const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions, allowInternalFixtureAutoConfirmation);
@@ -338,6 +346,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
   const inflightHostImports = new Map<string, Promise<HostWorkbookImportReceipt>>();
   const context: WorkbenchServerContext = {
     rootDir,
+    now: currentTime,
     auth,
     sessions,
     conversation: new SharedConversationRegistry(await createConversationStore({ rootDir: join(rootDir, "runtime", "workbench") })),
@@ -810,8 +819,13 @@ async function recoverActiveAttempts(
 class StoreBackedSessionRegistry implements SessionRegistry {
   constructor(private readonly rootDir: string, private readonly interactionLanguage: InteractionLanguage | undefined) {}
 
-  async create(sessionId: string): Promise<F8SessionSnapshot> {
-    const store = await createSessionStore({ rootDir: this.rootDir, sessionId, ...(this.interactionLanguage === undefined ? {} : { interactionLanguage: this.interactionLanguage }) });
+  async create(sessionId: string, analysisRequestContext: AnalysisRequestContext): Promise<F8SessionSnapshot> {
+    const store = await createSessionStore({
+      rootDir: this.rootDir,
+      sessionId,
+      analysisRequestContext,
+      ...(this.interactionLanguage === undefined ? {} : { interactionLanguage: this.interactionLanguage }),
+    });
     try {
       return await store.readSnapshot();
     } finally {

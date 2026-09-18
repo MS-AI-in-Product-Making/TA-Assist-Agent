@@ -1,3 +1,4 @@
+import type { AnalysisRequestContext } from "@ai-assist/contracts";
 import { createSessionStore } from "@ai-assist/workbench";
 import { startWorkbenchServer, type StartWorkbenchServerOptions } from "@ai-assist/workbench-server";
 import { randomUUID } from "node:crypto";
@@ -15,7 +16,10 @@ export async function runDefaultAgentCommand(request: AgentCliRequest): Promise<
 }
 
 function createLauncher(): AgentLauncher {
-  return createLauncherForTest({ startWorkbenchServer, openBrowser });
+  return createLauncherForTest({
+    startWorkbenchServer,
+    openBrowser,
+  });
 }
 
 export function createLauncherForTest(dependencies: {
@@ -28,9 +32,14 @@ export function createLauncherForTest(dependencies: {
     dependencies.openBrowser(started.url);
     return { sessionId: "pending", url: new URL(started.url).origin };
   };
-  const analyze = async (rootDir: string, interactionLanguage: InteractionLanguage) => {
+  const analyze = async (rootDir: string, interactionLanguage: InteractionLanguage, analysisRequestContext: AnalysisRequestContext) => {
     const sessionId = randomUUID();
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage });
+    const store = await createSessionStore({
+      rootDir,
+      sessionId,
+      interactionLanguage,
+      analysisRequestContext,
+    });
     await store.close();
     const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, resumeSessionId: sessionId });
     registerHostCredentialIpc(started.server);

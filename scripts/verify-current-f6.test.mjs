@@ -24,6 +24,7 @@ const OPTIONAL_SOURCE_KEYS = [
   "modelInterpretation",
 ];
 const INTERACTION_LANGUAGE = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false };
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: -420, source: "cli" };
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -105,6 +106,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
   const summary = readJson(summaryPath);
   summary.status = "completed";
   summary.counts = optimization.summary;
+  delete summary.analysisRequestContext;
   summary.sources = Object.fromEntries([
     ...["f2", "f3", "f4", "f5", "imageObservation", "supplierCapability", "datumStrategy", "cost"]
       .map((key) => [key, optimization.provenance[`${key}Reference`]])
@@ -130,6 +132,7 @@ function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheet
   writeJson(summaryPath, summary);
   const manifest = readJson(manifestPath);
   delete manifest.artifactSetVersion;
+  delete manifest.analysisRequestContext;
   manifest.status = "completed";
   manifest.inputDecisions = inputDecisions;
   manifest.artifacts.optimizationMarkdown = "Feature6-Optimization.md";
@@ -315,6 +318,7 @@ function createVerifiedRun({
       f5ArtifactRoot: bundle.f5ArtifactRoot,
       selectedWorksheetNames: bundle.selectedWorksheetNames,
       interactionLanguage: INTERACTION_LANGUAGE,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
     }),
@@ -389,7 +393,77 @@ function createV4FinalReportStub({ worksheetNames, blockedWorksheetNames = [] })
   };
 }
 
+function createV4FinalReportWithAdoLinkStub({ worksheetNames, blockedWorksheetNames = [], workItemId = 1119604 } = {}) {
+  const report = createV4FinalReportStub({ worksheetNames, blockedWorksheetNames });
+  return {
+    ...report,
+    markdown: `${report.markdown}\n[Updated Work Item #${workItemId}](https://dev.azure.com/contoso/Devices/_workitems/edit/${workItemId})\n`,
+  };
+}
+
 describe("validateExistingF6Artifact", () => {
+  it("rejects current artifacts without request context", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const summary = readJson(summaryPath);
+    const manifest = readJson(manifestPath);
+    delete summary.analysisRequestContext;
+    delete manifest.analysisRequestContext;
+    writeJson(summaryPath, summary);
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("keeps historical artifact versions read-only compatible without request context", () => {
+    const { runRoot, bundle } = createVerifiedRun();
+    rewriteAsHistoricalV2(runRoot);
+    const beforeOptimization = readFileSync(path.join(runRoot, "Feature6-Optimization.json"));
+    const beforeSummary = readFileSync(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const beforeManifest = readFileSync(path.join(runRoot, "manifest.json"));
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+    expect(readFileSync(path.join(runRoot, "Feature6-Optimization.json"))).toEqual(beforeOptimization);
+    expect(readFileSync(path.join(runRoot, "Feature6-Run-Summary.json"))).toEqual(beforeSummary);
+    expect(readFileSync(path.join(runRoot, "manifest.json"))).toEqual(beforeManifest);
+  });
+
+  it("rejects current artifacts with inconsistent structured ADO identity", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const summary = readJson(summaryPath);
+    const manifest = readJson(manifestPath);
+    summary.adoTraceability = {
+      status: "updated",
+      operation: "updated",
+      organization: "contoso",
+      project: "Devices",
+      workItemId: 1119604,
+    };
+    manifest.adoTraceability = {
+      ...summary.adoTraceability,
+      workItemId: 1119605,
+    };
+    writeJson(summaryPath, summary);
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
   it("accepts a valid current v4 run with unchanged f6-artifact-set-v3", () => {
     const { runRoot, bundle } = createVerifiedRun({
       createOptimization: createF6OptimizationV4,
@@ -402,6 +476,42 @@ describe("validateExistingF6Artifact", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v3");
     expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("rejects a current v4 report with a work item link when ADO traceability is missing from summary and manifest", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportWithAdoLinkStub({ worksheetNames: ["Analysis-A"] }),
+    });
+
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    expect(summary.adoTraceability).toBeUndefined();
+    expect(manifest.adoTraceability).toBeUndefined();
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("accepts a current v4 report without a work item link when ADO traceability is not requested", () => {
+    const { runRoot, bundle } = createVerifiedRun({
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub({ worksheetNames: ["Analysis-A"] }),
+    });
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const summary = readJson(summaryPath);
+    const manifest = readJson(manifestPath);
+    summary.adoTraceability = { status: "not_requested" };
+    manifest.adoTraceability = { status: "not_requested" };
+    writeJson(summaryPath, summary);
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({
+      status: "accepted",
+    });
   });
 
   it("rejects v4 selected-result snapshot identity tampering even when hashes are recomputed", () => {

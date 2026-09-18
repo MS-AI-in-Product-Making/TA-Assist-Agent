@@ -13,6 +13,8 @@ Use this as the primary entry for a complete governed TA workbook analysis.
 
 Before any acknowledgement, plan, skill-loading update, or other user-visible text, determine and lock the interaction language from the natural language of the request that starts this workflow. A naturally English request locks English, and a naturally Chinese request locks Chinese; an explicit language request overrides that natural-language detection. Do not inherit the VS Code, host, or UI locale when the workflow-start request has a clear language. Use the locked language for the first response and every later response, question, option label, progress update, action description, and final result.
 
+The interaction language lock governs conversation only. Regardless of the interaction language, the final Markdown and PDF engineering reports are always English. Report-bound model interpretation prose must also be generated in English. Preserve the actual interaction language in governed metadata and use it for user-facing workflow communication; never use it to localize report content.
+
 **REQUIRED SUB-SKILL: Use design-optimization.** Follow that Skill's workbook entry mode without omitting, merging, or reordering its governance gates.
 
 **REQUIRED SUB-SKILL: Use pdf-report-export.** Require the hash-validated PDF report in the same successful governed publication as the Markdown report.
@@ -22,6 +24,12 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 - Accept exactly one `.xlsx` TA workbook path.
 - If no path is supplied, ask for exactly one workbook path.
 - Never infer a workbook from editor state, prior runs, uploads, or similarly named files.
+
+## Analysis Request Context
+
+Capture the analysis request context once when the workflow-start request is received. Record `requestedAt` as that request instant with an explicit offset, record `utcOffsetMinutes` from the VS Code host, and record source: `vscode`. Do not prompt the user for analysis request context. Preserve the same analysis request context for the entire workbook run and pass it to Design Optimization without reconstructing or refreshing it at a later phase.
+
+Analysis Context and Optimization Targets are separate optional engineering inputs. Capturing the analysis request context does not change their standard-path `NOT_PROVIDED` decisions.
 
 ## Execution Continuity
 
@@ -33,6 +41,6 @@ Before any acknowledgement, plan, skill-loading update, or other user-visible te
 
 Present the workflow as **TA Assist Agent** and use product capability names in user-facing communication. Do not expose internal feature IDs, runner names, schema names, or artifact implementation details.
 
-The source workbook remains read-only. Preserve worksheet confirmations, internal image evaluation before recording standard-path Analysis Context and Optimization Targets as NOT_PROVIDED, drawing-governance publishing confirmation, multimodal image and complete-Factor validation, deterministic calculation authority, artifact containment, hashes, and final report validation.
+The source workbook remains read-only. Preserve worksheet confirmations, internal image evaluation before recording standard-path Analysis Context and Optimization Targets as NOT_PROVIDED, drawing-governance publishing confirmation, multimodal image and complete-Factor validation, deterministic calculation authority, artifact containment, hashes, English-only report content, and final report validation.
 
 On success, present only the validator-confirmed final `Feature6-Report.md` and `Feature6-Report.pdf` links as the engineering reports. Do not include absolute paths in the success response. Internal JSON, run-summary, and manifest artifacts remain governed implementation records, not additional user reports.

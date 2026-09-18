@@ -1,3 +1,5 @@
+import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
+
 function requiredValue(args, index, option) {
   const value = args[index + 1];
   if (value === undefined || value.startsWith("--") || !value.trim()) {
@@ -16,6 +18,20 @@ const OPTIONAL_PATHS = Object.freeze({
   "--model-interpretation": "modelInterpretationArtifact",
 });
 
+function parseAnalysisRequestContext(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Feature 6 --analysis-request-context must be valid JSON.");
+  }
+  const result = analysisRequestContextSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("Feature 6 --analysis-request-context is invalid.");
+  }
+  return result.data;
+}
+
 export function parseF6CliArgs(args = []) {
   if (args.length < 4 || args.slice(0, 4).some((value) => value.startsWith("--"))) {
     throw new Error("Feature 6 requires exactly four artifact roots before any options.");
@@ -27,6 +43,7 @@ export function parseF6CliArgs(args = []) {
 
   const selectedWorksheetNames = [];
   let languageTag;
+  let analysisRequestContext;
   const optionalPaths = Object.fromEntries(Object.values(OPTIONAL_PATHS).map((field) => [field, undefined]));
   for (let index = 4; index < args.length; index += 1) {
     const option = args[index];
@@ -38,6 +55,9 @@ export function parseF6CliArgs(args = []) {
         throw new Error(`Feature 6 worksheet is duplicated: ${worksheetName}`);
       }
       selectedWorksheetNames.push(worksheetName);
+    } else if (option === "--analysis-request-context") {
+      if (analysisRequestContext !== undefined) throw new Error("Feature 6 --analysis-request-context option is duplicated.");
+      analysisRequestContext = parseAnalysisRequestContext(value);
     } else if (option === "--language") {
       if (languageTag !== undefined) throw new Error("Feature 6 --language option is duplicated.");
       languageTag = value.trim();
@@ -57,6 +77,9 @@ export function parseF6CliArgs(args = []) {
   if (languageTag === undefined) {
     throw new Error("Feature 6 requires one locked --language value.");
   }
+  if (analysisRequestContext === undefined) {
+    throw new Error("Feature 6 requires one governed --analysis-request-context value.");
+  }
   if (optionalPaths.modelInterpretationArtifact === undefined) {
     throw new Error("Feature 6 requires one governed --model-interpretation artifact.");
   }
@@ -66,6 +89,7 @@ export function parseF6CliArgs(args = []) {
     f3ArtifactRoot,
     f4ArtifactRoot,
     f5ArtifactRoot,
+    analysisRequestContext,
     selectedWorksheetNames,
     interactionLanguage: {
       languageTag,

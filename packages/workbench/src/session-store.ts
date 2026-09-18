@@ -2,11 +2,12 @@ import { mkdir } from "node:fs/promises";
 import { DatabaseSync, StatementSync } from "node:sqlite";
 
 import {
+  type AnalysisRequestContext,
   createTypedError,
   f8SessionCommandSchema,
   f8SessionEventSchema,
-  f8SessionSnapshotSchema,
 } from "@ai-assist/contracts";
+import { f8SessionSnapshotSchema } from "../../contracts/src/f8-contracts.js";
 
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 import { acceptAttemptResult } from "./state-machine.js";
@@ -47,6 +48,7 @@ export interface SessionStoreOptions {
   readonly rootDir: string;
   readonly sessionId: string;
   readonly interactionLanguage?: F8SessionSnapshot["interactionLanguage"];
+  readonly analysisRequestContext?: AnalysisRequestContext;
   readonly testHooks?: SessionStoreTestHooks;
 }
 
@@ -172,7 +174,13 @@ async function initializeStore(options: SessionStoreOptions): Promise<SqliteSess
     throw error;
   }
 
-  return new SqliteSessionStore(database, options.sessionId, options.interactionLanguage, options.testHooks);
+  return new SqliteSessionStore(
+    database,
+    options.sessionId,
+    options.interactionLanguage,
+    options.analysisRequestContext,
+    options.testHooks,
+  );
 }
 
 class SqliteSessionStore implements SessionStore {
@@ -214,6 +222,7 @@ class SqliteSessionStore implements SessionStore {
     private readonly database: DatabaseSync,
     private readonly sessionId: string,
     private readonly interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
+    private readonly analysisRequestContext: AnalysisRequestContext | undefined,
     private readonly testHooks: SessionStoreTestHooks | undefined,
   ) {
     this.selectSessionStatement = this.database.prepare(`
@@ -352,7 +361,7 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const now = new Date().toISOString();
-    const snapshot = createInitialSnapshot(this.sessionId, this.interactionLanguage);
+    const snapshot = createInitialSnapshot(this.sessionId, this.interactionLanguage, this.analysisRequestContext);
 
     this.insertSessionStatement.run(
       this.sessionId,
@@ -764,12 +773,22 @@ class SqliteSessionStore implements SessionStore {
 function createInitialSnapshot(
   sessionId: string,
   interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
+  analysisRequestContext: AnalysisRequestContext | undefined,
 ): F8SessionSnapshot {
   if (interactionLanguage === undefined) {
     throw createTypedError({
       code: "validation_error",
       summary: `Session ${sessionId} requires an interaction language lock when it is first created.`,
       suggestedAction: "Provide the workflow-start interaction language when creating a new session, or open an existing persisted session to backfill legacy data.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  if (analysisRequestContext === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} requires request context when it is first created.`,
+      suggestedAction: "Provide the requester UTC offset and authority-stamped request instant when creating a new session, or open an existing persisted session to read legacy data.",
       affectedInputReferences: [sessionId],
     });
   }
@@ -782,17 +801,54 @@ function createInitialSnapshot(
     state: "created",
     activeAttempt: null,
     interactionLanguage,
+    analysisRequestContext,
     priorRunReferences: [],
   });
 }
 
 function normalizeSnapshot(currentSnapshot: F8SessionSnapshot, candidateSnapshot: F8SessionSnapshot): F8SessionSnapshot {
+  const analysisRequestContext = resolveAnalysisRequestContext(
+    currentSnapshot.analysisRequestContext,
+    candidateSnapshot.analysisRequestContext,
+    currentSnapshot.sessionId,
+  );
   return f8SessionSnapshotSchema.parse({
     ...candidateSnapshot,
     contractVersion: "f8-session-snapshot-v1",
     sessionId: currentSnapshot.sessionId,
     revision: currentSnapshot.revision + 1,
+    ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
   });
+}
+
+function resolveAnalysisRequestContext(
+  currentContext: AnalysisRequestContext | undefined,
+  candidateContext: AnalysisRequestContext | undefined,
+  sessionId: string,
+): AnalysisRequestContext | undefined {
+  if (candidateContext === undefined) {
+    return currentContext;
+  }
+
+  if (currentContext === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} cannot add request context after creation.`,
+      suggestedAction: "Keep historical snapshots read-only and create a new session when governed request context is required.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  if (stableStringify(candidateContext) !== stableStringify(currentContext)) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} cannot override its original request context.`,
+      suggestedAction: "Omit analysisRequestContext from post-create snapshot transitions or keep it byte-equivalent to the stored session value.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  return currentContext;
 }
 
 function prepareSnapshotTransition(

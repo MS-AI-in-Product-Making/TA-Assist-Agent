@@ -98,19 +98,22 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 		},
 
 		async readWorkItem(reference) {
-			const target = parseAdoWorkItemUrl(reference);
+			const inputUrlTarget = parseAdoWorkItemUrl(reference);
+			const validatedTarget = inputUrlTarget;
 			const result = await invoke(tools.getWorkItem, {
-				organization: target.organization,
-				project: target.project,
-				work_item_id: target.workItemId,
+				organization: validatedTarget.organization,
+				project: validatedTarget.project,
+				work_item_id: validatedTarget.workItemId,
 				expand: "fields",
 			});
 			const fields = record(result.fields, "fields");
+			const targetIdentity = readbackTargetIdentity(result, fields, validatedTarget);
 			const title = typeof fields["System.Title"] === "string" ? fields["System.Title"] : undefined;
 			const ownerReference = identity(fields["System.AssignedTo"]);
 			const requestByReference = identity(fields["System.CreatedBy"]);
 			return {
 				version: String(requiredNumber(result, "rev")),
+				targetIdentity,
 				...(title === undefined ? {} : { title }),
 				...(ownerReference === undefined ? {} : { ownerReference }),
 				...(requestByReference === undefined ? {} : { requestByReference }),
@@ -210,6 +213,30 @@ function requiredNumber(value: Record<string, unknown>, key: string): number {
 		throw new Error(`Surface MCP ${key} is invalid.`);
 	}
 	return candidate;
+}
+
+function readbackTargetIdentity(
+	result: Record<string, unknown>,
+	fields: Record<string, unknown>,
+	validatedTarget: { readonly organization: string; readonly project: string; readonly workItemId: number },
+): { readonly organization: string; readonly project: string; readonly workItemId: number } {
+	const workItemId = requiredNumber(result, "id");
+	const organization = optionalString(result.organization);
+	const project = optionalString(result.project) ?? optionalString(fields["System.TeamProject"]);
+	if (workItemId !== validatedTarget.workItemId
+		|| (organization !== undefined && organization !== validatedTarget.organization)
+		|| (project !== undefined && project !== validatedTarget.project)) {
+		throw new Error("Surface MCP Work Item readback identity does not match the validation target.");
+	}
+	return {
+		organization: validatedTarget.organization,
+		project: validatedTarget.project,
+		workItemId,
+	};
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function identity(value: unknown): string | undefined {

@@ -206,7 +206,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("break-after:page");
     expect(html).toContain("Stardos Stencil");
     expect(html).toContain("Barlow Condensed");
-    expect(html).toContain("--st-bone:#e2dcc9");
+    expect(html).toContain("--p-gray-242:#F2F2F2");
     expect(html).toContain('class="analysis-grid"');
     expect(html).toContain('analysis-panel--contributors');
     expect(html).toContain("grid-template-columns:.72fr 1.15fr .95fr");
@@ -226,6 +226,54 @@ describe("renderF6PdfSync", () => {
     expect(html.match(/class="report-content slide slide-summary"/gu)).toHaveLength(1);
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(5);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(6);
+  });
+
+  it("paginates localized worksheets and maps localized panel headings", () => {
+    const markdown = [
+      "# TA 工程分析报告",
+      "",
+      "# 3-1 工作表: 分析-A",
+      "",
+      "## 完整 Factor 表",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | DWG-1 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Within guidance |",
+      "",
+      "## 公差路径图片",
+      "",
+      "Image reviewed.",
+      "",
+      "## 要求与统计结果",
+      "",
+      "Results reviewed.",
+      "",
+      "## 贡献因子优先级",
+      "",
+      "Contributors reviewed.",
+      "",
+      "## 规格变更建议",
+      "",
+      "No change proposed.",
+      "",
+      "# 3-2 工作表: 分析-B",
+      "",
+      "Worksheet content.",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({
+      markdown,
+      sourceHash: createHash("sha256").update(markdown).digest("hex"),
+    });
+
+    expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(2);
+    expect(html).toContain('id="worksheet-1"');
+    expect(html).toContain('id="worksheet-2"');
+    expect(html).toContain('class="factor-table factor-table--complete"');
+    expect(html).toContain('analysis-panel--image');
+    expect(html).toContain('analysis-panel--results');
+    expect(html).toContain('analysis-panel--contributors');
+    expect(html).toContain('analysis-panel--specifications');
   });
 
   it("renders the issue 121 bounded worksheet layout", () => {
@@ -269,6 +317,7 @@ describe("renderF6PdfSync", () => {
       "| LSL | -0.150 mm |",
       "| USL | 0.050 mm |",
       "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
       "",
       "| Metric | Lower | Upper | Minimum Margin | Result |",
       "|---|---:|---:|---:|---|",
@@ -276,6 +325,13 @@ describe("renderF6PdfSync", () => {
       "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
       "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
       "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive Cp | 0.794 | FAIL |",
+      "| Predictive CpkL | 0.794 | FAIL |",
+      "| Predictive CpkU | 0.794 | FAIL |",
+      "| Predictive Cpk | 0.794 | FAIL |",
       "",
       "## Adjusted Mean to Spec Center Shift",
       "",
@@ -294,6 +350,9 @@ describe("renderF6PdfSync", () => {
       "| Side | Current Limit | Proposed Limit | Target Cpk | Approval |",
       "|---|---:|---:|---:|---|",
       "| lower | -0.150 | -0.180 | 1.333 | Engineering approval required |",
+      "| upper | 0.050 | 0.080 | 1.333 | Engineering approval required |",
+      "",
+      "- Summary: Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800], subject to ME and requirement-owner approval.",
       "",
       "<!-- f6-optimization-comparison -->",
       "## Optimization Comparison",
@@ -308,19 +367,176 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word;");
     expect(html).toContain('class="comment comment--fail">Fail</span>');
     expect(html).toContain('analysis-panel--process');
-    expect(html).toContain('class="range-bound range-bound--lower"');
-    expect(html).toContain('class="range-bound range-bound--upper"');
+    expect(html).toContain('class="range-spec-line range-spec-line--lower"');
+    expect(html).toContain('class="range-spec-line range-spec-line--upper"');
+    expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
+    expect(html.match(/class="range-spec-label range-spec-label--lower" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-spec-label range-spec-label--upper" style=/gu)).toHaveLength(1);
+    expect(html.match(/class="range-spec-line range-spec-line--lower" aria-hidden="true"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper" aria-hidden="true"/gu)).toHaveLength(4);
+    expect(html).toContain('<small class="range-values">-0.100 to 0.0400');
+    expect(html).not.toContain("Margin");
     expect(html).toContain('data-worst-case-result="FAIL"');
+    expect(html).toContain('data-evaluation-level="4 sigma"');
+    expect(html).toContain("Capability against target <strong>4 sigma · 1.33</strong>");
     expect(html).toContain('class="mean-marker mean-marker--nominal"');
     expect(html).toContain('class="mean-marker mean-marker--adjusted"');
+    expect(html).toContain('class="mean-value mean-value--nominal">Design nominal');
+    expect(html).toContain('class="mean-value mean-value--adjusted">Adjusted mean');
     expect(html).toContain('class="spec-marker spec-marker--current"');
     expect(html).toContain('class="spec-marker spec-marker--proposed"');
-    expect(html).toContain("--signal-red:#c43135");
-    expect(html).toContain("--signal-green:#198754");
+    expect(html).toContain('<div class="spec-change-legend"><span class="spec-value spec-value--current">Current</span><span class="spec-value spec-value--proposed">Proposed</span></div>');
+    expect(html).toContain('class="spec-value spec-value--current"');
+    expect(html).toContain('class="spec-value spec-value--proposed"');
+    expect(html).toContain("Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800]");
+    expect(html).toContain("--signal-red:var(--p-dark-red)");
+    expect(html).toContain("--signal-green:var(--p-green)");
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
     expect(html).not.toMatch(/class="[^"]*slide-optimization/u);
+  });
+
+  it("positions specification labels by graph domain and repeats unlabeled row markers", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | -0.100 mm | 0.040 mm | 0.010 mm | PASS |",
+      "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
+      "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toMatch(/class="range-spec-label range-spec-label--lower" style="left:14\.2857142857142\d%">LSL -0\.150<\/b>/u);
+    expect(html).toMatch(/class="range-spec-label range-spec-label--upper" style="left:71\.42857142857143%">USL 0\.0500<\/b>/u);
+    expect(html.match(/class="range-spec-line range-spec-line--lower" aria-hidden="true" style="left:14\.2857142857142\d%"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper" aria-hidden="true" style="left:71\.42857142857143%"/gu)).toHaveLength(4);
+  });
+
+  it("renders MISSING status, DIM ID review, range row spec lines, image3 palette, and 60/40 image split", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | MISSING | 1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | MISSING | MISSING | N/A | Controlled guidance |",
+      "| B | Factor B | Part B | CNC | DWG-2 | DIM-1 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
+      "| C | Factor C | Part C | CNC | DWG-3 | 12 | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.025 mm | Controlled guidance |",
+      "",
+      "## Process and Requirements",
+      "",
+      "| Check | Status | Assessment |",
+      "|---|---|---|",
+      "| Input Completeness | MISSING | Drawing Number is missing. |",
+      "| Target Sigma | WARNING | Current 4 sigma differs from recommended 6 sigma. |",
+      "| Output Completeness | COMPLETE | Specification limits are available. |",
+      "",
+      "## Tolerance Path Image",
+      "",
+      "![Tolerance stack](evidence/stack.png)",
+      "",
+      "Reviewed by model. *Model output is advisory.*",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level | 4 sigma |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | -0.0294 mm | 0.409 mm | -0.359 mm | PASS |",
+      "| 4-Sigma Range | -0.120 mm | 0.060 mm | -0.010 mm | FAIL |",
+      "| 6-Sigma Range | -0.160 mm | 0.100 mm | -0.050 mm | FAIL |",
+      "| Worst-Case Range | -0.200 mm | 0.150 mm | -0.100 mm | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({
+      markdown,
+      sourceHash: createHash("sha256").update(markdown).digest("hex"),
+      inlineImages: new Map([["evidence/stack.png", "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+
+    expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain('<strong class="status-warning">WARNING</strong>');
+    expect(html).toContain('<strong class="status-complete">COMPLETE</strong>');
+    expect(html).toContain('<strong class="dim-id-review">1</strong>');
+    expect(html).not.toContain('<strong class="dim-id-review">DIM-1</strong>');
+    expect(html).not.toContain('<strong class="dim-id-review">12</strong>');
+    expect(html.match(/class="range-spec-line range-spec-line--lower"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-line range-spec-line--upper"/gu)).toHaveLength(4);
+    expect(html.match(/class="range-spec-labels"/gu)).toHaveLength(1);
+    expect(html).toContain('<small class="range-values">-0.0294 to 0.409</small>');
+    expect(html).not.toContain("Margin");
+    expect(html).not.toContain("grid-template-columns:60% 40%");
+    expect(html).toContain("grid-template-columns:minmax(0,3fr) minmax(0,2fr)");
+    expect((html.match(/grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/gu) ?? [])).toHaveLength(2);
+    expect(html).toContain(".analysis-panel--image { display:grid; min-width:0; grid-template-columns:minmax(0,3fr) minmax(0,2fr);");
+    expect(html).toContain(".analysis-panel--image>.stack-image { display:block; min-width:0; grid-column:1; grid-row:2/span 4; width:100%; margin:0;");
+    expect(html).toContain(".analysis-panel--image .stack-image img { width:100%; height:248px; max-height:248px; object-fit:contain;");
+    expect(html).toContain(".analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28;");
+    expect(html).toContain("object-fit:contain");
+    for (const color of [
+      "#000000", "#FFFFFF", "#F2F2F2", "#D2D2D2", "#505050",
+      "#FF9349", "#FEF000", "#9BF00B", "#30E5D0", "#50E6FF",
+      "#D59DFF", "#A72929",
+    ]) expect(html).toContain(color);
+    expect(html).not.toMatch(/#e2dcc9|#c73b7a|#ee7a2e|#2d7e73|#3f73b7|#d8a93b/iu);
+  });
+
+  it("keeps the target-only capability caption when evaluation level is missing", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 0.000 mm |",
+      "| LSL | -0.150 mm |",
+      "| USL | 0.050 mm |",
+      "| Target Cpk | 1.333 |",
+      "| Evaluation Level |  |",
+      "",
+      "| Capability Metric | Value | Result |",
+      "|---|---:|---|",
+      "| Predictive Cp | 0.794 | FAIL |",
+      "| Predictive CpkL | 0.794 | FAIL |",
+      "| Predictive CpkU | 0.794 | FAIL |",
+      "| Predictive Cpk | 0.794 | FAIL |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("Capability against target <strong>1.33</strong>");
+    expect(html).not.toContain("N/A · 1.33");
+    expect(html).not.toContain("data-evaluation-level=");
   });
 
   it("keeps optimization comparison inline between worksheet slides", () => {
@@ -512,9 +728,9 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain('class="drawing-health"');
     expect(html).toContain('class="capability-spectrum"');
     expect(html).toContain('data-target-cpk="1.333"');
-    expect(html).toContain("Capability against target <strong>1.33</strong>");
+    expect(html).toContain("Capability against target <strong>3 sigma · 1.33</strong>");
     expect(html).toContain("<strong>1.48</strong>");
-    expect(html).toContain("<small>-0.150 → -0.180</small>");
+    expect(html).toContain('<span class="spec-value spec-value--current">-0.150</span> → <span class="spec-value spec-value--proposed">-0.180</span>');
     expect(html).toContain('class="spec-range-graph"');
     expect(html).toContain('data-statistical-result="PASS"');
     expect(html).toContain('data-worst-case-result="FAIL"');

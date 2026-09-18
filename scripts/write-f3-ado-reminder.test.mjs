@@ -74,6 +74,93 @@ function setupF3Root(report = acceptedReport()) {
 }
 
 describe("writeF3AdoReminder", () => {
+  it("fails closed for structured Surface readback without an explicit current report path", () => {
+    const root = setupF3Root();
+    const reportJsonPath = path.join(root, "Feature3-Report.json");
+    const originalJson = readFileSync(reportJsonPath, "utf8");
+
+    expect(() => writeF3AdoReminder({
+      f3OutputRoot: root,
+      receipt: {
+        operation: "updated",
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        verifiedAt: "2026-09-16T08:30:12.000Z",
+      },
+    })).toThrow(/report path/i);
+
+    expect(readFileSync(reportJsonPath, "utf8")).toBe(originalJson);
+    expect(existsSync(path.join(root, "Feature3-ADO-Reminder.md"))).toBe(false);
+    expect(existsSync(path.join(root, "Feature3-ADO-History.html"))).toBe(false);
+    expect(existsSync(path.join(root, "Feature3-Report.md"))).toBe(false);
+  });
+
+  it("publishes structured Surface readback to all four synchronized current artifacts", () => {
+    const root = setupF3Root();
+    const reportPath = path.join(root, "Feature3-Report.json");
+    const result = writeF3AdoReminder({
+      f3OutputRoot: root,
+      reportPath,
+      receipt: {
+        operation: "updated",
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        verifiedAt: "2026-09-16T08:30:12.000Z",
+      },
+    });
+    const persisted = JSON.parse(readFileSync(reportPath, "utf8"));
+    const reportMd = readFileSync(path.join(root, "Feature3-Report.md"), "utf8");
+    const reminder = readFileSync(result.reminderPath, "utf8");
+    const historyHtml = readFileSync(result.historyHtmlPath, "utf8");
+
+    expect(result.report).toMatchObject({
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "updated",
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+    });
+    expect(existsSync(result.reminderPath)).toBe(true);
+    expect(existsSync(result.historyHtmlPath)).toBe(true);
+    expect(existsSync(path.join(root, "Feature3-Report.md"))).toBe(true);
+    expect(persisted).toEqual(result.report);
+    expect(reminder).toContain("F3 DIM ID / Drawing Governance Reminder");
+    expect(historyHtml).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
+    expect(reportMd).toContain("ADO 状态：`updated`");
+    expect(JSON.stringify(result.report)).not.toContain("dev.azure.com");
+    expect(JSON.stringify(persisted)).toBe(JSON.stringify(result.report));
+  });
+
+  it("rolls back structured Surface readback publication failure without partial artifacts", () => {
+    const root = setupF3Root();
+    const reportJsonPath = path.join(root, "Feature3-Report.json");
+    const reportMdPath = path.join(root, "Feature3-Report.md");
+    const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    const historyHtmlPath = path.join(root, "Feature3-ADO-History.html");
+    const originalJson = readFileSync(reportJsonPath, "utf8");
+
+    expect(() => writeF3AdoReminder({
+      f3OutputRoot: root,
+      reportPath: reportJsonPath,
+      receipt: {
+        operation: "updated",
+        targetIdentity: { organization: "contoso", project: "Devices", workItemId: 1119604 },
+        verifiedAt: "2026-09-16T08:30:12.000Z",
+      },
+      __internalFailPromotionAt: 3,
+      __internalFailWithPath: reportJsonPath,
+    })).toThrow(/simulated-third-promotion-failure/i);
+
+    expect(readFileSync(reportJsonPath, "utf8")).toBe(originalJson);
+    expect(existsSync(reminderPath)).toBe(false);
+    expect(existsSync(historyHtmlPath)).toBe(false);
+    expect(existsSync(reportMdPath)).toBe(false);
+    const leftovers = readdirSync(root).filter((name) =>
+      name.includes("copilot-stage") || name.includes("copilot-backup") || name.endsWith(".tmp"));
+    expect(leftovers).toHaveLength(0);
+  });
+
   it("writes reminder markdown and persists not_requested outcome", () => {
     const root = setupF3Root();
     const initialHref = path.relative(

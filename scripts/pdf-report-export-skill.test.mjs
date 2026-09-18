@@ -14,6 +14,8 @@ describe("PDF Report Export skill", () => {
     expect(skill).toContain("finalReportPdfSha256");
     expect(skill).toContain("fail closed");
     expect(skill).toContain("Feature6-Report.md");
+    expect(skill).toContain("English-only content in both reports regardless of the interaction language");
+    expect(skill).toContain("use their required workspace-relative links and do not include absolute paths");
   });
 
   it("is required by the TA Assist Agent and Design Optimization workflows", () => {

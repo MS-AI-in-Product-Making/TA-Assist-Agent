@@ -8,7 +8,6 @@ import {
   f2UserReportSchema,
   f2FindingsDecisionProjectionSchema,
   f8SessionEventSchema,
-  f8SessionSnapshotSchema,
   f8ScenarioDraftSchema,
   f8AdoProjectionSchema,
   typedErrorSchema,
@@ -27,6 +26,7 @@ import {
   type F8WorksheetWhatIfCalculationRequest,
   type TypedError,
 } from "@ai-assist/contracts";
+import { f8SessionSnapshotSchema } from "../../../packages/contracts/src/f8-contracts.js";
 import type { F8CommandKind, F8PublicSessionCommand, F8SessionSnapshot } from "./workbench-session.js";
 
 export interface BootstrapResult {
@@ -368,7 +368,10 @@ export function createWorkbenchApi(): WorkbenchApi {
       method: "POST",
       credentials: "same-origin",
       headers: await mutationHeaders(),
-      body: "{}",
+      body: JSON.stringify({
+        utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        source: "web",
+      }),
     });
     const snapshot = f8SessionSnapshotSchema.parse(await parseJsonResponse(response));
     csrfToken = undefined;

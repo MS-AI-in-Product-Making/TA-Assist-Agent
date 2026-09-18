@@ -30,6 +30,11 @@ import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -357,8 +362,9 @@ function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
   }));
 }
 
-function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion, optimizationVersion = "v4" } = {}) {
+function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], selectedWorksheetNames = worksheetNames, blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion, optimizationVersion = "v4" } = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames, actualFieldOverrides, systemSpecificationOverrides });
+  bundle.selectedWorksheetNames = [...selectedWorksheetNames];
   const modelInterpretation = modelInterpretationVersion === undefined
     ? undefined
     : installF6ModelInterpretation(bundle, { version: modelInterpretationVersion });
@@ -380,10 +386,12 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       modelInterpretationArtifactRoot: bundle.modelInterpretationArtifactRoot,
       modelInterpretationArtifact: bundle.modelInterpretationArtifact,
       expectedModelInterpretationContentHash: bundle.expectedModelInterpretationContentHash,
+      analysisRequestContext: REQUEST_CONTEXT,
       requireMultimodalV3: true,
     });
     expect(loaded.status, JSON.stringify(loaded, null, 2)).toBe("accepted");
-    optimizationArtifact = createF6OptimizationV3(loaded.request, {
+    const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+    optimizationArtifact = createF6OptimizationV3(optimizationRequest, {
       interactionLanguage,
       multimodalInterpretation: loaded.modelInterpretation,
       multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
@@ -395,6 +403,7 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
       parseArgs: () => ({
         ...bundle,
         interactionLanguage,
+        analysisRequestContext: REQUEST_CONTEXT,
         modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       }),
       resolveLayout: () => ({
@@ -427,6 +436,7 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
         ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
     f6Optimization: f6ReadableOptimizationResultSchema.parse(optimizationArtifact),
+    analysisRequestContext: REQUEST_CONTEXT,
     modelInterpretation: requiredMultimodal,
     ...(modelInterpretation === undefined ? {} : { legacyModelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
   };
@@ -1393,6 +1403,27 @@ describe("createF6FinalReportProjection v3", () => {
     ...options,
   });
 
+  it("fails closed when the current final report projection is missing analysis request context", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const { analysisRequestContext: _analysisRequestContext, ...withoutRequestContext } = inputs;
+
+    expect(() => createF6FinalReportProjection(withoutRequestContext, { requireMultimodalV3: true }))
+      .toThrow(/analysisRequestContext/i);
+  });
+
+  it("publishes only the confirmed downstream subset of ready worksheets", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A", "Analysis-B"],
+      selectedWorksheetNames: ["Analysis-A"],
+    });
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.reportSummary.worksheetDispositions.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+    expect(report.markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(report.markdown).not.toContain("Worksheet: Analysis-B");
+  });
+
   it("marks ready identifier gaps as MISSING with the printable row marker", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
     const sourceRow = inputs.f2Report.worksheets[0].rows[0];
@@ -1549,13 +1580,155 @@ describe("createF6FinalReportProjection v3", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
 
-    expect(report.markdown).toMatch(/\| Report Generated At \| 2026-08-\d{2} \d{2}:\d{2}:\d{2} \(UTC [+-]\d{1,2}(?::\d{2})?\) \|/u);
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
     expect(report.markdown).toContain("| Need Review | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
     expect(report.markdown).toContain("[Analysis-B](#worksheet-2)");
     expect(report.markdown).toContain('<a id="worksheet-1"></a>');
     expect(report.markdown).toContain('<a id="worksheet-2"></a>');
+  });
+
+  it("uses the original request instant and requester explicit offset", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: -420,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 08:30:12 (UTC -7) |");
+    expect(report.markdown).not.toContain("Report Generated At");
+  });
+
+  it("formats half-hour offsets with a spaced UTC label", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: 330,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 21:00:12 (UTC +5:30) |");
+  });
+
+  it("formats negative half-hour offsets with a spaced UTC label", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      utcOffsetMinutes: -330,
+      source: "web",
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 10:00:12 (UTC -5:30) |");
+  });
+
+  it("rejects missing utcOffsetMinutes instead of using the machine timezone", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.analysisRequestContext = {
+      requestedAt: "2026-09-16T15:30:12.000Z",
+      source: "web",
+    };
+
+    expect(() => createF6FinalReportProjection(inputs, { requireMultimodalV3: true })).toThrow(
+      "Invalid F6 final report input: analysisRequestContext.",
+    );
+  });
+
+  it("renders process checks from governed inputs", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(readySection).toContain("| Check | Status | Assessment |");
+    expect(readySection).toContain("| Analysis Method | WARNING |");
+    expect(readySection).toContain("| Input Completeness | COMPLETE |");
+    expect(readySection).toContain("| Output Completeness | COMPLETE |");
+    expect(readySection).toContain("| Tolerance Validity | COMPLETE |");
+    expect(readySection).toContain("| Drawing/DIM Governance | COMPLETE |");
+    expect(readySection).toContain("| ADO Traceability | MISSING |");
+    expect(readySection).toContain("| Target Sigma | WARNING |");
+    expect(report.projection.worksheets[0].processChecks.map(({ checkId }) => checkId)).toEqual([
+      "analysis-method",
+      "input-completeness",
+      "output-completeness",
+      "tolerance-validity",
+      "drawing-dim-governance",
+      "ado-traceability",
+      "target-sigma",
+    ]);
+    expect(JSON.stringify(report.projection)).not.toMatch(/"(?:source|evidence|provenance)"\s*:/iu);
+  });
+
+  it("uses product capability names in blocked Required Action", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const blockedSectionStart = report.markdown.indexOf("# 3-2 Worksheet: Blocked-A");
+    const blockedSection = report.markdown.slice(blockedSectionStart);
+
+    expect(blockedSection).toContain(
+      "Required Action: Resolve Data Cleaning evidence before Calculation Engine, Analysis Interpretation, and Report Enhancement.",
+    );
+    expect(blockedSection).not.toMatch(/\bF[2456]\b/u);
+  });
+
+  it("renders ADO traceability links only from complete validated identity", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f3Report = {
+      ...inputs.f3Report,
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "updated",
+        organization: "contoso",
+        project: "Devices",
+        workItemId: 1119604,
+      },
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(readySection).toContain(
+      "[Updated Work Item #1119604](https://dev.azure.com/contoso/Devices/_workitems/edit/1119604)",
+    );
+
+    const noAdoInputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    const noAdoReport = createF6FinalReportProjection(noAdoInputs, { requireMultimodalV3: true });
+    const noAdoSection = noAdoReport.markdown.slice(noAdoReport.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
+
+    expect(noAdoSection).not.toContain("https://dev.azure.com/");
+  });
+
+  it("URL-encodes validated ADO traceability organization and project names", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f3Report = {
+      ...inputs.f3Report,
+      modelVersion: "drawing-governance-v3",
+      ado: {
+        status: "updated",
+        operation: "created",
+        organization: "contoso lab",
+        project: "Device Programs/Surface",
+        workItemId: 1119604,
+      },
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain(
+      "[Created Work Item #1119604](https://dev.azure.com/contoso%20lab/Device%20Programs%2FSurface/_workitems/edit/1119604)",
+    );
   });
 
   it("projects the issue 121 PDF report content contract", () => {
@@ -1764,6 +1937,23 @@ describe("createF6FinalReportProjection v3", () => {
 });
 
 describe("createF6FinalReportProjection v4 mixed outcomes", () => {
+  it("keeps Chinese interaction metadata while rendering the V4 report in English", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "baseline_meets_target");
+    inputs.f6Optimization.interactionLanguage = {
+      languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false,
+    };
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(inputs.f6Optimization.interactionLanguage.uiCatalogLanguage).toBe("zh");
+    expect(report.markdown).toContain("# TA Engineering Analysis Report");
+    expect(report.markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(report.markdown).toContain("## Complete Factor Table");
+    expect(report.markdown).toContain("## Tolerance Path Image");
+    expect(report.markdown).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],
@@ -1792,6 +1982,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
 
     expect(report.markdown).not.toContain("## Optimization Comparison");
     expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
+    expect(report.markdown).not.toContain("## Specification Changes");
   });
 
   it("fails schema validation when a V4 snapshot misses midpoint or mean-offset fields", () => {
@@ -1823,15 +2014,47 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(markdown).toContain("## Contributor Priorities");
     expect(markdown).toContain("| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |");
 
+    const disclosure = "*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*";
+    expect(markdown.match(/Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME\./gu)).toHaveLength(1);
+    expect(markdown).toContain(disclosure);
+
     if (selectedStatus === "step3_specification_relaxed_pending_approval") {
       expect(markdown).toContain("## Specification Changes");
       expect(markdown).toContain("Engineering approval required");
+      expect(markdown).toContain("Adjust the specification range from");
+      expect(markdown).toContain("subject to ME and requirement-owner approval");
+    } else if (selectedStatus === "step1_centered" || selectedStatus === "step2_tolerance_optimized") {
+      expect(markdown).toContain("## Specification Changes");
+      expect(markdown).toContain("Proposed Range: No change proposed");
+      expect(markdown).toContain("Retain the current specification range");
     } else {
-      expect(markdown).not.toContain("## Specification Changes");
+      expect(markdown).toContain("## Specification Changes");
+      expect(markdown).toContain("Proposed Range: No validated specification proposal");
     }
     if (selectedStatus === "no_validated_optimized_result") {
       expect(markdown).toContain("Selected Result: No validated optimized result");
     }
+  });
+
+  it("normalizes disclosure variants out of interpretation text and preserves a single italic disclosure", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    inputs.modelInterpretation.worksheets[0].result.imageTableInterpretation = [
+      "  Process review remains required.  ",
+      "",
+      "Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
+      "",
+      "Model interpretation may contain hallucinations,\nlabel mismatches, or omissions and must be reviewed by ME.",
+      "",
+      "  Contributors remain visible.  ",
+    ].join("\n\n");
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const markdown = report.markdown;
+
+    expect(markdown).toContain("Process review remains required.");
+    expect(markdown).toContain("Contributors remain visible.");
+    expect(markdown.match(/Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME\./gu)).toHaveLength(1);
+    expect(markdown).toContain("*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*");
   });
 
   it("renders all contributor priorities without optimization continuation slides", () => {

@@ -36,6 +36,18 @@ const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
 const HASH = "a".repeat(64);
 const PDF = Buffer.from("%PDF-1.7\nvalidated report\n");
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
+const UPDATED_ADO = {
+  status: "updated",
+  operation: "updated",
+  organization: "contoso",
+  project: "Devices",
+  workItemId: 1119604,
+};
 const interactionLanguage = {
   languageTag: "en-US",
   uiCatalogLanguage: "en",
@@ -85,9 +97,11 @@ function createMockV4Optimization() {
     interactionLanguage,
     requireMultimodalV3: true,
     publishRoot: bundle.publishRoot,
+    analysisRequestContext: REQUEST_CONTEXT,
   });
   if (loaded.status !== "accepted") throw new Error(`failed to build mock v4 optimization fixture: ${JSON.stringify(loaded)}`);
-  return createF6OptimizationV4(loaded.request, {
+  const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+  return createF6OptimizationV4(optimizationRequest, {
     interactionLanguage,
     multimodalInterpretation: loaded.modelInterpretation,
     multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
@@ -145,6 +159,7 @@ function setup({ status = "completed" } = {}) {
       f5ArtifactRoot: path.join(publishRoot, "f5"),
       selectedWorksheetNames: ["Analysis-A"],
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationArtifact: path.join(publishRoot, "multimodal.json"),
       expectedModelInterpretationContentHash: HASH,
     })),
@@ -161,7 +176,7 @@ function setup({ status = "completed" } = {}) {
     })),
     loadBundle: vi.fn(() => ({
       status: "accepted",
-      request: { request: true },
+      request: { request: true, analysisRequestContext: REQUEST_CONTEXT },
       f2Report: { f2: true },
       f3Report: { f3: true },
       f4Report: { f4: true },
@@ -205,7 +220,7 @@ function createRealBundle(options) {
 
 function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}) {
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
-  const parsed = { ...bundle, interactionLanguage, ...parsedOverrides };
+  const parsed = { ...bundle, interactionLanguage, analysisRequestContext: REQUEST_CONTEXT, ...parsedOverrides };
   if (!Object.hasOwn(parsedOverrides, "modelInterpretationArtifact")
     && typeof bundle.modelInterpretationArtifactRoot === "string"
     && typeof bundle.modelInterpretationArtifact === "string") {
@@ -359,6 +374,7 @@ describe("runF6FullValidation", () => {
       f6Optimization: context.optimization,
       generatedAt: "2026-08-17T01:02:03.456Z",
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" },
     }, {
       outputRoot: context.runRoot,
@@ -377,6 +393,75 @@ describe("runF6FullValidation", () => {
       multimodalReference: { artifact: "multimodal.json", contentHash: HASH },
       optimizationTargetsDecision: { outcome: "NOT_PROVIDED" },
     });
+  });
+
+  it("binds exact request context and structured ADO identity across report summary and manifest", () => {
+    const context = setup();
+    const updatedF3Report = { modelVersion: "drawing-governance-v3", ado: UPDATED_ADO };
+    context.deps.loadBundle.mockReturnValue({
+      ...context.deps.loadBundle(),
+      f3Report: updatedF3Report,
+    });
+    context.deps.createFinalReport = vi.fn((input) => ({
+      ...context.finalReport,
+      markdown: [
+        "# F6 final report",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        "| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |",
+        "",
+        `[Updated Work Item #${UPDATED_ADO.workItemId}](https://dev.azure.com/${UPDATED_ADO.organization}/${UPDATED_ADO.project}/_workitems/edit/${UPDATED_ADO.workItemId})`,
+        "",
+      ].join("\n"),
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    expect(readdirSync(context.runRoot).sort()).toEqual([
+      "Feature6-Optimization.json",
+      "Feature6-Report.md",
+      "Feature6-Report.pdf",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    expect(context.deps.createFinalReport).toHaveBeenCalledWith(expect.objectContaining({
+      f3Report: updatedF3Report,
+      analysisRequestContext: REQUEST_CONTEXT,
+    }), expect.anything());
+    const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    const markdown = readFileSync(path.join(context.runRoot, "Feature6-Report.md"), "utf8");
+    expect(summary.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    expect(manifest.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    expect(summary.adoTraceability).toEqual(UPDATED_ADO);
+    expect(manifest.adoTraceability).toEqual(UPDATED_ADO);
+    expect(markdown).toContain(`[Updated Work Item #${UPDATED_ADO.workItemId}](https://dev.azure.com/${UPDATED_ADO.organization}/${UPDATED_ADO.project}/_workitems/edit/${UPDATED_ADO.workItemId})`);
+  });
+
+  it("keeps not_requested ADO traceability unlinked in the report artifacts", () => {
+    const context = setup();
+    const f3Report = { modelVersion: "drawing-governance-v3", ado: { status: "not_requested" } };
+    context.deps.loadBundle.mockReturnValue({
+      ...context.deps.loadBundle(),
+      f3Report,
+    });
+    context.deps.createFinalReport = vi.fn(() => ({
+      ...context.finalReport,
+      markdown: "# F6 final report\n\nMISSING - ADO traceability was not initiated.\n",
+    }));
+
+    const result = runF6FullValidation({ args: ["ignored"] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    const markdown = readFileSync(path.join(context.runRoot, "Feature6-Report.md"), "utf8");
+    expect(summary.adoTraceability).toEqual({ status: "not_requested" });
+    expect(manifest.adoTraceability).toEqual({ status: "not_requested" });
+    expect(markdown).toContain("MISSING - ADO traceability was not initiated.");
+    expect(markdown).not.toContain("/_workitems/edit/");
   });
 
   it("rejects a final report with a provenance display column before successful artifact writes", () => {
@@ -450,6 +535,7 @@ describe("runF6FullValidation", () => {
       generatedAt: "2026-08-17T01:02:03.456Z",
       analysisContext,
       interactionLanguage,
+      analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretation,
     }, {
       outputRoot: context.runRoot,
@@ -635,6 +721,37 @@ describe("runF6FullValidation", () => {
 });
 
 describe("F6 real artifact full flow", () => {
+  it("preserves Chinese interaction metadata while publishing English reports", () => {
+    const bundle = createRealBundle({ worksheetNames: ["Analysis-A"] });
+    const chineseInteractionLanguage = {
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-zh",
+      source: "workflow_start",
+      fallbackUsed: false,
+    };
+    const { result, runRoot } = runRealF6(bundle, "v4-zh-interaction-english-report", {
+      createFinalReport: createF6FinalReportProjection,
+    }, {
+      interactionLanguage: chineseInteractionLanguage,
+    });
+
+    expect(result).toMatchObject({ status: "completed" });
+    const manifest = readJson(path.join(runRoot, "manifest.json"));
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const markdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
+    const pdf = readFileSync(path.join(runRoot, "Feature6-Report.pdf"));
+
+    expect(manifest.interactionLanguage).toEqual(chineseInteractionLanguage);
+    expect(summary.interactionLanguage).toEqual(chineseInteractionLanguage);
+    expect(markdown).toContain("# TA Engineering Analysis Report");
+    expect(markdown).toContain("# 3-1 Worksheet: Analysis-A");
+    expect(markdown).not.toMatch(/\p{Script=Han}/u);
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(summary.hashes.finalReportMarkdownSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.md")));
+    expect(summary.hashes.finalReportPdfSha256).toBe(artifactHash(path.join(runRoot, "Feature6-Report.pdf")));
+  });
+
   it.each([
     [false, "unchanged"], [true, "unchanged"], [true, "missing"], [true, "hash_mismatch"],
   ])("publishes real v4 consumers with mixed=%s and failed image=%s", (mixed, failedImage) => {
@@ -665,9 +782,10 @@ describe("F6 real artifact full flow", () => {
       if (failedImage === "missing") rmSync(imagePath);
       else writeFileSync(imagePath, "tampered failed image");
     }
-    const loaded = loadF6ArtifactBundle({ ...bundle, requireMultimodalV3: true });
+    const loaded = loadF6ArtifactBundle({ ...bundle, analysisRequestContext: REQUEST_CONTEXT, requireMultimodalV3: true });
     expect(loaded.status, JSON.stringify(loaded)).toBe("accepted");
-    const optimized = createF6OptimizationV4(loaded.request, {
+    const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+    const optimized = createF6OptimizationV4(optimizationRequest, {
       interactionLanguage, multimodalInterpretation: loaded.modelInterpretation,
       multimodalReference: loaded.inputDecisions.modelInterpretation.artifactReference,
       optimizationTargetsDecision: loaded.inputDecisions.optimizationTargets,
@@ -729,6 +847,7 @@ describe("F6 real artifact full flow", () => {
           "--worksheet", "Analysis-A",
           "--worksheet", "Analysis-B",
           "--language", "en-US",
+          "--analysis-request-context", JSON.stringify(REQUEST_CONTEXT),
           "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
           "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
         ],
@@ -799,6 +918,7 @@ describe("F6 real artifact full flow", () => {
         source: "workflow_start",
         fallbackUsed: false,
       },
+      analysisRequestContext: REQUEST_CONTEXT,
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
         finalReportMarkdown: "Feature6-Report.md",
@@ -844,6 +964,7 @@ describe("F6 real artifact full flow", () => {
       bundle.f5ArtifactRoot,
       "--worksheet", "Analysis-A",
       "--language", "en-US",
+      "--analysis-request-context", JSON.stringify(REQUEST_CONTEXT),
       "--model-interpretation", path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
       "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
     ], {

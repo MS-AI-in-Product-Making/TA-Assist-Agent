@@ -20,6 +20,8 @@ describe("validateTaWorkbookEntry", () => {
     expect(packageJson.scripts["workflow:ta-entry-validation"]).toBe("node scripts/validate-ta-workbook-entry.mjs");
     expect(skill).toContain("npm run workflow:ta-entry-validation -- <ta-workbook-path>");
     expect(skill).toContain("Never recursively scan repository contents to validate controlled versions");
+    expect(skill).toContain("process requirements `process-requirements-v3`");
+    expect(skill).not.toContain("process requirements `process-requirements-v1`");
   });
 
   it("validates only the supplied workbook and controlled capability loaders", () => {
@@ -31,7 +33,7 @@ describe("validateTaWorkbookEntry", () => {
     const validateCapabilities = vi.fn(() => ({
       featureId: "F0",
       status: "completed",
-      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
+      versions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v3"],
       artifactRoot: undefined,
     }));
 
@@ -42,7 +44,7 @@ describe("validateTaWorkbookEntry", () => {
         contentHash: createHash("sha256").update(workbookBytes).digest("hex"),
         sizeBytes: workbookBytes.length,
       },
-      controlledVersions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v1"],
+      controlledVersions: ["v1", "internal-v1", "interpretation-rules-v2", "process-requirements-v3"],
     });
     expect(validateCapabilities).toHaveBeenCalledOnce();
   });

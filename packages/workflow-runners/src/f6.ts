@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- runner facades validate external workflow artifact JSON at schema boundaries. */
 import { randomUUID, createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   closeSync,
   lstatSync,
@@ -14,7 +15,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { completedF5MultimodalProjection, createTypedError, f6OptimizationResultV4Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
+import { analysisRequestContextSchema, completedF5MultimodalProjection, createTypedError, f6OptimizationResultV4Schema, taEngineeringReportProjectionSchema } from "@ai-assist/contracts";
 import { renderF6PdfSync } from "@ai-assist/product-export";
 import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
@@ -254,7 +255,7 @@ function safeSources(sourceReferences: Record<string, { artifact: string; conten
   }]));
 }
 
-function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown, failureDetail?: F6OptimizationResult["failureDetail"]) {
+function manifest(layout: F6Layout, status: string, artifacts: Record<string, string>, reasonCode?: string, inputDecisions?: unknown, interactionLanguage?: unknown, analysisRequestContext?: unknown, adoTraceability?: unknown, failureDetail?: F6OptimizationResult["failureDetail"]) {
   return {
     contractVersion: "v1",
     artifactSetVersion: layout.artifactSetVersion,
@@ -264,9 +265,15 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(inputDecisions === undefined ? {} : { inputDecisions }),
     ...(interactionLanguage === undefined ? {} : { interactionLanguage }),
+    ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
+    ...(adoTraceability === undefined ? {} : { adoTraceability }),
     ...(failureDetail === undefined ? {} : { failureDetail }),
     artifacts,
   };
+}
+
+function adoTraceability(f3Report: any): unknown | undefined {
+  return f3Report?.modelVersion === "drawing-governance-v3" ? f3Report.ado : undefined;
 }
 
 function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationResult["failureDetail"] | undefined {
@@ -303,7 +310,7 @@ function validInteractionLanguage(value: unknown): boolean {
 function failedResult(layout: F6Layout, paths: ReturnType<typeof outputPaths>, artifacts: Record<string, string>, reasonCode: string, boundary: ReturnType<typeof captureBoundary>, staging: ReturnType<typeof captureStagingBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "lstat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "beforeRename" | "afterRename" | "rm">>, failureDetail?: F6OptimizationResult["failureDetail"]): F6OptimizationResult {
   try {
     assertBoundary(boundary, dependencies);
-    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode, undefined, undefined, failureDetail)), boundary, staging, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode, undefined, undefined, undefined, undefined, failureDetail)), boundary, staging, dependencies);
     return { featureId: "F6", status: "failed", reasonCode, ...(failureDetail === undefined ? {} : { failureDetail }), outputDirectory: layout.runRoot, manifestPath: paths.manifest };
   } catch {
     return { featureId: "F6", status: "failed", reasonCode: "workflow_output_failed", outputDirectory: layout.runRoot };
@@ -332,6 +339,10 @@ function verifyCallerAuthorizedHash(
   return decision?.outcome === "CALLER_AUTHORIZED"
     && typeof decision.artifactReference?.contentHash === "string"
     && decision.artifactReference.contentHash === expectedHash;
+}
+
+function parseAnalysisRequestContext(value: unknown) {
+  return analysisRequestContextSchema.safeParse(value);
 }
 
 function throwIfAborted(context: RunContext, stage: string): void {
@@ -391,6 +402,13 @@ export function runF6Optimization(
     if (loaded?.status !== "accepted") {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
     }
+    const parsedRequestContext = parseAnalysisRequestContext(request.analysisRequestContext);
+    const parsedLoadedRequestContext = parseAnalysisRequestContext(loaded.request?.analysisRequestContext);
+    if (!parsedRequestContext.success
+      || !parsedLoadedRequestContext.success
+      || !isDeepStrictEqual(parsedRequestContext.data, parsedLoadedRequestContext.data)) {
+      return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
+    }
 
     const inputDecisions = {
       analysisContext: loaded.inputDecisions?.analysisContext ?? { outcome: "NOT_PROVIDED" },
@@ -409,7 +427,8 @@ export function runF6Optimization(
     }
 
     failureStage = "optimization";
-    const optimizationCandidate = createOptimization(loaded.request, {
+    const { analysisRequestContext: _loadedAnalysisRequestContext, ...optimizationRequest } = loaded.request;
+    const optimizationCandidate = createOptimization(optimizationRequest, {
       interactionLanguage: request.interactionLanguage,
       multimodalInterpretation: loaded.modelInterpretation.contractVersion === "f5-multimodal-artifact-v4"
         ? completedF5MultimodalProjection(loaded.modelInterpretation)
@@ -448,6 +467,7 @@ export function runF6Optimization(
       f5Report: loaded.f5Report,
       f6Optimization: optimization,
       interactionLanguage: request.interactionLanguage,
+      analysisRequestContext: parsedRequestContext.data,
       generatedAt: generatedAtFromRunId(layout.runId),
       ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
       ...(loaded.modelInterpretation === undefined ? {} : { modelInterpretation: loaded.modelInterpretation }),
@@ -477,6 +497,7 @@ export function runF6Optimization(
       finalReportPdf,
     };
     const workflowStatus = optimization.runStatus.toLowerCase() as F6OptimizationResult["status"];
+    const structuredAdoTraceability = adoTraceability(loaded.f3Report);
     const summary = {
       contractVersion: "v1",
       artifactSetVersion: layout.artifactSetVersion,
@@ -485,6 +506,8 @@ export function runF6Optimization(
       sources: safeSources(loaded.sourceReferences),
       inputDecisions,
       interactionLanguage: request.interactionLanguage,
+      analysisRequestContext: parsedRequestContext.data,
+      ...(structuredAdoTraceability === undefined ? {} : { adoTraceability: structuredAdoTraceability }),
       counts: optimization.summary,
       hashes: Object.fromEntries(Object.entries(contents).map(([key, content]) => [`${key}Sha256`, sha256(content)])),
       reportSummary: finalReport.reportSummary,
@@ -498,7 +521,7 @@ export function runF6Optimization(
     }
     atomicWrite(paths.runSummary, json(summary), boundary, staging, writeDependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions, request.interactionLanguage)), boundary, staging, writeDependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions, request.interactionLanguage, parsedRequestContext.data, structuredAdoTraceability)), boundary, staging, writeDependencies);
     context.emit({ kind: "artifact_written", featureId: "F6", stage: "report", timestamp: new Date().toISOString(), path: paths.optimizationJson });
     return {
       featureId: "F6",

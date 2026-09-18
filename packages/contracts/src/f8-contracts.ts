@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { InteractionLanguage } from "@ai-assist/product-language";
+import { analysisRequestContextSchema } from "./analysis-request-context.js";
 import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
 import { f5MultimodalScopeEvaluationsSchema, f5MultimodalWorksheetRequestV3Schema, f5MultimodalWorksheetResultV3Schema } from "./ta-multimodal-contracts.js";
@@ -869,7 +870,7 @@ const adoExecutionPhaseSchema = z.enum([
   "reconcile",
 ]);
 
-const adoTargetIdentitySchema = z.object({
+export const adoTargetIdentitySchema = z.object({
   organization: nonEmptyStringSchema,
   project: nonEmptyStringSchema,
   workItemId: z.number().int().positive(),
@@ -895,11 +896,9 @@ const surfaceConfirmationSchema = z.object({
 }).strict();
 
 const surfaceUpdateReceiptSchema = z.object({
-  status: z.literal("updated"),
-  workItemReference: promptVisibleIdentitySchema,
-  commentReference: promptVisibleIdentitySchema,
-  version: promptVisibleIdentitySchema,
-  contentHash: sha256Schema,
+  operation: z.enum(["created", "updated"]),
+  targetIdentity: adoTargetIdentitySchema,
+  verifiedAt: z.string().datetime({ offset: true }),
 }).strict();
 
 export const f8AdoProjectionSchema = z.discriminatedUnion("state", [
@@ -1187,6 +1186,7 @@ export const f8SessionSnapshotSchema = z
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
     initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
     downstreamScopeSelection: downstreamSelectionDecisionSchema.optional(),
+    analysisRequestContext: analysisRequestContextSchema.optional(),
     pendingAnalysisContextDraft: f8PendingF6InputDraftSchema.optional(),
     pendingOptimizationTargetsDraft: f8PendingF6InputDraftSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),

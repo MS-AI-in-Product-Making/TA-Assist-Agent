@@ -11,7 +11,11 @@ describe("executeSurfaceValidation", () => {
       },
       createWorkItem,
       async readWorkItem() {
-        return { version: "7", ownerReference: "owner@example.com" };
+        return {
+          version: "7",
+          targetIdentity: { organization: "MSFTDEVICES", project: "Project", workItemId: 42 },
+          ownerReference: "owner@example.com",
+        };
       },
       async readCommentZero() {
         return { commentReference: "10", version: "4", content: "before" };
@@ -51,7 +55,11 @@ describe("executeSurfaceValidation", () => {
       },
       createWorkItem,
       async readWorkItem() {
-        return { version: "7", ownerReference: "owner@example.com" };
+        return {
+          version: "7",
+          targetIdentity: { organization: "MSFTDEVICES", project: "Project", workItemId: 42 },
+          ownerReference: "owner@example.com",
+        };
       },
       async readCommentZero() {
         return { commentReference: "10", version: "4", content: "before" };

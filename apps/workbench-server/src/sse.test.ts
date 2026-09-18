@@ -9,9 +9,10 @@ import { createSqliteEventSource, formatSseEvent } from "./sse.js";
 
 const tempRoots: string[] = [];
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T08:00:00.000Z", utcOffsetMinutes: 0, source: "web" } as const;
 
 function createSessionStore(options: Omit<Parameters<typeof createSessionStoreBase>[0], "interactionLanguage">) {
-  return createSessionStoreBase({ ...options, interactionLanguage: ENGLISH_LOCK });
+  return createSessionStoreBase({ ...options, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: options.analysisRequestContext ?? REQUEST_CONTEXT });
 }
 
 afterEach(async () => {

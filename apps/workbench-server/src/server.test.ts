@@ -19,6 +19,8 @@ import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-que
 import type { TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { buildSelectedWorksheetInterpretationContexts } from "./worksheet-interpretation-context.js";
 
+const TEST_ADO_WORK_ITEM_URL = "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42";
+
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
 }
@@ -30,6 +32,7 @@ const REVIEW_CONTEXT = {
 };
 const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
 const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T15:30:12.000Z", utcOffsetMinutes: -420, source: "web" } as const;
 const MULTIMODAL_IMAGE_BYTES = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
 const MULTIMODAL_IMAGE_HASH = createHash("sha256").update(MULTIMODAL_IMAGE_BYTES).digest("hex");
 
@@ -1450,9 +1453,56 @@ describe("workbench server routes", () => {
         method: "POST",
         url: "/api/sessions",
         headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: { utcOffsetMinutes: -420, source: "web" },
       });
       expect(created.statusCode).toBe(201);
       expect(created.json()).toMatchObject({ interactionLanguage: ENGLISH_LOCK });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("server stamps the request instant and rejects a client instant", async () => {
+    const rootDir = testRoot("workbench-server-request-context");
+    const requestInstant = new Date("2026-09-16T15:30:12.000Z");
+    const server = await buildWorkbenchServer({
+      rootDir,
+      interactionLanguage: ENGLISH_LOCK,
+      now: () => requestInstant,
+    });
+    try {
+      const nonce = await server.bootstrap.issueBrowserBootstrap();
+      const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
+      const cookie = bootstrap.headers["set-cookie"];
+      const csrf = await server.inject({ method: "GET", url: "/api/csrf", headers: { host: "127.0.0.1:0", cookie } });
+
+      const created = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: { utcOffsetMinutes: -420, source: "web" },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      expect(created.json()).toMatchObject({
+        analysisRequestContext: {
+          requestedAt: "2026-09-16T15:30:12.000Z",
+          utcOffsetMinutes: -420,
+          source: "web",
+        },
+      });
+
+      const rejected = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+        payload: {
+          requestedAt: "2020-01-01T00:00:00.000Z",
+          utcOffsetMinutes: 0,
+          source: "web",
+        },
+      });
+      expect(rejected.statusCode, rejected.body).toBe(400);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2752,7 +2802,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-session-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "14141414-1414-4414-8414-141414141414";
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     try {
       await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "uploaded-book" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
     } finally {
@@ -2784,7 +2834,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-corrupt-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "16161616-1616-4616-8616-161616161616";
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     await store.close();
     const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"));
     try {
@@ -2813,7 +2863,7 @@ describe("workbench server routes", () => {
     const sessionId = "15151515-1515-4515-8515-151515151515";
     const artifactId = "replacement-book";
     const relativePath = `uploads/${sessionId}/workbook/${artifactId}-book.xlsx`;
-    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK, analysisRequestContext: REQUEST_CONTEXT });
     try {
       const committed = await store.applyCommand({
         contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-replace", expectedRevision: 0, command: "replace_workbook",
@@ -2917,9 +2967,9 @@ describe("workbench server routes", () => {
       const missingOutcomePayload = { status: "completed" as const };
       const validationResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(missingOutcomePayload)).digest("hex"), payload: missingOutcomePayload } })).statusCode).toBe(400);
-      const confirmationHash = createHash("sha256").update(JSON.stringify(["WI-1", "C0", "1", prepareRequest.nextContent])).digest("hex");
+      const confirmationHash = createHash("sha256").update(JSON.stringify([TEST_ADO_WORK_ITEM_URL, "C0", "1", prepareRequest.nextContent])).digest("hex");
       const confirmation = {
-        status: "confirmation_required", workItemReference: "WI-1", ownerReference: prepareRequest.sponsorEmail, commentReference: "C0", expectedVersion: "1",
+        status: "confirmation_required", workItemReference: TEST_ADO_WORK_ITEM_URL, ownerReference: prepareRequest.sponsorEmail, commentReference: "C0", expectedVersion: "1",
         beforeContentHash: "b".repeat(64), nextContent: prepareRequest.nextContent, factorCount: prepareRequest.factorCount,
         confirmationHash, diff: [{ before: "before", after: prepareRequest.nextContent, changed: true }],
       } as const;
@@ -2949,7 +2999,17 @@ describe("workbench server routes", () => {
       const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
       expect(writeClaimResponse.statusCode).toBe(200);
       expect(writeClaimResponse.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation } });
-      const writePayload = { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: createHash("sha256").update(prepareRequest.nextContent).digest("hex") } } };
+        const writePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_write" as const,
+            receipt: {
+              operation: "created" as const,
+              targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+              verifiedAt: "2026-09-01T00:00:00.000Z",
+            },
+          },
+        };
       const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
       expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "review_required" });
@@ -3015,8 +3075,8 @@ describe("workbench server routes", () => {
       expect(validationClaim.statusCode).toBe(200);
       expect(validationClaim.json()).toMatchObject({ request: { kind: "surface_validate", prepareRequest: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42", nextContent: rendered.markdown, factorCount: 1 } } });
       expect(validationClaim.json()).not.toMatchObject({ request: { prepareRequest: { nextContent: expect.stringContaining("Old stale factor") } } });
-      const confirmationHash = createHash("sha256").update(JSON.stringify(["WI-42", "C0", "7", rendered.markdown])).digest("hex");
-      const confirmation = { status: "confirmation_required" as const, workItemReference: "WI-42", ownerReference: "owner-1", commentReference: "C0", expectedVersion: "7", beforeContentHash: "b".repeat(64), nextContent: rendered.markdown, factorCount: 1, confirmationHash, diff: [{ before: "old", after: rendered.markdown, changed: true }] };
+      const confirmationHash = createHash("sha256").update(JSON.stringify(["https://dev.azure.com/org/project/_workitems/edit/42", "C0", "7", rendered.markdown])).digest("hex");
+      const confirmation = { status: "confirmation_required" as const, workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42", ownerReference: "owner-1", commentReference: "C0", expectedVersion: "7", beforeContentHash: "b".repeat(64), nextContent: rendered.markdown, factorCount: 1, confirmationHash, diff: [{ before: "old", after: rendered.markdown, changed: true }] };
       const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
       const validationResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"), payload: validationPayload } })).statusCode).toBe(204);
@@ -3834,11 +3894,9 @@ describe("workbench server routes", () => {
           outcome: {
             kind: "surface_write" as const,
             receipt: {
-              status: "updated" as const,
-              workItemReference: confirmation.workItemReference,
-              commentReference: confirmation.commentReference,
-              version: "9",
-              contentHash: expectedContentHash,
+              operation: "updated" as const,
+              targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+              verifiedAt: "2026-09-01T00:00:00.000Z",
             },
           },
         };
@@ -3898,7 +3956,128 @@ describe("workbench server routes", () => {
         actionId: writeActionId,
         validationActionId,
         expectedRevision: revision,
+        receipt: {
+          operation: "updated",
+          targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+          verifiedAt: "2026-09-01T00:00:00.000Z",
+        },
       });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed for surface write results when confirmation work-item identity is not a strict ADO URL", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-identity-fail-closed");
+    await rm(rootDir, { recursive: true, force: true });
+    const report = f3Report("Host action canonical factor");
+    const reportHash = await writeJsonArtifact(rootDir, "f3/current-host-action.json", report);
+    const rendered = renderF3AdoMarkdown(report);
+    const prepareRequest = { mode: "create" as const, title: "[TA Requirement][Project][Phase] Update Drawing Requirements for Anonymous.xlsx", sponsorEmail: "sponsor@example.com", nextContent: rendered.markdown, factorCount: 1 };
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true, surfacePrepareService: { create: async () => prepareRequest } });
+    try {
+      const browser = await server.testAuthenticate("65656565-6565-4656-8656-656565656565");
+      const invalidWorkItemReference = "WI-1";
+      const session = await openSessionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        await session.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId: browser.sessionId,
+          commandId: "seed-ado-decision-invalid-write-identity",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({ snapshot: {
+          ...snapshot,
+          state: "ado_decision_required",
+          revision: snapshot.revision + 1,
+          inputRevision: 1,
+          activeAttempt: null,
+          downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 1),
+          priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
+          artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
+        }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
+      } finally {
+        await session.close();
+      }
+
+      const snapshot = (await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json<{ revision: number }>();
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: browser.sessionId,
+          commandId: "request-ado-validation-invalid-write-identity",
+          expectedRevision: snapshot.revision,
+          command: "confirm_ado_decision",
+          payload: { decision: "create_new", title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail },
+        },
+      });
+      expect(response.statusCode).toBe(202);
+
+      const validationActionId = `ado-validation:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
+      const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: validationActionId, hostInstanceId: "host-a" });
+      const claimResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/host-actions/${validationActionId}/claim`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${token}` },
+        payload: { hostInstanceId: "host-a" },
+      });
+      expect(claimResponse.statusCode).toBe(200);
+
+      const nextContent = prepareRequest.nextContent;
+      const validationClaim = claimResponse.json<{ leaseId: string }>();
+      const validationResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: validationActionId, hostInstanceId: "host-a" });
+      const confirmationHash = createHash("sha256").update(JSON.stringify([invalidWorkItemReference, "C0", "1", nextContent])).digest("hex");
+      const confirmation = {
+        status: "confirmation_required" as const,
+        workItemReference: invalidWorkItemReference,
+        ownerReference: prepareRequest.sponsorEmail,
+        commentReference: "C0",
+        expectedVersion: "1",
+        beforeContentHash: "b".repeat(64),
+        nextContent,
+        factorCount: 1,
+        confirmationHash,
+        diff: [{ before: "before", after: nextContent, changed: true }],
+      } as const;
+      const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+      expect((await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/host-actions/${validationActionId}/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` },
+        payload: { contractVersion: "f8-host-action-result-v1", actionId: validationActionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"), payload: validationPayload },
+      })).statusCode).toBe(204);
+
+      const writeActionId = `ado-write:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
+      const writeClaimToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId, expectedRevision: response.json<{ revision: number }>().revision, target: { mode: "create", title: prepareRequest.title, sponsorEmail: prepareRequest.sponsorEmail }, contentHash: rendered.contentHash, confirmationHash, confirmed: true } })).statusCode).toBe(201);
+      const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(writeClaimResponse.statusCode).toBe(200);
+
+      const writePayload = {
+        status: "completed" as const,
+        outcome: {
+          kind: "surface_write" as const,
+          receipt: {
+            operation: "created" as const,
+            targetIdentity: { organization: "unknown-organization", project: "unknown-project", workItemId: 1 },
+            verifiedAt: "2026-09-01T00:00:00.000Z",
+          },
+        },
+      };
+      const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      const writeResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` },
+        payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload },
+      });
+      expect(writeResponse.statusCode).toBe(400);
+      expect(writeResponse.json()).toMatchObject({ error: "host_action_result_integrity_rejected" });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -4559,14 +4738,14 @@ function testSurfaceConfirmation() {
   const nextContent = "governed markdown";
   return {
     status: "confirmation_required" as const,
-    workItemReference: "WI-1",
+    workItemReference: TEST_ADO_WORK_ITEM_URL,
     ownerReference: "owner-1",
     commentReference: "C0",
     expectedVersion: "1",
     beforeContentHash: "b".repeat(64),
     nextContent,
     factorCount: 1,
-    confirmationHash: createHash("sha256").update(JSON.stringify(["WI-1", "C0", "1", nextContent])).digest("hex"),
+    confirmationHash: createHash("sha256").update(JSON.stringify([TEST_ADO_WORK_ITEM_URL, "C0", "1", nextContent])).digest("hex"),
     diff: [{ before: "before", after: nextContent, changed: true }],
   };
 }

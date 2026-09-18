@@ -27,6 +27,8 @@ export type { F6SpecificationSolveResult, OneSidedSpecificationSolveInput } from
 export { createF6Optimization, createF6OptimizationV3, createF6OptimizationV4 } from "./f6-optimization.js";
 export type { F6OptimizationV3Inputs, F6OptimizationV4Inputs } from "./f6-optimization.js";
 export { createF6ReportProjection } from "./f6-report-projection.js";
+export { createF6ProcessChecks, classifyWorksheetDomain } from "./f6-process-requirements.js";
+export type { F6ProcessCheck, F6ProcessCheckId, F6ProcessCheckStatus, F6WorksheetDomainClassification } from "./f6-process-requirements.js";
 export { F6_DISPOSITION_RANK, worstDisposition } from "./f6-report-policy.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";

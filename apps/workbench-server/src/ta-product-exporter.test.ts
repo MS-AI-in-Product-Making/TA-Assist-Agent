@@ -11,6 +11,8 @@ import { canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore
 
 import { exportTaAnalysisForSession } from "./ta-product-exporter.js";
 
+const REQUEST_CONTEXT = { requestedAt: "2026-09-16T08:00:00.000Z", utcOffsetMinutes: 0, source: "web" } as const;
+
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -84,6 +86,7 @@ async function seedValidatedSession(
     rootDir,
     sessionId,
     interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false },
+    analysisRequestContext: REQUEST_CONTEXT,
   });
   try {
     await store.applyCommand({

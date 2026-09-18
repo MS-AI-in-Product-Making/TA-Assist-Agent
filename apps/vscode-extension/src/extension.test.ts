@@ -140,7 +140,7 @@ describe("extension workbench binding", () => {
 
     await registeredCommands.get("ta-assist.analyze")!();
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }), expect.any(Number));
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(globalStateValues.get("ta-assist.hostBinding")).toEqual({ sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     context.subscriptions.forEach((subscription) => subscription.dispose());
@@ -162,7 +162,7 @@ describe("extension workbench binding", () => {
 
     const response = await invokeParticipant({ prompt: `帮我分析 "${WORKBOOK_PATH}"` });
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }), expect.any(Number));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Agent Workbench.`);
@@ -175,7 +175,7 @@ describe("extension workbench binding", () => {
 
     const response = await invokeParticipant({ prompt: "帮我分析这份 Excel 工作簿" });
 
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }), expect.any(Number));
     expect(importWorkbookMock).not.toHaveBeenCalled();
     expect(context.globalState.update).toHaveBeenCalledWith("ta-assist.hostBinding", { sessionId: SESSION_ID, workbenchUrl: WORKBENCH_URL });
     expect(response.markdown).toHaveBeenCalledWith("TA Assist Agent Workbench is ready. Upload a workbook to begin.");
@@ -218,7 +218,7 @@ describe("extension workbench binding", () => {
     const response = await invokeParticipant({ prompt: "请用中文分析 report.xlsx 的 TA" });
 
     expect(findFilesMock).toHaveBeenCalled();
-    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "zh-CN", uiCatalogLanguage: "zh" }));
+    expect(launchNewWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "zh-CN", uiCatalogLanguage: "zh" }), expect.any(Number));
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(response.markdown).toHaveBeenCalledWith(`工作簿已接受。Session ${SESSION_ID} 正在 TA Assist Agent Workbench 中运行。`);
     context.subscriptions.forEach((subscription) => subscription.dispose());

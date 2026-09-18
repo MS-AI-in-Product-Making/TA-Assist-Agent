@@ -18,6 +18,16 @@ const ENGLISH_LOCK = {
   source: "workflow_start",
   fallbackUsed: false,
 } as const;
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T15:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "web",
+} as const;
+const OVERRIDE_REQUEST_CONTEXT = {
+  requestedAt: "2026-09-17T08:00:00.000Z",
+  utcOffsetMinutes: 60,
+  source: "cli",
+} as const;
 
 const tempRoots: string[] = [];
 
@@ -40,12 +50,116 @@ describe("SessionStore", () => {
     const store = await createStore(rootDir);
 
     expect((await store.readSnapshot()).interactionLanguage).toEqual(ENGLISH_LOCK);
+    expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
     await store.close();
 
     const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
     expect((await reopened.readSnapshot()).interactionLanguage).toEqual(ENGLISH_LOCK);
+    expect((await reopened.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
     expect(readPersistedSnapshot(rootDir).interactionLanguage).toEqual(ENGLISH_LOCK);
+    expect(readPersistedSnapshot(rootDir).analysisRequestContext).toEqual(REQUEST_CONTEXT);
     await reopened.close();
+  });
+
+  it("rejects creating a new session without request context", async () => {
+    const rootDir = await createTempRoot();
+
+    await expect(createSessionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      interactionLanguage: ENGLISH_LOCK,
+    })).rejects.toMatchObject({
+      code: "validation_error",
+    });
+    expect(readPersistedSessionCount(rootDir)).toBe(0);
+  });
+
+  it("keeps historical snapshots without request context readable when reopened", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    await store.close();
+
+    seedLegacySnapshot(rootDir, {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 0,
+      inputRevision: 0,
+      state: "created",
+      activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
+      priorRunReferences: [],
+    });
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    const reopenedSnapshot = await reopened.readSnapshot();
+    await reopened.close();
+
+    expect(reopenedSnapshot).toMatchObject({
+      revision: 0,
+      state: "created",
+    });
+    expect(reopenedSnapshot).not.toHaveProperty("analysisRequestContext");
+  });
+
+  it("preserves the original request context across snapshot mutations that omit it", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+
+    const updated = await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+    expect(updated.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    expect(readPersistedSnapshot(rootDir).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    await store.close();
+  });
+
+  it("rejects explicit request-context overrides across command, snapshot-mutation, and attempt-result paths", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+
+    try {
+      await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        ...acceptWorkbook(snapshot),
+        snapshot: {
+          ...acceptWorkbook(snapshot).snapshot,
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      }))).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      await expect(store.applySnapshotMutation(1, (snapshot) => ({
+        snapshot: {
+          ...snapshot,
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      }))).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: {
+          ...snapshotWithAttempt({
+            revision: 1,
+            state: "review_required",
+            activeAttempt: null,
+          }),
+          analysisRequestContext: OVERRIDE_REQUEST_CONTEXT,
+        },
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+      expect((await store.readSnapshot()).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+      expect(readPersistedSnapshot(rootDir).analysisRequestContext).toEqual(REQUEST_CONTEXT);
+    } finally {
+      await store.close();
+    }
   });
 
   it("materializes missing historical interaction language as legacy_fallback and persists it", async () => {
@@ -885,6 +999,7 @@ async function createStore(
     rootDir,
     sessionId: SESSION_ID,
     interactionLanguage: ENGLISH_LOCK,
+    analysisRequestContext: REQUEST_CONTEXT,
     ...overrides,
   });
 }

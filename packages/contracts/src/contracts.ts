@@ -6260,6 +6260,152 @@ export const drawingGovernanceResultV2Schema = z.union([
   drawingGovernanceAcceptedResultV2Schema,
 ]);
 
+export type AdoTraceabilityV3 =
+  | {
+    status: "not_requested" | "draft_ready" | "confirmation_required";
+    operation?: undefined;
+    organization?: undefined;
+    project?: undefined;
+    workItemId?: undefined;
+    reasonCode?: undefined;
+  }
+  | {
+    status: "updated";
+    operation: "created" | "updated";
+    organization: string;
+    project: string;
+    workItemId: number;
+    reasonCode?: undefined;
+  }
+  | {
+    status: "blocked" | "failed";
+    operation?: undefined;
+    organization?: undefined;
+    project?: undefined;
+    workItemId?: undefined;
+    reasonCode?: string | undefined;
+  };
+
+const adoTraceabilityV3StatusSchema = z.enum([
+  "not_requested",
+  "draft_ready",
+  "confirmation_required",
+  "updated",
+  "blocked",
+  "failed",
+]);
+
+const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUnion("status", [
+  z.object({
+    status: z.enum(["not_requested", "draft_ready", "confirmation_required"]),
+    operation: z.undefined().optional(),
+    organization: z.undefined().optional(),
+    project: z.undefined().optional(),
+    workItemId: z.undefined().optional(),
+    reasonCode: z.undefined().optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("updated"),
+    operation: z.enum(["created", "updated"]),
+    organization: z.string().min(1),
+    project: z.string().min(1),
+    workItemId: z.number().int().positive(),
+    reasonCode: z.undefined().optional(),
+  }).strict(),
+  z.object({
+    status: z.enum(["blocked", "failed"]),
+    operation: z.undefined().optional(),
+    organization: z.undefined().optional(),
+    project: z.undefined().optional(),
+    workItemId: z.undefined().optional(),
+    reasonCode: z.string().min(1).optional(),
+  }).strict(),
+]);
+
+const drawingGovernanceAcceptedResultV3Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v3"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.enum(["completed", "governance_required"]),
+  artifactRoot: z.string().min(1),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    rows: z.array(f3GovernanceRowSchema),
+  }).strict().superRefine((worksheet, context) => {
+    worksheet.rows.forEach((row, index) => {
+      if (row.imageReference.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference worksheet must match the containing worksheet", path: ["rows", index, "imageReference", "worksheetName"] });
+      }
+    });
+  })),
+  ado: adoTraceabilityV3Schema,
+  summary: z.object({
+    worksheetCount: z.number().int().nonnegative(),
+    factorCount: z.number().int().nonnegative(),
+    completeCount: z.number().int().nonnegative(),
+    governanceRequiredCount: z.number().int().nonnegative(),
+    duplicateConflictCount: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((result, context) => {
+  const rows = result.worksheets.flatMap((worksheet) => worksheet.rows);
+  const completeCount = rows.filter((row) => row.governanceStatus === "complete").length;
+  const expectedSummary = {
+    worksheetCount: result.worksheets.length,
+    factorCount: rows.length,
+    completeCount,
+    governanceRequiredCount: rows.length - completeCount,
+    duplicateConflictCount: rows.filter((row) => row.qualitySignals.includes("duplicate_conflict")).length,
+  };
+
+  for (const [field, value] of Object.entries(expectedSummary)) {
+    if (result.summary[field as keyof typeof expectedSummary] !== value) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${field} must match governance records`,
+        path: ["summary", field],
+      });
+    }
+  }
+
+  const expectedStatus = expectedSummary.governanceRequiredCount === 0
+    ? "completed"
+    : "governance_required";
+  if (result.status !== expectedStatus) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "status must match governance records",
+      path: ["status"],
+    });
+  }
+});
+
+const drawingGovernanceInputRejectedResultV3Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v3"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.literal("input_rejected"),
+  artifactIssues: z.array(z.object({
+    reasonCode: z.enum([
+      "f2_report_missing",
+      "f2_report_invalid",
+      "workbook_identity_mismatch",
+      "description_missing",
+      "no_ready_worksheet",
+      "worksheet_selection_invalid",
+    ]),
+    artifactReference: z.string().min(1),
+  }).strict()).min(1),
+}).strict();
+
+export const drawingGovernanceResultV3Schema = z.union([
+  drawingGovernanceInputRejectedResultV3Schema,
+  drawingGovernanceAcceptedResultV3Schema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -6329,6 +6475,7 @@ export type F2ReadyWorksheet = z.infer<typeof f2ReadyWorksheetSchema>;
 export type F4HandoffReady = z.infer<typeof f4HandoffReadySchema>;
 export type DrawingGovernanceRequestV2 = z.infer<typeof drawingGovernanceRequestV2Schema>;
 export type DrawingGovernanceResultV2 = z.infer<typeof drawingGovernanceResultV2Schema>;
+export type DrawingGovernanceResultV3 = z.infer<typeof drawingGovernanceResultV3Schema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
 export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
@@ -6819,6 +6966,47 @@ export const f6AnalysisContextSchema = z.discriminatedUnion("contextVersion", [
   f6AnalysisContextV2BaseSchema,
 ]).superRefine((artifact, context) => {
   validateAnalysisContextWorksheets(artifact, context);
+});
+
+export const f6ProcessCheckIdSchema = z.enum([
+  "analysis-method",
+  "input-completeness",
+  "output-completeness",
+  "tolerance-validity",
+  "drawing-dim-governance",
+  "ado-traceability",
+  "target-sigma",
+]);
+
+export const f6ProcessCheckStatusSchema = z.enum(["COMPLETE", "WARNING", "MISSING"]);
+
+export const f6ProcessCheckSchema = z.object({
+  checkId: f6ProcessCheckIdSchema,
+  status: f6ProcessCheckStatusSchema,
+  summary: z.string().min(1),
+  details: z.array(z.string().min(1)),
+}).strict();
+
+const f6ProcessCheckOrder = [
+  "analysis-method",
+  "input-completeness",
+  "output-completeness",
+  "tolerance-validity",
+  "drawing-dim-governance",
+  "ado-traceability",
+  "target-sigma",
+] as const;
+
+export const f6ProcessChecksSchema = z.array(f6ProcessCheckSchema).length(f6ProcessCheckOrder.length).superRefine((checks, context) => {
+  checks.forEach((check, index) => {
+    if (check.checkId !== f6ProcessCheckOrder[index]) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 process checks must use the governed fixed order", path: [index, "checkId"] });
+    }
+  });
+  const ids = checks.map(({ checkId }) => checkId);
+  if (new Set(ids).size !== ids.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 process check IDs must be unique" });
+  }
 });
 
 export const f6InputClarificationSchema = z.object({
@@ -9447,6 +9635,9 @@ export type F6OptimizationTargetsV2 = z.infer<typeof f6OptimizationTargetsV2Sche
 export type F6AnalysisContext = z.infer<typeof f6AnalysisContextSchema>;
 export type F6AnalysisContextV1 = z.infer<typeof f6AnalysisContextV1Schema>;
 export type F6AnalysisContextV2 = z.infer<typeof f6AnalysisContextV2Schema>;
+export type F6ProcessCheckId = z.infer<typeof f6ProcessCheckIdSchema>;
+export type F6ProcessCheckStatus = z.infer<typeof f6ProcessCheckStatusSchema>;
+export type F6ProcessCheck = z.infer<typeof f6ProcessCheckSchema>;
 export type F6InputClarification = z.infer<typeof f6InputClarificationSchema>;
 export type F6AnalysisContextProposal = z.infer<typeof f6AnalysisContextProposalSchema>;
 export type F6OptimizationTargetsProposal = z.infer<typeof f6OptimizationTargetsProposalSchema>;

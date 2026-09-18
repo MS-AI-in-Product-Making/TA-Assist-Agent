@@ -110,6 +110,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
   }
   if (stage === "f6_running") {
     if (environment.roots.f3Root === undefined || environment.roots.f4Root === undefined || environment.roots.f5Root === undefined || environment.reviewContext === undefined) throw new Error("F6 roots are unavailable.");
+    if (environment.snapshot.analysisRequestContext === undefined) throw new Error("F6 request context is required.");
     const multimodal = await requireMultimodalArtifact(environment, selected, "f6");
     const completedWorksheetNames = completedMultimodalWorksheetNames(multimodal.artifact);
     const scripts = await loadF6(environment.repositoryRoot);
@@ -121,6 +122,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
       f4ArtifactRoot: environment.roots.f4Root,
       f5ArtifactRoot: environment.roots.f5Root,
       selectedWorksheetNames: completedWorksheetNames,
+      analysisRequestContext: environment.snapshot.analysisRequestContext,
       interactionLanguage: environment.snapshot.interactionLanguage,
       modelInterpretationPath: multimodal.path,
       expectedModelInterpretationContentHash: multimodal.contentHash,
@@ -148,6 +150,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
             ...value,
             ...request,
             publishRoot: layout.publishRoot,
+            analysisRequestContext: request.analysisRequestContext,
             analysisContextArtifact: request.analysisContextPath,
             optimizationTargetsArtifact: request.optimizationTargetsPath,
             modelInterpretationArtifactRoot: dirname(request.modelInterpretationPath),

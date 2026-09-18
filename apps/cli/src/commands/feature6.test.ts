@@ -119,9 +119,17 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
     );
 
     expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nfullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}\nstatus: partially_completed`);
-    expect(JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"))).toEqual({
+    const invocation = JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"));
+    const requestContext = JSON.parse(invocation.argv[5]);
+    expect(requestContext).toEqual({
+      requestedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u),
+      utcOffsetMinutes: expect.any(Number),
+      source: "cli",
+    });
+    expect(invocation).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+        "--analysis-request-context", invocation.argv[5],
         "--worksheet", "Overview", "--worksheet", "Details",
         "--language", "en-US", "--model-interpretation", "evidence/model.json",
         "--supplier-capability", "evidence/supplier.json",

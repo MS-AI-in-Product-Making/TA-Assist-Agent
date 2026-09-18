@@ -39,6 +39,11 @@ const roots = [];
 const WORKBOOK_HASH = F6_FIXTURE_WORKBOOK_HASH;
 const RUN_ID = F6_FIXTURE_RUN_ID;
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
+const REQUEST_CONTEXT = {
+  requestedAt: "2026-09-16T08:30:12.000Z",
+  utcOffsetMinutes: -420,
+  source: "cli",
+};
 
 function fileSymlinksAvailable() {
   const probeRoot = mkdtempSync(path.join(tmpdir(), "f6-symlink-probe-"));
@@ -67,6 +72,7 @@ function sha256(filePath) {
 
 function setupBundle({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [] } = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames });
+  bundle.analysisRequestContext = REQUEST_CONTEXT;
   roots.push(bundle.root);
   return bundle;
 }
@@ -461,6 +467,17 @@ describe("loadF6ArtifactBundle", () => {
     });
   });
 
+  it("requires the current F6 request context and preserves it unchanged in the request", () => {
+    const bundle = setupBundle();
+    const { analysisRequestContext: _analysisRequestContext, ...withoutRequestContext } = bundle;
+
+    expect(loadF6ArtifactBundle(withoutRequestContext)).toMatchObject({ status: "inputRejected" });
+
+    const accepted = loadF6ArtifactBundle(bundle);
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.request.analysisRequestContext).toEqual(REQUEST_CONTEXT);
+  });
+
   it("keeps v1 Optimization Targets unit drift as hard inputRejected", () => {
     const bundle = setupBundle();
     const installed = installF6VersionedContextAndTargets(bundle, {
@@ -674,6 +691,21 @@ describe("F6 governed bundle validation", () => {
     );
     expect(result.blockedWorksheets[0].findings.some(({ findingKind }) =>
       findingKind === "confirmed_requirement_violation")).toBe(false);
+  });
+
+  it("limits report scope to the confirmed downstream subset plus F2 blocked worksheets", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"], blockedWorksheetNames: ["Blocked-A"] });
+    bundle.selectedWorksheetNames = ["Analysis-A"];
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
+    expect(result.request.reportScope).toEqual({
+      worksheetNames: ["Analysis-A", "Blocked-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
+    expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
   });
 
   it("accepts a required mixed multimodal v4 artifact and carries the failed worksheet as an F6 blocker", () => {

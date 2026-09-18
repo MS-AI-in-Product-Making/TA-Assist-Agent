@@ -110,6 +110,7 @@ describe("workbench server security boundary", () => {
         method: "POST",
         url: "/api/sessions",
         headers: { ...launcherHeaders, "x-csrf-token": launcherCsrf },
+        payload: { utcOffsetMinutes: 0, source: "web" },
       });
       expect(created.statusCode).toBe(201);
       const session = created.json<{ sessionId: string }>();
