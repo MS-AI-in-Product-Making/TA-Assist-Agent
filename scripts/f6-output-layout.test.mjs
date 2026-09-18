@@ -21,13 +21,13 @@ function roots(publishRoot = "test/demo-output") {
 }
 
 describe("resolveFeature6OutputLayout", () => {
-  it("builds the fixed default artifact layout", () => {
-    const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow);
+  it("builds the workbook-derived current artifact layout", () => {
+    const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow, undefined, "Anonymous.xlsx");
     expect(layout).toMatchObject({
-      artifactSetVersion: "f6-artifact-set-v3",
+      artifactSetVersion: "f6-artifact-set-v4",
       optimizationJsonName: "Feature6-Optimization.json",
-      finalReportMdName: "Feature6-Report.md",
-      finalReportPdfName: "Feature6-Report.pdf",
+      finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     });
@@ -44,24 +44,25 @@ describe("resolveFeature6OutputLayout", () => {
       path.join(publishRoot, "f6", "custom"),
       fixedNow,
       publishRoot,
+      "Anonymous.xlsx",
     );
     expect(layout.runRoot).toBe(path.join(publishRoot, "f6", "custom", layout.runId));
   });
 
   it.each(["../outside", "runs/../outside", "runs/./child", "runs/CON", "runs/bad\u0001name"])(
     "rejects unsafe output root %j",
-    (outputRoot) => expect(() => resolveFeature6OutputLayout(roots(), outputRoot, fixedNow, "test/demo-output"))
+    (outputRoot) => expect(() => resolveFeature6OutputLayout(roots(), outputRoot, fixedNow, "test/demo-output", "Anonymous.xlsx"))
       .toThrow(/unsafe|publish root|outside/i),
   );
 
   it("requires an explicit publish root for an override", () => {
-    expect(() => resolveFeature6OutputLayout(roots(), "test/demo-output/custom", fixedNow))
+    expect(() => resolveFeature6OutputLayout(roots(), "test/demo-output/custom", fixedNow, undefined, "Anonymous.xlsx"))
       .toThrow(/publish root/i);
   });
 
   it("rejects any governed input root outside the publish root", () => {
     for (const key of Object.keys(roots())) {
-      expect(() => resolveFeature6OutputLayout({ ...roots(), [key]: "outside/run" }, "test/demo-output/f6", fixedNow, "test/demo-output"))
+      expect(() => resolveFeature6OutputLayout({ ...roots(), [key]: "outside/run" }, "test/demo-output/f6", fixedNow, "test/demo-output", "Anonymous.xlsx"))
         .toThrow(/publish root|outside/i);
     }
   });
@@ -80,7 +81,7 @@ describe("resolveFeature6OutputLayout", () => {
       if (["EPERM", "EACCES"].includes(error?.code)) return skip();
       throw error;
     }
-    expect(() => resolveFeature6OutputLayout(roots(publishRoot), path.join(linkedRoot, "run"), fixedNow, publishRoot))
+    expect(() => resolveFeature6OutputLayout(roots(publishRoot), path.join(linkedRoot, "run"), fixedNow, publishRoot, "Anonymous.xlsx"))
       .toThrow(/publish root|outside|link/i);
   });
 
@@ -101,6 +102,7 @@ describe("resolveFeature6OutputLayout", () => {
       path.join(linkedPublishRoot, "f6", "run"),
       fixedNow,
       linkedPublishRoot,
+      "Anonymous.xlsx",
     )).toThrow(/publish root|link/i);
   });
 
@@ -108,7 +110,7 @@ describe("resolveFeature6OutputLayout", () => {
     const publishRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f6-no-create-"));
     cleanup.push(publishRoot);
     const outputRoot = path.join(publishRoot, "new", "output");
-    resolveFeature6OutputLayout(roots(publishRoot), outputRoot, fixedNow, publishRoot);
+    resolveFeature6OutputLayout(roots(publishRoot), outputRoot, fixedNow, publishRoot, "Anonymous.xlsx");
     expect(fs.existsSync(outputRoot)).toBe(false);
   });
 });

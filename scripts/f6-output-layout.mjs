@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createF6ReportFileNames } from "../packages/contracts/dist/index.js";
 import { safeName } from "./f1-output-layout.mjs";
 
 const DEFAULT_PUBLISH_ROOT = path.posix.join("test", "demo-output");
@@ -71,9 +72,10 @@ function runStem(f5ArtifactRoot) {
   return stem;
 }
 
-export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot) {
+export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot, workbookFileName) {
   const roots = [parsed?.f2ArtifactRoot, parsed?.f3ArtifactRoot, parsed?.f4ArtifactRoot, parsed?.f5ArtifactRoot];
   roots.forEach((root, index) => validatePathValue(root, `F${index + 2} artifact root`));
+  const reportNames = createF6ReportFileNames(workbookFileName);
   const stem = runStem(parsed.f5ArtifactRoot);
   const controlledPublishRoot = outputRoot === undefined
     ? DEFAULT_PUBLISH_ROOT
@@ -100,13 +102,12 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   const runId = now().toISOString().replace(/[:.]/g, "-");
   const normalizedBase = normalizedResultPath(outputBase);
   return {
-    artifactSetVersion: "f6-artifact-set-v3",
+    artifactSetVersion: "f6-artifact-set-v4",
     runId,
     runRoot: path.isAbsolute(normalizedBase) ? path.join(normalizedBase, runId) : path.posix.join(normalizedBase, runId),
     publishRoot: normalizedResultPath(controlledPublishRoot),
     optimizationJsonName: "Feature6-Optimization.json",
-    finalReportMdName: "Feature6-Report.md",
-    finalReportPdfName: "Feature6-Report.pdf",
+    ...reportNames,
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",
   };
