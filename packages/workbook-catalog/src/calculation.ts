@@ -152,6 +152,13 @@ function asNonBlankText(field: AvailableWorksheetField): string {
   return value;
 }
 
+function asNonBlankIdentityText(field: AvailableWorksheetField): string {
+  if (!field.rawText.trim()) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+  return field.rawText;
+}
+
 function asFiniteNumber(field: AvailableWorksheetField): number {
   if (typeof field.numericValue !== "number" || !Number.isFinite(field.numericValue)) {
     throw requestError(REQUEST_SUMMARY);
@@ -559,7 +566,7 @@ function normalizeFactorRow(
   const distributionField = asAvailableField(row.fields.distribution);
   const unitField = row.fields.unit;
 
-  const factorName = asNonBlankText(factorNameField);
+  const factorName = asNonBlankIdentityText(factorNameField);
   const nominalValue = asFiniteNumber(nominalValueField);
   const upperTolerance = asFiniteNumber(upperToleranceField);
   const lowerTolerance = asFiniteNumber(lowerToleranceField);

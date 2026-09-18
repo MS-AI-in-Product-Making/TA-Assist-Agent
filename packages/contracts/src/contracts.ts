@@ -6275,6 +6275,7 @@ export type AdoTraceabilityV3 =
     organization: string;
     project: string;
     workItemId: number;
+    verifiedAt?: string | undefined;
     reasonCode?: undefined;
   }
   | {
@@ -6283,6 +6284,7 @@ export type AdoTraceabilityV3 =
     organization: string;
     project: string;
     workItemId: number;
+    verifiedAt?: string | undefined;
     reasonCode?: undefined;
   }
   | {
@@ -6293,16 +6295,6 @@ export type AdoTraceabilityV3 =
     workItemId?: undefined;
     reasonCode?: string | undefined;
   };
-
-const adoTraceabilityV3StatusSchema = z.enum([
-  "not_requested",
-  "draft_ready",
-  "confirmation_required",
-  "target_validated",
-  "updated",
-  "blocked",
-  "failed",
-]);
 
 const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUnion("status", [
   z.object({
@@ -6319,6 +6311,7 @@ const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUni
     organization: z.string().min(1),
     project: z.string().min(1),
     workItemId: z.number().int().positive(),
+    verifiedAt: z.string().datetime({ offset: true }).optional(),
     reasonCode: z.undefined().optional(),
   }).strict(),
   z.object({
@@ -6327,6 +6320,7 @@ const adoTraceabilityV3Schema: z.ZodType<AdoTraceabilityV3> = z.discriminatedUni
     organization: z.string().min(1),
     project: z.string().min(1),
     workItemId: z.number().int().positive(),
+    verifiedAt: z.string().datetime({ offset: true }).optional(),
     reasonCode: z.undefined().optional(),
   }).strict(),
   z.object({

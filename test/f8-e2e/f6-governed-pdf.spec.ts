@@ -249,6 +249,22 @@ test("publishes one overview page plus one page per worksheet without overflow",
     const blocked = page.locator(".slide-worksheet").filter({ hasText: missingRun.worksheetNames[1] });
     await expect(ready).toBeVisible();
     await expect(blocked).toBeVisible();
+    const summaryTables = overview.locator(".document-overview,.workbook-summary");
+    for (const table of await summaryTables.all()) {
+      expect(await table.evaluate((node) => {
+        const tableBox = node.getBoundingClientRect();
+        const headerBox = node.querySelector("thead")?.getBoundingClientRect();
+        return headerBox !== undefined
+          && headerBox.left >= tableBox.left
+          && headerBox.right <= tableBox.right;
+      })).toBe(true);
+      expect(await table.evaluate((node) => getComputedStyle(node, "::before").textAlign)).toBe("center");
+    }
+    const summaryWorksheetLink = overview.locator(".workbook-summary tbody tr:first-child td:nth-child(2) a");
+    expect(await summaryWorksheetLink.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(0, 120, 212)");
+    const cpkFail = overview.getByText("CPK FAIL", { exact: true }).first();
+    await expect(cpkFail).toBeVisible();
+    expect(await cpkFail.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(167, 41, 41)");
     const stackImage = ready.locator(".stack-image img");
     await expect(stackImage).toHaveJSProperty("complete", true);
     expect(await stackImage.evaluate((image: HTMLImageElement) => {
@@ -294,6 +310,27 @@ test("publishes one overview page plus one page per worksheet without overflow",
       return [image.width, copy.width];
     });
     expect(imageWidth / copyWidth).toBeCloseTo(1.5, 1);
+
+    const interpretationHeadings = ready.locator(
+      ".analysis-panel--process>h2,.analysis-panel--image>h2,.analysis-panel--results>h2",
+    );
+    await expect(interpretationHeadings).toHaveCount(3);
+    expect(await interpretationHeadings.evaluateAll((headings) => (
+      [...new Set(headings.map((heading) => getComputedStyle(heading).color))]
+    ))).toEqual(["rgb(80, 230, 255)"]);
+
+    const optimizationPanels = ready.locator(
+      ".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications",
+    );
+    expect(await optimizationPanels.count()).toBeGreaterThanOrEqual(2);
+    expect(await optimizationPanels.evaluateAll((panels) => (
+      [...new Set(panels.map((panel) => panel.getBoundingClientRect().height))]
+    ))).toEqual([220]);
+    await expect(ready.locator(".analysis-panel--center .step-label")).toHaveText("Step 1");
+    await expect(ready.locator(".analysis-panel--contributors .step-label")).toHaveText("Step 2");
+    if (await ready.locator(".analysis-panel--specifications").count() > 0) {
+      await expect(ready.locator(".analysis-panel--specifications .step-label")).toHaveText("Step 3");
+    }
 
     expect(await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);

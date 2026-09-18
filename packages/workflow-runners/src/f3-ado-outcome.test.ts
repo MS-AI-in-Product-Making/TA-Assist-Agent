@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -68,6 +68,7 @@ describe("persistF3AdoTraceability", () => {
       organization: "1ES4Devices",
       project: "MechanicalEngineering",
       workItemId: 1121100,
+      verifiedAt: "2026-09-17T13:30:12.000Z",
     });
     expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
   });
@@ -132,6 +133,7 @@ describe("persistF3AdoTraceability", () => {
       organization: "contoso",
       project: "Devices",
       workItemId: 1119604,
+      verifiedAt: "2026-09-16T08:30:12.000Z",
     });
     expect(readFileSync(reportPath, "utf8")).toBe(legacyContent);
     expect(JSON.stringify(report)).not.toContain("dev.azure.com");
@@ -216,5 +218,37 @@ describe("persistF3AdoTraceability", () => {
     expect(existsSync(path.join(f3Root, "Feature3-ADO-Reminder.md"))).toBe(false);
     expect(existsSync(path.join(f3Root, "Feature3-ADO-History.html"))).toBe(false);
     expect(existsSync(path.join(f3Root, "Feature3-Report.md"))).toBe(false);
+  });
+
+  it("fails closed when an existing v3 receipt has a different verifiedAt", () => {
+    const f3Root = mkdtempSync(path.join(tmpdir(), "f3-ado-outcome-"));
+    roots.push(f3Root);
+    const reportPath = path.join(f3Root, "Feature3-Report.json");
+    const existing = updatedV3Report();
+    existing.ado.verifiedAt = "2026-09-16T08:30:12.000Z";
+    const original = `${JSON.stringify(existing, null, 2)}\n`;
+    writeFileSync(reportPath, original, "utf8");
+
+    expect(() => publishF3AdoTraceabilityArtifacts({
+      f3Root,
+      reportPath,
+      receipt: { ...receipt(), verifiedAt: "2026-09-16T08:31:12.000Z" },
+    })).toThrow(/does not match/i);
+    expect(readFileSync(reportPath, "utf8")).toBe(original);
+  });
+
+  it("fails closed when the F3 writable root is a linked directory", () => {
+    const realRoot = mkdtempSync(path.join(tmpdir(), "f3-ado-real-"));
+    const linkParent = mkdtempSync(path.join(tmpdir(), "f3-ado-link-parent-"));
+    const linkedRoot = path.join(linkParent, "linked-f3");
+    roots.push(linkParent, realRoot);
+    writeFileSync(path.join(realRoot, "Feature3-Report.json"), `${JSON.stringify(acceptedV2Report(), null, 2)}\n`, "utf8");
+    symlinkSync(realRoot, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+
+    expect(() => publishF3AdoTraceabilityArtifacts({
+      f3Root: linkedRoot,
+      reportPath: path.join(linkedRoot, "Feature3-Report.json"),
+      receipt: receipt(),
+    })).toThrow(/linked|symbolic|reparse/i);
   });
 });

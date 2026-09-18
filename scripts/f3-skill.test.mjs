@@ -263,15 +263,18 @@ describe("Drawing Governance skill contract", () => {
       "workflow:f2:excel",
       "workflow:f3",
       "workflow:f3:ado-reminder",
+      "workflow:f3:ado-receipt",
     ]);
 
     expect(scripts["workflow:f2:excel"]).toBe("node scripts/f2-excel-runner.mjs");
     expect(scripts["workflow:f3"]).toBe("node scripts/run-f3-full-validation.mjs");
     expect(scripts["workflow:f3:ado-reminder"]).toBe("node scripts/write-f3-ado-reminder.mjs");
+    expect(scripts["workflow:f3:ado-receipt"]).toBe("node scripts/write-f3-ado-receipt.mjs");
 
     expect(commands).toContain("workflow:f2:excel");
     expect(commands).toContain("workflow:f3");
     expect(commands).toContain("workflow:f3:ado-reminder");
+    expect(commands).toContain("workflow:f3:ado-receipt");
 
     // Lock complete example lines in skill to package script keys and argument shapes.
     expect(commandExamples).toEqual([
@@ -281,6 +284,7 @@ describe("Drawing Governance skill contract", () => {
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status updated --work-item-reference <id>",
+      "npm run workflow:f3:ado-receipt -- <f3-dir> --operation <created|updated> --organization <organization> --project <project> --work-item-id <id> --verified-at <iso-8601>",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_unavailable",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_authentication_failed",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported",
@@ -318,6 +322,17 @@ describe("Drawing Governance skill contract", () => {
     // Ensure no placeholder command shape that bypasses npm script reality.
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f3:ado-reminder\s+--\s+<f3-dir>\s+--status\s+cancel/i);
+  });
+
+  it("provides a governed v3 receipt command for successful Surface readback", () => {
+    const skill = readUtf8(skillPath);
+    const scripts = getPackageScripts();
+    const command = "npm run workflow:f3:ado-receipt -- <f3-dir> --operation <created|updated> --organization <organization> --project <project> --work-item-id <id> --verified-at <iso-8601>";
+
+    expect(scripts["workflow:f3:ado-receipt"]).toBe("node scripts/write-f3-ado-receipt.mjs");
+    expect(skill).toContain(command);
+    expect(skill).toContain("Successful Surface readback must use `workflow:f3:ado-receipt`");
+    expect(skill).toContain("must not use the historical `--status updated --work-item-reference <id>` command");
   });
 
   it("requires the F1 selection handshake before F2 validation and governed worksheet execution", () => {

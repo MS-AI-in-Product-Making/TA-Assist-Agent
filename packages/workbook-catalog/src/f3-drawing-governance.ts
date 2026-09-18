@@ -36,6 +36,12 @@ function requiredText(value: string | number | null, field: string): string {
   return text;
 }
 
+function requiredIdentityText(value: string | number | null, field: string): string {
+  const text = value === null ? "" : String(value);
+  if (text.trim().length === 0) throw new Error(`F3 validation_error: ${field} is required.`);
+  return text;
+}
+
 function requiredNumber(value: string | number | null, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`F3 validation_error: ${field} must be a finite number.`);
@@ -96,10 +102,10 @@ export function createF3DrawingGovernance(request: unknown): DrawingGovernanceRe
       deviceLevelDim: worksheet.worksheetName,
       dimensionDescription: worksheet.toleranceLoopDescription,
       partCategory: requiredText(row.actualFields.partCategory, "partCategory"),
-      partSubsystem: requiredText(row.actualFields.partName, "partName"),
+      partSubsystem: requiredIdentityText(row.actualFields.partName, "partName"),
       drawingNumber: drawingNumber ?? null,
       dimId: dimId ?? null,
-      factorDescription: requiredText(row.actualFields.factorName, "factorName"),
+      factorDescription: requiredIdentityText(row.actualFields.factorName, "factorName"),
       nominal: requiredNumber(row.actualFields.nominalValue, "nominalValue"),
       upperTolerance: requiredNumber(row.actualFields.upperTolerance, "upperTolerance"),
       lowerTolerance: requiredNumber(row.actualFields.lowerTolerance, "lowerTolerance"),

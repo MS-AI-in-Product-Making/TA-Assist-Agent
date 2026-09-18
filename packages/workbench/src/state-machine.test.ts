@@ -372,7 +372,7 @@ describe("workbench state machine", () => {
     ).state).toBe("ado_decision_required");
   });
 
-  it("records local-only governance as not requested and proceeds to review", () => {
+  it("records local-only governance and republishes F6 before review", () => {
     const api = requireApi();
     const result = api.reduceSessionCommand(
       baseSnapshot({ state: "ado_decision_required", revision: 4 }),
@@ -386,8 +386,8 @@ describe("workbench state machine", () => {
       },
     );
 
-    expect(result.state).toBe("review_required");
-    expect(result.activeAttempt).toBeNull();
+    expect(result.state).toBe("f6_running");
+    expect(result.activeAttempt).toMatchObject({ status: "running", stage: "f6_running" });
     expect(result.priorRunReferences).toEqual([
       expect.objectContaining({ featureId: "F3", referenceId: "ado-not-requested" }),
     ]);
@@ -410,6 +410,34 @@ describe("workbench state machine", () => {
     expect(pending.state).toBe("ado_action_pending");
     expect(pending.activeAttempt).toBeNull();
     expect(api.acceptAttemptResult(pending, completedAttemptResult()).state).toBe("ado_action_pending");
+  });
+
+  it("starts a fresh F6 publication attempt after a verified Surface write", () => {
+    const api = requireApi();
+    const result = api.reduceSessionCommand(
+      baseSnapshot({ state: "ado_action_pending", revision: 5 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "surface-write-accepted",
+        expectedRevision: 5,
+        command: "accept_surface_write",
+        payload: { actionId: "surface-action-1" },
+      },
+    );
+
+    expect(result.state).toBe("f6_running");
+    expect(result.activeAttempt).toMatchObject({ status: "running", stage: "f6_running" });
+    expect(result.priorRunReferences).toContainEqual(expect.objectContaining({
+      featureId: "F3",
+      referenceId: "ado-updated",
+      runReference: expect.stringMatching(/:0$/),
+    }));
+    expect(api.acceptAttemptResult(result, {
+      attemptId: result.activeAttempt!.attemptId,
+      status: "completed",
+      result: { status: "completed" },
+    }).state).toBe("review_required");
   });
 
   it("invalidates only the active input revision on replace_workbook while preserving immutable history", () => {

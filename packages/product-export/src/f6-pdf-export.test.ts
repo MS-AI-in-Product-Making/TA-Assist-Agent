@@ -197,7 +197,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('href="#worksheet-1"');
     expect(html).toContain('class="comment comment--pass">Pass</span>');
     expect(html).toContain('class="comment comment--need-review">Need Review</span>');
-    expect(html).toContain('class="comment comment--fail">Fail</span>');
+    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
     expect(html).toContain('class="contribution-chart"');
     expect(html).not.toContain('<table class="contribution-table"');
     expect(html).not.toContain("fitWorksheetPages");
@@ -364,7 +364,7 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("grid-template-columns:.72fr 1.28fr");
-    expect(html).toContain('class="comment comment--fail">Fail</span>');
+    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-spec-line range-spec-line--lower"');
     expect(html).toContain('class="range-spec-line range-spec-line--upper"');
@@ -390,7 +390,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800]");
     expect(html).toContain("--signal-red:var(--p-dark-red)");
     expect(html).toContain("--signal-green:var(--p-green)");
-    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:10%;");
+    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
     expect(html).toContain("--raw-data:#0078D4");
     expect(html).toContain("--interpretation:#50E6FF");
     expect(html).toContain("--optimization:#D59DFF");
@@ -831,6 +831,66 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('class="range-spec-label range-spec-label--lower">LSL -0.150</b>');
     expect(html).toContain('class="range-spec-label range-spec-label--upper">USL 0.0500</b>');
     expect(html).toContain("<figcaption><span>Capability against target</span><strong>4 sigma · 1.33</strong></figcaption>");
+  });
+
+  it("keeps summary tables inside their borders and applies the governed visual hierarchy", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "## Document Overview",
+      "",
+      "| Field | Value |",
+      "|---|---|",
+      "| Source Workbook | Analysis.xlsx |",
+      "",
+      "## Workbook Summary",
+      "",
+      "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
+      "|---|---|---|---|",
+      "| Fail | [Analysis-A](#worksheet-1) | Loop A | Capability requires review. |",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | DWG-1 | DIM-1 | 1 mm | 0.1 mm | -0.1 mm | 1 | 4 | 1 mm | 0.1 mm | 0.025 mm | Capability: non_f0_process_category |",
+      "",
+      "## Process and Requirements",
+      "",
+      "| Check | Status | Assessment |",
+      "|---|---|---|",
+      "| ADO Traceability | COMPLETE | ADO work item updated. |",
+      "",
+      "## Tolerance Path Image",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "## Contributor Priorities",
+      "",
+      "## Specification Changes",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain(">CPK FAIL</span>");
+    expect(html).toContain(".comment--fail { color:var(--p-dark-red) !important;");
+    expect(html).toContain(".document-overview,.workbook-summary { align-self:stretch; box-sizing:border-box;");
+    expect(html).toContain("clip-path:inset(0 round 24px)");
+    expect(html).toContain("text-align:center; text-transform:uppercase;");
+    expect(html).toContain(".workbook-summary td:nth-child(2) a { color:var(--raw-data);");
+    expect(html).toContain(".factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:3%;");
+    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
+    expect(html).toContain(".analysis-panel--process>h2,.analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation);");
+    expect(html).toContain('<span class="step-label">Step 1</span>');
+    expect(html).toContain('<span class="step-label">Step 2</span>');
+    expect(html).toContain('<span class="step-label">Step 3</span>');
+    expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { height:220px;");
+    expect(html).toContain("--signal-green:var(--p-green)");
+    expect(html).toContain("--p-green:#9BF00B");
   });
 
   it("uses compact Factor rows after seven entries and normalizes unavailable guidance", () => {

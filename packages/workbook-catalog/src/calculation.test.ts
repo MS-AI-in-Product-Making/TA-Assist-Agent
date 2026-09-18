@@ -277,6 +277,20 @@ describe("createCalculation", () => {
     }).toThrow();
   });
 
+  it("preserves source whitespace in the calculated Factor name", () => {
+    const request = baseRequest(1);
+    request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!.fields.factorName = availableText(
+      "factor-1 ",
+      "Analysis-A!A2",
+    );
+
+    const result = createCalculation(request);
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    expect(result.factors[0]?.factorName).toBe("factor-1 ");
+  });
+
   it("returns referral recommendation for 11 factors while still computing WC/RSS", () => {
     const result = createCalculation(baseRequest(11));
 
