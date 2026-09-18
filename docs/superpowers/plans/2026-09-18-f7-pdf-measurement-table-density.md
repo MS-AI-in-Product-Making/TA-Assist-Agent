@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep the representative seven-row PDF Measurement Analysis table on one A4 landscape page while removing Source Mode and Readiness and applying the approved high-density layout.
+**Goal:** Keep both complete PDF Factor Setup tables on one A4 landscape page while removing four presentation-only columns and applying dynamic high-density layout.
 
-**Architecture:** Keep the governed `F7ReportProjection` unchanged and make a presentation-only change in the F7 PDF renderer. Wrap the Measurement Analysis heading and table in one best-fit print fragment, remove two rendered columns, and apply table-specific compact CSS while preserving row-safe fallback pagination for oversized tables.
+**Architecture:** Keep the governed `F7ReportProjection` unchanged and make a presentation-only change in the F7 PDF renderer. Wrap both Factor Setup tables in one forced single-page fragment, remove two rendered columns from each table, and derive a Chromium print `zoom` from Factor count with inverse width compensation so workflow-valid reports remain complete without clipping.
 
 **Tech Stack:** TypeScript, Vitest, HTML/CSS print layout, local Edge/Chrome PDF rendering, `pdfjs-dist` for page-text verification.
 
@@ -13,7 +13,8 @@
 ## File Structure
 
 - Modify `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts`: define the eight-column and compact print-layout behavior before implementation.
-- Modify `apps/f7-local-api/src/f7-report-pdf-renderer.ts`: remove the two presentation columns, add the best-fit wrapper, and apply Measurement Analysis-specific density styles.
+- Modify `apps/f7-local-api/src/f7-report-pdf-renderer.ts`: remove the two Measurement Analysis presentation columns and apply its compact density styles.
+- Extend the same two files for the approved forced-single-page increment: remove Setup Inputs traceability columns, wrap both tables, and add deterministic density scaling.
 - Do not modify report contracts, report projection, Web UI, or calculation code.
 
 ### Task 1: Define The Compact Eight-Column Contract
@@ -208,3 +209,138 @@ git diff --check HEAD~2..HEAD
 ```
 
 Expected: only the approved plan, renderer test, and renderer implementation are present; no generated PDF, visual-companion files, report contract, projection, or Web UI changes are tracked.
+
+### Task 4: Force Both Factor Setup Tables Onto One Page
+
+This task supersedes Task 2's Measurement-only best-fit wrapper and fallback-pagination behavior. The earlier task remains in the plan as implementation history; the final renderer behavior is the forced single-page contract below.
+
+**Files:**
+- Modify: `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts`
+- Modify: `apps/f7-local-api/src/f7-report-pdf-renderer.ts`
+- Inspect: generated temporary PDFs only; do not commit generated reports
+
+- [ ] **Step 1: Write failing assertions for the Setup Inputs columns and shared wrapper**
+
+Change the Setup Inputs heading expectation to:
+
+```ts
+expect(setupHeadings).toEqual([
+  "Item",
+  "Factor",
+  "Design Nominal",
+  "+Tol",
+  "-Tol",
+  "Long-term Safety Factor",
+  "Sigma Level",
+  "Distribution",
+]);
+expect(setupInputsTable).not.toContain("<th>Part Number</th>");
+expect(setupInputsTable).not.toContain("<th>DIM ID</th>");
+```
+
+Replace the Measurement-only wrapper assertion with a Factor Setup wrapper assertion that proves the wrapper contains the `Factor Setup` heading, `Setup Inputs` heading/table, and `Measurement Analysis` heading/table in that order. Assert that the wrapper has an inline `--factor-setup-zoom` and `--factor-setup-width`, and that `Dimension Chain` follows a forced page boundary outside the wrapper.
+
+- [ ] **Step 2: Write failing density-function tests**
+
+Export a presentation-only helper `factorSetupDensityStyle(factorCount: number)` and assert:
+
+```ts
+expect(factorSetupDensityStyle(7)).toBe("--factor-setup-zoom:1;--factor-setup-width:100%;");
+expect(factorSetupDensityStyle(14)).toBe("--factor-setup-zoom:0.5;--factor-setup-width:200%;");
+expect(factorSetupDensityStyle(100)).toBe("--factor-setup-zoom:0.07;--factor-setup-width:1428.571429%;");
+```
+
+The helper must reject non-positive or non-integer counts rather than emit invalid CSS.
+
+- [ ] **Step 3: Run the focused test and verify RED**
+
+```powershell
+npm exec vitest -- run --project node apps/f7-local-api/src/f7-report-pdf-renderer.test.ts
+```
+
+Expected: FAIL because Setup Inputs still renders ten columns, both tables do not share one wrapper, and the density helper does not exist.
+
+- [ ] **Step 4: Implement the eight-column Setup Inputs table**
+
+Change `renderFactorSetupInputs` to omit `partNumber` and `dimId` cells and headers. Retain Item, Factor, Design Nominal, +Tol, -Tol, Long-term Safety Factor, Sigma Level, and Distribution with existing escaping and number formatting.
+
+- [ ] **Step 5: Implement deterministic density and the forced single-page wrapper**
+
+Implement:
+
+```ts
+export function factorSetupDensityStyle(factorCount: number): string {
+  if (!Number.isInteger(factorCount) || factorCount < 1) {
+    throw new Error("Factor Setup density requires a positive integer Factor count.");
+  }
+  const zoom = Math.min(1, 7 / factorCount);
+  const width = 100 / zoom;
+  return `--factor-setup-zoom:${formatCssNumber(zoom)};--factor-setup-width:${formatCssNumber(width)}%;`;
+}
+```
+
+Use bounded deterministic decimal formatting without locale dependence. Refactor rendering so `renderFactorMeasurementAnalysis` returns its heading/table without a wrapper, and `renderEngineeringInputs` emits:
+
+```html
+<div class="factor-setup-wrapper" style="...">
+  <h3>Factor Setup</h3>
+  ...Setup Inputs...
+  ...Measurement Analysis...
+</div>
+<div class="dimension-chain-wrapper">
+  <h3>Dimension Chain</h3>
+  ...Dimension Chain...
+</div>
+```
+
+- [ ] **Step 6: Apply forced print CSS without clipping**
+
+Use:
+
+```css
+.factor-setup-wrapper {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  zoom: var(--factor-setup-zoom);
+  width: var(--factor-setup-width);
+}
+.dimension-chain-wrapper { break-before: page; page-break-before: always; }
+[data-factor-setup-inputs], [data-factor-measurement-analysis] {
+  table-layout: fixed;
+  font-size: 6.4pt;
+  line-height: 1.12;
+}
+[data-factor-setup-inputs] th, [data-factor-setup-inputs] td,
+[data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td {
+  padding: 2px 3px;
+}
+```
+
+Do not add fixed heights, `overflow: hidden`, row omission, or fallback pagination inside the Factor Setup wrapper.
+
+- [ ] **Step 7: Run focused checks and commit GREEN**
+
+```powershell
+npm exec vitest -- run --project node apps/f7-local-api/src/f7-report-pdf-renderer.test.ts
+npx eslint apps/f7-local-api/src/f7-report-pdf-renderer.ts apps/f7-local-api/src/f7-report-pdf-renderer.test.ts
+```
+
+Expected: PASS. Commit only the renderer and renderer test:
+
+```powershell
+git add apps/f7-local-api/src/f7-report-pdf-renderer.ts apps/f7-local-api/src/f7-report-pdf-renderer.test.ts
+git commit -m "fix(f7): force PDF factor setup onto one page"
+```
+
+- [ ] **Step 8: Verify real 7-Factor and 100-Factor PDFs**
+
+Use temporary tests under `local-test/F7_Test_Finetune_05/` or a temporary test block removed before commit. Render with the installed controlled browser and parse each PDF with `pdfjs-dist`. For both counts, assert exactly one page contains `Setup Inputs`, `Measurement Analysis`, every unique Setup Inputs row marker, and every unique Measurement Analysis row marker. Assert `Dimension Chain` starts on a later page. Verify all nonblank PDF text items remain within the page viewport and visually inspect both PDFs for omitted rows or clipping.
+
+- [ ] **Step 9: Run regression and build checks**
+
+```powershell
+npm exec vitest -- run --project node apps/f7-local-api/src/f7-report-pdf-renderer.test.ts apps/f7-local-api/src/server.test.ts
+npm run build -- --force
+```
+
+Expected: focused tests and build pass. Restore only build-generated tracked `dist` changes after recording `BUILD_OK`; the worktree must be clean except for ignored local verification PDFs.
