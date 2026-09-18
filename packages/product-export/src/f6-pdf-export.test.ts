@@ -891,7 +891,9 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { height:220px;");
     expect(html).toContain(".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { display:flex; align-items:baseline; white-space:nowrap;");
     expect(html).toContain(".step-label { flex:0 0 auto;");
+    expect(html).toContain(".document-overview th:first-child,.workbook-summary th:first-child { border-top-left-radius:22px;");
     expect(html).toContain(".document-overview th:last-child,.workbook-summary th:last-child { border-top-right-radius:22px;");
+    expect(html).toContain(".analysis-panel--contributors { padding:20px 22px 10px;");
     expect(html).toContain("--signal-green:var(--p-green)");
     expect(html).toContain("--p-green:#9BF00B");
   });

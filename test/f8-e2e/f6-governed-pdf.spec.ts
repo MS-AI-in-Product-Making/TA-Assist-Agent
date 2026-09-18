@@ -260,6 +260,9 @@ test("publishes one overview page plus one page per worksheet without overflow",
           && headerBox.right <= tableBox.right;
       })).toBe(true);
       expect(await table.evaluate((node) => getComputedStyle(node, "::before").textAlign)).toBe("center");
+      expect(await table.locator("th:first-child").evaluate((node) => (
+        Number.parseFloat(getComputedStyle(node).borderTopLeftRadius)
+      ))).toBeGreaterThan(0);
       expect(await table.locator("th:last-child").evaluate((node) => (
         Number.parseFloat(getComputedStyle(node).borderTopRightRadius)
       ))).toBeGreaterThan(0);
@@ -348,6 +351,10 @@ test("publishes one overview page plus one page per worksheet without overflow",
         && stepBox.top < headingBox.bottom
         && stepBox.bottom > headingBox.top;
     }))).toBe(true);
+    const headingTopCoordinates = await optimizationHeadings.evaluateAll((headings) => (
+      headings.map((heading) => heading.getBoundingClientRect().top)
+    ));
+    expect(Math.max(...headingTopCoordinates) - Math.min(...headingTopCoordinates)).toBeLessThanOrEqual(1);
 
     expect(await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
@@ -468,9 +475,16 @@ test("validates supplied governed report layout", async ({ page }, testInfo) => 
       && stepBox.bottom > headingBox.top;
   }))).toBe(true);
   for (const table of await page.locator(".document-overview,.workbook-summary").all()) {
+    expect(await table.locator("th:first-child").evaluate((node) => (
+      Number.parseFloat(getComputedStyle(node).borderTopLeftRadius)
+    ))).toBeGreaterThan(0);
     expect(await table.locator("th:last-child").evaluate((node) => (
       Number.parseFloat(getComputedStyle(node).borderTopRightRadius)
     ))).toBeGreaterThan(0);
   }
+  const headingTopCoordinates = await headings.evaluateAll((nodes) => (
+    nodes.map((heading) => heading.getBoundingClientRect().top)
+  ));
+  expect(Math.max(...headingTopCoordinates) - Math.min(...headingTopCoordinates)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath("meara-v4-report.png"), fullPage: true });
 });
