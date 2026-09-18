@@ -2,7 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { F7ReportFactor, F7ReportProjection } from "@ai-assist/contracts";
+import {
+  F7_MEASUREMENT_IMPORT_MAX_FACTORS,
+  type F7ReportFactor,
+  type F7ReportProjection,
+} from "@ai-assist/contracts";
 import { renderDimensionChainVisual, type DimensionChainVisual } from "./dimension-chain-visual.js";
 import {
   AssumptionResultsPdfQueueFullError,
@@ -23,7 +27,6 @@ const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
   retryDelay: 100,
 } as const;
 const MAX_QUEUED_RENDERS = 3;
-const FACTOR_SETUP_MAX_FACTORS = 100;
 const FACTOR_SETUP_SCALED_ROW_CAPACITY = 5.5;
 const DIMENSION_CHAIN_MIN_LENGTH = 36;
 const DIMENSION_CHAIN_MAX_LENGTH = 180;
@@ -103,7 +106,7 @@ function formatDensityNumber(value: number): string {
 }
 
 export function factorSetupDensityStyle(factorCount: number): string {
-  if (!Number.isInteger(factorCount) || factorCount <= 0 || factorCount > FACTOR_SETUP_MAX_FACTORS) {
+  if (!Number.isInteger(factorCount) || factorCount <= 0 || factorCount > F7_MEASUREMENT_IMPORT_MAX_FACTORS) {
     throw new Error("Factor count must be an integer between 1 and 100.");
   }
   const scale = factorCount <= 7 ? 1 : FACTOR_SETUP_SCALED_ROW_CAPACITY / (factorCount - 1);
@@ -348,12 +351,17 @@ function renderDimensionChain(report: F7ReportProjection): string {
 }
 
 function renderFactorSetupInputs(factors: readonly F7ReportFactor[]): string {
-  const rows = factors.map((factor, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${formatNumber(factor.designNominal)}</td><td>${formatNumber(factor.upperTolerance)}</td><td>${formatNumber(factor.lowerTolerance)}</td><td>${formatNumber(factor.longTermSafetyFactor)}</td><td>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td></tr>`).join("");
+  const rows = factors.map((factor, index) => `<tr><td>${index + 1}</td><td>${renderFactorSetupName(factor.factorName)}</td><td>${formatNumber(factor.designNominal)}</td><td>${formatNumber(factor.upperTolerance)}</td><td>${formatNumber(factor.lowerTolerance)}</td><td>${formatNumber(factor.longTermSafetyFactor)}</td><td>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td></tr>`).join("");
   return `<h4>Setup Inputs</h4><table data-factor-setup-inputs><thead><tr><th>Item</th><th>Factor</th><th>Design Nominal</th><th>+Tol</th><th>-Tol</th><th>Long-term Safety Factor</th><th>Sigma Level</th><th>Distribution</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function metricLine(label: string, value: string): string {
   return `<span class="metric-line"><span class="metric-label">${label}</span><span class="metric-value">${value}</span></span>`;
+}
+
+function renderFactorSetupName(name: string): string {
+  const scale = Math.min(1, 10 / Math.max(1, name.length));
+  return `<span class="factor-setup-name" data-factor-name-length="${name.length}" style="transform:scaleX(${formatDensityNumber(scale)});width:${formatDensityNumber(100 / scale)}%;">${escapeHtml(name)}</span>`;
 }
 
 function renderAnalysisMetric(
@@ -380,7 +388,7 @@ function renderFactorMeasurementAnalysis(factors: readonly F7ReportFactor[]): st
       : measured === undefined
         ? `<span class="metric-stack">${metricLine("Setup", `${options?.tolerance ? "±" : ""}${formatNumber(setup)}`)}${metricLine("Actual", unavailableMetric.actual)}${metricLine("Δ", unavailableMetric.delta)}</span>`
         : renderAnalysisMetric(setup, measured, options);
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(factor.factorName)}</td><td>${metric(factor.setupMean, comparison?.mean)}</td><td>${metric(factor.setupTolerance, comparison?.tolerance, { tolerance: true })}</td><td>${metric(factor.setupOneSigma, comparison?.oneSigma)}</td><td>${metric(factor.setupCpk, comparison?.cpk)}</td><td>${formatNumber(factor.percentContributionToSigma * 100)}%</td><td>${formatNumber(factor.sampleCount, 0)}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${renderFactorSetupName(factor.factorName)}</td><td>${metric(factor.setupMean, comparison?.mean)}</td><td>${metric(factor.setupTolerance, comparison?.tolerance, { tolerance: true })}</td><td>${metric(factor.setupOneSigma, comparison?.oneSigma)}</td><td>${metric(factor.setupCpk, comparison?.cpk)}</td><td>${formatNumber(factor.percentContributionToSigma * 100)}%</td><td>${formatNumber(factor.sampleCount, 0)}</td></tr>`;
   }).join("");
   return `<h4>Measurement Analysis</h4><table data-factor-measurement-analysis><thead><tr><th>Item</th><th>Factor</th><th>Mean</th><th>Tolerance</th><th>1σ</th><th>Cpk</th><th>% Contribution to σ</th><th>Sample Count</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -693,6 +701,8 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     [data-factor-setup-inputs] th, [data-factor-setup-inputs] td, [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { border-width: var(--factor-setup-border-width); }
     [data-factor-setup-inputs] tr, [data-factor-measurement-analysis] tr { break-inside: avoid; page-break-inside: avoid; }
     [data-factor-setup-inputs] th:first-child, [data-factor-setup-inputs] td:first-child, [data-factor-measurement-analysis] th:first-child, [data-factor-measurement-analysis] td:first-child { width: 4%; text-align: center; }
+    [data-factor-setup-inputs] td:nth-child(2), [data-factor-measurement-analysis] td:nth-child(2) { white-space: nowrap; }
+    .factor-setup-name { display: block; overflow: visible; white-space: nowrap; transform-origin: left top; }
     [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { text-align: right; }
     [data-factor-measurement-analysis] th:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] td:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] th:nth-child(8), [data-factor-measurement-analysis] td:nth-child(8) { text-align: right; }
     .metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }

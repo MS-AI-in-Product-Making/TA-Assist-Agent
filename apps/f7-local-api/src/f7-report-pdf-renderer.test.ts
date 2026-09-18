@@ -512,9 +512,17 @@ describe("F7 report PDF renderer", () => {
       ...report,
       factors,
     });
+    const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
+    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
     const dimensionChainPages = [...html.matchAll(/<div data-dimension-chain-page[^>]*>[\s\S]*?<\/svg><\/div>/g)]
       .map((match) => match[0]);
 
+    expect(setupInputsTable).toContain(`data-factor-name-length="${oversizedFactorName.length}"`);
+    expect(measurementAnalysisTable).toContain(`data-factor-name-length="${oversizedFactorName.length}"`);
+    expect(setupInputsTable).toContain("transform:scaleX(0.003226);width:31000%;");
+    expect(measurementAnalysisTable).toContain("transform:scaleX(0.003226);width:31000%;");
+    expect(html).toContain(".factor-setup-name { display: block; overflow: visible; white-space: nowrap; transform-origin: left top; }");
+    expect(html).toContain("[data-factor-setup-inputs] td:nth-child(2), [data-factor-measurement-analysis] td:nth-child(2) { white-space: nowrap; }");
     expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
     expect(html).toContain("thead { display: table-header-group; }");
     expect(html).toContain("[data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: var(--factor-setup-table-font-size); line-height: 1.12; }");
@@ -567,6 +575,20 @@ describe("F7 report PDF renderer", () => {
     expect(dimensionChainPages.join("")).not.toMatch(/(?:NaN|-?Infinity)/);
   });
 
+  it.each(["W".repeat(300), "测".repeat(300)])("fits complete wide Factor names without wrapping", (factorName) => {
+    const report = reportFixture();
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      factors: [{ ...report.factors[0]!, factorName }],
+    });
+
+    expect(html.match(/data-factor-name-length="300"/g)).toHaveLength(2);
+    expect(html.match(/transform:scaleX\(0\.033333\);width:3000%;/g)).toHaveLength(2);
+    for (const table of ["factor-setup-inputs", "factor-measurement-analysis"]) {
+      expect(html.match(new RegExp(`<table data-${table}>[\\s\\S]*?${factorName}[\\s\\S]*?<\\/table>`))).toBeTruthy();
+    }
+  });
+
   it("compresses the Dimension Chain when factor magnitudes differ by more than eight times", () => {
     const report = reportFixture();
     const baseFactor = report.factors[0]!;
@@ -597,8 +619,10 @@ describe("F7 report PDF renderer", () => {
     const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
     const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
     const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
-      .flatMap((row) => [...row[1]!.matchAll(/<td>([^<]+)<\/td>/g)].map((cell) => cell[1] ?? ""))
-      .filter((_, index) => index % 8 === 0 || index % 8 >= 2 && index % 8 <= 6);
+      .flatMap((row) => [...row[1]!.matchAll(/<td>([\s\S]*?)<\/td>/g)]
+        .map((cell, index) => ({ index, value: (cell[1] ?? "").replace(/<[^>]+>/g, "") })))
+      .filter(({ index }) => index === 0 || index >= 2 && index <= 6)
+      .map(({ value }) => value);
     const measurementNumericValues = [...(measurementAnalysisTable ?? "").matchAll(/<span class="metric-value">([^<]+)<\/span>/g)]
       .map((match) => match[1] ?? "");
 

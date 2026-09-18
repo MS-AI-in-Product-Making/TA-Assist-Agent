@@ -3,7 +3,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch, type DeepReadonly } from "vue";
 import { ArrowLeftRight, ArrowRightLeft, LoaderCircle } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
-import type { Distribution } from "@ai-assist/contracts";
+import { F7_MEASUREMENT_IMPORT_MAX_FACTORS, type Distribution } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
 import {
   buildConfirmedEngineeringEvidence,
@@ -300,6 +300,7 @@ function nextUserFactorId(): string {
 }
 
 function addFactor(afterFactor?: DeepReadonly<F7FactorState>): void {
+  if (activeFactors.value.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS) return;
   const factorCandidateId = nextUserFactorId();
   const sourceRow = Math.max(0, ...activeFactors.value.map((factor) => factor.factorCandidate.sourceRow)) + 1;
   factorNames[factorCandidateId] = "";
@@ -1173,7 +1174,7 @@ function onModeChange(factorId: string, event: Event): void {
           type="button"
           class="factor-add-button"
           data-add-factor
-          :disabled="busy"
+          :disabled="busy || activeFactors.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS"
           @click="addFactor()"
         >
           + Add Factor
@@ -1282,7 +1283,7 @@ function onModeChange(factorId: string, event: Event): void {
                     class="factor-row-control factor-insert-control"
                     :aria-label="`Add factor after ${factorNameFor(factor) || 'new factor'}`"
                     :title="`Add factor after ${factorNameFor(factor) || 'new factor'}`"
-                    :disabled="busy"
+                    :disabled="busy || activeFactors.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS"
                     @click="addFactor(factor)"
                   >+</button>
                 </div>
@@ -1318,6 +1319,7 @@ function onModeChange(factorId: string, event: Event): void {
                   type="text"
                   class="factor-name-input"
                   aria-label="New factor name"
+                  maxlength="300"
                   :disabled="busy"
                 >
                 <div v-else>{{ factorNameFor(factor) }}</div>

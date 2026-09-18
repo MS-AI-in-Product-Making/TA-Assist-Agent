@@ -4,7 +4,7 @@
 
 **Goal:** Keep both complete PDF Factor Setup tables on one A4 landscape page while removing four presentation-only columns and applying dynamic high-density layout.
 
-**Architecture:** Keep the governed `F7ReportProjection` unchanged and make a presentation-only change in the F7 PDF renderer. Wrap both Factor Setup tables in one forced single-page fragment, remove two rendered columns from each table, and derive a Chromium print `zoom` from Factor count with inverse width compensation so workflow-valid reports remain complete without clipping.
+**Architecture:** Wrap both Factor Setup tables in one forced single-page fragment, remove two rendered columns from each table, and derive actual print dimensions from Factor count so workflow-valid reports remain complete without clipping. Align the final report Factor-name limit with the existing 300-character governed input limit and horizontally fit complete names inside the two Factor Setup tables.
 
 **Tech Stack:** TypeScript, Vitest, HTML/CSS print layout, local Edge/Chrome PDF rendering, `pdfjs-dist` for page-text verification.
 
@@ -15,7 +15,9 @@
 - Modify `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts`: define the eight-column and compact print-layout behavior before implementation.
 - Modify `apps/f7-local-api/src/f7-report-pdf-renderer.ts`: remove the two Measurement Analysis presentation columns and apply its compact density styles.
 - Extend the same two files for the approved forced-single-page increment: remove Setup Inputs traceability columns, wrap both tables, and add deterministic density scaling.
-- Do not modify report contracts, report projection, Web UI, or calculation code.
+- Modify `packages/contracts/src/f7-contracts.ts` and its test to enforce the governed 300-character Factor-name maximum throughout the Factor lifecycle and the existing 100-Factor resource maximum on sessions and final reports.
+- Modify `apps/f7-web/src/components/FactorInputTable.vue` and its tests so user-added Factor names expose the same 300-character input boundary and every insertion path stops at 100 Factors.
+- Do not modify calculation code.
 
 ### Task 1: Define The Compact Eight-Column Contract
 
@@ -238,19 +240,11 @@ expect(setupInputsTable).not.toContain("<th>Part Number</th>");
 expect(setupInputsTable).not.toContain("<th>DIM ID</th>");
 ```
 
-Replace the Measurement-only wrapper assertion with a Factor Setup wrapper assertion that proves the wrapper contains the `Factor Setup` heading, `Setup Inputs` heading/table, and `Measurement Analysis` heading/table in that order. Assert that the wrapper has an inline `--factor-setup-zoom` and `--factor-setup-width`, and that `Dimension Chain` follows a forced page boundary outside the wrapper.
+Replace the Measurement-only wrapper assertion with a Factor Setup wrapper assertion that proves the wrapper contains the `Factor Setup` heading, `Setup Inputs` heading/table, and `Measurement Analysis` heading/table in that order. Assert that the wrapper has inline density dimensions and that `Dimension Chain` follows a forced page boundary outside the wrapper.
 
 - [ ] **Step 2: Write failing density-function tests**
 
-Export a presentation-only helper `factorSetupDensityStyle(factorCount: number)` and assert:
-
-```ts
-expect(factorSetupDensityStyle(7)).toBe("--factor-setup-zoom:1;--factor-setup-width:100%;");
-expect(factorSetupDensityStyle(14)).toBe("--factor-setup-zoom:0.5;--factor-setup-width:200%;");
-expect(factorSetupDensityStyle(100)).toBe("--factor-setup-zoom:0.07;--factor-setup-width:1428.571429%;");
-```
-
-The helper must reject non-positive or non-integer counts rather than emit invalid CSS.
+Export a presentation-only helper `factorSetupDensityStyle(factorCount: number)` and assert the exact table font, label font, cell padding, heading size, margins, metric gaps, and border width for 1, 7, and 100 Factors. The helper must reject values outside the governed 1-100 range and must keep printed text at or above `0.5pt`.
 
 - [ ] **Step 3: Run the focused test and verify RED**
 
@@ -266,20 +260,7 @@ Change `renderFactorSetupInputs` to omit `partNumber` and `dimId` cells and head
 
 - [ ] **Step 5: Implement deterministic density and the forced single-page wrapper**
 
-Implement:
-
-```ts
-export function factorSetupDensityStyle(factorCount: number): string {
-  if (!Number.isInteger(factorCount) || factorCount < 1) {
-    throw new Error("Factor Setup density requires a positive integer Factor count.");
-  }
-  const zoom = Math.min(1, 7 / factorCount);
-  const width = 100 / zoom;
-  return `--factor-setup-zoom:${formatCssNumber(zoom)};--factor-setup-width:${formatCssNumber(width)}%;`;
-}
-```
-
-Use bounded deterministic decimal formatting without locale dependence. Refactor rendering so `renderFactorMeasurementAnalysis` returns its heading/table without a wrapper, and `renderEngineeringInputs` emits:
+Use bounded deterministic decimal formatting without locale dependence. Scale real CSS dimensions instead of using Chromium `zoom`. Refactor rendering so `renderFactorMeasurementAnalysis` returns its heading/table without a wrapper, and `renderEngineeringInputs` emits:
 
 ```html
 <div class="factor-setup-wrapper" style="...">
@@ -301,22 +282,20 @@ Use:
 .factor-setup-wrapper {
   break-inside: avoid;
   page-break-inside: avoid;
-  zoom: var(--factor-setup-zoom);
-  width: var(--factor-setup-width);
 }
 .dimension-chain-wrapper { break-before: page; page-break-before: always; }
 [data-factor-setup-inputs], [data-factor-measurement-analysis] {
   table-layout: fixed;
-  font-size: 6.4pt;
+  font-size: var(--factor-setup-table-font-size);
   line-height: 1.12;
 }
 [data-factor-setup-inputs] th, [data-factor-setup-inputs] td,
 [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td {
-  padding: 2px 3px;
+  padding: var(--factor-setup-cell-y) var(--factor-setup-cell-x);
 }
 ```
 
-Do not add fixed heights, `overflow: hidden`, row omission, or fallback pagination inside the Factor Setup wrapper.
+Keep complete Factor names on one line and horizontally scale them to the Factor column using a conservative capacity for wide glyphs, including CJK text. Do not add fixed heights, `overflow: hidden`, text truncation, row omission, or fallback pagination inside the Factor Setup wrapper.
 
 - [ ] **Step 7: Run focused checks and commit GREEN**
 

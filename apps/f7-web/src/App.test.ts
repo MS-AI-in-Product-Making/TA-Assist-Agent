@@ -1717,7 +1717,7 @@ describe("F7 workbench shell", () => {
 
     await addedRow.get("button[aria-label='Move new factor up']").trigger("click");
     rows = wrapper.findAll(".factor-table tbody tr");
-    expect(rows[0]!.find("input[aria-label='New factor name']").exists()).toBe(true);
+    expect(rows[0]!.find("input[aria-label='New factor name']").attributes("maxlength")).toBe("300");
     expect(rows[0]!.get("button[aria-label='Move new factor up']").attributes("disabled")).toBeDefined();
     expect(rows[1]!.get("button[aria-label='Move C-cover height down']").attributes("disabled")).toBeDefined();
 

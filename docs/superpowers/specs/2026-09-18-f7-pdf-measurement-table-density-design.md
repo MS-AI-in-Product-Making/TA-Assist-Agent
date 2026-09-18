@@ -61,23 +61,24 @@ Both tables use the approved high-density option B:
 - Compact metric-label text sized below the table body without dropping labels.
 - Existing colors, borders, number formatting, escaping, and A4 landscape page size.
 
-Seven Factors use the approved option B dimensions without additional scaling. Higher Factor counts use deterministic renderer-owned density tiers that reduce the entire Factor Setup block through Chromium print `zoom`. The most compact tier supports the contract maximum of 100 Factors. Extreme Factor counts remain complete but may require electronic zoom to read; completeness and one-page output take precedence over print-size readability because the user explicitly requires no pagination.
+Seven Factors use the approved option B dimensions without additional scaling. Higher Factor counts use deterministic renderer-owned density values that reduce actual font sizes, padding, margins, gaps, and border widths before Chromium print layout. The most compact values support the contract maximum of 100 Factors while keeping text at or above the browser's reliable `0.5pt` print floor. Extreme Factor counts remain complete but may require electronic magnification to read; completeness and one-page output take precedence over print-size readability because the user explicitly requires no pagination.
 
 ## Pagination
 
-The renderer treats the `Factor Setup` heading and both complete tables as one forced single-page print fragment. It derives a density tier from `report.factors.length`, places that tier on the wrapper, and applies a tested `zoom` value before Chromium performs print layout. The wrapper and both tables use `break-inside: avoid` and `page-break-inside: avoid`; no fallback row pagination is permitted inside this block.
+The renderer treats the `Factor Setup` heading and both complete tables as one forced single-page print fragment. It derives bounded layout dimensions from `report.factors.length` and places them on the wrapper before Chromium performs print layout. The wrapper and both tables use `break-inside: avoid` and `page-break-inside: avoid`; no fallback row pagination is permitted inside this block. Governed sessions and reports are limited to 100 Factors, and governed Factor names are limited to 300 characters. Inside the two Factor Setup tables, each complete name remains on one line and is horizontally scaled using a conservative wide-glyph allowance without truncation; the Dimension Chain retains its independent complete multiline name rendering.
 
 The Dimension Chain begins on the next page so its layout cannot force either Factor Setup table to split. The renderer must not use fixed-height clipping or overflow suppression to satisfy the page-count requirement.
 
 ## Architecture
 
-The change stays in `apps/f7-local-api/src/f7-report-pdf-renderer.ts`. The renderer omits the four presentation columns across the two tables, derives a density tier from Factor count, and adds compact Factor Setup CSS plus one wrapper that owns forced single-page behavior. The server-authoritative `F7ReportProjection` and all source calculations remain unchanged.
+The presentation change stays in `apps/f7-local-api/src/f7-report-pdf-renderer.ts`. The renderer omits the four presentation columns across the two tables, derives density values from Factor count, and adds compact Factor Setup CSS plus one wrapper that owns forced single-page behavior. `f7ReportFactorSchema` aligns its Factor-name maximum with the existing governed input schemas; all source calculations remain unchanged.
 
 Renderer tests in `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts` define both eight-column contracts, verify that removed traceability and status text is absent from the tables, and assert the compact print CSS. A browser-rendered PDF check verifies that both tables and all seven representative Factor rows occupy one page and that no content is clipped.
 
 ## Error Handling And Governance
 
 - PDF generation remains server-authoritative.
+- Candidate, user-added confirmation, evidence, final report, and Web editing boundaries consistently enforce the governed 300-character Factor-name maximum. Session, report, and Web insertion boundaries consistently enforce the governed 100-Factor maximum.
 - The report contract continues to validate source mode, readiness, warning state, and sample count even when selected fields are not displayed.
 - Existing HTML escaping, finite-number formatting, local browser rendering, temporary-file cleanup, queue limits, and `%PDF-` signature validation remain unchanged.
 - Reports in the current workflow-supported range of 1 through 100 Factors always retain every Factor row. Extreme row counts trade physical print readability for single-page completeness; they never paginate or clip.
