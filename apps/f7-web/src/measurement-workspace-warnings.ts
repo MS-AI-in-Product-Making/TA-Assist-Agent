@@ -1,4 +1,7 @@
-import { evaluateFactorMeasurementWarnings } from "@ai-assist/f7-statistics";
+import {
+  evaluateFactorMeasurementWarnings,
+  type FactorMeasurementDisposition,
+} from "@ai-assist/f7-statistics";
 
 interface MeasurementWarningFactor {
   readonly evidence?: {
@@ -9,7 +12,7 @@ interface MeasurementWarningFactor {
     readonly dataset?: {
       readonly observations: ReadonlyArray<{
         readonly value: number;
-        readonly disposition: string;
+        readonly disposition: FactorMeasurementDisposition;
       }>;
     } | undefined;
   } | undefined;
