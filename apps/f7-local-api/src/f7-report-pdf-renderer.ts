@@ -664,7 +664,7 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { width: auto; }
     [data-factor-setup-inputs] th:nth-child(n+5):nth-child(-n+9), [data-factor-setup-inputs] td:nth-child(n+5):nth-child(-n+9), [data-factor-measurement-analysis] th:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] td:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] th:nth-child(9), [data-factor-measurement-analysis] td:nth-child(9) { text-align: right; }
     .metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }
-    .metric-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px; white-space: nowrap; }
+    .metric-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px; white-space: normal; overflow-wrap: anywhere; }
     .metric-label { color: #5c6b76; font-size: 7.2pt; font-weight: 600; }
     .metric-value { text-align: right; font-variant-numeric: tabular-nums; }
     .status-label { display: inline-block; width: fit-content; padding: 1px 4px; border-radius: 2px; font-size: 7.2pt; font-weight: 700; white-space: nowrap; }

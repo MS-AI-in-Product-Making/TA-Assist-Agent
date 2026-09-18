@@ -572,6 +572,17 @@ describe("F7 report PDF renderer", () => {
     expect(measurementNumericValues.every((value) => value.length <= 16)).toBe(true);
   });
 
+  it("allows measurement metric lines to wrap within fixed table cells", () => {
+    const html = renderF7ReportPdfHtml(reportFixture());
+    const metricLineRule = html.match(/\.metric-line\s*\{([^}]*)\}/)?.[1];
+
+    expect(metricLineRule).toBeDefined();
+    expect(metricLineRule).toMatch(/display:\s*grid/);
+    expect(metricLineRule).toMatch(/white-space:\s*normal/);
+    expect(metricLineRule).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(metricLineRule).not.toMatch(/white-space:\s*nowrap/);
+  });
+
   it("renders em dashes for absent optional measured metrics without inventing values", () => {
     const report = reportFixture();
     const measuredFactor = report.factors[0]!;
