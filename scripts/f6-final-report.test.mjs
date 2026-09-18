@@ -1582,7 +1582,7 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
-    expect(report.markdown).toContain("| Need Review | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
+    expect(report.markdown).toContain("| Missing Info | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
     expect(report.markdown).toContain("[Analysis-B](#worksheet-2)");
     expect(report.markdown).toContain('<a id="worksheet-1"></a>');
@@ -1647,7 +1647,7 @@ describe("createF6FinalReportProjection v3", () => {
     const readySection = report.markdown.slice(report.markdown.indexOf("# 3-1 Worksheet: Analysis-A"));
 
     expect(readySection).toContain("| Check | Status | Assessment |");
-    expect(readySection).toContain("| Analysis Method | WARNING |");
+    expect(readySection).toContain("| Analysis Method | COMPLETE |");
     expect(readySection).toContain("| Input Completeness | COMPLETE |");
     expect(readySection).toContain("| Output Completeness | COMPLETE |");
     expect(readySection).toContain("| Tolerance Validity | COMPLETE |");
@@ -2048,15 +2048,36 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
       expect(markdown).toContain("subject to ME and requirement-owner approval");
     } else if (selectedStatus === "step1_centered" || selectedStatus === "step2_tolerance_optimized") {
       expect(markdown).toContain("## Specification Changes");
-      expect(markdown).toContain("Proposed Range: No change proposed");
-      expect(markdown).toContain("Retain the current specification range");
-    } else {
+      expect(markdown).toContain("Engineering approval required");
+      expect(markdown).toContain("Adjust the specification range from");
+      expect(markdown).toContain("subject to ME and requirement-owner approval");
+      expect(markdown).not.toContain("Proposed Range: No change proposed");
+    } else if (selectedStatus === "no_validated_optimized_result") {
       expect(markdown).toContain("## Specification Changes");
-      expect(markdown).toContain("Proposed Range: No validated specification proposal");
+      expect(markdown).toContain("Engineering approval required");
+      expect(markdown).toContain("Adjust the specification range from");
+      expect(markdown).toContain("subject to ME and requirement-owner approval");
     }
     if (selectedStatus === "no_validated_optimized_result") {
       expect(markdown).toContain("Selected Result: No validated optimized result");
     }
+  });
+
+  it("renders a specification alternative when lower Cpk equals the target FAIL boundary", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "step2_tolerance_optimized");
+    const worksheet = inputs.f6Optimization.worksheets[0];
+    const targetCpk = worksheet.baselineResult.capability.targetCpk;
+    worksheet.baselineResult.capability.lowerCpk = targetCpk;
+    worksheet.baselineResult.capability.cpk = targetCpk;
+    worksheet.trigger.lowerCpk = targetCpk;
+    worksheet.trigger.failedSides = [];
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+
+    expect(report.markdown).toContain("## Specification Changes");
+    expect(report.markdown).toContain("Adjust the specification range from");
+    expect(report.markdown).toContain("Engineering approval required");
   });
 
   it("normalizes disclosure variants out of interpretation text and preserves a single italic disclosure", () => {

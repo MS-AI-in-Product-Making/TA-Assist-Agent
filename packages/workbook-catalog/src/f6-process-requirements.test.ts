@@ -304,9 +304,10 @@ describe("createF6ProcessChecks", () => {
   });
 
   it.each([
-    [3, "WARNING", "Worst Case"],
-    [4, "COMPLETE", "suitable"],
-    [11, "WARNING", "3D Variation Analysis"],
+    [3, "COMPLETE", "Worst Case"],
+    [4, "COMPLETE", "RSS"],
+    [10, "COMPLETE", "RSS"],
+    [11, "WARNING", "Monte Carlo VA"],
   ] as const)("maps factor count %i deterministically", (factorCount, status, phrase) => {
     const check = findCheck(createF6ProcessChecks(fixture({ factorCount })), "analysis-method");
     expect(check).toMatchObject({ status });
@@ -329,7 +330,10 @@ describe("createF6ProcessChecks", () => {
     expect(findCheck(checks, "input-completeness").details).toEqual([
       "Factor 1 row 2 missing required fields: upperTolerance, distribution.",
     ]);
-    expect(findCheck(checks, "drawing-dim-governance")).toMatchObject({ status: "WARNING" });
+    expect(findCheck(checks, "drawing-dim-governance")).toMatchObject({
+      status: "WARNING",
+      summary: "Missing Drawing Number/DIM ID info",
+    });
     expect(findCheck(checks, "drawing-dim-governance").details).toEqual([
       "Factor 1 row 2 missing identifiers: drawingNumber, dimCharacteristicId.",
       "Factor 1 row 2 governance status: needs_governance.",

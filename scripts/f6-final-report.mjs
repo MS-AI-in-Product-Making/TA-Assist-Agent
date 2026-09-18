@@ -19,7 +19,7 @@ import {
   createCalculationRequestFromF4Handoff,
   createF4Handoff,
 } from "../packages/workbook-catalog/dist/f4-handoff.js";
-import { createF6ProcessChecks, createF6ReportProjection, F6_DISPOSITION_RANK, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
+import { createF6ProcessChecks, createF6ReportProjection, F6_DISPOSITION_RANK, solveOneSidedSpecificationLimits, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import {
   renderCalculationClaims,
@@ -710,6 +710,28 @@ function specificationRangeText(lower, upper, unit) {
   return `[${fixedEngineering(lower, unit)}, ${fixedEngineering(upper, unit)}]`;
 }
 
+function v4SpecificationAlternative(worksheet) {
+  const baseline = worksheet.f6Worksheet.baselineResult;
+  const selected = worksheet.f6Worksheet.selectedResult;
+  if (selected.status === "step3_specification_relaxed_pending_approval") {
+    return selected.snapshot.capability;
+  }
+  const failedSides = [
+    ...(baseline.capability.lowerCpk <= baseline.capability.targetCpk ? ["lower"] : []),
+    ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upper"] : []),
+  ];
+  if (failedSides.length === 0) return undefined;
+  const solved = solveOneSidedSpecificationLimits({
+    mean: baseline.system.mean,
+    rssSigma: baseline.system.rssSigma,
+    targetCpk: baseline.capability.targetCpk,
+    lowerSpecLimit: baseline.capability.lowerSpecLimit,
+    upperSpecLimit: baseline.capability.upperSpecLimit,
+    failedSides,
+  });
+  return solved.status === "completed" ? solved : undefined;
+}
+
 function renderV4OptimizationModules(worksheet, unit, catalog) {
   const baseline = worksheet.f6Worksheet.baselineResult;
   const selected = worksheet.f6Worksheet.selectedResult.snapshot;
@@ -738,14 +760,15 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
   ])));
   lines.push("", catalog.topThree);
 
-  const failedSides = [
-    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
-      && !nearlyEqual(baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit)
-      ? ["lower", baseline.capability.lowerSpecLimit, selected.capability.lowerSpecLimit]
+  const specificationAlternative = v4SpecificationAlternative(worksheet);
+  const changedSides = [
+    specificationAlternative !== undefined
+      && !nearlyEqual(baseline.capability.lowerSpecLimit, specificationAlternative.lowerSpecLimit)
+      ? ["lower", baseline.capability.lowerSpecLimit, specificationAlternative.lowerSpecLimit]
       : undefined,
-    worksheet.f6Worksheet.selectedResult.status === "step3_specification_relaxed_pending_approval"
-      && !nearlyEqual(baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit)
-      ? ["upper", baseline.capability.upperSpecLimit, selected.capability.upperSpecLimit]
+    specificationAlternative !== undefined
+      && !nearlyEqual(baseline.capability.upperSpecLimit, specificationAlternative.upperSpecLimit)
+      ? ["upper", baseline.capability.upperSpecLimit, specificationAlternative.upperSpecLimit]
       : undefined,
   ].filter(Boolean);
   if (baseline.capability.status === "FAIL") {
@@ -759,16 +782,16 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
       baseline.capability.upperSpecLimit,
       unit,
     );
-    if (failedSides.length > 0) {
+    if (changedSides.length > 0) {
       const proposedRange = specificationRangeText(
-        selected.capability.lowerSpecLimit,
-        selected.capability.upperSpecLimit,
+        specificationAlternative.lowerSpecLimit,
+        specificationAlternative.upperSpecLimit,
         unit,
       );
       lines.push(
         `| ${catalog.side} | ${catalog.currentLimit} | ${catalog.proposedLimit} | ${catalog.targetCpk} | ${catalog.approval} |`,
         "|---|---:|---:|---:|---|",
-        ...failedSides.map(([side, currentLimit, proposedLimit]) => row([
+        ...changedSides.map(([side, currentLimit, proposedLimit]) => row([
           side,
           numberText(currentLimit),
           numberText(proposedLimit),
@@ -777,12 +800,6 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
         ])),
         "",
         `- Summary: Adjust the specification range from ${currentRange} to ${proposedRange}, subject to ME and requirement-owner approval.`,
-      );
-    } else if (["step1_centered", "step2_tolerance_optimized"].includes(worksheet.f6Worksheet.selectedResult.status)) {
-      lines.push(
-        `- Current Range: ${currentRange}`,
-        "- Proposed Range: No change proposed",
-        `- Summary: Retain the current specification range ${currentRange}; ${v4SelectedStatusText(worksheet.f6Worksheet.selectedResult.status)} meets Target Cpk without a requirement change.`,
       );
     } else {
       lines.push(
@@ -1254,7 +1271,7 @@ function dispositionText(value) {
 
 function dispositionComment(value) {
   if (value === "PASS") return "Pass";
-  if (value === "CONDITIONAL_PASS") return "Need Review";
+  if (value === "CONDITIONAL_PASS") return "Missing Info";
   return "Fail";
 }
 
