@@ -492,10 +492,14 @@ export function createF7ReportProjection(
   }
 
   const manifestByFactorId = new Map(simulation.factorManifest.map((entry) => [entry.factorId, entry]));
-  const setupVarianceTotal = parsedSnapshot.factors.reduce((total, factor) => {
+  const setupSigmas = parsedSnapshot.factors.flatMap((factor) => {
     const oneSigma = factor.evidence?.oneSigma;
-    return oneSigma === undefined ? total : total + oneSigma ** 2;
-  }, 0);
+    return oneSigma !== undefined && Number.isFinite(oneSigma) && oneSigma > 0 ? [oneSigma] : [];
+  });
+  const maxSetupSigma = Math.max(0, ...setupSigmas);
+  const setupWeightTotal = maxSetupSigma === 0
+    ? 0
+    : setupSigmas.reduce((total, oneSigma) => total + (oneSigma / maxSetupSigma) ** 2, 0);
   const factors = parsedSnapshot.factors.map((factorState) => {
     const evidence = factorState.evidence;
     const sourceMode = factorState.sourceMode;
@@ -538,7 +542,6 @@ export function createF7ReportProjection(
       && factorState.measurementPasteResult?.status === "ready"
       ? factorState.measurementPasteResult.dataset
       : undefined;
-    const warningDataset = factorState.measurementPasteResult?.dataset;
     const measuredComparison = readyMeasuredDataset === undefined
       ? undefined
       : buildFactorMeasuredComparison({
@@ -569,12 +572,12 @@ export function createF7ReportProjection(
             ? {}
             : { cpk: projectComparisonMetric(measuredComparison.cpk)! }),
         };
-    const measurementWarning = warningDataset === undefined
+    const measurementWarning = readyMeasuredDataset === undefined
       ? false
       : hasFactorMeasurementWarning(evaluateFactorMeasurementWarnings({
           lowerSpecLimit: evidence.lowerSpecLimit,
           upperSpecLimit: evidence.upperSpecLimit,
-          observations: warningDataset.observations,
+          observations: readyMeasuredDataset.observations,
         }));
     return {
       factorId: evidence.factorId,
@@ -591,9 +594,9 @@ export function createF7ReportProjection(
       setupTolerance: evidence.tolerance,
       setupOneSigma: evidence.oneSigma,
       setupCpk: evidence.sigmaLevel / 3,
-      percentContributionToSigma: setupVarianceTotal === 0
+      percentContributionToSigma: maxSetupSigma === 0 || setupWeightTotal === 0
         ? 0
-        : evidence.oneSigma ** 2 / setupVarianceTotal,
+        : (evidence.oneSigma / maxSetupSigma) ** 2 / setupWeightTotal,
       ...(measurementComparison === undefined ? {} : { measurementComparison }),
       sampleCount: readyMeasuredDataset?.observations.filter(({ disposition }) => disposition === "included").length ?? 0,
       readiness: sourceMode === "BASELINE_ASSUMPTION" || readyMeasuredDataset !== undefined

@@ -2202,7 +2202,55 @@ export const f7ReportFactorSchema = z
     sourceReferences: z.array(z.string().min(1)).min(1),
   })
   .strict()
-  .superRefine(requireValidEditableFactorSpecification);
+  .superRefine((factor, context) => {
+    requireValidEditableFactorSpecification(factor, context);
+    if (factor.readiness === "pending") {
+      if (factor.sampleCount !== 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness requires sampleCount to be zero",
+          path: ["sampleCount"],
+        });
+      }
+      if (factor.measurementComparison !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness cannot include measurementComparison",
+          path: ["measurementComparison"],
+        });
+      }
+      if (factor.measurementWarning) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pending readiness cannot include measurementWarning",
+          path: ["measurementWarning"],
+        });
+      }
+    }
+    if (factor.sampleCount > 0 && factor.readiness !== "ready") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "positive sampleCount requires ready readiness",
+        path: ["sampleCount"],
+      });
+    }
+    if (factor.measurementComparison !== undefined
+      && (factor.readiness !== "ready" || factor.sampleCount === 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "measurementComparison requires ready readiness and a positive sampleCount",
+        path: ["measurementComparison"],
+      });
+    }
+    if (factor.measurementWarning
+      && (factor.readiness !== "ready" || factor.sampleCount === 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "measurementWarning requires ready measured data",
+        path: ["measurementWarning"],
+      });
+    }
+  });
 
 export const f7ReportSpecificationSourceCellsSchema = z
   .object({

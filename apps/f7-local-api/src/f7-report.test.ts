@@ -755,6 +755,25 @@ describe("createF7ReportProjection", () => {
     expect(contributions.reduce((total, contribution) => total + contribution, 0)).toBeCloseTo(1, 12);
   });
 
+  it.each([
+    ["underflow-scale", 1e-200],
+    ["overflow-scale", 1e155],
+  ] as const)("keeps equal %s factor contributions finite and normalized", (_name, oneSigma) => {
+    const snapshot = createSnapshot();
+    snapshot.factors[0]!.evidence!.oneSigma = oneSigma;
+    snapshot.factors[0]!.evidence!.baselineSampler.standardDeviation = oneSigma;
+    snapshot.factors[1]!.evidence!.oneSigma = oneSigma;
+    snapshot.factors[1]!.evidence!.baselineSampler.standardDeviation = oneSigma;
+
+    const contributions = createF7ReportProjection(snapshot, GENERATED_AT).factors
+      .map(({ percentContributionToSigma }) => percentContributionToSigma);
+
+    expect(contributions).toEqual([0.5, 0.5]);
+    expect(contributions.every((contribution) => (
+      Number.isFinite(contribution) && contribution >= 0 && contribution <= 1
+    ))).toBe(true);
+  });
+
   it("keeps a measured Factor pending without a ready paste result", () => {
     const snapshot = createSnapshot();
     const measuredFactor = snapshot.factors[1]!;
@@ -766,7 +785,7 @@ describe("createF7ReportProjection", () => {
     expect(report.factors[1]).not.toHaveProperty("measurementComparison");
   });
 
-  it("projects governed warning evidence for a baseline Factor without treating it as measured", () => {
+  it("does not project measurement warning evidence for a baseline Factor", () => {
     const snapshot = createSnapshot();
     const baselineFactor = snapshot.factors[0]!;
     const measuredDataset = snapshot.factors[1]!.measurementPasteResult!.dataset!;
@@ -787,7 +806,7 @@ describe("createF7ReportProjection", () => {
 
     const factor = createF7ReportProjection(f7SessionSnapshotSchema.parse(snapshot), GENERATED_AT).factors[0]!;
 
-    expect(factor).toMatchObject({ readiness: "ready", sampleCount: 0, measurementWarning: true });
+    expect(factor).toMatchObject({ readiness: "ready", sampleCount: 0, measurementWarning: false });
     expect(factor).not.toHaveProperty("measurementComparison");
   });
 

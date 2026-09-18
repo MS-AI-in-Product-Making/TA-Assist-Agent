@@ -319,6 +319,47 @@ function createReportFixture(
   };
 }
 
+describe("f7ReportFactorSchema status consistency", () => {
+  const createFactor = () => createReportFixture().factors[0];
+
+  it("accepts a baseline-ready Factor without measured evidence", () => {
+    const factor = {
+      ...createFactor(),
+      sourceMode: "BASELINE_ASSUMPTION" as const,
+      measurementComparison: undefined,
+      sampleCount: 0,
+      readiness: "ready" as const,
+      measurementWarning: false,
+    };
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...createReportFixture(),
+      factors: [factor],
+      simulation: {
+        ...createReportFixture().simulation,
+        factorManifest: [{ factorId: SHA256, family: "normal", sourceMode: "BASELINE_ASSUMPTION" }],
+      },
+      evidence: {
+        ...createReportFixture().evidence,
+        factorManifest: [{ factorId: SHA256, family: "normal", sourceMode: "BASELINE_ASSUMPTION" }],
+      },
+    }).success).toBe(true);
+  });
+
+  it.each([
+    ["pending with samples", { readiness: "pending", sampleCount: 1, measurementComparison: undefined, measurementWarning: false }],
+    ["pending with comparison", { readiness: "pending", sampleCount: 0, measurementWarning: false }],
+    ["pending with warning", { readiness: "pending", sampleCount: 0, measurementComparison: undefined, measurementWarning: true }],
+    ["ready comparison without samples", { readiness: "ready", sampleCount: 0, measurementWarning: false }],
+    ["ready warning without samples", { readiness: "ready", sampleCount: 0, measurementComparison: undefined, measurementWarning: true }],
+  ] as const)("rejects %s", (_name, overrides) => {
+    const fixture = createReportFixture();
+    const factor = { ...createFactor(), ...overrides };
+
+    expect(f7ReportProjectionSchema.safeParse({ ...fixture, factors: [factor] }).success).toBe(false);
+  });
+});
+
 describe("F7 report contracts", () => {
   it("accepts all governed assessment outcomes when they match simulation capability", () => {
     for (const assessment of ["MEETS_TARGET", "BELOW_TARGET", "NOT_EVALUABLE"] as const) {
@@ -456,7 +497,13 @@ describe("F7 report contracts", () => {
 
     expect(f7ReportProjectionSchema.safeParse({
       ...report,
-      factors: [{ ...report.factors[0], readiness: "pending" }],
+      factors: [{
+        ...report.factors[0],
+        measurementComparison: undefined,
+        sampleCount: 0,
+        readiness: "pending",
+        measurementWarning: false,
+      }],
     }).success).toBe(true);
   });
 
