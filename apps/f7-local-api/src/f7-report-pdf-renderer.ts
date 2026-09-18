@@ -108,20 +108,23 @@ export function factorSetupDensityStyle(factorCount: number): string {
   }
   const scale = factorCount <= 7 ? 1 : FACTOR_SETUP_SCALED_ROW_CAPACITY / (factorCount - 1);
   const dimensions = [
-    ["table-font-size", 6.4, "pt"],
-    ["label-font-size", 5.8, "pt"],
-    ["cell-y", 2, "px"],
-    ["cell-x", 3, "px"],
-    ["h3-font-size", 10.5, "pt"],
-    ["h4-font-size", 9, "pt"],
-    ["h3-margin-top", 9, "px"],
-    ["h3-margin-bottom", 4, "px"],
-    ["h4-margin-top", 8, "px"],
-    ["h4-margin-bottom", 3, "px"],
-    ["table-margin", 7, "px"],
+    ["table-font-size", 6.4, "pt", 0.5],
+    ["label-font-size", 5.8, "pt", 0.5],
+    ["cell-y", 2, "px", 0],
+    ["cell-x", 3, "px", 0],
+    ["h3-font-size", 10.5, "pt", 0],
+    ["h4-font-size", 9, "pt", 0],
+    ["h3-margin-top", 9, "px", 0],
+    ["h3-margin-bottom", 4, "px", 0],
+    ["h4-margin-top", 8, "px", 0],
+    ["h4-margin-bottom", 3, "px", 0],
+    ["table-margin", 7, "px", 0],
+    ["metric-stack-gap", 1, "px", 0],
+    ["metric-line-gap", 4, "px", 0],
+    ["border-width", 1, "px", 0],
   ] as const;
   return dimensions
-    .map(([name, value, unit]) => `--factor-setup-${name}:${formatDensityNumber(value * scale)}${unit};`)
+    .map(([name, value, unit, minimum]) => `--factor-setup-${name}:${formatDensityNumber(Math.max(minimum, value * scale))}${unit};`)
     .join("");
 }
 
@@ -687,12 +690,15 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     .dimension-chain-wrapper { break-before: page; page-break-before: always; }
     [data-factor-setup-inputs], [data-factor-measurement-analysis] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: var(--factor-setup-table-font-size); line-height: 1.12; }
     [data-factor-setup-inputs] th, [data-factor-setup-inputs] td, [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { padding: var(--factor-setup-cell-y) var(--factor-setup-cell-x); }
+    [data-factor-setup-inputs] th, [data-factor-setup-inputs] td, [data-factor-measurement-analysis] th, [data-factor-measurement-analysis] td { border-width: var(--factor-setup-border-width); }
     [data-factor-setup-inputs] tr, [data-factor-measurement-analysis] tr { break-inside: avoid; page-break-inside: avoid; }
     [data-factor-setup-inputs] th:first-child, [data-factor-setup-inputs] td:first-child, [data-factor-measurement-analysis] th:first-child, [data-factor-measurement-analysis] td:first-child { width: 4%; text-align: center; }
     [data-factor-setup-inputs] th:nth-child(n+3):nth-child(-n+7), [data-factor-setup-inputs] td:nth-child(n+3):nth-child(-n+7) { text-align: right; }
     [data-factor-measurement-analysis] th:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] td:nth-child(n+3):nth-child(-n+7), [data-factor-measurement-analysis] th:nth-child(8), [data-factor-measurement-analysis] td:nth-child(8) { text-align: right; }
     .metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }
     .metric-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px; white-space: normal; overflow-wrap: anywhere; }
+    [data-factor-measurement-analysis] .metric-stack { gap: var(--factor-setup-metric-stack-gap); }
+    [data-factor-measurement-analysis] .metric-line { gap: var(--factor-setup-metric-line-gap); }
     [data-factor-measurement-analysis] .metric-label { font-size: var(--factor-setup-label-font-size); }
     .metric-label { color: #5c6b76; font-weight: 600; }
     .metric-value { text-align: right; font-variant-numeric: tabular-nums; }
