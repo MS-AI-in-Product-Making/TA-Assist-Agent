@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/f7-statistics": "0.1.0",
     "@ai-assist/knowledge-base": "0.1.0",
     "@ai-assist/product-language": "0.1.0",
     "@ai-assist/workbook-catalog": "0.1.0",
