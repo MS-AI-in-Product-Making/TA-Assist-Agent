@@ -24,6 +24,7 @@ const TEMPORARY_DIRECTORY_REMOVE_OPTIONS = {
 } as const;
 const MAX_QUEUED_RENDERS = 3;
 const FACTOR_SETUP_MAX_FACTORS = 100;
+const FACTOR_SETUP_SCALED_ROW_CAPACITY = 5.5;
 const DIMENSION_CHAIN_MIN_LENGTH = 36;
 const DIMENSION_CHAIN_MAX_LENGTH = 180;
 const DIMENSION_CHAIN_COMPRESSION_RATIO = 8;
@@ -105,7 +106,7 @@ export function factorSetupDensityStyle(factorCount: number): string {
   if (!Number.isInteger(factorCount) || factorCount <= 0 || factorCount > FACTOR_SETUP_MAX_FACTORS) {
     throw new Error("Factor count must be an integer between 1 and 100.");
   }
-  const scale = factorCount <= 7 ? 1 : 6 / (factorCount - 1);
+  const scale = factorCount <= 7 ? 1 : FACTOR_SETUP_SCALED_ROW_CAPACITY / (factorCount - 1);
   const dimensions = [
     ["table-font-size", 6.4, "pt"],
     ["label-font-size", 5.8, "pt"],
