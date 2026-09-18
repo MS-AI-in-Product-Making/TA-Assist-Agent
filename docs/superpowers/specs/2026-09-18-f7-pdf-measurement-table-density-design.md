@@ -6,27 +6,39 @@
 
 ## Goal
 
-Keep the representative seven-row `Measurement Analysis` table together on one A4 landscape PDF page while improving horizontal space and preserving readable engineering evidence.
+Keep the complete `Setup Inputs` and `Measurement Analysis` tables together on one A4 landscape PDF page without pagination or clipping, using dynamic density when the Factor count increases.
 
 ## Scope
 
 Included:
 
+- Remove the `Part Number` and `DIM ID` columns from the PDF `Setup Inputs` table only.
 - Remove the `Source Mode` and `Readiness` columns from the PDF `Measurement Analysis` table only.
 - Retain `Sample Count` and all setup, actual, delta, contribution, and warning-independent engineering values.
-- Apply the user-selected high-density layout to this table.
-- Prefer keeping the complete table together when it fits on a page.
-- Preserve repeated headers and row-safe pagination when a larger table cannot fit on one page.
+- Apply the user-selected high-density layout to both Factor Setup tables.
+- Force the complete Factor Setup block onto one page for the current workflow-supported range of 1 through 100 Factors.
+- Dynamically reduce the Factor Setup block scale as row count increases.
 
 Excluded:
 
 - Changes to the Web Factor Setup table.
 - Changes to the governed report contract or report projection.
 - Changes to source-mode, readiness, or warning calculations.
-- Changes to the Setup Inputs table, Dimension Chain, Monte Carlo results, interpretation, or assessment sections.
+- Changes to the Dimension Chain, Monte Carlo results, interpretation, or assessment sections.
 - Changes to the separate assumption-results PDF.
 
 ## Presentation
+
+The PDF `Setup Inputs` table contains these eight columns in order:
+
+1. Item
+2. Factor
+3. Design Nominal
+4. +Tol
+5. -Tol
+6. Long-term Safety Factor
+7. Sigma Level
+8. Distribution
 
 The PDF `Measurement Analysis` table contains these eight columns in order:
 
@@ -39,57 +51,55 @@ The PDF `Measurement Analysis` table contains these eight columns in order:
 7. % Contribution to sigma
 8. Sample Count
 
-`Source Mode` and `Readiness` remain governed report data but are not rendered in this PDF table. Measurement warning labels are also absent because their only PDF placement was inside the removed Source Mode column. No report data or validation rule is removed.
+`Part Number`, `DIM ID`, `Source Mode`, and `Readiness` remain governed report data but are not rendered in these PDF tables. Measurement warning labels are also absent because their only PDF placement was inside the removed Source Mode column. No report data or validation rule is removed.
 
-The table uses the approved high-density option B:
+Both tables use the approved high-density option B:
 
 - `6.4pt` table text.
 - `2px 3px` cell padding.
-- `1.12` line height for measurement cells.
+- `1.12` line height.
 - Compact metric-label text sized below the table body without dropping labels.
 - Existing colors, borders, number formatting, escaping, and A4 landscape page size.
 
+Seven Factors use the approved option B dimensions without additional scaling. Higher Factor counts use deterministic renderer-owned density tiers that reduce the entire Factor Setup block through Chromium print `zoom`. The most compact tier supports the contract maximum of 100 Factors. Extreme Factor counts remain complete but may require electronic zoom to read; completeness and one-page output take precedence over print-size readability because the user explicitly requires no pagination.
+
 ## Pagination
 
-The renderer prefers the heading and complete `Measurement Analysis` table as one print fragment. A representative seven-row table must remain on one PDF page rather than continuing on the next page.
+The renderer treats the `Factor Setup` heading and both complete tables as one forced single-page print fragment. It derives a density tier from `report.factors.length`, places that tier on the wrapper, and applies a tested `zoom` value before Chromium performs print layout. The wrapper and both tables use `break-inside: avoid` and `page-break-inside: avoid`; no fallback row pagination is permitted inside this block.
 
-Tables larger than a physical page must still flow across pages. In that case:
-
-- table headers repeat through existing print-table semantics;
-- individual Factor rows remain intact;
-- content is never clipped or allowed to overflow the printable page.
-
-This is a best-fit print constraint, not an unconditional no-break rule for arbitrarily large Factor counts.
+The Dimension Chain begins on the next page so its layout cannot force either Factor Setup table to split. The renderer must not use fixed-height clipping or overflow suppression to satisfy the page-count requirement.
 
 ## Architecture
 
-The change stays in `apps/f7-local-api/src/f7-report-pdf-renderer.ts`. The renderer omits the two presentation columns and adds Measurement Analysis-specific compact CSS and a wrapper that owns the best-fit page-break behavior. The server-authoritative `F7ReportProjection` and all source calculations remain unchanged.
+The change stays in `apps/f7-local-api/src/f7-report-pdf-renderer.ts`. The renderer omits the four presentation columns across the two tables, derives a density tier from Factor count, and adds compact Factor Setup CSS plus one wrapper that owns forced single-page behavior. The server-authoritative `F7ReportProjection` and all source calculations remain unchanged.
 
-Renderer tests in `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts` define the eight-column contract, verify that removed status text is absent from the table, and assert the compact print CSS. A browser-rendered PDF check verifies that all seven representative Factor rows occupy one page and that no content is clipped.
+Renderer tests in `apps/f7-local-api/src/f7-report-pdf-renderer.test.ts` define both eight-column contracts, verify that removed traceability and status text is absent from the tables, and assert the compact print CSS. A browser-rendered PDF check verifies that both tables and all seven representative Factor rows occupy one page and that no content is clipped.
 
 ## Error Handling And Governance
 
 - PDF generation remains server-authoritative.
 - The report contract continues to validate source mode, readiness, warning state, and sample count even when selected fields are not displayed.
 - Existing HTML escaping, finite-number formatting, local browser rendering, temporary-file cleanup, queue limits, and `%PDF-` signature validation remain unchanged.
-- If a table is too large for one page, readable pagination takes precedence over the no-split preference.
+- Reports in the current workflow-supported range of 1 through 100 Factors always retain every Factor row. Extreme row counts trade physical print readability for single-page completeness; they never paginate or clip.
 
 ## Verification
 
-1. Update the focused renderer test first and observe failure against the existing ten-column output.
-2. Verify the rendered Measurement Analysis headings are exactly the approved eight columns.
-3. Verify `Source Mode`, `Readiness`, their status labels, and source-mode warning labels are absent from this table while `Sample Count` remains.
-4. Verify compact CSS values and best-fit pagination selectors are present.
+1. Update the focused renderer test first and observe failure against the existing Setup Inputs output and page wrapper.
+2. Verify both rendered table heading sets are exactly the approved eight columns.
+3. Verify `Part Number` and `DIM ID` are absent from Setup Inputs; verify `Source Mode`, `Readiness`, their status labels, and source-mode warning labels are absent from Measurement Analysis while `Sample Count` remains.
+4. Verify compact CSS values, density-tier selection, forced page-break selectors, and the Dimension Chain page boundary are present.
 5. Run the complete F7 PDF renderer test file.
-6. Generate and inspect a representative seven-Factor PDF, confirming all Measurement Analysis rows share one page and text does not clip or overlap.
+6. Generate and inspect representative 7-Factor and 100-Factor PDFs, confirming both Factor Setup tables and all rows share one page in each report and no row is clipped.
 7. Run TypeScript diagnostics for the touched renderer and test.
 
 ## Acceptance Criteria
 
+- The PDF Setup Inputs table no longer displays `Part Number` or `DIM ID`.
 - The PDF Measurement Analysis table no longer displays `Source Mode` or `Readiness`.
 - The PDF Measurement Analysis table still displays `Sample Count` and all six engineering identification/metric columns.
-- The selected high-density styling is applied only where needed.
-- The representative seven-row Measurement Analysis table is not divided across two PDF pages.
-- Larger tables paginate without clipping, with repeated headers and intact rows.
+- The selected high-density styling is applied to both Factor Setup tables.
+- The Setup Inputs and Measurement Analysis tables remain together on exactly one PDF page for 7 through 100 Factors.
+- No Factor Setup row is clipped, omitted, or continued on another page.
+- The Dimension Chain starts on the following page.
 - Web UI behavior, governed report data, and downstream PDF sections remain unchanged.
 - Focused renderer tests and PDF layout verification pass.
