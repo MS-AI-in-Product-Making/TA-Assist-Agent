@@ -65,6 +65,21 @@ const WORKSHEET_NAME = `Analysis ${UNSAFE_MARKDOWN_PAYLOAD}`;
 const MEASURED_FACTOR_NAME = `Measured ${UNSAFE_MARKDOWN_PAYLOAD}`;
 const MEASUREMENT_SOURCE = `clipboard ${UNSAFE_MARKDOWN_PAYLOAD}`;
 
+function createReadyValidation() {
+  return {
+    status: "ready" as const,
+    blockingIssues: [],
+    advisoryIssues: [],
+    candidateEligibility: {
+      normal: "eligible" as const,
+      lognormal: "eligible" as const,
+      weibull: "eligible" as const,
+      gamma: "eligible" as const,
+      uniform: "eligible_with_boundary_warning" as const,
+    },
+  };
+}
+
 function wilsonScoreInterval(successes: number, trials: number): { lower: number; upper: number } {
   const z = 1.959963984540054;
   const zSquared = z * z;
@@ -121,6 +136,8 @@ function createEvidence(options: {
   sourceRow: number;
   designNominal: number;
   standardDeviation: number;
+  partNumber?: string;
+  dimId?: string;
 }) {
   const lowerTolerance = -0.2;
   const upperTolerance = 0.2;
@@ -141,6 +158,8 @@ function createEvidence(options: {
     factorCandidateId: options.factorCandidateId,
     factorId: options.factorId,
     factorName: options.factorName,
+    ...(options.partNumber === undefined ? {} : { partNumber: options.partNumber }),
+    ...(options.dimId === undefined ? {} : { dimId: options.dimId }),
     unit: "mm",
     unitSource: "workbook" as const,
     designNominal: options.designNominal,
@@ -354,6 +373,8 @@ function createSnapshot(
     sourceRow: 14,
     designNominal: -1,
     standardDeviation: 0.1,
+    partNumber: "PN-100",
+    dimId: "DIM-1",
   });
   const measuredEvidence = createEvidence({
     factorCandidateId: MEASURED_CANDIDATE_ID,
@@ -362,6 +383,8 @@ function createSnapshot(
     sourceRow: 15,
     designNominal: 1.25,
     standardDeviation: 0.08,
+    partNumber: "PN-200",
+    dimId: "DIM-2",
   });
   const snapshot = {
     contractId: "f7-analysis-result-v1" as const,
@@ -435,6 +458,8 @@ function createSnapshot(
           designNominal: -1,
           upperTolerance: 0.2,
           lowerTolerance: -0.2,
+          partNumber: "PN-100",
+          dimId: "DIM-1",
           confirmed: true as const,
         },
         sourceMode: "BASELINE_ASSUMPTION" as const,
@@ -451,6 +476,8 @@ function createSnapshot(
           designNominal: 1.25,
           upperTolerance: 0.2,
           lowerTolerance: -0.2,
+          partNumber: "PN-200",
+          dimId: "DIM-2",
           confirmed: true as const,
         },
         sourceMode: "MEASURED" as const,
@@ -475,6 +502,28 @@ function createSnapshot(
           },
         },
         evidence: measuredEvidence,
+        measurementPasteResult: {
+          status: "ready" as const,
+          factorId: MEASURED_FACTOR_ID,
+          dataset: {
+            factorId: MEASURED_FACTOR_ID,
+            unit: "mm",
+            structure: "UNORDERED_SAMPLE" as const,
+            sourceReference: MEASUREMENT_SOURCE,
+            importedAt: "2026-08-24T08:00:00.000Z",
+            msaStatus: "available" as const,
+            observations: [
+              { value: 1.2, originalRow: 1, disposition: "included" as const },
+              { value: 1.3, originalRow: 2, disposition: "included" as const },
+            ],
+            missingRowCount: 0,
+            rejectionSummaries: [],
+            originalRowCount: 2,
+            analyzedCount: 2,
+            contentHash: DATASET_HASH,
+          },
+          validation: createReadyValidation(),
+        },
         distributionFitResult: createDistributionFitResult(),
         distributionApproval: {
           factorId: MEASURED_FACTOR_ID,
@@ -621,12 +670,22 @@ describe("createF7ReportProjection", () => {
       {
         factorId: BASELINE_FACTOR_ID,
         factorName: "Baseline frame",
+        partNumber: "PN-100",
+        dimId: "DIM-1",
         designNominal: -1,
         upperTolerance: 0.2,
         lowerTolerance: -0.2,
         longTermSafetyFactor: 1,
         sigmaLevel: 3,
         setupDistribution: "Normal",
+        setupMean: -1,
+        setupTolerance: 0.4,
+        setupOneSigma: 0.1,
+        setupCpk: 1,
+        percentContributionToSigma: expect.closeTo(0.01 / 0.0164, 12),
+        sampleCount: 0,
+        readiness: "ready",
+        measurementWarning: false,
         loopCoefficient: -1,
         sourceMode: "BASELINE_ASSUMPTION",
         approvedDistribution: "normal",
@@ -635,12 +694,37 @@ describe("createF7ReportProjection", () => {
       {
         factorId: MEASURED_FACTOR_ID,
         factorName: MEASURED_FACTOR_NAME,
+        partNumber: "PN-200",
+        dimId: "DIM-2",
         designNominal: 1.25,
         upperTolerance: 0.2,
         lowerTolerance: -0.2,
         longTermSafetyFactor: 1,
         sigmaLevel: 3,
         setupDistribution: "Normal",
+        setupMean: 1.25,
+        setupTolerance: 0.4,
+        setupOneSigma: 0.08,
+        setupCpk: 1,
+        percentContributionToSigma: expect.closeTo(0.0064 / 0.0164, 12),
+        measurementComparison: {
+          mean: { actual: 1.25, delta: 0 },
+          tolerance: {
+            actual: expect.closeTo(3 * Math.sqrt(0.005), 12),
+            delta: expect.closeTo(3 * Math.sqrt(0.005) - 0.4, 12),
+          },
+          oneSigma: {
+            actual: expect.closeTo(Math.sqrt(0.005), 12),
+            delta: expect.closeTo(Math.sqrt(0.005) - 0.08, 12),
+          },
+          cpk: {
+            actual: expect.closeTo(0.2 / (3 * Math.sqrt(0.005)), 12),
+            delta: expect.closeTo(0.2 / (3 * Math.sqrt(0.005)) - 1, 12),
+          },
+        },
+        sampleCount: 2,
+        readiness: "ready",
+        measurementWarning: false,
         loopCoefficient: 1,
         sourceMode: "MEASURED",
         approvedDistribution: "normal",
@@ -655,6 +739,142 @@ describe("createF7ReportProjection", () => {
     expect(report.factors[1]?.upperTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.upperTolerance);
     expect(report.factors[1]?.lowerTolerance).not.toBe(MEASURED_CANDIDATE_SETUP.lowerTolerance);
     expect(report.factors[1]?.setupDistribution).not.toBe(MEASURED_CANDIDATE_SETUP.distribution);
+  });
+
+  it("keeps a measured Factor pending without a ready paste result", () => {
+    const snapshot = createSnapshot();
+    const measuredFactor = snapshot.factors[1]!;
+    delete measuredFactor.measurementPasteResult;
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.factors[1]).toMatchObject({ readiness: "pending", sampleCount: 0, measurementWarning: false });
+    expect(report.factors[1]).not.toHaveProperty("measurementComparison");
+  });
+
+  it("projects governed warning evidence for a baseline Factor without treating it as measured", () => {
+    const snapshot = createSnapshot();
+    const baselineFactor = snapshot.factors[0]!;
+    const measuredDataset = snapshot.factors[1]!.measurementPasteResult!.dataset!;
+    const dataset = {
+      ...measuredDataset,
+      factorId: BASELINE_FACTOR_ID,
+      observations: measuredDataset.observations.map((observation, index) => ({
+        ...observation,
+        value: index === 0 ? 2 : observation.value,
+      })),
+    };
+    baselineFactor.measurementPasteResult = {
+      status: "ready",
+      factorId: BASELINE_FACTOR_ID,
+      dataset,
+      validation: createReadyValidation(),
+    };
+
+    const factor = createF7ReportProjection(f7SessionSnapshotSchema.parse(snapshot), GENERATED_AT).factors[0]!;
+
+    expect(factor).toMatchObject({ readiness: "ready", sampleCount: 0, measurementWarning: true });
+    expect(factor).not.toHaveProperty("measurementComparison");
+  });
+
+  it.each([
+    {
+      name: "excluded observations",
+      structure: "UNORDERED_SAMPLE" as const,
+      observations: [
+        { value: 1.2, originalRow: 1, disposition: "included" as const },
+        {
+          value: 99,
+          originalRow: 2,
+          disposition: "excluded" as const,
+          reason: "OUTLIER" as const,
+          operatorReference: "operator-1",
+          confirmed: true as const,
+        },
+        { value: 1.3, originalRow: 3, disposition: "included" as const },
+      ],
+      expectedCount: 2,
+      expectedMean: 1.25,
+      optionalMetrics: true,
+    },
+    {
+      name: "one included observation",
+      structure: "UNORDERED_SAMPLE" as const,
+      observations: [{ value: 1.2, originalRow: 1, disposition: "included" as const }],
+      expectedCount: 1,
+      expectedMean: 1.2,
+      optionalMetrics: false,
+    },
+    {
+      name: "zero variation",
+      structure: "UNORDERED_SAMPLE" as const,
+      observations: [
+        { value: 1.2, originalRow: 1, disposition: "included" as const },
+        { value: 1.2, originalRow: 2, disposition: "included" as const },
+      ],
+      expectedCount: 2,
+      expectedMean: 1.2,
+      optionalMetrics: false,
+    },
+    {
+      name: "rational subgroup",
+      structure: "RATIONAL_SUBGROUP" as const,
+      rationalSubgroupConfig: { subgroupSize: 2, estimator: "RANGE_D2" as const },
+      observations: [
+        { value: 1.1, originalRow: 1, disposition: "included" as const },
+        { value: 1.2, originalRow: 2, disposition: "included" as const },
+        { value: 1.3, originalRow: 3, disposition: "included" as const },
+        { value: 1.4, originalRow: 4, disposition: "included" as const },
+      ],
+      expectedCount: 4,
+      expectedMean: 1.25,
+      optionalMetrics: true,
+    },
+  ])("uses shared measured-comparison semantics for $name", (scenario) => {
+    const snapshot = createSnapshot();
+    const measuredFactor = snapshot.factors[1]!;
+    const existingDataset = measuredFactor.measurementPasteResult!.dataset!;
+    const dataset = {
+      ...existingDataset,
+      structure: scenario.structure,
+      ...(scenario.rationalSubgroupConfig === undefined
+        ? { rationalSubgroupConfig: undefined }
+        : { rationalSubgroupConfig: scenario.rationalSubgroupConfig }),
+      observations: scenario.observations,
+      originalRowCount: scenario.observations.length,
+      analyzedCount: scenario.expectedCount,
+    };
+    measuredFactor.input = { mode: "MEASURED", dataset };
+    measuredFactor.measurementPasteResult = {
+      ...measuredFactor.measurementPasteResult!,
+      dataset,
+    };
+
+    const factor = createF7ReportProjection(f7SessionSnapshotSchema.parse(snapshot), GENERATED_AT).factors[1]!;
+
+    expect(factor.sampleCount).toBe(scenario.expectedCount);
+    expect(factor.measurementComparison?.mean.actual).toBeCloseTo(scenario.expectedMean, 12);
+    if (scenario.optionalMetrics) {
+      expect(factor.measurementComparison).toHaveProperty("oneSigma");
+      expect(factor.measurementComparison).toHaveProperty("tolerance");
+      expect(factor.measurementComparison).toHaveProperty("cpk");
+    } else {
+      expect(factor.measurementComparison).not.toHaveProperty("oneSigma");
+      expect(factor.measurementComparison).not.toHaveProperty("tolerance");
+      expect(factor.measurementComparison).not.toHaveProperty("cpk");
+    }
+  });
+
+  it("uses shared warning criteria for a ready measured Factor", () => {
+    const snapshot = createSnapshot();
+    const measuredFactor = snapshot.factors[1]!;
+    const dataset = measuredFactor.measurementPasteResult!.dataset!;
+    dataset.observations[0] = { ...dataset.observations[0]!, value: 2 };
+    measuredFactor.input = { mode: "MEASURED", dataset };
+
+    const report = createF7ReportProjection(f7SessionSnapshotSchema.parse(snapshot), GENERATED_AT);
+
+    expect(report.factors[1]?.measurementWarning).toBe(true);
   });
 
   it("adds an F0-grounded Setup versus Monte Carlo interpretation and optimization direction", () => {
