@@ -119,6 +119,54 @@ describe("buildFactorMeasuredComparison", () => {
     expect(result?.cpk.actual).toBeCloseTo(18 / (3 * governedSigma), 12);
   });
 
+  it("degrades zero rational-subgroup variation to Mean-only", () => {
+    const result = buildFactorMeasuredComparison({
+      ...setup,
+      dataset: dataset(
+        [
+          { originalRow: 1, value: 1.25, disposition: "included" },
+          { originalRow: 2, value: 1.25, disposition: "included" },
+          { originalRow: 3, value: 1.25, disposition: "included" },
+          { originalRow: 4, value: 1.25, disposition: "included" },
+        ],
+        {
+          structure: "RATIONAL_SUBGROUP",
+          rationalSubgroupConfig: { subgroupSize: 2, estimator: "RANGE_D2" },
+        },
+      ),
+    });
+
+    expect(result).toEqual({
+      mean: { setup: -2, actual: 1.25, delta: -0.75 },
+      tolerance: { setup: 1, actual: undefined, delta: undefined },
+      oneSigma: { setup: 0.25, actual: undefined, delta: undefined },
+      cpk: { setup: 2, actual: undefined, delta: undefined },
+    });
+  });
+
+  it("degrades non-finite rational-subgroup sigma from extreme finite values to Mean-only", () => {
+    const result = buildFactorMeasuredComparison({
+      ...setup,
+      dataset: dataset(
+        [
+          { originalRow: 1, value: Number.MAX_VALUE, disposition: "included" },
+          { originalRow: 2, value: -Number.MAX_VALUE, disposition: "included" },
+        ],
+        {
+          structure: "RATIONAL_SUBGROUP",
+          rationalSubgroupConfig: { subgroupSize: 2, estimator: "RANGE_D2" },
+        },
+      ),
+    });
+
+    expect(result).toEqual({
+      mean: { setup: -2, actual: 0, delta: -2 },
+      tolerance: { setup: 1, actual: undefined, delta: undefined },
+      oneSigma: { setup: 0.25, actual: undefined, delta: undefined },
+      cpk: { setup: 2, actual: undefined, delta: undefined },
+    });
+  });
+
   it("keeps Mean and Setup Cpk for one observation", () => {
     const result = buildFactorMeasuredComparison({
       ...setup,

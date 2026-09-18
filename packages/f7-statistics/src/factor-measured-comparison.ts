@@ -97,12 +97,18 @@ export function buildFactorMeasuredComparison(
     }
   }
 
-  const capability = calculateF7Capability(
-    values,
-    input.lowerSpecLimit,
-    input.upperSpecLimit,
-    governedStandardDeviation,
-  );
+  let capability;
+  try {
+    capability = calculateF7Capability(
+      values,
+      input.lowerSpecLimit,
+      input.upperSpecLimit,
+      governedStandardDeviation,
+    );
+  } catch (error) {
+    if (error instanceof RangeError) return unavailableComparison;
+    throw error;
+  }
   if (capability.status !== "ready") return unavailableComparison;
 
   const actualStandardDeviation = capability.sampleStandardDeviation;
