@@ -156,17 +156,17 @@ export function classifyWorksheetDomain(input: ProcessInput): F6WorksheetDomainC
 
 function createAnalysisMethodCheck(calculation: CalculationCompletedResult): F6ProcessCheck {
   if (calculation.factorCount < 4) {
-    return check("analysis-method", "WARNING", `Worst Case method is recommended for ${calculation.factorCount} factors.`, [
-      "Use RSS/Monte Carlo only when engineering review accepts the low factor-count assumption.",
+    return check("analysis-method", "COMPLETE", `Worst Case method is recommended for ${calculation.factorCount} factors.`, [
+      "Factor count is within the governed low-dimensional range.",
     ]);
   }
   if (calculation.factorCount <= 10) {
-    return check("analysis-method", "COMPLETE", `Monte Carlo/RSS analysis is suitable for ${calculation.factorCount} factors.`, [
+    return check("analysis-method", "COMPLETE", `RSS analysis is recommended for ${calculation.factorCount} factors.`, [
       "Factor count is within the governed 4-10 deterministic range.",
     ]);
   }
-  return check("analysis-method", "WARNING", `3D Variation Analysis is recommended for ${calculation.factorCount} factors.`, [
-    "Escalate high-dimensional stacks to governed 3D variation analysis review.",
+  return check("analysis-method", "WARNING", `Monte Carlo VA is recommended for ${calculation.factorCount} factors.`, [
+    "Escalate high-dimensional stacks to governed Monte Carlo variation analysis review.",
   ]);
 }
 
@@ -244,7 +244,7 @@ function createDrawingGovernanceCheck(worksheet: F3Worksheet): F6ProcessCheck {
   });
   return details.length === 0
     ? check("drawing-dim-governance", "COMPLETE", "Drawing Number and DIM ID governance are complete.")
-    : check("drawing-dim-governance", "WARNING", "Drawing/DIM governance requires review.", details);
+    : check("drawing-dim-governance", "WARNING", "Missing Drawing Number/DIM ID info", details);
 }
 
 function createAdoTraceabilityCheck(ado: AdoTraceabilityV3, worksheet: F3Worksheet): F6ProcessCheck {

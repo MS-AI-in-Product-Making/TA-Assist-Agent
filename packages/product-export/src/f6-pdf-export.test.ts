@@ -364,7 +364,6 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("grid-template-columns:.72fr 1.28fr");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word;");
     expect(html).toContain('class="comment comment--fail">Fail</span>');
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-spec-line range-spec-line--lower"');
@@ -391,7 +390,32 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("Adjust the specification range from [-0.150, 0.0500] to [-0.180, 0.0800]");
     expect(html).toContain("--signal-red:var(--p-dark-red)");
     expect(html).toContain("--signal-green:var(--p-green)");
-    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
+    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:10%;");
+    expect(html).toContain("--raw-data:#0078D4");
+    expect(html).toContain("--interpretation:#50E6FF");
+    expect(html).toContain("--optimization:#D59DFF");
+    expect(html).toContain('class="report-stage-legend"');
+    expect(html).toContain('<span class="stage-key stage-key--raw">Raw data</span>');
+    expect(html).toContain('<span class="stage-key stage-key--interpretation">Interpretation</span>');
+    expect(html).toContain('<span class="stage-key stage-key--optimization">Optimization</span>');
+    expect(html).toContain(".slide-summary { grid-template-columns:.72fr 1.28fr; grid-template-rows:64px 1fr;");
+    expect(html).toContain(".slide-summary>h1 { grid-column:1/-1; align-self:start;");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px; line-height:1;");
+    expect(html).toContain(".workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:9%;");
+    expect(html).toContain(".workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:21%;");
+    expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:25%;");
+    expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:45%;");
+    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain(".factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:17%; white-space:nowrap;");
+    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
+    expect(html).toContain(".range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4;");
+    expect(html).toContain(".analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation); }");
+    expect(html).toContain(".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { color:var(--optimization); }");
+    expect(html).toContain(".analysis-panel--center h2,.analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }");
+    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px;");
+    expect(html).toContain('.analysis-panel--center::after,.analysis-panel--contributors::after { content:"→";');
+    expect(html).toContain(".analysis-panel--contributors:last-child::after { display:none; }");
+    expect(html).toContain("th { background:var(--raw-data) !important;");
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
     expect(html).not.toMatch(/class="[^"]*slide-optimization/u);
@@ -799,9 +823,9 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain('content:"TA Assist Agent');
     expect(html).toContain(".document-overview td,.workbook-summary td { padding:9px 16px;");
     expect(html).toContain("font-size:17px;");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:14px;");
-    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:6px 14px;");
-    expect(html).toContain("font:800 14px/1 var(--st-meta)");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px;");
+    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain("font:800 12px/1 var(--st-meta)");
     expect(html).toContain(".analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-white);");
     expect(html).toContain(".analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-white);");
     expect(html).toContain('class="range-spec-label range-spec-label--lower">LSL -0.150</b>');
@@ -830,7 +854,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("Not covered");
     expect(html).not.toContain("guidance_unknown");
     expect(html).not.toContain("f0_information_insufficient");
-    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:16.5%;");
+    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
     expect(html).toContain(".factor-table--dense td { padding:5px 6px; font-size:13px;");
   });
 
@@ -863,10 +887,10 @@ describe("renderF6PdfSync", () => {
 
     expect(html).toContain("Exceeds guidance &le; 0.200&nbsp;mm");
     expect(html).not.toContain("internal_guidance_exceeded");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:14px; line-height:1.1;");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px; line-height:1;");
     expect(html).toContain(".document-overview td,.workbook-summary td { padding:9px 16px;");
     expect(html).toContain(".factor-table td { padding:5px 7px;");
-    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:14px;");
+    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px;");
   });
 
   it("fails closed when a worksheet exceeds the fixed slide Factor capacity", () => {
