@@ -8,7 +8,7 @@ export type F7CapabilityResult =
       readonly cpk: number;
     }
   | {
-      readonly status: "insufficient_data" | "zero_variation";
+      readonly status: "insufficient_data" | "zero_variation" | "invalid_calculation";
       readonly sampleSize: number;
     };
 
@@ -18,6 +18,16 @@ export function calculateF7Capability(
   upperSpecLimit: number,
   governedStandardDeviation?: number,
 ): F7CapabilityResult {
+  if (!Number.isFinite(lowerSpecLimit) || !Number.isFinite(upperSpecLimit)) {
+    throw new RangeError("Specification limits must be finite.");
+  }
+  if (
+    governedStandardDeviation !== undefined
+    && (!Number.isFinite(governedStandardDeviation) || governedStandardDeviation <= 0)
+  ) {
+    throw new RangeError("Governed standard deviation must be finite and greater than zero.");
+  }
+
   const finiteValues = values.filter(Number.isFinite);
   if (finiteValues.length < 2) {
     return { status: "insufficient_data", sampleSize: finiteValues.length };
@@ -30,10 +40,17 @@ export function calculateF7Capability(
   if (sampleStandardDeviation === 0) {
     return { status: "zero_variation", sampleSize: finiteValues.length };
   }
+  if (!Number.isFinite(mean) || !Number.isFinite(sampleStandardDeviation)) {
+    return { status: "invalid_calculation", sampleSize: finiteValues.length };
+  }
 
   const cp = (upperSpecLimit - lowerSpecLimit) / (6 * sampleStandardDeviation);
   const cpu = (upperSpecLimit - mean) / (3 * sampleStandardDeviation);
   const cpl = (mean - lowerSpecLimit) / (3 * sampleStandardDeviation);
+  const cpk = Math.min(cpu, cpl);
+  if (![cp, cpk].every(Number.isFinite)) {
+    return { status: "invalid_calculation", sampleSize: finiteValues.length };
+  }
 
   return {
     status: "ready",
@@ -41,6 +58,6 @@ export function calculateF7Capability(
     mean,
     sampleStandardDeviation,
     cp,
-    cpk: Math.min(cpu, cpl),
+    cpk,
   };
 }

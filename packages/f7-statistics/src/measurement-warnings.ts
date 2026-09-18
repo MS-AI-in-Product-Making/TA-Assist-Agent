@@ -1,8 +1,9 @@
 import { buildMeasurementDiagnostics } from "./measurement-diagnostics.js";
+import type { FactorMeasurementDisposition } from "./measurement-observation.js";
 
 export interface FactorMeasurementWarningObservation {
   readonly value: number;
-  readonly disposition: string;
+  readonly disposition: FactorMeasurementDisposition;
 }
 
 export interface FactorMeasurementWarningInput {

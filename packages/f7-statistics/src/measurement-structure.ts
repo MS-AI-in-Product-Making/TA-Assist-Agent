@@ -51,6 +51,9 @@ export function calculateRationalSubgroupStandardDeviation(
   if (values.length === 0 || values.length % subgroupSize !== 0) {
     throw new RangeError("Rational subgroup data must contain complete subgroups.");
   }
+  if (values.some((value) => !Number.isFinite(value))) {
+    throw new RangeError("Rational subgroup observations must be finite.");
+  }
 
   const dispersions: number[] = [];
   for (let index = 0; index < values.length; index += subgroupSize) {

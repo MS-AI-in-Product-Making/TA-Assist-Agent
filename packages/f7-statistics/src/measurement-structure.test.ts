@@ -41,4 +41,15 @@ describe("rational subgroup measurement structure", () => {
     expect(() => calculateRationalSubgroupStandardDeviation([1, 2, 3, 4, 5], 3, "RANGE_D2"))
       .toThrowError("complete subgroups");
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects a non-finite observation of %s",
+    (nonFiniteValue) => {
+      expect(() => calculateRationalSubgroupStandardDeviation(
+        [1, nonFiniteValue, 2, 3],
+        2,
+        "RANGE_D2",
+      )).toThrowError(new RangeError("Rational subgroup observations must be finite."));
+    },
+  );
 });

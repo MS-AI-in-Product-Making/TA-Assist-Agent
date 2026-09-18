@@ -1,4 +1,6 @@
 import { calculateF7Capability } from "./capability.js";
+import type { FactorMeasurementDisposition } from "./measurement-observation.js";
+export type { FactorMeasurementDisposition } from "./measurement-observation.js";
 import type {
   F7MeasurementStructure,
   RationalSubgroupEstimator,
@@ -7,7 +9,7 @@ import { calculateRationalSubgroupStandardDeviation } from "./measurement-struct
 
 export interface FactorMeasurementObservation {
   readonly value: number;
-  readonly disposition: string;
+  readonly disposition: FactorMeasurementDisposition;
   readonly originalRow: number;
 }
 

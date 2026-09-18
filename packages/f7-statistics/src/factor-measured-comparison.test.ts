@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import type { F7MeasurementDataset } from "@ai-assist/contracts";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   FactorMeasurementDataset,
+  FactorMeasurementDisposition,
   FactorMeasurementObservation,
 } from "./factor-measured-comparison";
 import { buildFactorMeasuredComparison } from "./factor-measured-comparison";
@@ -25,6 +27,12 @@ const setup = {
 } as const;
 
 describe("buildFactorMeasuredComparison", () => {
+  it("uses the provider-neutral observation disposition contract", () => {
+    expectTypeOf<FactorMeasurementDisposition>().toEqualTypeOf<"included" | "excluded">();
+    expectTypeOf<F7MeasurementDataset["observations"][number]>()
+      .toMatchTypeOf<FactorMeasurementObservation>();
+  });
+
   it("compares Mean by absolute magnitude", () => {
     const result = buildFactorMeasuredComparison({
       ...setup,

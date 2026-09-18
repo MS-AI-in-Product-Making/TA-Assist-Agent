@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import type { FactorMeasurementWarningObservation } from "./measurement-warnings";
 import {
   evaluateFactorMeasurementWarnings,
   hasFactorMeasurementWarning,
 } from "./measurement-warnings";
 
 describe("factor measurement warning evidence", () => {
+  it("uses the shared observation disposition contract", () => {
+    expectTypeOf<FactorMeasurementWarningObservation["disposition"]>()
+      .toEqualTypeOf<"included" | "excluded">();
+  });
+
   it("reports cross-zero specifications and included out-of-spec values", () => {
     const evidence = evaluateFactorMeasurementWarnings({
       lowerSpecLimit: -0.2,
