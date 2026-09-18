@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { renderF6PdfHtml } from "../../packages/product-export/src/f6-pdf-report.js";
+import { validatedF6InlineImages } from "../../packages/product-export/src/f6-pdf-export.js";
 
 const REQUEST_CONTEXT = {
   requestedAt: "2026-09-16T08:30:12.000Z",
@@ -438,10 +439,18 @@ test("validates supplied governed report layout", async ({ page }, testInfo) => 
   await inspectPdf(validation.finalReportPdfPath);
   const markdown = readFileSync(validation.finalReportMarkdownPath, "utf8");
   const htmlPath = testInfo.outputPath("meara-v4-report.html");
+  const sourceHash = createHash("sha256").update(markdown).digest("hex");
+  const pdfInput = {
+    markdown,
+    sourceHash,
+    reportPath: validation.finalReportMarkdownPath,
+    managedRoot: process.env.AI_TVA_F6_PUBLISH_ROOT ?? path.resolve("test", "demo-output"),
+  };
   writeFileSync(htmlPath, renderF6PdfHtml({
     markdown,
-    sourceHash: createHash("sha256").update(markdown).digest("hex"),
+    sourceHash,
     baseHref: pathToFileURL(`${validation.outputDirectory}${path.sep}`).href,
+    inlineImages: validatedF6InlineImages(pdfInput),
   }), "utf8");
   await page.goto(pathToFileURL(htmlPath).href);
 
