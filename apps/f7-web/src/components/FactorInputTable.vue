@@ -1143,11 +1143,8 @@ function onModeChange(factorId: string, event: Event): void {
 
 <template>
   <section
-    id="measurement-entry-individual-panel"
     class="workbench-panel"
     aria-label="Factor setup and source mode"
-    :role="measurementEntryMode === 'individual' ? 'tabpanel' : undefined"
-    :aria-labelledby="measurementEntryMode === 'individual' ? 'measurement-entry-individual-tab' : undefined"
   >
     <div class="factor-setup-heading">
       <h2>Factor Setup</h2>

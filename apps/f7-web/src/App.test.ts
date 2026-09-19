@@ -3066,7 +3066,7 @@ describe("F7 workbench shell", () => {
     expect(wrapper.get("#monte-carlo-title").text()).toBe("Monte Carlo simulation");
     const restartFromStepOne = wrapper.findAll(".workflow-steps li")[0]!.get("[data-workflow-restart]");
     expect(restartFromStepOne.attributes("disabled")).toBeUndefined();
-    expect(restartFromStepOne.text()).toBe("Select worksheet");
+    expect(restartFromStepOne.text()).toBe("Change selection");
     expect(wrapper.find(".monte-carlo-form").exists()).toBe(false);
     expect(wrapper.find("[data-run-monte-carlo]").exists()).toBe(false);
     await vi.waitFor(() => {
@@ -3156,6 +3156,11 @@ describe("F7 workbench shell", () => {
     expect(withResult.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
     expect(withResult.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
     expect(withResult.get("[data-workflow-open-monte-carlo]").text()).toBe("View results");
+
+    await withResult.get("#measurement-entry-individual-tab").trigger("click");
+    expect(withResult.findAll(".workflow-steps li")[1]?.attributes("aria-current")).toBe("step");
+    expect(withResult.find("#monte-carlo-title").exists()).toBe(false);
+    expect(withResult.get("#measurement-entry-individual-panel").attributes("role")).toBe("tabpanel");
   });
 
   it("8g) embeds the automatically generated F0 report below the Step 3 Monte Carlo result", async () => {
@@ -3623,11 +3628,11 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
     await wrapper.get("button[data-close-measurement]").trigger("click");
-    await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(false));
+    await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(true));
 
     const monteCarloStep = wrapper.findAll(".workflow-steps li")[2]!;
-    expect(monteCarloStep.text()).toContain("Locked");
-    expect(monteCarloStep.find("[data-workflow-open-monte-carlo]").exists()).toBe(false);
+    expect(monteCarloStep.text()).toContain("System specification evidence is unavailable");
+    expect(monteCarloStep.get("[data-workflow-open-monte-carlo]").attributes("disabled")).toBeDefined();
     expect(client.runMonteCarlo).not.toHaveBeenCalled();
   });
 
@@ -3887,14 +3892,19 @@ describe("F7 workbench shell", () => {
     expect(listItems.every((item) => item.find(".workflow-step-actions").exists())).toBe(true);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
     expect(listItems[0]?.find("[data-workflow-restart]").exists()).toBe(false);
+    const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
+    const openPicker = vi.spyOn(workbookInput, "click").mockImplementation(() => undefined);
+    await listItems[0]!.get("[data-workflow-select-worksheet]").trigger("click");
+    expect(openPicker).toHaveBeenCalledOnce();
 
     for (const index of [1, 2]) {
       const item = listItems[index];
       expect(item?.attributes("aria-disabled")).toBe("true");
       expect(item?.findAll("button")).toHaveLength(index === 1 ? 2 : 1);
       expect(item?.findAll("button").every((button) => button.attributes("disabled") !== undefined)).toBe(true);
-      expect(item?.text().toLowerCase()).toContain("locked");
     }
+    expect(listItems[1]?.text()).toContain("Complete worksheet selection to continue");
+    expect(listItems[2]?.text()).toContain("Complete measurement analysis to continue");
     expect(listItems[2]!.get("button").text()).toBe("Run Monte Carlo");
   });
 
@@ -4228,6 +4238,31 @@ describe("F7 workbench shell", () => {
     expect(individualWrapper.find("[data-measurement-process-flow]").exists()).toBe(false);
   });
 
+  it("keeps Web Factor Entry keyboard reachable when Excel Bulk Import is unavailable", async () => {
+    const snapshot = measurementEntrySnapshot();
+    const wrapper = mount(App, {
+      props: { client: createMockClient(snapshot, { importWorkbook: snapshot }) },
+      attachTo: document.body,
+    });
+    await uploadWorkbook(wrapper);
+    (wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId = HASH_C;
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get("#measurement-entry-import-tab").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("#measurement-entry-import-tab").attributes("aria-selected")).toBe("false");
+    expect(wrapper.get("#measurement-entry-individual-tab").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get("#measurement-entry-individual-tab").attributes("aria-selected")).toBe("true");
+    expect(wrapper.get("#measurement-entry-individual-tab").attributes("tabindex")).toBe("0");
+    const controlledPanel = wrapper.get("#measurement-entry-individual-panel");
+    expect(controlledPanel.attributes("role")).toBe("tabpanel");
+    expect(controlledPanel.attributes("aria-labelledby")).toBe("measurement-entry-individual-tab");
+    wrapper.get<HTMLButtonElement>("#measurement-entry-individual-tab").element.focus();
+    await wrapper.get("#measurement-entry-individual-tab").trigger("keydown", { key: "ArrowLeft" });
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(wrapper.get("#measurement-entry-individual-tab").element);
+    expect(wrapper.get("#measurement-entry-import-tab").attributes("aria-selected")).toBe("false");
+  });
+
   it("forwards measurement import events while mode switching discards preview without mutating the session", async () => {
     const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
     vi.mocked(client.previewMeasurementImport).mockResolvedValue(measurementImportPreview("ready"));
@@ -4245,11 +4280,13 @@ describe("F7 workbench shell", () => {
     await vi.waitFor(() => expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1));
     await uploadMeasurementImportFile(wrapper);
     await wrapper.get("[role='tab'][aria-selected='true']").trigger("keydown", { key: "ArrowRight" });
+    await wrapper.vm.$nextTick();
 
     expect(client.downloadMeasurementTemplate).toHaveBeenCalledTimes(1);
     expect(client.previewMeasurementImport).toHaveBeenCalledTimes(1);
     expect(wrapper.find("[data-measurement-import-review]").exists()).toBe(false);
     expect(wrapper.find("[data-measurement-import-surface]").exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get("#measurement-entry-individual-tab").element);
     expect(client.setFactorMode).not.toHaveBeenCalled();
     expect(client.commitMeasurementImport).not.toHaveBeenCalled();
     click.mockRestore();
