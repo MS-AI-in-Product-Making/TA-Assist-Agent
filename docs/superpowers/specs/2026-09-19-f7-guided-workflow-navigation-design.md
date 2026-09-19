@@ -34,6 +34,14 @@ Existing confirmation behavior for replacing a workbook remains unchanged.
 - Completed steps retain the existing restrained green completion treatment.
 - Status text explains why a step is unavailable or what action is expected next.
 
+The workflow cards use clearly differentiated state surfaces:
+
+- Completed steps use a pale green background with a green border and green step marker.
+- The current step uses a pale blue-gray background with a strong dark border and filled dark step marker.
+- Pending or locked steps use a neutral light-gray background, muted text, and a gray dashed border.
+
+On layouts with three horizontal columns, a directional arrow is centered in each gap between consecutive cards. The arrow after a completed step is green; other arrows are gray. At the narrow single-column breakpoint, the connectors rotate downward and sit between the stacked cards. Connectors are decorative and hidden from assistive technology.
+
 Cards keep equal structural rhythm without nesting additional cards. Buttons remain stable in height and do not resize when status text changes.
 
 ## Responsive Behavior
