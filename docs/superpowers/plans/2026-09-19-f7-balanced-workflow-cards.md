@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restyle the existing three-step F7 workflow as balanced tall cards inspired by the approved reference while preserving all English copy, behavior, and accessibility.
+**Goal:** Restyle the existing three-step F7 workflow as balanced compact cards inspired by the approved reference while preserving all English copy, behavior, and accessibility.
 
 **Architecture:** Keep workflow state and event handling in `App.vue`. Add presentational Lucide components and state badges to the existing ordered-list markup, then implement the approved card hierarchy and responsive layout in `style.css`. Extend the existing `App.test.ts` workflow tests so structure and critical style contracts fail before implementation and protect behavior afterward.
 
@@ -42,7 +42,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write the failing CSS contract test**
 
-Require a vertical card grid with centered content, minimum card height, full-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation.
+Require a compact card grid with a 104px minimum height, a shared number/icon/state top row, bottom actions, side-by-side Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
@@ -51,7 +51,7 @@ Expected: FAIL because the current compact horizontal card layout does not satis
 
 - [ ] **Step 3: Implement the approved visual treatment**
 
-Update `style.css` so the number, icon, badge, title, supporting status, and actions form a centered vertical hierarchy. Use pale blue for current, pale green for complete, white/light blue-gray for pending, and gray for locked. Keep green enabled actions, gray disabled actions, visible focus, equal card heights, horizontal desktop connectors, and vertical mobile connectors.
+Update `style.css` so the number, icon, and badge share a compact top row above the centered title, supporting status, and 28px action row. Use pale blue for current, pale green for complete, white/light blue-gray for pending, and gray for locked. Keep green enabled actions, gray disabled actions, visible focus, equal card heights, horizontal desktop connectors, and vertical mobile connectors.
 
 - [ ] **Step 4: Run focused and full validation**
 

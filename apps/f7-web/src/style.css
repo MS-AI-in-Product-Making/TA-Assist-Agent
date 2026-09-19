@@ -131,20 +131,19 @@ body {
   position: relative;
   border: 1px solid var(--line);
   border-radius: 8px;
-  min-height: 304px;
-  padding: 16px 14px 14px;
+  min-height: 104px;
+  padding: 6px 8px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 22px 18px minmax(0, 1fr);
   grid-template-areas:
-    "index"
-    "icon"
-    "state"
-    "label"
-    "status"
-    "actions";
-  grid-template-rows: auto auto auto auto minmax(30px, 1fr) auto;
-  justify-items: center;
-  row-gap: 7px;
+    "index icon state"
+    "label label label"
+    "status status status"
+    "actions actions actions";
+  grid-template-rows: 22px auto auto 28px;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 2px;
   background: linear-gradient(160deg, #fff, #f1f5f8);
   box-shadow: 0 9px 22px rgb(27 50 78 / 10%);
 }
@@ -175,8 +174,8 @@ body {
 
 .step-index {
   grid-area: index;
-  width: 36px;
-  height: 36px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 1px solid #a9b7c5;
   display: inline-flex;
@@ -184,44 +183,46 @@ body {
   justify-content: center;
   background: #fff;
   color: #315f9c;
-  font-size: 0.86rem;
+  font-size: 0.7rem;
   font-weight: 700;
   box-shadow: 0 3px 9px rgb(27 50 78 / 12%);
 }
 
 .workflow-step-icon {
   grid-area: icon;
-  margin-top: 3px;
+  width: 18px;
+  height: 18px;
   color: #244f86;
 }
 
 .workflow-step-state {
   grid-area: state;
+  justify-self: end;
   border-radius: 999px;
-  padding: 3px 9px;
+  padding: 2px 7px;
   background: rgb(36 79 134 / 12%);
   color: #244f86;
-  font-size: 0.65rem;
+  font-size: 0.58rem;
   font-weight: 800;
   line-height: 1.2;
 }
 
 .step-label {
   grid-area: label;
-  max-width: 240px;
-  margin: 3px 0 0;
+  max-width: 100%;
+  margin: 0;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 750;
   line-height: 1.3;
 }
 
 .step-status {
   grid-area: status;
-  max-width: 250px;
+  max-width: 100%;
   text-align: center;
-  font-size: 0.75rem;
-  line-height: 1.35;
+  font-size: 0.65rem;
+  line-height: 1.2;
   color: var(--ink-soft);
 }
 
@@ -230,25 +231,26 @@ body {
   align-self: end;
   display: flex;
   justify-content: stretch;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 2px;
 }
 
 .workflow-step-action {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 7px;
+  gap: 5px;
   width: 100%;
   max-width: 100%;
-  min-height: 36px;
+  min-height: 28px;
   border: 1px solid var(--success);
   border-radius: 5px;
-  padding: 7px 14px;
+  padding: 4px 8px;
   background: var(--success);
   color: #fff;
   font: inherit;
+  font-size: 0.72rem;
   font-weight: 650;
   cursor: pointer;
 }
@@ -756,7 +758,7 @@ textarea {
 
 .measurement-entry-tabs {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   width: 100%;
   max-width: 100%;
   border: 0;
@@ -766,19 +768,20 @@ textarea {
 }
 
 .measurement-entry-tab {
-  flex: 0 0 auto;
+  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  width: 100%;
+  gap: 5px;
+  width: auto;
   min-width: 0;
-  min-height: 36px;
+  min-height: 28px;
   border: 1px solid var(--success);
   border-radius: 5px;
-  padding: 7px 14px;
+  padding: 4px 8px;
   background: #fff;
   color: var(--success);
   font: inherit;
+  font-size: 0.7rem;
   font-weight: 650;
   cursor: pointer;
 }

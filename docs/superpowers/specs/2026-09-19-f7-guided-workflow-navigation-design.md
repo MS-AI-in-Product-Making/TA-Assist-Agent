@@ -44,18 +44,17 @@ On layouts with three horizontal columns, a directional arrow is centered in eac
 
 Cards keep equal structural rhythm without nesting additional cards. Buttons remain stable in height and do not resize when status text changes.
 
-## Balanced Tall-Card Layout
+## Balanced Compact-Card Layout
 
-The workflow adopts the approved balanced interpretation of the supplied visual reference. It keeps the reference's tall, centered card composition while using restrained state-specific surfaces suitable for an engineering tool. All visible interface copy remains English.
+The workflow adopts the approved balanced interpretation of the supplied visual reference while compressing each card to approximately one third of the original tall-card height. It uses restrained state-specific surfaces suitable for an engineering tool. All visible interface copy remains English.
 
-Each card is arranged vertically:
+Each card uses a compact hierarchy:
 
-1. A centered circular step number at the top.
-2. A Lucide icon identifying the phase: `TableProperties` for worksheet selection, `ChartNoAxesCombined` for measurement analysis, and `Dices` for Monte Carlo calculation.
-3. A compact uppercase state badge such as `CURRENT`, `COMPLETE`, or `LOCKED`.
-4. A centered step title.
-5. The existing status guidance in smaller supporting text below the title, including actionable lock reasons.
-6. A full-width, bottom-aligned action area. Step 2 retains two stacked mode actions.
+1. The circular step number, phase Lucide icon, and uppercase state badge share the top row.
+2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
+3. A bottom-aligned action area uses 28px controls. Step 2 places its two mode actions side by side with equal widths.
+
+Cards have a 104px minimum height and remain equal-height at desktop and mobile widths.
 
 The card surfaces are:
 
