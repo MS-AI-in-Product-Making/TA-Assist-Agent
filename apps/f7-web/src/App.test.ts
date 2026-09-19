@@ -3915,10 +3915,11 @@ describe("F7 workbench shell", () => {
     expect(listItems[2]?.text()).toContain("Complete measurement analysis to continue");
     expect(listItems[2]!.get("button").text()).toBe("Run Monte Carlo");
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\s*\{[^}]*min-height:\s*104px[^}]*grid-template-areas:\s*"index icon state"\s*"label label label"\s*"status status status"\s*"actions actions actions"/s);
-    expect(STYLE_SOURCE).toMatch(/\.workflow-step-actions\s*\{[^}]*align-self:\s*end[^}]*width:\s*100%/s);
-    expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*100%[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
+    expect(STYLE_SOURCE).toMatch(/\.step-label\s*\{[^}]*font-size:\s*0\.9rem/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-step-actions\s*\{[^}]*align-self:\s*end[^}]*justify-content:\s*center[^}]*width:\s*100%/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*fit-content[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
     expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tabs\s*\{[^}]*flex-direction:\s*row/s);
-    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*1\s+1\s+0[^}]*width:\s*auto/s);
+    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*0\s+0\s+auto[^}]*width:\s*fit-content/s);
     expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\.is-selected\s*\{[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li:not\(:last-child\)::before\s*\{[^}]*height:\s*3px[^}]*background:\s*#596273/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*border-left:\s*10px solid #596273/s);
