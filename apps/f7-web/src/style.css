@@ -175,18 +175,20 @@ body {
 .workflow-step-actions {
   grid-area: actions;
   display: flex;
+  justify-content: flex-start;
   gap: 6px;
   width: 100%;
   margin-top: 6px;
 }
 
 .workflow-step-action {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-height: 36px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--success);
   border-radius: 5px;
-  padding: 7px 10px;
-  background: var(--ink);
+  padding: 7px 14px;
+  background: var(--success);
   color: #fff;
   font: inherit;
   font-weight: 650;
@@ -679,21 +681,21 @@ textarea {
 }
 
 .measurement-entry-tab {
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 36px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--success);
   border-radius: 5px;
-  padding: 7px 10px;
+  padding: 7px 14px;
   background: #fff;
-  color: var(--ink);
+  color: var(--success);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
 }
 
 .measurement-entry-tab.is-selected {
-  background: var(--ink);
+  background: var(--success);
   color: #fff;
   font-weight: 700;
   box-shadow: none;

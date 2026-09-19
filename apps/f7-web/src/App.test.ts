@@ -3906,6 +3906,9 @@ describe("F7 workbench shell", () => {
     expect(listItems[1]?.text()).toContain("Complete worksheet selection to continue");
     expect(listItems[2]?.text()).toContain("Complete measurement analysis to continue");
     expect(listItems[2]!.get("button").text()).toBe("Run Monte Carlo");
+    expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*fit-content[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
+    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*0\s+0\s+auto/s);
+    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\.is-selected\s*\{[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
   });
 
   it("9b) workflow rail marks step2 as current during measurement stage", async () => {
