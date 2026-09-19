@@ -3890,6 +3890,14 @@ describe("F7 workbench shell", () => {
     const listItems = wrapper.findAll("ol.workflow-steps > li");
     expect(listItems).toHaveLength(3);
     expect(listItems.every((item) => item.find(".workflow-step-actions").exists())).toBe(true);
+    expect(listItems.every((item) => item.find(".workflow-step-icon").exists())).toBe(true);
+    expect(listItems.map((item) => item.get(".workflow-step-icon").classes().find((className) => className.startsWith("lucide-") && className !== "lucide"))).toEqual([
+      "lucide-table-properties-icon",
+      "lucide-chart-no-axes-combined-icon",
+      "lucide-dices-icon",
+    ]);
+    expect(listItems.map((item) => item.get(".workflow-step-state").text())).toEqual(["CURRENT", "LOCKED", "LOCKED"]);
+    expect(listItems.every((item) => item.findAll("button").every((button) => button.find("svg").exists()))).toBe(true);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
     expect(listItems[0]?.find("[data-workflow-restart]").exists()).toBe(false);
     const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
@@ -3906,18 +3914,23 @@ describe("F7 workbench shell", () => {
     expect(listItems[1]?.text()).toContain("Complete worksheet selection to continue");
     expect(listItems[2]?.text()).toContain("Complete measurement analysis to continue");
     expect(listItems[2]!.get("button").text()).toBe("Run Monte Carlo");
-    expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*fit-content[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
-    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*0\s+0\s+auto/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\s*\{[^}]*min-height:\s*304px[^}]*grid-template-areas:\s*"index"\s*"icon"\s*"state"\s*"label"\s*"status"\s*"actions"/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-step-actions\s*\{[^}]*align-self:\s*end[^}]*width:\s*100%/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*100%[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
+    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tabs\s*\{[^}]*flex-direction:\s*column/s);
+    expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*0\s+0\s*auto/s);
     expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\.is-selected\s*\{[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li:not\(:last-child\)::before\s*\{[^}]*height:\s*3px[^}]*background:\s*#596273/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*border-left:\s*10px solid #596273/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete:not\(:last-child\)::before\s*\{[^}]*background:\s*var\(--success\)/s);
     expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete:not\(:last-child\)::after\s*\{[^}]*border-left-color:\s*var\(--success\)/s);
-    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-current\s*\{[^}]*background:\s*#eaf1f8/s);
-    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete\s*\{[^}]*background:\s*#e4f3ee/s);
-    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-locked\s*\{[^}]*background:\s*#eceff2/s);
-    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*620px\)\s*\{[\s\S]*\.workflow-steps li:not\(:last-child\)::before\s*\{[^}]*width:\s*3px[^}]*height:\s*18px/s);
-    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*620px\)\s*\{[\s\S]*\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*border-top:\s*10px solid #596273/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-current\s*\{[^}]*background:\s*linear-gradient\(160deg, #e8f2fb, #d8e7f6\)[^}]*outline:\s*2px solid #315f9c/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-current \.step-index\s*\{[^}]*background:\s*#315f9c[^}]*color:\s*#fff/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete\s*\{[^}]*background:\s*linear-gradient\(160deg, #e6f5ef, #d5ebe3\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-locked\s*\{[^}]*background:\s*linear-gradient\(160deg, #f3f5f7, #e7eaee\)/s);
+    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*760px\)\s*\{[\s\S]*\.workflow-steps\s*\{[^}]*grid-template-columns:\s*1fr/s);
+    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*760px\)\s*\{[\s\S]*\.workflow-steps li:not\(:last-child\)::before\s*\{[^}]*width:\s*3px[^}]*height:\s*18px/s);
+    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*760px\)\s*\{[\s\S]*\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*border-top:\s*10px solid #596273/s);
   });
 
   it("9b) workflow rail marks step2 as current during measurement stage", async () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircle } from "lucide-vue-next";
+import { ChartNoAxesCombined, Dices, FileSpreadsheet, Globe2, LoaderCircle, Play, TableProperties } from "lucide-vue-next";
 import { computed, markRaw, nextTick, ref, shallowRef, watch, type ComponentPublicInstance } from "vue";
 import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
@@ -246,9 +246,9 @@ watch(() => store.session.value?.sessionId ?? "", (nextSessionId, previousSessio
 }, { immediate: true });
 
 const workflowSteps = [
-  { id: 1, label: "Select worksheet" },
-  { id: 2, label: "Measurement Data Import & Analysis" },
-  { id: 3, label: "Monte Carlo Calculation & Report" },
+  { id: 1, label: "Select worksheet", icon: TableProperties },
+  { id: 2, label: "Measurement Data Import & Analysis", icon: ChartNoAxesCombined },
+  { id: 3, label: "Monte Carlo Calculation & Report", icon: Dices },
 ] as const;
 
 const currentPhaseStep = computed(() => {
@@ -743,6 +743,14 @@ async function openReport(): Promise<void> {
               class="step-index"
               aria-hidden="true"
             >{{ step.id }}</span>
+            <component
+              :is="step.icon"
+              class="workflow-step-icon"
+              :size="24"
+              :stroke-width="2"
+              aria-hidden="true"
+            />
+            <span class="workflow-step-state">{{ workflowStepState(step.id).toUpperCase() }}</span>
             <h3 class="step-label workflow-step-heading">{{ step.label }}</h3>
             <span class="step-status">{{ workflowStepStatusText(step.id, workflowStepState(step.id)) }}</span>
             <div
@@ -756,7 +764,13 @@ async function openReport(): Promise<void> {
                 :data-workflow-select-worksheet="workflowStepState(step.id) !== 'complete' ? '' : undefined"
                 :disabled="store.isBusy.value"
                 @click="workflowStepState(step.id) === 'complete' ? restartFromWorksheetSelection($event) : selectWorkbook()"
-              >{{ workflowStepState(step.id) === 'complete' ? 'Change selection' : 'Select worksheet' }}</button>
+              >
+                <FileSpreadsheet
+                  :size="15"
+                  aria-hidden="true"
+                />
+                {{ workflowStepState(step.id) === 'complete' ? 'Change selection' : 'Select worksheet' }}
+              </button>
             </div>
             <div
               v-else-if="step.id === 2"
@@ -777,7 +791,13 @@ async function openReport(): Promise<void> {
                 :disabled="store.isBusy.value || !measurementImportAvailable"
                 @click="onMeasurementEntryModeChange('import')"
                 @keydown="onMeasurementEntryModeKeydown"
-              >Excel Bulk Import</button>
+              >
+                <FileSpreadsheet
+                  :size="15"
+                  aria-hidden="true"
+                />
+                Excel Bulk Import
+              </button>
               <button
                 id="measurement-entry-individual-tab"
                 :ref="setMeasurementIndividualTab"
@@ -791,7 +811,13 @@ async function openReport(): Promise<void> {
                 :disabled="store.isBusy.value || workflowStepState(step.id) === 'locked'"
                 @click="onMeasurementEntryModeChange('individual')"
                 @keydown="onMeasurementEntryModeKeydown"
-              >Web Factor Entry</button>
+              >
+                <Globe2
+                  :size="15"
+                  aria-hidden="true"
+                />
+                Web Factor Entry
+              </button>
             </div>
             <div
               v-else
@@ -804,7 +830,13 @@ async function openReport(): Promise<void> {
                 data-workflow-open-monte-carlo
                 :disabled="store.isBusy.value || !simulationReady"
                 @click="openMonteCarlo"
-              >{{ store.session.value?.monteCarloResult ? 'View results' : 'Run Monte Carlo' }}</button>
+              >
+                <Play
+                  :size="15"
+                  aria-hidden="true"
+                />
+                {{ store.session.value?.monteCarloResult ? 'View results' : 'Run Monte Carlo' }}
+              </button>
             </div>
           </li>
         </ol>
