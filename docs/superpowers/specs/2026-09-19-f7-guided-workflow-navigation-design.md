@@ -54,7 +54,17 @@ Each card uses a compact hierarchy:
 2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
 3. A bottom-aligned action area uses centered 28px controls sized to their icon-and-text content. Step 2 places its two content-width mode actions side by side.
 
-Cards have a 104px minimum height and remain equal-height at desktop and mobile widths.
+Cards use the approved balanced proportions: approximately 260px wide by 148px high. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. Cards remain equal-height at desktop and mobile widths.
+
+Typography keeps the existing font families and text colors. Only size and spacing change for readability:
+
+- Step number: 0.8rem.
+- State badge: 0.69rem.
+- Step title: 1rem.
+- Supporting status: 0.81rem.
+- Action label: 0.81rem.
+
+Action controls remain centered and sized to their icon-and-text content. At the balanced card width, Step 2 stacks its two full English mode actions vertically so neither label is reduced, clipped, or forced outside the card.
 
 The card surfaces are:
 
@@ -63,7 +73,7 @@ The card surfaces are:
 - Pending: white to light blue-gray surface with a neutral border.
 - Locked: light gray gradient with muted content and a dashed neutral border.
 
-Cards use restrained shadows and a maximum corner radius of 8px. Step titles use a 0.9rem size for readability. Action buttons use icon-and-text labels, a stable compact height, content-driven widths, centered placement, and the existing green available/selected treatment. Disabled actions remain gray. The active card may be visually elevated but must not shift the grid or alter adjacent card dimensions.
+Cards use restrained shadows and a maximum corner radius of 8px. Action buttons use icon-and-text labels, a stable compact height, content-driven widths, centered placement, and the existing green available/selected treatment. Disabled actions remain gray. The active card may be visually elevated but must not shift the grid or alter adjacent card dimensions.
 
 Directional connectors remain centered between cards. They use a clear line and arrowhead, become green after a completed step, and rotate vertically at the single-column breakpoint.
 

@@ -42,7 +42,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write the failing CSS contract test**
 
-Require a compact card grid with a 104px minimum height, a shared number/icon/state top row, 0.9rem titles, centered content-width bottom actions, side-by-side Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation.
+Require a centered card grid with approximately 260 × 148px cards, a shared number/icon/state top row, larger readable text, centered content-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation. Preserve all existing font families and text colors.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
@@ -51,7 +51,7 @@ Expected: FAIL because the current compact horizontal card layout does not satis
 
 - [ ] **Step 3: Implement the approved visual treatment**
 
-Update `style.css` so the number, icon, and badge share a compact top row above the centered 0.9rem title, supporting status, and centered content-width 28px action row. Use pale blue for current, pale green for complete, white/light blue-gray for pending, and gray for locked. Keep green enabled actions, gray disabled actions, visible focus, equal card heights, horizontal desktop connectors, and vertical mobile connectors.
+Update `style.css` so the number, icon, and badge share a compact top row above the centered title, supporting status, and centered content-width action area. Increase sizes without changing font families or text colors. Constrain and center the three-card grid, stack Step 2 actions, and keep green enabled actions, gray disabled actions, visible focus, equal card heights, horizontal desktop connectors, and vertical mobile connectors.
 
 - [ ] **Step 4: Run focused and full validation**
 
