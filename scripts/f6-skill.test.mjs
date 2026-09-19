@@ -133,6 +133,7 @@ describe("Design Optimization skill contract", () => {
       "### Phase W8 - Generate governed model interpretation",
       "### Phase W9 - Run and validate F6",
       "### Phase W9A - Govern optional F3 ADO publishing",
+      "### Phase W9B - Republish after ADO outcome",
       "### Phase W10 - Present every Feature output",
     ]);
     expect(internal).toContain("F1/F2 scope call");
@@ -238,6 +239,21 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Never reuse a historical F3 root");
     expect(internal).toContain("Every validated F3 result enters W9A after F6 validation");
     expect(internal).toContain("F3 governance status does not bypass W9A");
+  });
+
+  it("republishes a fresh governed report set after the terminal ADO outcome", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expectOrdered(internal, [
+      "### Phase W9 - Run and validate F6",
+      "### Phase W9A - Govern optional F3 ADO publishing",
+      "### Phase W9B - Republish after ADO outcome",
+      "### Phase W10 - Present every Feature output",
+    ]);
+    expect(internal).toContain("Never modify or replace the already validated W9 artifact set");
+    expect(internal).toContain("materialize a new model interpretation against the terminal F3 artifact");
+    expect(internal).toContain("publish a new five-file F6 artifact set");
+    expect(internal).toContain("Present only the validator-confirmed W9B Markdown and PDF reports");
+    expect(internal).toContain("ADO traceability check reflects the terminal F3 publishing outcome");
   });
 
   it("reuses the governed drawing governance protocol without automatic or implicit writes", () => {
@@ -359,8 +375,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("do not present any report link");
     expect(internal).not.toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
     expect(internal).not.toContain("[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)");
-    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.md\)/g)).toHaveLength(1);
-    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF\]\(test\/demo-output\/f6-runs\/\<run-id\>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
+    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.md\)/g)).toHaveLength(1);
+    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
     expectOrdered(internal, [
       `[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`,
       `[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`,

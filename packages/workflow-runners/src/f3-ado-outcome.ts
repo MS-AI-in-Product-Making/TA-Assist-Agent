@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -108,6 +108,7 @@ export function persistF3AdoTargetValidation(input: PersistF3AdoTargetValidation
   if (reportRelativePath.startsWith("..") || path.isAbsolute(reportRelativePath)) {
     throw new Error("Feature 3 report path is outside the current writable root.");
   }
+  assertRealPathContained(f3Root, reportPath);
   if (!Number.isFinite(Date.parse(input.verifiedAt))) throw new Error("Surface target verifiedAt is invalid.");
 
   const source = JSON.parse(readFileSync(reportPath, "utf8")) as unknown;
@@ -136,6 +137,7 @@ export function persistF3AdoTargetValidation(input: PersistF3AdoTargetValidation
       organization: input.targetIdentity.organization,
       project: input.targetIdentity.project,
       workItemId: input.targetIdentity.workItemId,
+      verifiedAt: input.verifiedAt,
     },
   });
   if (report.status === "input_rejected") {
@@ -154,6 +156,7 @@ export function persistF3AdoTraceability(input: PersistF3AdoTraceabilityInput): 
   if (reportRelativePath.startsWith("..") || path.isAbsolute(reportRelativePath)) {
     throw new Error("Feature 3 report path is outside the current writable root.");
   }
+  assertRealPathContained(f3Root, reportPath);
   const source = JSON.parse(readFileSync(reportPath, "utf8")) as unknown;
   const existingV3 = drawingGovernanceResultV3Schema.safeParse(source);
   if (existingV3.success) {
@@ -181,6 +184,7 @@ export function persistF3AdoTraceability(input: PersistF3AdoTraceabilityInput): 
       organization: input.receipt.targetIdentity.organization,
       project: input.receipt.targetIdentity.project,
       workItemId: input.receipt.targetIdentity.workItemId,
+      verifiedAt: input.receipt.verifiedAt,
     },
   });
   if (report.status === "input_rejected") {
@@ -290,7 +294,19 @@ function matchesReceipt(
     && report.ado.operation === receipt.operation
     && report.ado.organization === receipt.targetIdentity.organization
     && report.ado.project === receipt.targetIdentity.project
-    && report.ado.workItemId === receipt.targetIdentity.workItemId;
+    && report.ado.workItemId === receipt.targetIdentity.workItemId
+    && report.ado.verifiedAt === receipt.verifiedAt;
+}
+
+function assertRealPathContained(root: string, reportPath: string): void {
+  if (lstatSync(root).isSymbolicLink() || lstatSync(reportPath).isSymbolicLink()) {
+    throw new Error("Feature 3 receipt paths must not contain linked paths.");
+  }
+  const realRoot = realpathSync(root);
+  const realReportPath = realpathSync(reportPath);
+  if (isOutsideRoot(realRoot, realReportPath)) {
+    throw new Error("Feature 3 current report real path is outside the current writable root.");
+  }
 }
 
 function createFsOps(overrides: Partial<F3AdoFsOps> = {}): F3AdoFsOps {

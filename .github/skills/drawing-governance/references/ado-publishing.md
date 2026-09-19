@@ -125,7 +125,7 @@ Status/reason matrix (writer-compatible and unique):
 - body capability unsupported -> status `blocked` + reason `surface_mcp_comment_body_unsupported`
 - write/readback mismatch -> status `failed` + reason `write_verification_failed`
 
-`updated` is persisted only after readback verification and carries no reason code.
+`updated` is persisted only after readback verification and carries no reason code. Use `npm run workflow:f3:ado-receipt -- <f3-dir> --operation <created|updated> --organization <organization> --project <project> --work-item-id <id> --verified-at <iso-8601>` with the complete verified Surface receipt. The historical `--status updated --work-item-reference <id>` command must not be used for a current successful write.
 local reminder fallback is not required on successful update unless implementation requires it.
 
 ## Policy prohibitions

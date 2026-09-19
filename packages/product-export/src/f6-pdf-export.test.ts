@@ -197,7 +197,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('href="#worksheet-1"');
     expect(html).toContain('class="comment comment--pass">Pass</span>');
     expect(html).toContain('class="comment comment--need-review">Need Review</span>');
-    expect(html).toContain('class="comment comment--fail">Fail</span>');
+    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
     expect(html).toContain('class="contribution-chart"');
     expect(html).not.toContain('<table class="contribution-table"');
     expect(html).not.toContain("fitWorksheetPages");
@@ -364,8 +364,7 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("grid-template-columns:.72fr 1.28fr");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word;");
-    expect(html).toContain('class="comment comment--fail">Fail</span>');
+    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-spec-line range-spec-line--lower"');
     expect(html).toContain('class="range-spec-line range-spec-line--upper"');
@@ -392,6 +391,31 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("--signal-red:var(--p-dark-red)");
     expect(html).toContain("--signal-green:var(--p-green)");
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
+    expect(html).toContain("--raw-data:#0078D4");
+    expect(html).toContain("--interpretation:#50E6FF");
+    expect(html).toContain("--optimization:#D59DFF");
+    expect(html).toContain('class="report-stage-legend"');
+    expect(html).toContain('<span class="stage-key stage-key--raw">Raw data</span>');
+    expect(html).toContain('<span class="stage-key stage-key--interpretation">Interpretation</span>');
+    expect(html).toContain('<span class="stage-key stage-key--optimization">Optimization</span>');
+    expect(html).toContain(".slide-summary { grid-template-columns:.72fr 1.28fr; grid-template-rows:64px 1fr;");
+    expect(html).toContain(".slide-summary>h1 { grid-column:1/-1; align-self:start;");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px; line-height:1;");
+    expect(html).toContain(".workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:9%;");
+    expect(html).toContain(".workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:21%;");
+    expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:25%;");
+    expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:45%;");
+    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain(".factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:17%; white-space:nowrap;");
+    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
+    expect(html).toContain(".range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4;");
+    expect(html).toContain(".analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation); }");
+    expect(html).toContain(".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { color:var(--optimization); }");
+    expect(html).toContain(".analysis-panel--center h2,.analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }");
+    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px;");
+    expect(html).toContain('.analysis-panel--center::after,.analysis-panel--contributors::after { content:"→";');
+    expect(html).toContain(".analysis-panel--contributors:last-child::after { display:none; }");
+    expect(html).toContain("th { background:var(--raw-data) !important;");
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
     expect(html.match(/class="[^"]*\bslide\b[^"]*"/gu)).toHaveLength(2);
     expect(html).not.toMatch(/class="[^"]*slide-optimization/u);
@@ -799,14 +823,74 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain('content:"TA Assist Agent');
     expect(html).toContain(".document-overview td,.workbook-summary td { padding:9px 16px;");
     expect(html).toContain("font-size:17px;");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:14px;");
-    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:6px 14px;");
-    expect(html).toContain("font:800 14px/1 var(--st-meta)");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px;");
+    expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain("font:800 12px/1 var(--st-meta)");
     expect(html).toContain(".analysis-panel--process { grid-column:1; grid-row:1; background:var(--p-white);");
     expect(html).toContain(".analysis-panel--results { display:block; grid-column:3; grid-row:1; background:var(--p-white);");
     expect(html).toContain('class="range-spec-label range-spec-label--lower">LSL -0.150</b>');
     expect(html).toContain('class="range-spec-label range-spec-label--upper">USL 0.0500</b>');
     expect(html).toContain("<figcaption><span>Capability against target</span><strong>4 sigma · 1.33</strong></figcaption>");
+  });
+
+  it("keeps summary tables inside their borders and applies the governed visual hierarchy", () => {
+    const markdown = [
+      "# TA Engineering Analysis Report",
+      "",
+      "## Document Overview",
+      "",
+      "| Field | Value |",
+      "|---|---|",
+      "| Source Workbook | Analysis.xlsx |",
+      "",
+      "## Workbook Summary",
+      "",
+      "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
+      "|---|---|---|---|",
+      "| Fail | [Analysis-A](#worksheet-1) | Loop A | Capability requires review. |",
+      "",
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | Factor A | Part A | CNC | DWG-1 | DIM-1 | 1 mm | 0.1 mm | -0.1 mm | 1 | 4 | 1 mm | 0.1 mm | 0.025 mm | Capability: non_f0_process_category |",
+      "",
+      "## Process and Requirements",
+      "",
+      "| Check | Status | Assessment |",
+      "|---|---|---|",
+      "| ADO Traceability | COMPLETE | ADO work item updated. |",
+      "",
+      "## Tolerance Path Image",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "## Contributor Priorities",
+      "",
+      "## Specification Changes",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain(">CPK FAIL</span>");
+    expect(html).toContain(".comment--fail { color:var(--p-dark-red) !important;");
+    expect(html).toContain(".document-overview,.workbook-summary { align-self:stretch; box-sizing:border-box;");
+    expect(html).toContain("clip-path:inset(0 round 24px)");
+    expect(html).toContain("text-align:center; text-transform:uppercase;");
+    expect(html).toContain(".workbook-summary td:nth-child(2) a { color:var(--raw-data);");
+    expect(html).toContain(".factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:3%;");
+    expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
+    expect(html).toContain(".analysis-panel--process>h2,.analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation);");
+    expect(html).toContain('<span class="step-label">Step 1</span>');
+    expect(html).toContain('<span class="step-label">Step 2</span>');
+    expect(html).toContain('<span class="step-label">Step 3</span>');
+    expect(html).toContain(".analysis-panel--center,.analysis-panel--contributors,.analysis-panel--specifications { height:220px;");
+    expect(html).toContain("--signal-green:var(--p-green)");
+    expect(html).toContain("--p-green:#9BF00B");
   });
 
   it("uses compact Factor rows after seven entries and normalizes unavailable guidance", () => {
@@ -830,7 +914,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("Not covered");
     expect(html).not.toContain("guidance_unknown");
     expect(html).not.toContain("f0_information_insufficient");
-    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:16.5%;");
+    expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
     expect(html).toContain(".factor-table--dense td { padding:5px 6px; font-size:13px;");
   });
 
@@ -863,10 +947,10 @@ describe("renderF6PdfSync", () => {
 
     expect(html).toContain("Exceeds guidance &le; 0.200&nbsp;mm");
     expect(html).not.toContain("internal_guidance_exceeded");
-    expect(html).toContain(".workbook-summary td { overflow-wrap:anywhere; word-break:break-word; font-size:14px; line-height:1.1;");
+    expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px; line-height:1;");
     expect(html).toContain(".document-overview td,.workbook-summary td { padding:9px 16px;");
     expect(html).toContain(".factor-table td { padding:5px 7px;");
-    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:14px;");
+    expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px;");
   });
 
   it("fails closed when a worksheet exceeds the fixed slide Factor capacity", () => {

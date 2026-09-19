@@ -788,11 +788,11 @@ describe("runF5FullValidation", () => {
   });
 
   it.each([
-    ["invalid v2 snapshot", "artifact_contract_invalid"],
-    ["selected worksheet missing from v2", "artifact_identity_mismatch"],
-    ["missing optional observation", "artifact_missing"],
-    ["malformed optional observation", "artifact_contract_invalid"],
-  ])("completes deterministic F5 when %s", (_case, fallbackReasonCode) => {
+    ["invalid v2 snapshot", "artifact_contract_invalid", undefined],
+    ["selected worksheet missing from v2", "artifact_identity_mismatch", "worksheets"],
+    ["missing optional observation", "artifact_missing", undefined],
+    ["malformed optional observation", "artifact_contract_invalid", undefined],
+  ])("completes deterministic F5 when %s", (_case, fallbackReasonCode, mismatchPath) => {
     const context = setup();
     context.deps.loadBundle.mockReturnValue({
       status: "accepted",
@@ -807,6 +807,7 @@ describe("runF5FullValidation", () => {
       observationFallback: {
         reasonCode: fallbackReasonCode,
         artifactReference: "observations.json",
+        ...(mismatchPath === undefined ? {} : { mismatchPath }),
       },
     });
     context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
@@ -839,6 +840,11 @@ describe("runF5FullValidation", () => {
     expect(summary.sources).not.toHaveProperty("observation");
     expect(summary.hashes).not.toHaveProperty("imageObservationsSha256");
     expect(result).not.toHaveProperty("imageObservationsPath");
+    expect(result.observationFallback).toEqual({
+      reasonCode: fallbackReasonCode,
+      artifactReference: "observations.json",
+      ...(mismatchPath === undefined ? {} : { mismatchPath }),
+    });
     expect(existsSync(path.join(context.runRoot, "Feature5-Image-Observations.json"))).toBe(false);
   });
 
