@@ -52,7 +52,7 @@ Each card uses a compact hierarchy:
 
 1. The circular step number, phase Lucide icon, and uppercase state badge share the top row.
 2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
-3. A bottom-aligned action area uses centered 28px controls sized to their icon-and-text content. Step 2 places its two content-width mode actions side by side.
+3. A bottom-aligned action area uses centered controls sized to their icon-and-text content.
 
 Cards use the approved balanced proportions: approximately 260px wide by 148px high. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. Cards remain equal-height at desktop and mobile widths.
 
