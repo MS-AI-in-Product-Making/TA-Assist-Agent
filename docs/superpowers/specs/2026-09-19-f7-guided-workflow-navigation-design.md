@@ -54,7 +54,9 @@ Each card uses a compact hierarchy:
 2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
 3. A bottom-aligned action area uses centered controls sized to their icon-and-text content.
 
-Cards use the approved balanced proportions: 260px wide with a 148px minimum height. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. All three cards share the height required by the most content-heavy step at both desktop and mobile widths, so full English labels remain readable without reducing type size.
+Cards use the approved balanced proportions: 296px wide with content-driven height. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. Each card determines its own height from its title, status, and actions; there is no shared grid-row height or fixed minimum card height.
+
+Step titles remain on one line at the desktop card width. The 296px outer width provides enough usable content width for the longest current English title without reducing its 1rem type size. At narrower viewports, the workflow changes to a single column before the three cards and connector gaps can overflow.
 
 Typography keeps the existing font families and text colors. Only size and spacing change for readability:
 
@@ -64,7 +66,7 @@ Typography keeps the existing font families and text colors. Only size and spaci
 - Supporting status: 0.81rem.
 - Action label: 0.81rem.
 
-Action controls remain centered and sized to their icon-and-text content. At the balanced card width, Step 2 stacks its two full English mode actions vertically so neither label is reduced, clipped, or forced outside the card.
+Action controls remain centered and sized to their icon-and-text content. Step 2 stacks its two full English mode actions vertically so neither label is reduced, clipped, or forced outside the card.
 
 The card surfaces are:
 
@@ -79,7 +81,7 @@ Directional connectors remain centered between cards. They use a clear line and 
 
 ## Responsive Behavior
 
-The workflow remains a three-column row when sufficient width is available. At narrow widths it becomes a single-column sequence in numerical order. Titles, hints, and button labels wrap without overlap or horizontal overflow.
+The workflow remains a three-column row when at least 1040px of viewport width is available. Below 1040px it becomes a centered single-column sequence in numerical order. Cards use `min(296px, 100%)` in the single-column layout so narrow mobile viewports remain free of horizontal overflow. Step titles remain on one line; status and button labels may wrap only when required by the available mobile width.
 
 ## Accessibility
 
