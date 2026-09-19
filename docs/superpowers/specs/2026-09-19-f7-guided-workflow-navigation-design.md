@@ -101,4 +101,4 @@ Update the workflow markup and state-derived labels in `App.vue`, with presentat
 - Assert that each card renders the intended phase icon and state badge without changing accessible step names or tab semantics.
 - Preserve tests for workbook replacement confirmation, Step 2 mode switching, and Monte Carlo navigation.
 - Run the focused F7 Web unit tests and lint checks.
-- Verify the workflow visually at desktop and narrow viewport widths, including equal card heights, bottom-aligned actions, keyboard focus, connector placement, and absence of overlap.
+- Verify the workflow visually at desktop and narrow viewport widths, including single-line titles, independent content-driven card heights, keyboard focus, connector placement, and absence of overlap.
