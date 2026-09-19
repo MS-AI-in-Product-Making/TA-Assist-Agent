@@ -3144,6 +3144,7 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(withoutResult);
     expect(withoutResult.findAll(".workflow-steps li")).toHaveLength(3);
     expect(withoutResult.findAll(".workflow-steps li")[2]?.attributes("aria-disabled")).toBeUndefined();
+    expect(withoutResult.get("[data-workflow-open-monte-carlo]").text()).toBe("Run Monte Carlo");
 
     const completed = completedMonteCarloSnapshot();
     const withResult = mount(App, {
@@ -3154,6 +3155,7 @@ describe("F7 workbench shell", () => {
     expect(withResult.findAll(".workflow-steps li")).toHaveLength(3);
     expect(withResult.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
     expect(withResult.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
+    expect(withResult.get("[data-workflow-open-monte-carlo]").text()).toBe("View results");
   });
 
   it("8g) embeds the automatically generated F0 report below the Step 3 Monte Carlo result", async () => {
@@ -3873,7 +3875,7 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
-    const stepLabels = wrapper.findAll("ol.workflow-steps > li .step-label").map((node) => node.text().trim());
+    const stepLabels = wrapper.findAll("ol.workflow-steps > li .workflow-step-heading").map((node) => node.text().trim());
     expect(stepLabels).toEqual([
       "Select worksheet",
       "Measurement Data Import & Analysis",
@@ -3882,18 +3884,18 @@ describe("F7 workbench shell", () => {
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
     expect(listItems).toHaveLength(3);
+    expect(listItems.every((item) => item.find(".workflow-step-actions").exists())).toBe(true);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
     expect(listItems[0]?.find("[data-workflow-restart]").exists()).toBe(false);
 
     for (const index of [1, 2]) {
       const item = listItems[index];
       expect(item?.attributes("aria-disabled")).toBe("true");
-      expect(item?.findAll("button, a, input, select, textarea")).toHaveLength(0);
+      expect(item?.findAll("button")).toHaveLength(index === 1 ? 2 : 1);
+      expect(item?.findAll("button").every((button) => button.attributes("disabled") !== undefined)).toBe(true);
       expect(item?.text().toLowerCase()).toContain("locked");
     }
-
-    const buttonLabels = wrapper.findAll("button").map((button) => button.text());
-    expect(buttonLabels.some((text) => /capability|distribution|monte carlo|report/i.test(text))).toBe(false);
+    expect(listItems[2]!.get("button").text()).toBe("Run Monte Carlo");
   });
 
   it("9b) workflow rail marks step2 as current during measurement stage", async () => {
@@ -3914,8 +3916,12 @@ describe("F7 workbench shell", () => {
     });
     const openPicker = vi.spyOn(workbookInput, "click").mockImplementation(() => undefined);
     const restart = listItems[0]!.get("[data-workflow-restart]");
-    expect(restart.text()).toBe("Select worksheet");
+    expect(restart.text()).toBe("Change selection");
     expect(restart.attributes("disabled")).toBeUndefined();
+    expect(listItems[1]!.findAll("button").map((button) => button.text())).toEqual([
+      "Excel Bulk Import",
+      "Web Factor Entry",
+    ]);
 
     await restart.trigger("click");
 
