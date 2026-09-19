@@ -3909,6 +3909,12 @@ describe("F7 workbench shell", () => {
     expect(STYLE_SOURCE).toMatch(/\.workflow-step-action\s*\{[^}]*width:\s*fit-content[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
     expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\s*\{[^}]*flex:\s*0\s+0\s+auto/s);
     expect(STYLE_SOURCE).toMatch(/\.measurement-entry-tab\.is-selected\s*\{[^}]*background:\s*var\(--success\)[^}]*color:\s*#fff/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*content:\s*"→"[^}]*color:\s*#8b929c/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete:not\(:last-child\)::after\s*\{[^}]*color:\s*var\(--success\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-current\s*\{[^}]*background:\s*#eaf1f8/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-complete\s*\{[^}]*background:\s*#e4f3ee/s);
+    expect(STYLE_SOURCE).toMatch(/\.workflow-steps li\.step-locked\s*\{[^}]*background:\s*#eceff2/s);
+    expect(STYLE_SOURCE).toMatch(/@media \(max-width:\s*620px\)\s*\{[\s\S]*\.workflow-steps li:not\(:last-child\)::after\s*\{[^}]*content:\s*"↓"/s);
   });
 
   it("9b) workflow rail marks step2 as current during measurement stage", async () => {
