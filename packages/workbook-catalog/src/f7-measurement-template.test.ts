@@ -264,7 +264,7 @@ describe("F7 measurement template authority", () => {
     ]);
   });
 
-  it("projects cross-zero versus valid limit status without manufacturing optional identifiers", () => {
+  it("treats a physical LSL of zero as valid without manufacturing optional identifiers", () => {
     const authority = createF7MeasurementImportAuthority(makeInput({
       factors: [
         makeFactor({ partNumber: undefined, dimId: undefined, specificationSource: undefined }),
@@ -300,7 +300,7 @@ describe("F7 measurement template authority", () => {
     expect(validFactor && "partNumber" in validFactor).toBe(false);
     expect(validFactor && "dimId" in validFactor).toBe(false);
     expect(validFactor?.specificationSource).toBe("Derived");
-    expect(crossZeroFactor?.limitStatus).toBe("CROSSES_ZERO");
+    expect(crossZeroFactor?.limitStatus).toBe("VALID");
     expect(crossZeroFactor?.lowerSpecLimit).toBe(0);
     expect(crossZeroFactor?.upperSpecLimit).toBe(0.15);
     expect(crossZeroFactor?.specificationSource).toBe("Derived");
@@ -337,7 +337,7 @@ describe("F7 measurement template authority", () => {
     expect(factor?.upperSpecLimit).toBe(20);
   });
 
-  it("accepts worksheet cross-zero factor limits when the authoritative lower limit is zero", () => {
+  it("accepts worksheet factor limits without warning when the authoritative lower limit is zero", () => {
     const authority = createF7MeasurementImportAuthority(makeInput({
       factors: [
         makeFactor({
@@ -363,7 +363,7 @@ describe("F7 measurement template authority", () => {
 
     const [factor] = authority.manifest.factors;
     expect(factor?.specificationSource).toBe("Worksheet");
-    expect(factor?.limitStatus).toBe("CROSSES_ZERO");
+    expect(factor?.limitStatus).toBe("VALID");
     expect(factor?.lowerSpecLimit).toBe(0);
     expect(factor?.upperSpecLimit).toBe(15);
   });

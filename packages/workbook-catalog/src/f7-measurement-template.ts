@@ -326,9 +326,7 @@ function hashLockedCoordinateValues(manifest: F7MeasurementImportManifest): stri
 function projectManifestFactor(factor: ParsedFactorEvidence, index: number): F7MeasurementImportFactorManifest {
   const column = columnLetters(F7_MEASUREMENT_TEMPLATE_LAYOUT.firstFactorColumn + index);
   const factorSource = specificationSource(factor.specificationSource);
-  const lowerEndpoint = normalizeNegativeZero(factor.designNominal + factor.lowerTolerance);
-  const upperEndpoint = normalizeNegativeZero(factor.designNominal + factor.upperTolerance);
-  const limitStatus = Math.min(lowerEndpoint, upperEndpoint) <= 0 && Math.max(lowerEndpoint, upperEndpoint) >= 0
+  const limitStatus = factor.lowerSpecLimit < 0
     ? "CROSSES_ZERO" as const
     : "VALID" as const;
   const projected = {

@@ -47,7 +47,7 @@ export interface MonteCarloPlotModel {
 
 const width = 800;
 const height = 320;
-const margin = { top: 72, right: 20, bottom: 42, left: 56 } as const;
+const margin = { top: 82, right: 20, bottom: 42, left: 56 } as const;
 type SetupInput = NonNullable<MonteCarloPlotInput["setup"]>;
 
 function isValidSetup(setup: MonteCarloPlotInput["setup"]): setup is SetupInput {

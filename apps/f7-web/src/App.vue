@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle } from "lucide-vue-next";
-import { computed, markRaw, nextTick, ref, shallowRef, watch } from "vue";
+import { computed, markRaw, nextTick, ref, shallowRef, watch, type ComponentPublicInstance } from "vue";
 import { createF7Client, type AssumptionResultsPdfRequest, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
@@ -29,6 +29,7 @@ const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
 const editingFactorSetup = ref(false);
 const measurementEntryMode = ref<"import" | "individual">("import");
+const measurementImportOpenRequest = ref(0);
 const measurementImportSuccessMessage = ref("");
 const blockedMeasurementFactors = ref<readonly { readonly factorId: string; readonly message: string }[]>([]);
 const automaticAnalysisProgress = ref<{
@@ -41,6 +42,11 @@ const reportRetryAvailable = ref(false);
 const reportPdfBusy = ref(false);
 const reportPdfError = ref("");
 const workbookInput = ref<HTMLInputElement>();
+const measurementImportTab = ref<globalThis.HTMLButtonElement>();
+
+function setMeasurementImportTab(element: globalThis.Element | ComponentPublicInstance | null): void {
+  measurementImportTab.value = element instanceof globalThis.HTMLButtonElement ? element : undefined;
+}
 const pendingWorkbookFile = ref<File>();
 const importingWorkbookFileName = ref("");
 const restartConfirmationVisible = ref(false);
@@ -199,7 +205,9 @@ const displayedWorkbookFileName = computed(() => (
 const simulationReady = computed(() => {
   if (workbookReplacementBusy.value) return false;
   const session = store.session.value;
-  return session?.status === "phase_1_ready" && session.factors.every((factor) => (
+  return session?.status === "phase_1_ready"
+    && session.systemSpecification?.status === "available"
+    && session.factors.every((factor) => (
     factor.sourceMode === "BASELINE_ASSUMPTION"
     || (factor.sourceMode === "MEASURED" && factor.distributionApproval !== undefined)
   ));
@@ -218,6 +226,8 @@ const measurementImportPanelVisible = computed(() => {
   if (activeMeasurementStage.value !== "measurement" && activeMeasurementStage.value !== "capability" && activeMeasurementStage.value !== "distribution") return false;
   return session.status === "measurement_entry" || session.status === "phase_1_ready";
 });
+
+const measurementImportAvailable = computed(() => measurementImportPanelVisible.value);
 
 watch(() => store.session.value?.sessionId ?? "", (nextSessionId, previousSessionId) => {
   if (!nextSessionId || nextSessionId === previousSessionId) return;
@@ -441,11 +451,23 @@ async function onSetMode(factorId: string, mode: F7SourceMode): Promise<void> {
 }
 
 function onMeasurementEntryModeChange(mode: "import" | "individual"): void {
-  if (mode === measurementEntryMode.value) return;
-  store.cancelMeasurementImport();
-  measurementImportSuccessMessage.value = "";
-  measurementTemplateDownloadRequestToken += 1;
-  measurementEntryMode.value = mode;
+  if (mode !== measurementEntryMode.value) {
+    store.cancelMeasurementImport();
+    measurementImportSuccessMessage.value = "";
+    measurementTemplateDownloadRequestToken += 1;
+    measurementEntryMode.value = mode;
+  }
+  if (mode === "import") measurementImportOpenRequest.value += 1;
+}
+
+function onMeasurementEntryModeKeydown(event: globalThis.KeyboardEvent): void {
+  if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "End") {
+    event.preventDefault();
+    onMeasurementEntryModeChange("individual");
+  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "Home") {
+    event.preventDefault();
+    onMeasurementEntryModeChange("import");
+  }
 }
 
 async function onDownloadMeasurementTemplate(): Promise<void> {
@@ -527,6 +549,8 @@ async function onCommitMeasurementImport(): Promise<void> {
     } finally {
       automaticAnalysisProgress.value = undefined;
     }
+    await nextTick();
+    measurementImportTab.value?.focus();
   });
 }
 
@@ -599,8 +623,21 @@ async function openMonteCarlo(): Promise<void> {
   }
   activeMeasurementFactorId.value = "";
   activeMeasurementStage.value = "monteCarlo";
-  const report = store.session.value?.monteCarloResult ? openReport() : undefined;
-  await report;
+  const session = store.session.value;
+  if (session?.monteCarloResult) {
+    await openReport();
+    return;
+  }
+  const specification = session?.systemSpecification;
+  if (specification?.status !== "available") return;
+  await onRunMonteCarlo({
+    lowerSpecLimit: specification.lowerSpecLimit.actualValue,
+    upperSpecLimit: specification.upperSpecLimit.actualValue,
+    targetSigmaLevel: specification.targetSigmaLevel.actualValue,
+    iterations: 100_000,
+    runSeed: BigInt(12_345).toString(16).padStart(64, "0"),
+    correlationMode: "INDEPENDENT",
+  });
 }
 
 async function onRunMonteCarlo(request: {
@@ -663,7 +700,7 @@ async function openReport(): Promise<void> {
     </header>
 
     <div class="layout-grid">
-      <aside class="workflow-rail">
+      <nav class="workflow-rail" aria-label="Analysis workflow">
         <h2 class="rail-title">Workflow</h2>
         <ol class="workflow-steps">
           <li
@@ -691,6 +728,7 @@ async function openReport(): Promise<void> {
               v-else-if="step.id === 3 && simulationReady"
               type="button"
               class="step-label step-link"
+              data-open-monte-carlo
               data-workflow-open-monte-carlo
               :disabled="store.isBusy.value"
               @click="openMonteCarlo"
@@ -702,6 +740,40 @@ async function openReport(): Promise<void> {
               class="step-label"
             >{{ step.label }}</span>
             <span class="step-status">{{ workflowStepStatusText(step.id, workflowStepState(step.id)) }}</span>
+            <div
+              v-if="step.id === 2 && workflowStepState(step.id) !== 'locked'"
+              class="workflow-step-actions measurement-entry-tabs"
+              role="tablist"
+              aria-label="Measurement input mode"
+            >
+              <button
+                id="measurement-entry-import-tab"
+                :ref="setMeasurementImportTab"
+                type="button"
+                role="tab"
+                class="measurement-entry-tab"
+                :class="measurementEntryMode === 'import' ? 'is-selected' : ''"
+                :aria-selected="measurementEntryMode === 'import' ? 'true' : 'false'"
+                aria-controls="measurement-entry-import-panel"
+                :tabindex="measurementEntryMode === 'import' ? 0 : -1"
+                :disabled="store.isBusy.value || !measurementImportAvailable"
+                @click="onMeasurementEntryModeChange('import')"
+                @keydown="onMeasurementEntryModeKeydown"
+              >Excel Bulk Import</button>
+              <button
+                id="measurement-entry-individual-tab"
+                type="button"
+                role="tab"
+                class="measurement-entry-tab"
+                :class="measurementEntryMode === 'individual' ? 'is-selected' : ''"
+                :aria-selected="measurementEntryMode === 'individual' ? 'true' : 'false'"
+                aria-controls="measurement-entry-individual-panel"
+                :tabindex="measurementEntryMode === 'individual' ? 0 : -1"
+                :disabled="store.isBusy.value"
+                @click="onMeasurementEntryModeChange('individual')"
+                @keydown="onMeasurementEntryModeKeydown"
+              >Web Factor Entry</button>
+            </div>
           </li>
         </ol>
         <div v-if="store.session.value && !workbookReplacementBusy" class="workflow-metadata">
@@ -716,7 +788,7 @@ async function openReport(): Promise<void> {
             </span>
           </p>
         </div>
-      </aside>
+      </nav>
       <section class="workflow-content">
         <section
           v-show="workbookImportBusy || !store.session.value || store.session.value.status === 'worksheet_selection'"
@@ -785,15 +857,13 @@ async function openReport(): Promise<void> {
           :busy="store.isBusy.value"
           :action="store.busyAction.value === 'downloadMeasurementTemplate' || store.busyAction.value === 'previewMeasurementImport' || store.busyAction.value === 'commitMeasurementImport' ? store.busyAction.value : null"
           :mode="measurementEntryMode"
+          :open-request="measurementImportOpenRequest"
           :success-message="measurementImportSuccessMessage || null"
-          :monte-carlo-ready="simulationReady"
           @download="onDownloadMeasurementTemplate"
           @upload="onPreviewMeasurementImport"
           @confirm="onCommitMeasurementImport"
           @cancel="onCancelMeasurementImport"
           @close-import="onCloseMeasurementImport"
-          @mode-change="onMeasurementEntryModeChange"
-          @open-monte-carlo="openMonteCarlo"
         />
 
         <FactorInputTable
@@ -832,7 +902,6 @@ async function openReport(): Promise<void> {
           :busy="store.isBusy.value"
           :report-pdf-busy="reportPdfBusy"
           :report-pdf-error="reportPdfError"
-          @run="onRunMonteCarlo"
           @download-report-pdf="downloadReportPdf"
           @close="closeMonteCarlo"
         />
@@ -867,19 +936,9 @@ async function openReport(): Promise<void> {
           <h2>Phase 1 setup ready</h2>
           <p>
             {{ simulationReady
-              ? "All factor models are governed and ready for system simulation."
+              ? "All factor models are governed. Use Workflow Step 3 to run the system simulation and generate the report."
               : `Complete Distribution Fit for each measured factor to automatically select its final Monte Carlo distribution. ${pendingMeasuredFitCount} measured factor${pendingMeasuredFitCount === 1 ? "" : "s"} remain.` }}
           </p>
-          <button
-            v-if="simulationReady"
-            type="button"
-            class="action-button"
-            data-open-monte-carlo
-            :disabled="store.isBusy.value"
-            @click="openMonteCarlo"
-          >
-            Open Monte Carlo
-          </button>
         </section>
         </template>
       </section>

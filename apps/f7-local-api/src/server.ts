@@ -435,8 +435,8 @@ function factorWarnings(
   dataset: { readonly observations: ReadonlyArray<{ readonly value: number; readonly disposition: string }> },
 ): F7MeasurementImportDiagnostic[] {
   const warnings: F7MeasurementImportDiagnostic[] = [];
-  if (factor.limitStatus === "CROSSES_ZERO") {
-    warnings.push(previewWarning("sample_validation_failure", factor, "Factor specification crosses zero; physical LSL is 0."));
+  if (factor.lowerSpecLimit < 0) {
+    warnings.push(previewWarning("sample_validation_failure", factor, "Factor LSL is below 0. Review Factor Setup."));
   }
   const outOfSpecCount = dataset.observations.filter((observation) =>
     observation.disposition === "included"
@@ -591,8 +591,8 @@ async function handleRequest(
         replacesExistingFactor: false,
         diagnostics: parsedTemplate.diagnostics.filter((diagnostic) =>
           diagnostic.factorId === undefined || diagnostic.factorId === factor.factorId),
-        warnings: factor.limitStatus === "CROSSES_ZERO"
-          ? [previewWarning("sample_validation_failure", factor, "Factor specification crosses zero; physical LSL is 0.")]
+        warnings: factor.lowerSpecLimit < 0
+          ? [previewWarning("sample_validation_failure", factor, "Factor LSL is below 0. Review Factor Setup.")]
           : [],
         validation: {
           status: "blocked",
