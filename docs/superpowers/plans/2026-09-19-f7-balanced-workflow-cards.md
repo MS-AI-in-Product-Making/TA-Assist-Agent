@@ -42,7 +42,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write the failing CSS contract test**
 
-Require a centered card grid with approximately 260 × 148px cards, a shared number/icon/state top row, larger readable text, centered content-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation. Preserve all existing font families and text colors.
+Require a centered card grid with 260px-wide cards, a 148px minimum height, equal content-driven rows, a shared number/icon/state top row, larger readable text, centered content-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and the existing responsive connector orientation. Preserve all existing font families and text colors.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 

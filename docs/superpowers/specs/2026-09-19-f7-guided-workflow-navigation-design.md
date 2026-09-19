@@ -54,7 +54,7 @@ Each card uses a compact hierarchy:
 2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
 3. A bottom-aligned action area uses centered controls sized to their icon-and-text content.
 
-Cards use the approved balanced proportions: approximately 260px wide by 148px high. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. Cards remain equal-height at desktop and mobile widths.
+Cards use the approved balanced proportions: 260px wide with a 148px minimum height. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. All three cards share the height required by the most content-heavy step at both desktop and mobile widths, so full English labels remain readable without reducing type size.
 
 Typography keeps the existing font families and text colors. Only size and spacing change for readability:
 
