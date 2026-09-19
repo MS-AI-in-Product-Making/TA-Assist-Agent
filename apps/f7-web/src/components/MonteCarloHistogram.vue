@@ -33,9 +33,14 @@ const labels: Record<MonteCarloReferenceId, string> = {
   "upper-spec-limit": "USL",
   target: "Target",
   mean: "Mean",
-  "minus-target-sigma": "−Target σ",
-  "plus-target-sigma": "+Target σ",
+  "minus-target-sigma": `−${props.result.targetSigmaLevel}σ`,
+  "plus-target-sigma": `+${props.result.targetSigmaLevel}σ`,
 };
+const topReferenceIds = new Set<MonteCarloReferenceId>([
+  "lower-spec-limit",
+  "target",
+  "upper-spec-limit",
+]);
 const chartAriaLabel = computed(() => props.setup === undefined
   ? "Monte Carlo observed histogram and moment-fitted Normal curve"
   : "Monte Carlo observed histogram with Monte Carlo and Factor Setup Normal curves");
@@ -54,11 +59,85 @@ function xPosition(value: number): number {
 }
 
 function yPosition(value: number): number {
-  return 72 + (1 - value / model.value.maximumCount) * 206;
+  return 82 + (1 - value / model.value.maximumCount) * 196;
 }
 
 function formatTick(value: number): string {
   return value.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+}
+
+function formatReference(value: number): string {
+  return value.toFixed(4);
+}
+
+function referenceText(reference: { readonly id: MonteCarloReferenceId; readonly value: number }): string {
+  return `${labels[reference.id]} ${formatReference(reference.value)}`;
+}
+
+function referenceRow(referenceId: MonteCarloReferenceId): "top" | "bottom" {
+  return topReferenceIds.has(referenceId) ? "top" : "bottom";
+}
+
+function referenceLabelWidth(text: string): number {
+  return Math.min(160, Math.max(64, text.length * 6.3 + 12));
+}
+
+function referenceTextLength(text: string): number | undefined {
+  return text.length * 6.3 + 12 > 160 ? 148 : undefined;
+}
+
+function referenceLabelX(x: number, text: string): number {
+  const halfWidth = referenceLabelWidth(text) / 2;
+  return Math.min(780 - halfWidth, Math.max(56 + halfWidth, x));
+}
+
+interface LabelLayoutItem {
+  readonly id: string;
+  readonly x: number;
+  readonly text: string;
+}
+
+function layoutLabelRow(items: readonly LabelLayoutItem[]): ReadonlyMap<string, number> {
+  const positioned = [...items]
+    .sort((left, right) => left.x - right.x)
+    .map((item) => ({ ...item, width: referenceLabelWidth(item.text), positionedX: referenceLabelX(item.x, item.text) }));
+  for (let index = 1; index < positioned.length; index += 1) {
+    const previous = positioned[index - 1]!;
+    const current = positioned[index]!;
+    current.positionedX = Math.max(current.positionedX, previous.positionedX + previous.width / 2 + current.width / 2);
+  }
+  for (let index = positioned.length - 1; index >= 0; index -= 1) {
+    const current = positioned[index]!;
+    const maximumX = index === positioned.length - 1
+      ? 780 - current.width / 2
+      : positioned[index + 1]!.positionedX - positioned[index + 1]!.width / 2 - current.width / 2;
+    current.positionedX = Math.min(current.positionedX, maximumX);
+  }
+  return new Map(positioned.map((item) => [item.id, item.positionedX]));
+}
+
+const referenceLabelPositions = computed(() => {
+  const rows = model.value.references.reduce<Record<"top" | "bottom", LabelLayoutItem[]>>((result, reference) => {
+    result[referenceRow(reference.id)].push({ id: reference.id, x: reference.x, text: referenceText(reference) });
+    return result;
+  }, { top: [], bottom: [] });
+  if (model.value.setupMeanReference !== undefined) {
+    const setupReference = model.value.setupMeanReference;
+    rows.bottom.push({
+      id: "setup-mean",
+      x: setupReference.x,
+      text: `Setup Mean ${formatReference(setupReference.value)}`,
+    });
+  }
+  return new Map([...layoutLabelRow(rows.top), ...layoutLabelRow(rows.bottom)]);
+});
+
+function positionedReferenceLabelX(reference: { readonly id: MonteCarloReferenceId; readonly x: number }): number {
+  return referenceLabelPositions.value.get(reference.id) ?? reference.x;
+}
+
+function setupMeanLabelX(): number {
+  return referenceLabelPositions.value.get("setup-mean") ?? 418;
 }
 </script>
 
@@ -73,7 +152,7 @@ function formatTick(value: number): string {
           <text class="plot-tick-label" x="50" :y="yPosition(tick) + 4" text-anchor="end">{{ formatTick(tick) }}</text>
         </g>
         <line class="plot-axis" x1="56" x2="780" y1="278" y2="278" />
-        <line class="plot-axis" x1="56" x2="56" y1="72" y2="278" />
+        <line class="plot-axis" x1="56" x2="56" y1="82" y2="278" />
         <rect
         v-for="(bar, index) in model.bars"
         :key="index"
@@ -90,17 +169,37 @@ function formatTick(value: number): string {
         :key="reference.id"
         data-monte-carlo-reference
         :data-reference-id="reference.id"
+        :data-reference-row="referenceRow(reference.id)"
       >
         <line
           :class="['monte-carlo-reference', `reference-${reference.id}`]"
           :x1="reference.x"
           :x2="reference.x"
-          y1="72"
+          y1="82"
           y2="278"
         />
-        <text class="monte-carlo-reference-label" :x="reference.x" :y="16 + reference.labelRow * 15" text-anchor="middle">
-          {{ labels[reference.id] }}
-        </text>
+        <g
+          class="monte-carlo-reference-badge"
+          :transform="`translate(${positionedReferenceLabelX(reference)} ${referenceRow(reference.id) === 'top' ? 5 : 31})`"
+        >
+          <rect
+            :x="-referenceLabelWidth(referenceText(reference)) / 2"
+            y="0"
+            :width="referenceLabelWidth(referenceText(reference))"
+            height="18"
+            rx="2"
+          />
+          <text
+            class="monte-carlo-reference-label"
+            x="0"
+            y="13"
+            text-anchor="middle"
+            :textLength="referenceTextLength(referenceText(reference))"
+            :lengthAdjust="referenceTextLength(referenceText(reference)) === undefined ? undefined : 'spacingAndGlyphs'"
+          >
+            {{ referenceText(reference) }}
+          </text>
+        </g>
         </g>
         <path data-monte-carlo-fit class="monte-carlo-fit" :d="model.curvePath" />
         <path
@@ -112,20 +211,37 @@ function formatTick(value: number): string {
         <g
           v-if="model.setupMeanReference"
           data-factor-setup-mean
+          data-reference-row="bottom"
           class="factor-setup-mean"
         >
           <line
             :x1="model.setupMeanReference.x"
             :x2="model.setupMeanReference.x"
-            y1="72"
+            y1="82"
             y2="278"
           />
-          <text
-            class="monte-carlo-reference-label"
-            :x="model.setupMeanReference.x"
-            :y="16 + model.setupMeanReference.labelRow * 15"
-            text-anchor="middle"
-          >Setup Mean</text>
+          <g
+            class="monte-carlo-reference-badge setup-mean-badge"
+            :transform="`translate(${setupMeanLabelX()} 31)`"
+          >
+            <rect
+              :x="-referenceLabelWidth(`Setup Mean ${formatReference(model.setupMeanReference.value)}`) / 2"
+              y="0"
+              :width="referenceLabelWidth(`Setup Mean ${formatReference(model.setupMeanReference.value)}`)"
+              height="18"
+              rx="2"
+            />
+            <text
+              class="monte-carlo-reference-label"
+              x="0"
+              y="13"
+              text-anchor="middle"
+              :textLength="referenceTextLength(`Setup Mean ${formatReference(model.setupMeanReference.value)}`)"
+              :lengthAdjust="referenceTextLength(`Setup Mean ${formatReference(model.setupMeanReference.value)}`) === undefined ? undefined : 'spacingAndGlyphs'"
+            >
+              Setup Mean {{ formatReference(model.setupMeanReference.value) }}
+            </text>
+          </g>
         </g>
         <g v-for="(tick, index) in model.xTicks" :key="`x-${index}`">
           <line class="plot-tick" :x1="xPosition(tick)" :x2="xPosition(tick)" y1="278" y2="283" />

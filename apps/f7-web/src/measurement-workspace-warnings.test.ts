@@ -33,9 +33,17 @@ describe("measurementWorkspaceWarnings", () => {
     }));
 
     expect(warnings).toEqual([
-      "Factor specification crosses zero; physical LSL is 0.",
+      "Factor LSL is below 0. Review Factor Setup.",
       "1 included measurement is outside the Factor specification.",
     ]);
+  });
+
+  it("does not warn when the LSL is exactly zero", () => {
+    expect(measurementWorkspaceWarnings(factorWithMeasurements({
+      lowerSpecLimit: 0,
+      upperSpecLimit: 0.8,
+      observations: [{ value: 0.4, disposition: "included" }],
+    }))).toEqual([]);
   });
 
   it("returns no warning when all included measurements are within a positive specification", () => {

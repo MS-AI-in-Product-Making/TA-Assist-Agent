@@ -4,6 +4,7 @@ export declare const F7_SELECTION_NORMAL_SKEWNESS_MAX = 0.5;
 export declare const F7_SELECTION_NORMAL_COEFFICIENT_OF_VARIATION_MAX = 0.1;
 export declare const F7_SELECTION_NORMAL_MEAN_MEDIAN_RELATIVE_DIFFERENCE_MAX = 0.02;
 export declare const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.1;
+export declare const f7SpecificationSourceSchema: z.ZodEnum<["Worksheet", "Derived"]>;
 export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
 export declare const f7FactorSourceModeSchema: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 export declare const f7MeasurementStructureSchema: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
@@ -86,6 +87,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sigmaLevel: z.ZodOptional<z.ZodNumber>;
     standardDeviation: z.ZodNumber;
     distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+    specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
     designNominal: z.ZodNumber;
@@ -98,6 +100,8 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
     factorCandidateId: z.ZodString;
     factorName: z.ZodString;
+    partNumber: z.ZodOptional<z.ZodString>;
+    dimId: z.ZodOptional<z.ZodString>;
     userAdded: z.ZodOptional<z.ZodLiteral<true>>;
     workbookUnitEvidence: z.ZodOptional<z.ZodString>;
     excelSignedMean: z.ZodNumber;
@@ -118,9 +122,12 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | undefined;
     userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }, {
     factorName: string;
     worksheetName: string;
@@ -138,9 +145,12 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | undefined;
     userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }>, {
     factorName: string;
     worksheetName: string;
@@ -158,9 +168,12 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | undefined;
     userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }, {
     factorName: string;
     worksheetName: string;
@@ -178,9 +191,12 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | undefined;
     userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }>;
 export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -192,7 +208,10 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: z.ZodNumber;
     factorCandidateId: z.ZodString;
     factorName: z.ZodOptional<z.ZodString>;
+    partNumber: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    dimId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+    componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
 }, "strict", z.ZodTypeAny, {
     confirmed: true;
     upperTolerance: number;
@@ -202,7 +221,10 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     factorName?: string | undefined;
     distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | null | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | null | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
 }, {
     confirmed: true;
@@ -213,7 +235,10 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     factorName?: string | undefined;
     distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | null | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | null | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
 }>, {
     confirmed: true;
@@ -224,7 +249,10 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     factorName?: string | undefined;
     distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | null | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | null | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
 }, {
     confirmed: true;
@@ -235,7 +263,10 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     factorName?: string | undefined;
     distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
+    partNumber?: string | null | undefined;
     sigmaLevel?: number | undefined;
+    dimId?: string | null | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
 }>;
 export declare const f7UnitSourceSchema: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
@@ -304,6 +335,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         physicalMean: number;
         support: "BOUNDED_REAL";
     }>;
+    specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
     calculatedMean: z.ZodNumber;
@@ -324,7 +356,10 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: z.ZodString;
     factorId: z.ZodString;
     factorName: z.ZodString;
+    partNumber: z.ZodOptional<z.ZodString>;
+    dimId: z.ZodOptional<z.ZodString>;
     userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+    componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
     unit: z.ZodString;
     unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 }, "strict", z.ZodTypeAny, {
@@ -366,7 +401,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         support: "BOUNDED_REAL";
     };
     calculatedMean: number;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }, {
     unit: string;
     tolerance: number;
@@ -406,7 +445,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         support: "BOUNDED_REAL";
     };
     calculatedMean: number;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }>, {
     unit: string;
     tolerance: number;
@@ -446,7 +489,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         support: "BOUNDED_REAL";
     };
     calculatedMean: number;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }, {
     unit: string;
     tolerance: number;
@@ -486,7 +533,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         support: "BOUNDED_REAL";
     };
     calculatedMean: number;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
     userAdded?: true | undefined;
+    specificationSource?: "Worksheet" | "Derived" | undefined;
 }>;
 export declare const f7ObservationDispositionSchema: z.ZodEnum<["included", "excluded"]>;
 export declare const f7ExclusionReasonSchema: z.ZodEnum<["OUTLIER", "MEASUREMENT_SYSTEM_ERROR", "TRANSCRIPTION_ERROR", "PROCESS_INTERRUPTION", "OTHER"]>;
@@ -1353,6 +1404,6794 @@ export declare const f7DatasetValidationResultSchema: z.ZodObject<{
         gamma: "eligible" | "ineligible_nonpositive";
     };
 }>;
+export declare const F7_MEASUREMENT_IMPORT_TEMPLATE_CONTRACT_ID = "f7-measurement-import-template-v1";
+export declare const F7_MEASUREMENT_IMPORT_MAX_FACTORS = 100;
+export declare const F7_MEASUREMENT_IMPORT_MAX_DIAGNOSTICS = 2000;
+export declare const f7MeasurementImportFactorCoordinatesSchema: z.ZodObject<{
+    factorNameCell: z.ZodString;
+    partNumberCell: z.ZodString;
+    dimIdCell: z.ZodString;
+    designNominalCell: z.ZodString;
+    upperToleranceCell: z.ZodString;
+    lowerToleranceCell: z.ZodString;
+    lowerSpecLimitCell: z.ZodString;
+    upperSpecLimitCell: z.ZodString;
+    specificationSourceCell: z.ZodString;
+    limitStatusCell: z.ZodString;
+    measurementStructureCell: z.ZodString;
+    subgroupSizeCell: z.ZodString;
+    estimatorCell: z.ZodString;
+    measurementColumn: z.ZodString;
+    firstMeasurementCell: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    factorNameCell: string;
+    partNumberCell: string;
+    dimIdCell: string;
+    designNominalCell: string;
+    upperToleranceCell: string;
+    lowerToleranceCell: string;
+    lowerSpecLimitCell: string;
+    upperSpecLimitCell: string;
+    specificationSourceCell: string;
+    limitStatusCell: string;
+    measurementStructureCell: string;
+    subgroupSizeCell: string;
+    estimatorCell: string;
+    measurementColumn: string;
+    firstMeasurementCell: string;
+}, {
+    factorNameCell: string;
+    partNumberCell: string;
+    dimIdCell: string;
+    designNominalCell: string;
+    upperToleranceCell: string;
+    lowerToleranceCell: string;
+    lowerSpecLimitCell: string;
+    upperSpecLimitCell: string;
+    specificationSourceCell: string;
+    limitStatusCell: string;
+    measurementStructureCell: string;
+    subgroupSizeCell: string;
+    estimatorCell: string;
+    measurementColumn: string;
+    firstMeasurementCell: string;
+}>;
+export declare const f7MeasurementImportFactorLimitStatusSchema: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+export declare const f7MeasurementImportFactorManifestSchema: z.ZodEffects<z.ZodObject<{
+    factorId: z.ZodString;
+    factorName: z.ZodString;
+    partNumber: z.ZodOptional<z.ZodString>;
+    dimId: z.ZodOptional<z.ZodString>;
+    unit: z.ZodString;
+    designNominal: z.ZodNumber;
+    upperTolerance: z.ZodNumber;
+    lowerTolerance: z.ZodNumber;
+    lowerSpecLimit: z.ZodNumber;
+    upperSpecLimit: z.ZodNumber;
+    specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+    limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+    coordinates: z.ZodObject<{
+        factorNameCell: z.ZodString;
+        partNumberCell: z.ZodString;
+        dimIdCell: z.ZodString;
+        designNominalCell: z.ZodString;
+        upperToleranceCell: z.ZodString;
+        lowerToleranceCell: z.ZodString;
+        lowerSpecLimitCell: z.ZodString;
+        upperSpecLimitCell: z.ZodString;
+        specificationSourceCell: z.ZodString;
+        limitStatusCell: z.ZodString;
+        measurementStructureCell: z.ZodString;
+        subgroupSizeCell: z.ZodString;
+        estimatorCell: z.ZodString;
+        measurementColumn: z.ZodString;
+        firstMeasurementCell: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    }, {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    }>;
+    immutableValueDigest: z.ZodString;
+    immutableCoordinateDigest: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    unit: string;
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    specificationSource: "Worksheet" | "Derived";
+    factorId: string;
+    limitStatus: "VALID" | "CROSSES_ZERO";
+    coordinates: {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    };
+    immutableValueDigest: string;
+    immutableCoordinateDigest: string;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+}, {
+    unit: string;
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    specificationSource: "Worksheet" | "Derived";
+    factorId: string;
+    limitStatus: "VALID" | "CROSSES_ZERO";
+    coordinates: {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    };
+    immutableValueDigest: string;
+    immutableCoordinateDigest: string;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+}>, {
+    unit: string;
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    specificationSource: "Worksheet" | "Derived";
+    factorId: string;
+    limitStatus: "VALID" | "CROSSES_ZERO";
+    coordinates: {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    };
+    immutableValueDigest: string;
+    immutableCoordinateDigest: string;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+}, {
+    unit: string;
+    factorName: string;
+    upperTolerance: number;
+    lowerTolerance: number;
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    specificationSource: "Worksheet" | "Derived";
+    factorId: string;
+    limitStatus: "VALID" | "CROSSES_ZERO";
+    coordinates: {
+        factorNameCell: string;
+        partNumberCell: string;
+        dimIdCell: string;
+        designNominalCell: string;
+        upperToleranceCell: string;
+        lowerToleranceCell: string;
+        lowerSpecLimitCell: string;
+        upperSpecLimitCell: string;
+        specificationSourceCell: string;
+        limitStatusCell: string;
+        measurementStructureCell: string;
+        subgroupSizeCell: string;
+        estimatorCell: string;
+        measurementColumn: string;
+        firstMeasurementCell: string;
+    };
+    immutableValueDigest: string;
+    immutableCoordinateDigest: string;
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+}>;
+export declare const f7MeasurementImportManifestSchema: z.ZodEffects<z.ZodObject<{
+    contractId: z.ZodLiteral<"f7-measurement-import-template-v1">;
+    contractVersion: z.ZodLiteral<1>;
+    templateId: z.ZodString;
+    workbookContentHash: z.ZodString;
+    worksheetName: z.ZodString;
+    worksheetStableId: z.ZodString;
+    factorSetDigest: z.ZodString;
+    factorsDigest: z.ZodString;
+    lockedValueDigest: z.ZodString;
+    lockedCoordinateDigest: z.ZodString;
+    factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        factorId: z.ZodString;
+        factorName: z.ZodString;
+        partNumber: z.ZodOptional<z.ZodString>;
+        dimId: z.ZodOptional<z.ZodString>;
+        unit: z.ZodString;
+        designNominal: z.ZodNumber;
+        upperTolerance: z.ZodNumber;
+        lowerTolerance: z.ZodNumber;
+        lowerSpecLimit: z.ZodNumber;
+        upperSpecLimit: z.ZodNumber;
+        specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+        limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+        coordinates: z.ZodObject<{
+            factorNameCell: z.ZodString;
+            partNumberCell: z.ZodString;
+            dimIdCell: z.ZodString;
+            designNominalCell: z.ZodString;
+            upperToleranceCell: z.ZodString;
+            lowerToleranceCell: z.ZodString;
+            lowerSpecLimitCell: z.ZodString;
+            upperSpecLimitCell: z.ZodString;
+            specificationSourceCell: z.ZodString;
+            limitStatusCell: z.ZodString;
+            measurementStructureCell: z.ZodString;
+            subgroupSizeCell: z.ZodString;
+            estimatorCell: z.ZodString;
+            measurementColumn: z.ZodString;
+            firstMeasurementCell: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        }, {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        }>;
+        immutableValueDigest: z.ZodString;
+        immutableCoordinateDigest: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }, {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }>, {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }, {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }>, "many">;
+}, "strict", z.ZodTypeAny, {
+    contractVersion: 1;
+    contractId: "f7-measurement-import-template-v1";
+    worksheetName: string;
+    workbookContentHash: string;
+    factors: {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }[];
+    templateId: string;
+    worksheetStableId: string;
+    factorSetDigest: string;
+    factorsDigest: string;
+    lockedValueDigest: string;
+    lockedCoordinateDigest: string;
+}, {
+    contractVersion: 1;
+    contractId: "f7-measurement-import-template-v1";
+    worksheetName: string;
+    workbookContentHash: string;
+    factors: {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }[];
+    templateId: string;
+    worksheetStableId: string;
+    factorSetDigest: string;
+    factorsDigest: string;
+    lockedValueDigest: string;
+    lockedCoordinateDigest: string;
+}>, {
+    contractVersion: 1;
+    contractId: "f7-measurement-import-template-v1";
+    worksheetName: string;
+    workbookContentHash: string;
+    factors: {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }[];
+    templateId: string;
+    worksheetStableId: string;
+    factorSetDigest: string;
+    factorsDigest: string;
+    lockedValueDigest: string;
+    lockedCoordinateDigest: string;
+}, {
+    contractVersion: 1;
+    contractId: "f7-measurement-import-template-v1";
+    worksheetName: string;
+    workbookContentHash: string;
+    factors: {
+        unit: string;
+        factorName: string;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        specificationSource: "Worksheet" | "Derived";
+        factorId: string;
+        limitStatus: "VALID" | "CROSSES_ZERO";
+        coordinates: {
+            factorNameCell: string;
+            partNumberCell: string;
+            dimIdCell: string;
+            designNominalCell: string;
+            upperToleranceCell: string;
+            lowerToleranceCell: string;
+            lowerSpecLimitCell: string;
+            upperSpecLimitCell: string;
+            specificationSourceCell: string;
+            limitStatusCell: string;
+            measurementStructureCell: string;
+            subgroupSizeCell: string;
+            estimatorCell: string;
+            measurementColumn: string;
+            firstMeasurementCell: string;
+        };
+        immutableValueDigest: string;
+        immutableCoordinateDigest: string;
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+    }[];
+    templateId: string;
+    worksheetStableId: string;
+    factorSetDigest: string;
+    factorsDigest: string;
+    lockedValueDigest: string;
+    lockedCoordinateDigest: string;
+}>;
+export declare const f7MeasurementImportAuthoritySchema: z.ZodObject<{
+    sessionId: z.ZodString;
+    sessionStateDigest: z.ZodString;
+    authorityDigest: z.ZodString;
+    manifest: z.ZodEffects<z.ZodObject<{
+        contractId: z.ZodLiteral<"f7-measurement-import-template-v1">;
+        contractVersion: z.ZodLiteral<1>;
+        templateId: z.ZodString;
+        workbookContentHash: z.ZodString;
+        worksheetName: z.ZodString;
+        worksheetStableId: z.ZodString;
+        factorSetDigest: z.ZodString;
+        factorsDigest: z.ZodString;
+        lockedValueDigest: z.ZodString;
+        lockedCoordinateDigest: z.ZodString;
+        factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+            factorId: z.ZodString;
+            factorName: z.ZodString;
+            partNumber: z.ZodOptional<z.ZodString>;
+            dimId: z.ZodOptional<z.ZodString>;
+            unit: z.ZodString;
+            designNominal: z.ZodNumber;
+            upperTolerance: z.ZodNumber;
+            lowerTolerance: z.ZodNumber;
+            lowerSpecLimit: z.ZodNumber;
+            upperSpecLimit: z.ZodNumber;
+            specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+            limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+            coordinates: z.ZodObject<{
+                factorNameCell: z.ZodString;
+                partNumberCell: z.ZodString;
+                dimIdCell: z.ZodString;
+                designNominalCell: z.ZodString;
+                upperToleranceCell: z.ZodString;
+                lowerToleranceCell: z.ZodString;
+                lowerSpecLimitCell: z.ZodString;
+                upperSpecLimitCell: z.ZodString;
+                specificationSourceCell: z.ZodString;
+                limitStatusCell: z.ZodString;
+                measurementStructureCell: z.ZodString;
+                subgroupSizeCell: z.ZodString;
+                estimatorCell: z.ZodString;
+                measurementColumn: z.ZodString;
+                firstMeasurementCell: z.ZodString;
+            }, "strict", z.ZodTypeAny, {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            }, {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            }>;
+            immutableValueDigest: z.ZodString;
+            immutableCoordinateDigest: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }, {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }>, {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }, {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }>, "many">;
+    }, "strict", z.ZodTypeAny, {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    }, {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    }>, {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    }, {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    }>;
+}, "strict", z.ZodTypeAny, {
+    sessionId: string;
+    manifest: {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    };
+    sessionStateDigest: string;
+    authorityDigest: string;
+}, {
+    sessionId: string;
+    manifest: {
+        contractVersion: 1;
+        contractId: "f7-measurement-import-template-v1";
+        worksheetName: string;
+        workbookContentHash: string;
+        factors: {
+            unit: string;
+            factorName: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            specificationSource: "Worksheet" | "Derived";
+            factorId: string;
+            limitStatus: "VALID" | "CROSSES_ZERO";
+            coordinates: {
+                factorNameCell: string;
+                partNumberCell: string;
+                dimIdCell: string;
+                designNominalCell: string;
+                upperToleranceCell: string;
+                lowerToleranceCell: string;
+                lowerSpecLimitCell: string;
+                upperSpecLimitCell: string;
+                specificationSourceCell: string;
+                limitStatusCell: string;
+                measurementStructureCell: string;
+                subgroupSizeCell: string;
+                estimatorCell: string;
+                measurementColumn: string;
+                firstMeasurementCell: string;
+            };
+            immutableValueDigest: string;
+            immutableCoordinateDigest: string;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+        }[];
+        templateId: string;
+        worksheetStableId: string;
+        factorSetDigest: string;
+        factorsDigest: string;
+        lockedValueDigest: string;
+        lockedCoordinateDigest: string;
+    };
+    sessionStateDigest: string;
+    authorityDigest: string;
+}>;
+export declare const f7MeasurementImportAuthorityContextSchema: z.ZodObject<{
+    authority: z.ZodObject<{
+        sessionId: z.ZodString;
+        sessionStateDigest: z.ZodString;
+        authorityDigest: z.ZodString;
+        manifest: z.ZodEffects<z.ZodObject<{
+            contractId: z.ZodLiteral<"f7-measurement-import-template-v1">;
+            contractVersion: z.ZodLiteral<1>;
+            templateId: z.ZodString;
+            workbookContentHash: z.ZodString;
+            worksheetName: z.ZodString;
+            worksheetStableId: z.ZodString;
+            factorSetDigest: z.ZodString;
+            factorsDigest: z.ZodString;
+            lockedValueDigest: z.ZodString;
+            lockedCoordinateDigest: z.ZodString;
+            factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+                factorId: z.ZodString;
+                factorName: z.ZodString;
+                partNumber: z.ZodOptional<z.ZodString>;
+                dimId: z.ZodOptional<z.ZodString>;
+                unit: z.ZodString;
+                designNominal: z.ZodNumber;
+                upperTolerance: z.ZodNumber;
+                lowerTolerance: z.ZodNumber;
+                lowerSpecLimit: z.ZodNumber;
+                upperSpecLimit: z.ZodNumber;
+                specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+                limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+                coordinates: z.ZodObject<{
+                    factorNameCell: z.ZodString;
+                    partNumberCell: z.ZodString;
+                    dimIdCell: z.ZodString;
+                    designNominalCell: z.ZodString;
+                    upperToleranceCell: z.ZodString;
+                    lowerToleranceCell: z.ZodString;
+                    lowerSpecLimitCell: z.ZodString;
+                    upperSpecLimitCell: z.ZodString;
+                    specificationSourceCell: z.ZodString;
+                    limitStatusCell: z.ZodString;
+                    measurementStructureCell: z.ZodString;
+                    subgroupSizeCell: z.ZodString;
+                    estimatorCell: z.ZodString;
+                    measurementColumn: z.ZodString;
+                    firstMeasurementCell: z.ZodString;
+                }, "strict", z.ZodTypeAny, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }>;
+                immutableValueDigest: z.ZodString;
+                immutableCoordinateDigest: z.ZodString;
+            }, "strict", z.ZodTypeAny, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, "many">;
+        }, "strict", z.ZodTypeAny, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }>;
+    expectedMeasurementImportRevision: z.ZodNumber;
+}, "strict", z.ZodTypeAny, {
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}, {
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}>;
+export declare const f7MeasurementImportDiagnosticReasonSchema: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+export declare const f7MeasurementImportDiagnosticSchema: z.ZodObject<{
+    reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+    factorId: z.ZodOptional<z.ZodString>;
+    factorName: z.ZodOptional<z.ZodString>;
+    sheetCell: z.ZodOptional<z.ZodString>;
+    rowNumber: z.ZodOptional<z.ZodNumber>;
+    value: z.ZodOptional<z.ZodNumber>;
+    requiredMinimum: z.ZodOptional<z.ZodNumber>;
+    displayMessage: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+    displayMessage: string;
+    value?: number | undefined;
+    factorName?: string | undefined;
+    factorId?: string | undefined;
+    rowNumber?: number | undefined;
+    sheetCell?: string | undefined;
+    requiredMinimum?: number | undefined;
+}, {
+    reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+    displayMessage: string;
+    value?: number | undefined;
+    factorName?: string | undefined;
+    factorId?: string | undefined;
+    rowNumber?: number | undefined;
+    sheetCell?: string | undefined;
+    requiredMinimum?: number | undefined;
+}>;
+export declare const f7MeasurementImportFactorPreviewSchema: z.ZodEffects<z.ZodObject<{
+    factorId: z.ZodString;
+    factorName: z.ZodString;
+    unit: z.ZodString;
+    structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
+    sampleCount: z.ZodNumber;
+    status: z.ZodEnum<["ready", "blocked"]>;
+    replacesExistingFactor: z.ZodBoolean;
+    diagnostics: z.ZodArray<z.ZodObject<{
+        reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+        factorId: z.ZodOptional<z.ZodString>;
+        factorName: z.ZodOptional<z.ZodString>;
+        sheetCell: z.ZodOptional<z.ZodString>;
+        rowNumber: z.ZodOptional<z.ZodNumber>;
+        value: z.ZodOptional<z.ZodNumber>;
+        requiredMinimum: z.ZodOptional<z.ZodNumber>;
+        displayMessage: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }>, "many">;
+    warnings: z.ZodArray<z.ZodObject<{
+        reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+        factorId: z.ZodOptional<z.ZodString>;
+        factorName: z.ZodOptional<z.ZodString>;
+        sheetCell: z.ZodOptional<z.ZodString>;
+        rowNumber: z.ZodOptional<z.ZodNumber>;
+        value: z.ZodOptional<z.ZodNumber>;
+        requiredMinimum: z.ZodOptional<z.ZodNumber>;
+        displayMessage: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }>, "many">;
+    dataset: z.ZodOptional<z.ZodEffects<z.ZodObject<{
+        factorId: z.ZodString;
+        unit: z.ZodString;
+        structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
+        sourceReference: z.ZodString;
+        importedAt: z.ZodString;
+        msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
+        observations: z.ZodArray<z.ZodDiscriminatedUnion<"disposition", [z.ZodObject<{
+            disposition: z.ZodLiteral<"included">;
+            value: z.ZodNumber;
+            originalRow: z.ZodNumber;
+            sequence: z.ZodOptional<z.ZodString>;
+            timestamp: z.ZodOptional<z.ZodString>;
+            subgroup: z.ZodOptional<z.ZodString>;
+            batch: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        }, {
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        }>, z.ZodObject<{
+            disposition: z.ZodLiteral<"excluded">;
+            reason: z.ZodEnum<["OUTLIER", "MEASUREMENT_SYSTEM_ERROR", "TRANSCRIPTION_ERROR", "PROCESS_INTERRUPTION", "OTHER"]>;
+            operatorReference: z.ZodString;
+            confirmed: z.ZodLiteral<true>;
+            value: z.ZodNumber;
+            originalRow: z.ZodNumber;
+            sequence: z.ZodOptional<z.ZodString>;
+            timestamp: z.ZodOptional<z.ZodString>;
+            subgroup: z.ZodOptional<z.ZodString>;
+            batch: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        }, {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        }>]>, "many">;
+        missingRowCount: z.ZodNumber;
+        rejectionSummaries: z.ZodArray<z.ZodObject<{
+            rowNumber: z.ZodNumber;
+            reason: z.ZodEnum<["non_finite_value", "invalid_row", "missing_value"]>;
+        }, "strict", z.ZodTypeAny, {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }, {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }>, "many">;
+        originalRowCount: z.ZodNumber;
+        analyzedCount: z.ZodNumber;
+        contentHash: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>, {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>>;
+    validation: z.ZodObject<{
+        status: z.ZodEnum<["ready", "blocked"]>;
+        blockingIssues: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+        }, "strict", z.ZodTypeAny, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }>, "many">;
+        advisoryIssues: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+        }, "strict", z.ZodTypeAny, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }>, "many">;
+        candidateEligibility: z.ZodObject<{
+            normal: z.ZodLiteral<"eligible">;
+            lognormal: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            weibull: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            gamma: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
+        }, "strict", z.ZodTypeAny, {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        }, {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    }, {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    }>;
+}, "strict", z.ZodTypeAny, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+    dataset?: {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    } | undefined;
+}, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+    dataset?: {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    } | undefined;
+}>, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+    dataset?: {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    } | undefined;
+}, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+    dataset?: {
+        unit: string;
+        contentHash: string;
+        observations: ({
+            value: number;
+            disposition: "included";
+            originalRow: number;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        } | {
+            value: number;
+            confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+            disposition: "excluded";
+            originalRow: number;
+            operatorReference: string;
+            sequence?: string | undefined;
+            timestamp?: string | undefined;
+            subgroup?: string | undefined;
+            batch?: string | undefined;
+        })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        missingRowCount: number;
+        rejectionSummaries: {
+            reason: "non_finite_value" | "invalid_row" | "missing_value";
+            rowNumber: number;
+        }[];
+        originalRowCount: number;
+        analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    } | undefined;
+}>;
+export declare const f7MeasurementImportFactorPreviewResponseSchema: z.ZodEffects<z.ZodObject<{
+    factorId: z.ZodString;
+    factorName: z.ZodString;
+    unit: z.ZodString;
+    structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
+    sampleCount: z.ZodNumber;
+    status: z.ZodEnum<["ready", "blocked"]>;
+    replacesExistingFactor: z.ZodBoolean;
+    diagnostics: z.ZodArray<z.ZodObject<{
+        reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+        factorId: z.ZodOptional<z.ZodString>;
+        factorName: z.ZodOptional<z.ZodString>;
+        sheetCell: z.ZodOptional<z.ZodString>;
+        rowNumber: z.ZodOptional<z.ZodNumber>;
+        value: z.ZodOptional<z.ZodNumber>;
+        requiredMinimum: z.ZodOptional<z.ZodNumber>;
+        displayMessage: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }>, "many">;
+    warnings: z.ZodArray<z.ZodObject<{
+        reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+        factorId: z.ZodOptional<z.ZodString>;
+        factorName: z.ZodOptional<z.ZodString>;
+        sheetCell: z.ZodOptional<z.ZodString>;
+        rowNumber: z.ZodOptional<z.ZodNumber>;
+        value: z.ZodOptional<z.ZodNumber>;
+        requiredMinimum: z.ZodOptional<z.ZodNumber>;
+        displayMessage: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }>, "many">;
+    validation: z.ZodObject<{
+        status: z.ZodEnum<["ready", "blocked"]>;
+        blockingIssues: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+        }, "strict", z.ZodTypeAny, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }>, "many">;
+        advisoryIssues: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+        }, "strict", z.ZodTypeAny, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }, {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }>, "many">;
+        candidateEligibility: z.ZodObject<{
+            normal: z.ZodLiteral<"eligible">;
+            lognormal: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            weibull: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            gamma: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+            uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
+        }, "strict", z.ZodTypeAny, {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        }, {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    }, {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    }>;
+}, "strict", z.ZodTypeAny, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}>, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}, {
+    status: "blocked" | "ready";
+    validation: {
+        status: "blocked" | "ready";
+        blockingIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        advisoryIssues: {
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            factorId?: string | undefined;
+            rowNumbers?: number[] | undefined;
+        }[];
+        candidateEligibility: {
+            normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
+            lognormal: "eligible" | "ineligible_nonpositive";
+            weibull: "eligible" | "ineligible_nonpositive";
+            gamma: "eligible" | "ineligible_nonpositive";
+        };
+    };
+    unit: string;
+    factorName: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sampleCount: number;
+    replacesExistingFactor: boolean;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    warnings: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}>;
+export declare const f7MeasurementImportPreviewRequestSchema: z.ZodObject<{
+    sessionId: z.ZodString;
+    fileName: z.ZodEffects<z.ZodString, string, string>;
+    workbookBase64: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    sessionId: string;
+    fileName: string;
+    workbookBase64: string;
+}, {
+    sessionId: string;
+    fileName: string;
+    workbookBase64: string;
+}>;
+export declare const f7MeasurementImportPreviewResponseSchema: z.ZodEffects<z.ZodObject<{
+    previewId: z.ZodString;
+    expiresAt: z.ZodString;
+    sessionStateDigest: z.ZodString;
+    factorSetDigest: z.ZodString;
+    status: z.ZodEnum<["ready", "blocked"]>;
+    factorCount: z.ZodNumber;
+    replacementFactorIds: z.ZodArray<z.ZodString, "many">;
+    factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        factorId: z.ZodString;
+        factorName: z.ZodString;
+        unit: z.ZodString;
+        structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
+        sampleCount: z.ZodNumber;
+        status: z.ZodEnum<["ready", "blocked"]>;
+        replacesExistingFactor: z.ZodBoolean;
+        diagnostics: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            factorName: z.ZodOptional<z.ZodString>;
+            sheetCell: z.ZodOptional<z.ZodString>;
+            rowNumber: z.ZodOptional<z.ZodNumber>;
+            value: z.ZodOptional<z.ZodNumber>;
+            requiredMinimum: z.ZodOptional<z.ZodNumber>;
+            displayMessage: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }, {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }>, "many">;
+        warnings: z.ZodArray<z.ZodObject<{
+            reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+            factorId: z.ZodOptional<z.ZodString>;
+            factorName: z.ZodOptional<z.ZodString>;
+            sheetCell: z.ZodOptional<z.ZodString>;
+            rowNumber: z.ZodOptional<z.ZodNumber>;
+            value: z.ZodOptional<z.ZodNumber>;
+            requiredMinimum: z.ZodOptional<z.ZodNumber>;
+            displayMessage: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }, {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }>, "many">;
+        validation: z.ZodObject<{
+            status: z.ZodEnum<["ready", "blocked"]>;
+            blockingIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            advisoryIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            candidateEligibility: z.ZodObject<{
+                normal: z.ZodLiteral<"eligible">;
+                lognormal: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                weibull: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                gamma: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
+            }, "strict", z.ZodTypeAny, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }>;
+        }, "strict", z.ZodTypeAny, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>, {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>, "many">;
+    diagnostics: z.ZodArray<z.ZodObject<{
+        reason: z.ZodEnum<["invalid_template_identity", "stale_template", "changed_locked_cell", "missing_factor", "extra_factor", "duplicate_factor", "invalid_enum", "missing_structure_configuration", "incomplete_subgroup", "non_finite_measurement", "negative_physical_measurement", "sample_validation_failure", "unsupported_workbook_content"]>;
+        factorId: z.ZodOptional<z.ZodString>;
+        factorName: z.ZodOptional<z.ZodString>;
+        sheetCell: z.ZodOptional<z.ZodString>;
+        rowNumber: z.ZodOptional<z.ZodNumber>;
+        value: z.ZodOptional<z.ZodNumber>;
+        requiredMinimum: z.ZodOptional<z.ZodNumber>;
+        displayMessage: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }, {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }>, "many">;
+    readyFactorCount: z.ZodNumber;
+    blockedFactorCount: z.ZodNumber;
+    replacementCount: z.ZodNumber;
+    totalSampleCount: z.ZodNumber;
+    diagnosticCount: z.ZodNumber;
+}, "strict", z.ZodTypeAny, {
+    status: "blocked" | "ready";
+    factorCount: number;
+    factors: {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    previewId: string;
+    expiresAt: string;
+    readyFactorCount: number;
+    blockedFactorCount: number;
+    replacementCount: number;
+    totalSampleCount: number;
+    diagnosticCount: number;
+}, {
+    status: "blocked" | "ready";
+    factorCount: number;
+    factors: {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    previewId: string;
+    expiresAt: string;
+    readyFactorCount: number;
+    blockedFactorCount: number;
+    replacementCount: number;
+    totalSampleCount: number;
+    diagnosticCount: number;
+}>, {
+    status: "blocked" | "ready";
+    factorCount: number;
+    factors: {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    previewId: string;
+    expiresAt: string;
+    readyFactorCount: number;
+    blockedFactorCount: number;
+    replacementCount: number;
+    totalSampleCount: number;
+    diagnosticCount: number;
+}, {
+    status: "blocked" | "ready";
+    factorCount: number;
+    factors: {
+        status: "blocked" | "ready";
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sampleCount: number;
+        replacesExistingFactor: boolean;
+        diagnostics: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        warnings: {
+            reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+            displayMessage: string;
+            value?: number | undefined;
+            factorName?: string | undefined;
+            factorId?: string | undefined;
+            rowNumber?: number | undefined;
+            sheetCell?: string | undefined;
+            requiredMinimum?: number | undefined;
+        }[];
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    diagnostics: {
+        reason: "non_finite_measurement" | "invalid_template_identity" | "stale_template" | "changed_locked_cell" | "missing_factor" | "extra_factor" | "duplicate_factor" | "invalid_enum" | "missing_structure_configuration" | "incomplete_subgroup" | "negative_physical_measurement" | "sample_validation_failure" | "unsupported_workbook_content";
+        displayMessage: string;
+        value?: number | undefined;
+        factorName?: string | undefined;
+        factorId?: string | undefined;
+        rowNumber?: number | undefined;
+        sheetCell?: string | undefined;
+        requiredMinimum?: number | undefined;
+    }[];
+    previewId: string;
+    expiresAt: string;
+    readyFactorCount: number;
+    blockedFactorCount: number;
+    replacementCount: number;
+    totalSampleCount: number;
+    diagnosticCount: number;
+}>;
+export declare const f7MeasurementImportStoredBatchSchema: z.ZodEffects<z.ZodObject<{
+    previewId: z.ZodString;
+    sessionId: z.ZodString;
+    expiresAt: z.ZodString;
+    sessionStateDigest: z.ZodString;
+    factorSetDigest: z.ZodString;
+    authority: z.ZodObject<{
+        sessionId: z.ZodString;
+        sessionStateDigest: z.ZodString;
+        authorityDigest: z.ZodString;
+        manifest: z.ZodEffects<z.ZodObject<{
+            contractId: z.ZodLiteral<"f7-measurement-import-template-v1">;
+            contractVersion: z.ZodLiteral<1>;
+            templateId: z.ZodString;
+            workbookContentHash: z.ZodString;
+            worksheetName: z.ZodString;
+            worksheetStableId: z.ZodString;
+            factorSetDigest: z.ZodString;
+            factorsDigest: z.ZodString;
+            lockedValueDigest: z.ZodString;
+            lockedCoordinateDigest: z.ZodString;
+            factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+                factorId: z.ZodString;
+                factorName: z.ZodString;
+                partNumber: z.ZodOptional<z.ZodString>;
+                dimId: z.ZodOptional<z.ZodString>;
+                unit: z.ZodString;
+                designNominal: z.ZodNumber;
+                upperTolerance: z.ZodNumber;
+                lowerTolerance: z.ZodNumber;
+                lowerSpecLimit: z.ZodNumber;
+                upperSpecLimit: z.ZodNumber;
+                specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+                limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+                coordinates: z.ZodObject<{
+                    factorNameCell: z.ZodString;
+                    partNumberCell: z.ZodString;
+                    dimIdCell: z.ZodString;
+                    designNominalCell: z.ZodString;
+                    upperToleranceCell: z.ZodString;
+                    lowerToleranceCell: z.ZodString;
+                    lowerSpecLimitCell: z.ZodString;
+                    upperSpecLimitCell: z.ZodString;
+                    specificationSourceCell: z.ZodString;
+                    limitStatusCell: z.ZodString;
+                    measurementStructureCell: z.ZodString;
+                    subgroupSizeCell: z.ZodString;
+                    estimatorCell: z.ZodString;
+                    measurementColumn: z.ZodString;
+                    firstMeasurementCell: z.ZodString;
+                }, "strict", z.ZodTypeAny, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }>;
+                immutableValueDigest: z.ZodString;
+                immutableCoordinateDigest: z.ZodString;
+            }, "strict", z.ZodTypeAny, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, "many">;
+        }, "strict", z.ZodTypeAny, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }>;
+    replacementFactorIds: z.ZodArray<z.ZodString, "many">;
+    factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        factorId: z.ZodString;
+        factorName: z.ZodString;
+        unit: z.ZodString;
+        replacesExistingFactor: z.ZodBoolean;
+        dataset: z.ZodEffects<z.ZodObject<{
+            factorId: z.ZodString;
+            unit: z.ZodString;
+            structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+            rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                subgroupSize: z.ZodNumber;
+                estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+            }, "strict", z.ZodTypeAny, {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            }, {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            }>>;
+            sourceReference: z.ZodString;
+            importedAt: z.ZodString;
+            msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
+            observations: z.ZodArray<z.ZodDiscriminatedUnion<"disposition", [z.ZodObject<{
+                disposition: z.ZodLiteral<"included">;
+                value: z.ZodNumber;
+                originalRow: z.ZodNumber;
+                sequence: z.ZodOptional<z.ZodString>;
+                timestamp: z.ZodOptional<z.ZodString>;
+                subgroup: z.ZodOptional<z.ZodString>;
+                batch: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }, {
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }>, z.ZodObject<{
+                disposition: z.ZodLiteral<"excluded">;
+                reason: z.ZodEnum<["OUTLIER", "MEASUREMENT_SYSTEM_ERROR", "TRANSCRIPTION_ERROR", "PROCESS_INTERRUPTION", "OTHER"]>;
+                operatorReference: z.ZodString;
+                confirmed: z.ZodLiteral<true>;
+                value: z.ZodNumber;
+                originalRow: z.ZodNumber;
+                sequence: z.ZodOptional<z.ZodString>;
+                timestamp: z.ZodOptional<z.ZodString>;
+                subgroup: z.ZodOptional<z.ZodString>;
+                batch: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }, {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }>]>, "many">;
+            missingRowCount: z.ZodNumber;
+            rejectionSummaries: z.ZodArray<z.ZodObject<{
+                rowNumber: z.ZodNumber;
+                reason: z.ZodEnum<["non_finite_value", "invalid_row", "missing_value"]>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }, {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }>, "many">;
+            originalRowCount: z.ZodNumber;
+            analyzedCount: z.ZodNumber;
+            contentHash: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }>, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }>;
+        validation: z.ZodObject<{
+            status: z.ZodEnum<["ready", "blocked"]>;
+            blockingIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            advisoryIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            candidateEligibility: z.ZodObject<{
+                normal: z.ZodLiteral<"eligible">;
+                lognormal: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                weibull: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                gamma: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
+            }, "strict", z.ZodTypeAny, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }>;
+        }, "strict", z.ZodTypeAny, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }>, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }>, "many">;
+}, "strict", z.ZodTypeAny, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    previewId: string;
+    expiresAt: string;
+}, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    previewId: string;
+    expiresAt: string;
+}>, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    previewId: string;
+    expiresAt: string;
+}, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    previewId: string;
+    expiresAt: string;
+}>;
+export declare const f7MeasurementImportCommitMutationSchema: z.ZodEffects<z.ZodObject<{
+    sessionId: z.ZodString;
+    expectedMeasurementImportRevision: z.ZodNumber;
+    sessionStateDigest: z.ZodString;
+    factorSetDigest: z.ZodString;
+    authority: z.ZodObject<{
+        sessionId: z.ZodString;
+        sessionStateDigest: z.ZodString;
+        authorityDigest: z.ZodString;
+        manifest: z.ZodEffects<z.ZodObject<{
+            contractId: z.ZodLiteral<"f7-measurement-import-template-v1">;
+            contractVersion: z.ZodLiteral<1>;
+            templateId: z.ZodString;
+            workbookContentHash: z.ZodString;
+            worksheetName: z.ZodString;
+            worksheetStableId: z.ZodString;
+            factorSetDigest: z.ZodString;
+            factorsDigest: z.ZodString;
+            lockedValueDigest: z.ZodString;
+            lockedCoordinateDigest: z.ZodString;
+            factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+                factorId: z.ZodString;
+                factorName: z.ZodString;
+                partNumber: z.ZodOptional<z.ZodString>;
+                dimId: z.ZodOptional<z.ZodString>;
+                unit: z.ZodString;
+                designNominal: z.ZodNumber;
+                upperTolerance: z.ZodNumber;
+                lowerTolerance: z.ZodNumber;
+                lowerSpecLimit: z.ZodNumber;
+                upperSpecLimit: z.ZodNumber;
+                specificationSource: z.ZodEnum<["Worksheet", "Derived"]>;
+                limitStatus: z.ZodEnum<["VALID", "CROSSES_ZERO"]>;
+                coordinates: z.ZodObject<{
+                    factorNameCell: z.ZodString;
+                    partNumberCell: z.ZodString;
+                    dimIdCell: z.ZodString;
+                    designNominalCell: z.ZodString;
+                    upperToleranceCell: z.ZodString;
+                    lowerToleranceCell: z.ZodString;
+                    lowerSpecLimitCell: z.ZodString;
+                    upperSpecLimitCell: z.ZodString;
+                    specificationSourceCell: z.ZodString;
+                    limitStatusCell: z.ZodString;
+                    measurementStructureCell: z.ZodString;
+                    subgroupSizeCell: z.ZodString;
+                    estimatorCell: z.ZodString;
+                    measurementColumn: z.ZodString;
+                    firstMeasurementCell: z.ZodString;
+                }, "strict", z.ZodTypeAny, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }, {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                }>;
+                immutableValueDigest: z.ZodString;
+                immutableCoordinateDigest: z.ZodString;
+            }, "strict", z.ZodTypeAny, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }, {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }>, "many">;
+        }, "strict", z.ZodTypeAny, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }, {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }, {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    }>;
+    replacementFactorIds: z.ZodArray<z.ZodString, "many">;
+    factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        factorId: z.ZodString;
+        factorName: z.ZodString;
+        unit: z.ZodString;
+        replacesExistingFactor: z.ZodBoolean;
+        dataset: z.ZodEffects<z.ZodObject<{
+            factorId: z.ZodString;
+            unit: z.ZodString;
+            structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+            rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                subgroupSize: z.ZodNumber;
+                estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+            }, "strict", z.ZodTypeAny, {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            }, {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            }>>;
+            sourceReference: z.ZodString;
+            importedAt: z.ZodString;
+            msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
+            observations: z.ZodArray<z.ZodDiscriminatedUnion<"disposition", [z.ZodObject<{
+                disposition: z.ZodLiteral<"included">;
+                value: z.ZodNumber;
+                originalRow: z.ZodNumber;
+                sequence: z.ZodOptional<z.ZodString>;
+                timestamp: z.ZodOptional<z.ZodString>;
+                subgroup: z.ZodOptional<z.ZodString>;
+                batch: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }, {
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }>, z.ZodObject<{
+                disposition: z.ZodLiteral<"excluded">;
+                reason: z.ZodEnum<["OUTLIER", "MEASUREMENT_SYSTEM_ERROR", "TRANSCRIPTION_ERROR", "PROCESS_INTERRUPTION", "OTHER"]>;
+                operatorReference: z.ZodString;
+                confirmed: z.ZodLiteral<true>;
+                value: z.ZodNumber;
+                originalRow: z.ZodNumber;
+                sequence: z.ZodOptional<z.ZodString>;
+                timestamp: z.ZodOptional<z.ZodString>;
+                subgroup: z.ZodOptional<z.ZodString>;
+                batch: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }, {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            }>]>, "many">;
+            missingRowCount: z.ZodNumber;
+            rejectionSummaries: z.ZodArray<z.ZodObject<{
+                rowNumber: z.ZodNumber;
+                reason: z.ZodEnum<["non_finite_value", "invalid_row", "missing_value"]>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }, {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }>, "many">;
+            originalRowCount: z.ZodNumber;
+            analyzedCount: z.ZodNumber;
+            contentHash: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }>, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }, {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        }>;
+        validation: z.ZodObject<{
+            status: z.ZodEnum<["ready", "blocked"]>;
+            blockingIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            advisoryIssues: z.ZodArray<z.ZodObject<{
+                reason: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
+                factorId: z.ZodOptional<z.ZodString>;
+                rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
+            }, "strict", z.ZodTypeAny, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }, {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }>, "many">;
+            candidateEligibility: z.ZodObject<{
+                normal: z.ZodLiteral<"eligible">;
+                lognormal: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                weibull: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                gamma: z.ZodEnum<["eligible", "ineligible_nonpositive"]>;
+                uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
+            }, "strict", z.ZodTypeAny, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }, {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            }>;
+        }, "strict", z.ZodTypeAny, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }, {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }>, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }, {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }>, "many">;
+}, "strict", z.ZodTypeAny, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}>, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}, {
+    sessionId: string;
+    factors: {
+        validation: {
+            status: "blocked" | "ready";
+            blockingIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            advisoryIssues: {
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                factorId?: string | undefined;
+                rowNumbers?: number[] | undefined;
+            }[];
+            candidateEligibility: {
+                normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
+                lognormal: "eligible" | "ineligible_nonpositive";
+                weibull: "eligible" | "ineligible_nonpositive";
+                gamma: "eligible" | "ineligible_nonpositive";
+            };
+        };
+        unit: string;
+        factorName: string;
+        factorId: string;
+        dataset: {
+            unit: string;
+            contentHash: string;
+            observations: ({
+                value: number;
+                disposition: "included";
+                originalRow: number;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            } | {
+                value: number;
+                confirmed: true;
+                reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+                disposition: "excluded";
+                originalRow: number;
+                operatorReference: string;
+                sequence?: string | undefined;
+                timestamp?: string | undefined;
+                subgroup?: string | undefined;
+                batch?: string | undefined;
+            })[];
+            factorId: string;
+            structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+            sourceReference: string;
+            importedAt: string;
+            msaStatus: "unknown" | "available" | "not_available";
+            missingRowCount: number;
+            rejectionSummaries: {
+                reason: "non_finite_value" | "invalid_row" | "missing_value";
+                rowNumber: number;
+            }[];
+            originalRowCount: number;
+            analyzedCount: number;
+            rationalSubgroupConfig?: {
+                subgroupSize: number;
+                estimator: "RANGE_D2" | "S_C4";
+            } | undefined;
+        };
+        replacesExistingFactor: boolean;
+    }[];
+    replacementFactorIds: string[];
+    factorSetDigest: string;
+    sessionStateDigest: string;
+    authority: {
+        sessionId: string;
+        manifest: {
+            contractVersion: 1;
+            contractId: "f7-measurement-import-template-v1";
+            worksheetName: string;
+            workbookContentHash: string;
+            factors: {
+                unit: string;
+                factorName: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                specificationSource: "Worksheet" | "Derived";
+                factorId: string;
+                limitStatus: "VALID" | "CROSSES_ZERO";
+                coordinates: {
+                    factorNameCell: string;
+                    partNumberCell: string;
+                    dimIdCell: string;
+                    designNominalCell: string;
+                    upperToleranceCell: string;
+                    lowerToleranceCell: string;
+                    lowerSpecLimitCell: string;
+                    upperSpecLimitCell: string;
+                    specificationSourceCell: string;
+                    limitStatusCell: string;
+                    measurementStructureCell: string;
+                    subgroupSizeCell: string;
+                    estimatorCell: string;
+                    measurementColumn: string;
+                    firstMeasurementCell: string;
+                };
+                immutableValueDigest: string;
+                immutableCoordinateDigest: string;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+            }[];
+            templateId: string;
+            worksheetStableId: string;
+            factorSetDigest: string;
+            factorsDigest: string;
+            lockedValueDigest: string;
+            lockedCoordinateDigest: string;
+        };
+        sessionStateDigest: string;
+        authorityDigest: string;
+    };
+    expectedMeasurementImportRevision: number;
+}>;
+export declare const f7MeasurementImportCommitRequestSchema: z.ZodEffects<z.ZodObject<{
+    sessionId: z.ZodString;
+    previewId: z.ZodString;
+    replacementFactorIds: z.ZodArray<z.ZodString, "many">;
+    confirmed: z.ZodLiteral<true>;
+}, "strict", z.ZodTypeAny, {
+    sessionId: string;
+    confirmed: true;
+    replacementFactorIds: string[];
+    previewId: string;
+}, {
+    sessionId: string;
+    confirmed: true;
+    replacementFactorIds: string[];
+    previewId: string;
+}>, {
+    sessionId: string;
+    confirmed: true;
+    replacementFactorIds: string[];
+    previewId: string;
+}, {
+    sessionId: string;
+    confirmed: true;
+    replacementFactorIds: string[];
+    previewId: string;
+}>;
 export declare const F7_DISTRIBUTION_CANDIDATE_ORDER: readonly ["normal", "lognormal", "weibull", "gamma", "uniform"];
 export declare const f7DistributionCandidateFamilySchema: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
 export declare const f7DistributionModelSpecificationSchema: z.ZodEnum<["normal_location_scale", "lognormal_location_zero", "lognormal_location_free", "weibull_location_zero", "weibull_location_free", "gamma_location_zero", "gamma_location_free", "uniform_boundary_mle"]>;
@@ -1650,6 +8489,7 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
     }>;
     warnings: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
+    warnings: string[];
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
@@ -1686,8 +8526,8 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     };
-    warnings: string[];
 }, {
+    warnings: string[];
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
@@ -1724,8 +8564,8 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     };
-    warnings: string[];
 }>, {
+    warnings: string[];
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
@@ -1762,8 +8602,8 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     };
-    warnings: string[];
 }, {
+    warnings: string[];
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
@@ -1800,7 +8640,6 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     };
-    warnings: string[];
 }>;
 export declare const f7DistributionFitFailedCandidateSchema: z.ZodObject<{
     family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -2036,6 +8875,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         }>;
         warnings: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2072,8 +8912,8 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }, {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2110,8 +8950,8 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }>, {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2148,8 +8988,8 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }, {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2186,7 +9026,6 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }>, "many">;
     failedCandidates: z.ZodArray<z.ZodObject<{
         family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -2268,6 +9107,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     }>;
 }, "strict", z.ZodTypeAny, {
     candidates: {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2304,7 +9144,6 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }[];
     factorId: string;
     sampleSize: number;
@@ -2333,6 +9172,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
 }, {
     candidates: {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2369,7 +9209,6 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }[];
     factorId: string;
     sampleSize: number;
@@ -2398,6 +9237,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
 }>, {
     candidates: {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2434,7 +9274,6 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }[];
     factorId: string;
     sampleSize: number;
@@ -2463,6 +9302,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
 }, {
     candidates: {
+        warnings: string[];
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
@@ -2499,7 +9339,6 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         };
-        warnings: string[];
     }[];
     factorId: string;
     sampleSize: number;
@@ -2863,6 +9702,7 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         };
     }>;
 }, "strict", z.ZodTypeAny, {
+    status: "blocked" | "ready";
     validation: {
         status: "blocked" | "ready";
         blockingIssues: {
@@ -2883,7 +9723,6 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
             gamma: "eligible" | "ineligible_nonpositive";
         };
     };
-    status: "blocked" | "ready";
     factorId: string;
     dataset?: {
         unit: string;
@@ -2926,6 +9765,7 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | undefined;
     } | undefined;
 }, {
+    status: "blocked" | "ready";
     validation: {
         status: "blocked" | "ready";
         blockingIssues: {
@@ -2946,7 +9786,6 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
             gamma: "eligible" | "ineligible_nonpositive";
         };
     };
-    status: "blocked" | "ready";
     factorId: string;
     dataset?: {
         unit: string;
@@ -3544,6 +10383,90 @@ export declare const f7ReportFactorSchema: z.ZodEffects<z.ZodObject<{
     longTermSafetyFactor: z.ZodNumber;
     sigmaLevel: z.ZodNumber;
     setupDistribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+    setupMean: z.ZodNumber;
+    setupTolerance: z.ZodNumber;
+    setupOneSigma: z.ZodNumber;
+    setupCpk: z.ZodNumber;
+    percentContributionToSigma: z.ZodNumber;
+    measurementComparison: z.ZodOptional<z.ZodObject<{
+        mean: z.ZodObject<{
+            actual: z.ZodNumber;
+            delta: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            actual: number;
+            delta: number;
+        }, {
+            actual: number;
+            delta: number;
+        }>;
+        tolerance: z.ZodOptional<z.ZodObject<{
+            actual: z.ZodNumber;
+            delta: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            actual: number;
+            delta: number;
+        }, {
+            actual: number;
+            delta: number;
+        }>>;
+        oneSigma: z.ZodOptional<z.ZodObject<{
+            actual: z.ZodNumber;
+            delta: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            actual: number;
+            delta: number;
+        }, {
+            actual: number;
+            delta: number;
+        }>>;
+        cpk: z.ZodOptional<z.ZodObject<{
+            actual: z.ZodNumber;
+            delta: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            actual: number;
+            delta: number;
+        }, {
+            actual: number;
+            delta: number;
+        }>>;
+    }, "strict", z.ZodTypeAny, {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    }, {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    }>>;
+    sampleCount: z.ZodNumber;
+    readiness: z.ZodEnum<["ready", "pending"]>;
+    measurementWarning: z.ZodBoolean;
     approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
     sourceReferences: z.ZodArray<z.ZodString, "many">;
     designNominal: z.ZodNumber;
@@ -3551,60 +10474,174 @@ export declare const f7ReportFactorSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: z.ZodNumber;
     factorId: z.ZodString;
     factorName: z.ZodString;
+    partNumber: z.ZodOptional<z.ZodString>;
+    dimId: z.ZodOptional<z.ZodString>;
     loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
     sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 }, "strict", z.ZodTypeAny, {
     factorName: string;
     upperTolerance: number;
     lowerTolerance: number;
+    percentContributionToSigma: number;
     longTermSafetyFactor: number;
     designNominal: number;
     sigmaLevel: number;
+    readiness: "ready" | "pending";
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
+    sampleCount: number;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    setupMean: number;
+    setupTolerance: number;
+    setupOneSigma: number;
+    setupCpk: number;
+    measurementWarning: boolean;
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    measurementComparison?: {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    } | undefined;
 }, {
     factorName: string;
     upperTolerance: number;
     lowerTolerance: number;
+    percentContributionToSigma: number;
     longTermSafetyFactor: number;
     designNominal: number;
     sigmaLevel: number;
+    readiness: "ready" | "pending";
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
+    sampleCount: number;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    setupMean: number;
+    setupTolerance: number;
+    setupOneSigma: number;
+    setupCpk: number;
+    measurementWarning: boolean;
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    measurementComparison?: {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    } | undefined;
 }>, {
     factorName: string;
     upperTolerance: number;
     lowerTolerance: number;
+    percentContributionToSigma: number;
     longTermSafetyFactor: number;
     designNominal: number;
     sigmaLevel: number;
+    readiness: "ready" | "pending";
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
+    sampleCount: number;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    setupMean: number;
+    setupTolerance: number;
+    setupOneSigma: number;
+    setupCpk: number;
+    measurementWarning: boolean;
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    measurementComparison?: {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    } | undefined;
 }, {
     factorName: string;
     upperTolerance: number;
     lowerTolerance: number;
+    percentContributionToSigma: number;
     longTermSafetyFactor: number;
     designNominal: number;
     sigmaLevel: number;
+    readiness: "ready" | "pending";
     sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
+    sampleCount: number;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    setupMean: number;
+    setupTolerance: number;
+    setupOneSigma: number;
+    setupCpk: number;
+    measurementWarning: boolean;
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    partNumber?: string | undefined;
+    dimId?: string | undefined;
+    measurementComparison?: {
+        mean: {
+            actual: number;
+            delta: number;
+        };
+        cpk?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        tolerance?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+        oneSigma?: {
+            actual: number;
+            delta: number;
+        } | undefined;
+    } | undefined;
 }>;
 export declare const f7ReportSpecificationSourceCellsSchema: z.ZodObject<{
     lowerSpecLimit: z.ZodOptional<z.ZodString>;
@@ -4841,6 +11878,90 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         longTermSafetyFactor: z.ZodNumber;
         sigmaLevel: z.ZodNumber;
         setupDistribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+        setupMean: z.ZodNumber;
+        setupTolerance: z.ZodNumber;
+        setupOneSigma: z.ZodNumber;
+        setupCpk: z.ZodNumber;
+        percentContributionToSigma: z.ZodNumber;
+        measurementComparison: z.ZodOptional<z.ZodObject<{
+            mean: z.ZodObject<{
+                actual: z.ZodNumber;
+                delta: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                actual: number;
+                delta: number;
+            }, {
+                actual: number;
+                delta: number;
+            }>;
+            tolerance: z.ZodOptional<z.ZodObject<{
+                actual: z.ZodNumber;
+                delta: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                actual: number;
+                delta: number;
+            }, {
+                actual: number;
+                delta: number;
+            }>>;
+            oneSigma: z.ZodOptional<z.ZodObject<{
+                actual: z.ZodNumber;
+                delta: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                actual: number;
+                delta: number;
+            }, {
+                actual: number;
+                delta: number;
+            }>>;
+            cpk: z.ZodOptional<z.ZodObject<{
+                actual: z.ZodNumber;
+                delta: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                actual: number;
+                delta: number;
+            }, {
+                actual: number;
+                delta: number;
+            }>>;
+        }, "strict", z.ZodTypeAny, {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        }, {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        }>>;
+        sampleCount: z.ZodNumber;
+        readiness: z.ZodEnum<["ready", "pending"]>;
+        measurementWarning: z.ZodBoolean;
         approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
         sourceReferences: z.ZodArray<z.ZodString, "many">;
         designNominal: z.ZodNumber;
@@ -4848,60 +11969,174 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         lowerTolerance: z.ZodNumber;
         factorId: z.ZodString;
         factorName: z.ZodString;
+        partNumber: z.ZodOptional<z.ZodString>;
+        dimId: z.ZodOptional<z.ZodString>;
         loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
         sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
     }, "strict", z.ZodTypeAny, {
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }, {
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }>, {
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }, {
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }>, "many">;
     analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         status: z.ZodLiteral<"available">;
@@ -5596,15 +12831,43 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }[];
     evidence: {
         worksheetName: string;
@@ -5815,15 +13078,43 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }[];
     evidence: {
         worksheetName: string;
@@ -6034,15 +13325,43 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }[];
     evidence: {
         worksheetName: string;
@@ -6253,15 +13572,43 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         factorName: string;
         upperTolerance: number;
         lowerTolerance: number;
+        percentContributionToSigma: number;
         longTermSafetyFactor: number;
         designNominal: number;
         sigmaLevel: number;
+        readiness: "ready" | "pending";
         sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
+        sampleCount: number;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         setupDistribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+        setupMean: number;
+        setupTolerance: number;
+        setupOneSigma: number;
+        setupCpk: number;
+        measurementWarning: boolean;
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        partNumber?: string | undefined;
+        dimId?: string | undefined;
+        measurementComparison?: {
+            mean: {
+                actual: number;
+                delta: number;
+            };
+            cpk?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            tolerance?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+            oneSigma?: {
+                actual: number;
+                delta: number;
+            } | undefined;
+        } | undefined;
     }[];
     evidence: {
         worksheetName: string;
@@ -7319,6 +14666,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sigmaLevel: z.ZodOptional<z.ZodNumber>;
             standardDeviation: z.ZodNumber;
             distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+            specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
             designNominal: z.ZodNumber;
@@ -7331,6 +14679,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
             factorCandidateId: z.ZodString;
             factorName: z.ZodString;
+            partNumber: z.ZodOptional<z.ZodString>;
+            dimId: z.ZodOptional<z.ZodString>;
             userAdded: z.ZodOptional<z.ZodLiteral<true>>;
             workbookUnitEvidence: z.ZodOptional<z.ZodString>;
             excelSignedMean: z.ZodNumber;
@@ -7351,9 +14701,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }, {
             factorName: string;
             worksheetName: string;
@@ -7371,9 +14724,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }>, {
             factorName: string;
             worksheetName: string;
@@ -7391,9 +14747,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }, {
             factorName: string;
             worksheetName: string;
@@ -7411,9 +14770,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }>;
         setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
             longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -7425,7 +14787,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: z.ZodNumber;
             factorCandidateId: z.ZodString;
             factorName: z.ZodOptional<z.ZodString>;
+            partNumber: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+            dimId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+            componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
         }, "strict", z.ZodTypeAny, {
             confirmed: true;
             upperTolerance: number;
@@ -7435,7 +14800,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         }, {
             confirmed: true;
@@ -7446,7 +14814,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         }>, {
             confirmed: true;
@@ -7457,7 +14828,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         }, {
             confirmed: true;
@@ -7468,7 +14842,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         }>>;
         sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
@@ -7963,6 +15340,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "BOUNDED_REAL";
             }>;
+            specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
             calculatedMean: z.ZodNumber;
@@ -7983,7 +15361,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: z.ZodString;
             factorId: z.ZodString;
             factorName: z.ZodString;
+            partNumber: z.ZodOptional<z.ZodString>;
+            dimId: z.ZodOptional<z.ZodString>;
             userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+            componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
             unit: z.ZodString;
             unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
         }, "strict", z.ZodTypeAny, {
@@ -8025,7 +15406,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }, {
             unit: string;
             tolerance: number;
@@ -8065,7 +15450,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }>, {
             unit: string;
             tolerance: number;
@@ -8105,7 +15494,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }, {
             unit: string;
             tolerance: number;
@@ -8145,7 +15538,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         }>>;
         datasetValidation: z.ZodOptional<z.ZodObject<{
             status: z.ZodEnum<["ready", "blocked"]>;
@@ -8569,6 +15966,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
             }>;
         }, "strict", z.ZodTypeAny, {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -8589,7 +15987,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -8632,6 +16029,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | undefined;
             } | undefined;
         }, {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -8652,7 +16050,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -8846,6 +16243,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }>;
                 warnings: z.ZodArray<z.ZodString, "many">;
             }, "strict", z.ZodTypeAny, {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -8882,8 +16280,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }, {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -8920,8 +16318,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }>, {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -8958,8 +16356,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }, {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -8996,7 +16394,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }>, "many">;
             failedCandidates: z.ZodArray<z.ZodObject<{
                 family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -9078,6 +16475,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }>;
         }, "strict", z.ZodTypeAny, {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9114,7 +16512,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9143,6 +16540,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         }, {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9179,7 +16577,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9208,6 +16605,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         }>, {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9244,7 +16642,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9273,6 +16670,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         }, {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9309,7 +16707,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9371,9 +16768,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -9472,7 +16872,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -9484,7 +16888,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -9508,6 +16915,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -9528,7 +16936,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -9573,6 +16980,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9609,7 +17017,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9661,9 +17068,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -9762,7 +17172,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -9774,7 +17188,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -9798,6 +17215,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -9818,7 +17236,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -9863,6 +17280,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -9899,7 +17317,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -9951,9 +17368,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -10052,7 +17472,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -10064,7 +17488,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -10088,6 +17515,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -10108,7 +17536,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -10153,6 +17580,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -10189,7 +17617,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -10241,9 +17668,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -10342,7 +17772,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -10354,7 +17788,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -10378,6 +17815,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -10398,7 +17836,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -10443,6 +17880,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -10479,7 +17917,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -10965,8 +18402,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         }[];
     }>>;
 }, "strict", z.ZodTypeAny, {
-    sessionId: string;
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    sessionId: string;
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     workbook: {
@@ -10992,9 +18429,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -11093,7 +18533,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -11105,7 +18549,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -11129,6 +18576,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -11149,7 +18597,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -11194,6 +18641,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -11230,7 +18678,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -11505,8 +18952,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         }[];
     } | undefined;
 }, {
-    sessionId: string;
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    sessionId: string;
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     workbook: {
@@ -11532,9 +18979,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -11633,7 +19083,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -11645,7 +19099,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -11669,6 +19126,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -11689,7 +19147,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -11734,6 +19191,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -11770,7 +19228,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -12045,8 +19502,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         }[];
     } | undefined;
 }>, {
-    sessionId: string;
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    sessionId: string;
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     workbook: {
@@ -12072,9 +19529,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -12173,7 +19633,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -12185,7 +19649,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -12209,6 +19676,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -12229,7 +19697,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -12274,6 +19741,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -12310,7 +19778,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -12585,8 +20052,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         }[];
     } | undefined;
 }, {
-    sessionId: string;
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    sessionId: string;
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     workbook: {
@@ -12612,9 +20079,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         };
         input?: {
             mode: "MEASURED";
@@ -12713,7 +20183,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 support: "BOUNDED_REAL";
             };
             calculatedMean: number;
+            partNumber?: string | undefined;
+            dimId?: string | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
+            specificationSource?: "Worksheet" | "Derived" | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -12725,7 +20199,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName?: string | undefined;
             distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
+            partNumber?: string | null | undefined;
             sigmaLevel?: number | undefined;
+            dimId?: string | null | undefined;
+            componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
             userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
@@ -12749,6 +20226,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         } | undefined;
         measurementPasteResult?: {
+            status: "blocked" | "ready";
             validation: {
                 status: "blocked" | "ready";
                 blockingIssues: {
@@ -12769,7 +20247,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     gamma: "eligible" | "ineligible_nonpositive";
                 };
             };
-            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
                 unit: string;
@@ -12814,6 +20291,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         distributionFitResult?: {
             candidates: {
+                warnings: string[];
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
@@ -12850,7 +20328,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 };
-                warnings: string[];
             }[];
             factorId: string;
             sampleSize: number;
@@ -14051,6 +21528,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sigmaLevel: z.ZodOptional<z.ZodNumber>;
                 standardDeviation: z.ZodNumber;
                 distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
+                specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
                 designNominal: z.ZodNumber;
@@ -14063,6 +21541,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
                 factorCandidateId: z.ZodString;
                 factorName: z.ZodString;
+                partNumber: z.ZodOptional<z.ZodString>;
+                dimId: z.ZodOptional<z.ZodString>;
                 userAdded: z.ZodOptional<z.ZodLiteral<true>>;
                 workbookUnitEvidence: z.ZodOptional<z.ZodString>;
                 excelSignedMean: z.ZodNumber;
@@ -14083,9 +21563,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }, {
                 factorName: string;
                 worksheetName: string;
@@ -14103,9 +21586,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }>, {
                 factorName: string;
                 worksheetName: string;
@@ -14123,9 +21609,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }, {
                 factorName: string;
                 worksheetName: string;
@@ -14143,9 +21632,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }>;
             setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
                 longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -14157,7 +21649,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: z.ZodNumber;
                 factorCandidateId: z.ZodString;
                 factorName: z.ZodOptional<z.ZodString>;
+                partNumber: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+                dimId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
                 userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+                componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
             }, "strict", z.ZodTypeAny, {
                 confirmed: true;
                 upperTolerance: number;
@@ -14167,7 +21662,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             }, {
                 confirmed: true;
@@ -14178,7 +21676,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             }>, {
                 confirmed: true;
@@ -14189,7 +21690,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             }, {
                 confirmed: true;
@@ -14200,7 +21704,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             }>>;
             sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
@@ -14695,6 +22202,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "BOUNDED_REAL";
                 }>;
+                specificationSource: z.ZodOptional<z.ZodEnum<["Worksheet", "Derived"]>>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
                 calculatedMean: z.ZodNumber;
@@ -14715,7 +22223,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: z.ZodString;
                 factorId: z.ZodString;
                 factorName: z.ZodString;
+                partNumber: z.ZodOptional<z.ZodString>;
+                dimId: z.ZodOptional<z.ZodString>;
                 userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+                componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
                 unit: z.ZodString;
                 unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
             }, "strict", z.ZodTypeAny, {
@@ -14757,7 +22268,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }, {
                 unit: string;
                 tolerance: number;
@@ -14797,7 +22312,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }>, {
                 unit: string;
                 tolerance: number;
@@ -14837,7 +22356,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }, {
                 unit: string;
                 tolerance: number;
@@ -14877,7 +22400,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             }>>;
             datasetValidation: z.ZodOptional<z.ZodObject<{
                 status: z.ZodEnum<["ready", "blocked"]>;
@@ -15301,6 +22828,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                 }>;
             }, "strict", z.ZodTypeAny, {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -15321,7 +22849,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -15364,6 +22891,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | undefined;
                 } | undefined;
             }, {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -15384,7 +22912,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -15578,6 +23105,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }>;
                     warnings: z.ZodArray<z.ZodString, "many">;
                 }, "strict", z.ZodTypeAny, {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15614,8 +23142,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }, {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15652,8 +23180,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }>, {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15690,8 +23218,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }, {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15728,7 +23256,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }>, "many">;
                 failedCandidates: z.ZodArray<z.ZodObject<{
                     family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -15810,6 +23337,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }>;
             }, "strict", z.ZodTypeAny, {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15846,7 +23374,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -15875,6 +23402,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             }, {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15911,7 +23439,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -15940,6 +23467,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             }>, {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -15976,7 +23504,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -16005,6 +23532,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             }, {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -16041,7 +23569,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -16103,9 +23630,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -16204,7 +23734,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -16216,7 +23750,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -16240,6 +23777,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -16260,7 +23798,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -16305,6 +23842,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -16341,7 +23879,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -16393,9 +23930,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -16494,7 +24034,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -16506,7 +24050,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -16530,6 +24077,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -16550,7 +24098,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -16595,6 +24142,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -16631,7 +24179,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -16683,9 +24230,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -16784,7 +24334,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -16796,7 +24350,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -16820,6 +24377,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -16840,7 +24398,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -16885,6 +24442,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -16921,7 +24479,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -16973,9 +24530,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -17074,7 +24634,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -17086,7 +24650,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -17110,6 +24677,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -17130,7 +24698,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -17175,6 +24742,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -17211,7 +24779,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -17697,8 +25264,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             }[];
         }>>;
     }, "strict", z.ZodTypeAny, {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -17724,9 +25291,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -17825,7 +25395,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -17837,7 +25411,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -17861,6 +25438,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -17881,7 +25459,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -17926,6 +25503,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -17962,7 +25540,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -18237,8 +25814,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             }[];
         } | undefined;
     }, {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -18264,9 +25841,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -18365,7 +25945,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -18377,7 +25961,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -18401,6 +25988,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -18421,7 +26009,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -18466,6 +26053,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -18502,7 +26090,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -18777,8 +26364,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             }[];
         } | undefined;
     }>, {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -18804,9 +26391,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -18905,7 +26495,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -18917,7 +26511,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -18941,6 +26538,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -18961,7 +26559,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -19006,6 +26603,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -19042,7 +26640,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -19317,8 +26914,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             }[];
         } | undefined;
     }, {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -19344,9 +26941,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -19445,7 +27045,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -19457,7 +27061,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -19481,6 +27088,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -19501,7 +27109,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -19546,6 +27153,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -19582,7 +27190,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -19861,8 +27468,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     snapshot: {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -19888,9 +27495,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -19989,7 +27599,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -20001,7 +27615,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -20025,6 +27642,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -20045,7 +27663,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -20090,6 +27707,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -20126,7 +27744,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -20405,8 +28022,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
     outputClassification: "confidential";
     contractId: "f7-analysis-result-v1";
     snapshot: {
-        sessionId: string;
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        sessionId: string;
         outputClassification: "confidential";
         contractId: "f7-analysis-result-v1";
         workbook: {
@@ -20432,9 +28049,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             };
             input?: {
                 mode: "MEASURED";
@@ -20533,7 +28153,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     support: "BOUNDED_REAL";
                 };
                 calculatedMean: number;
+                partNumber?: string | undefined;
+                dimId?: string | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
+                specificationSource?: "Worksheet" | "Derived" | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -20545,7 +28169,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName?: string | undefined;
                 distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
+                partNumber?: string | null | undefined;
                 sigmaLevel?: number | undefined;
+                dimId?: string | null | undefined;
+                componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
                 userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
@@ -20569,6 +28196,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             } | undefined;
             measurementPasteResult?: {
+                status: "blocked" | "ready";
                 validation: {
                     status: "blocked" | "ready";
                     blockingIssues: {
@@ -20589,7 +28217,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         gamma: "eligible" | "ineligible_nonpositive";
                     };
                 };
-                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
                     unit: string;
@@ -20634,6 +28261,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             distributionFitResult?: {
                 candidates: {
+                    warnings: string[];
                     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
@@ -20670,7 +28298,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     };
-                    warnings: string[];
                 }[];
                 factorId: string;
                 sampleSize: number;
@@ -20956,6 +28583,33 @@ export declare const f7WorkbookImportRouteRequestSchema: z.ZodObject<{
     fileName: string;
     workbookBase64: string;
 }>;
+export declare const f7MeasurementImportPreviewRouteRequestSchema: z.ZodObject<{
+    body: z.ZodObject<{
+        sessionId: z.ZodString;
+        fileName: z.ZodEffects<z.ZodString, string, string>;
+        workbookBase64: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        fileName: string;
+        workbookBase64: string;
+    }, {
+        sessionId: string;
+        fileName: string;
+        workbookBase64: string;
+    }>;
+}, "strict", z.ZodTypeAny, {
+    body: {
+        sessionId: string;
+        fileName: string;
+        workbookBase64: string;
+    };
+}, {
+    body: {
+        sessionId: string;
+        fileName: string;
+        workbookBase64: string;
+    };
+}>;
 export declare const f7WorksheetConfirmRouteRequestSchema: z.ZodObject<{
     sessionId: z.ZodString;
     confirmation: z.ZodEffects<z.ZodObject<{
@@ -21006,7 +28660,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerTolerance: z.ZodNumber;
         factorCandidateId: z.ZodString;
         factorName: z.ZodOptional<z.ZodString>;
+        partNumber: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        dimId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         userAdded: z.ZodOptional<z.ZodLiteral<true>>;
+        componentCategory: z.ZodOptional<z.ZodEnum<["battery-cts", "z-axis-or-around-xy-clearance", "glass-tdm-gap-or-z-step", "thermal-module-critical-path", "pcb-critical-clearance-or-alignment", "cover-fit-and-function", "hinge-trackpad-button-or-sensor", "cable-routing", "external-port-kickstand-logo-or-ssd", "pcb-component-or-fastener", "engagement-or-assembly-feature", "foam-or-gasket-sealing-cushioning-or-nvh"]>>;
     }, "strict", z.ZodTypeAny, {
         confirmed: true;
         upperTolerance: number;
@@ -21016,7 +28673,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }, {
         confirmed: true;
@@ -21027,7 +28687,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }>, {
         confirmed: true;
@@ -21038,7 +28701,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }, {
         confirmed: true;
@@ -21049,7 +28715,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }>, "many">;
     systemSpecification: z.ZodOptional<z.ZodObject<{
@@ -21076,7 +28745,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }[];
     systemSpecification?: {
@@ -21095,7 +28767,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }[];
     systemSpecification?: {
@@ -21114,7 +28789,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }[];
     systemSpecification?: {
@@ -21133,7 +28811,10 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName?: string | undefined;
         distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
+        partNumber?: string | null | undefined;
         sigmaLevel?: number | undefined;
+        dimId?: string | null | undefined;
+        componentCategory?: "battery-cts" | "z-axis-or-around-xy-clearance" | "glass-tdm-gap-or-z-step" | "thermal-module-critical-path" | "pcb-critical-clearance-or-alignment" | "cover-fit-and-function" | "hinge-trackpad-button-or-sensor" | "cable-routing" | "external-port-kickstand-logo-or-ssd" | "pcb-component-or-fastener" | "engagement-or-assembly-feature" | "foam-or-gasket-sealing-cushioning-or-nvh" | undefined;
         userAdded?: true | undefined;
     }[];
     systemSpecification?: {
@@ -21328,6 +29009,48 @@ export declare const f7MeasurementDispositionRouteRequestSchema: z.ZodObject<{
         rowNumbers: number[];
     };
 }>;
+export declare const f7MeasurementImportCommitRouteRequestSchema: z.ZodObject<{
+    body: z.ZodEffects<z.ZodObject<{
+        sessionId: z.ZodString;
+        previewId: z.ZodString;
+        replacementFactorIds: z.ZodArray<z.ZodString, "many">;
+        confirmed: z.ZodLiteral<true>;
+    }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    }, {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    }>, {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    }, {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    }>;
+}, "strict", z.ZodTypeAny, {
+    body: {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    };
+}, {
+    body: {
+        sessionId: string;
+        confirmed: true;
+        replacementFactorIds: string[];
+        previewId: string;
+    };
+}>;
 export declare const f7DistributionFitRouteRequestSchema: z.ZodObject<{
     params: z.ZodObject<{
         factorId: z.ZodString;
@@ -21505,6 +29228,19 @@ export type F7MeasurementDataset = z.infer<typeof f7MeasurementDatasetSchema>;
 export type F7DatasetValidationIssue = z.infer<typeof f7DatasetValidationIssueSchema>;
 export type F7MeasurementPasteResult = z.infer<typeof f7MeasurementPasteResultSchema>;
 export type F7DatasetValidationResult = z.infer<typeof f7DatasetValidationResultSchema>;
+export type F7MeasurementImportFactorLimitStatus = z.infer<typeof f7MeasurementImportFactorLimitStatusSchema>;
+export type F7MeasurementImportFactorManifest = z.infer<typeof f7MeasurementImportFactorManifestSchema>;
+export type F7MeasurementImportManifest = z.infer<typeof f7MeasurementImportManifestSchema>;
+export type F7MeasurementImportAuthority = z.infer<typeof f7MeasurementImportAuthoritySchema>;
+export type F7MeasurementImportAuthorityContext = z.infer<typeof f7MeasurementImportAuthorityContextSchema>;
+export type F7MeasurementImportDiagnosticReason = z.infer<typeof f7MeasurementImportDiagnosticReasonSchema>;
+export type F7MeasurementImportDiagnostic = z.infer<typeof f7MeasurementImportDiagnosticSchema>;
+export type F7MeasurementImportFactorPreview = z.infer<typeof f7MeasurementImportFactorPreviewSchema>;
+export type F7MeasurementImportPreviewRequest = z.infer<typeof f7MeasurementImportPreviewRequestSchema>;
+export type F7MeasurementImportPreviewResponse = z.infer<typeof f7MeasurementImportPreviewResponseSchema>;
+export type F7MeasurementImportStoredBatch = z.infer<typeof f7MeasurementImportStoredBatchSchema>;
+export type F7MeasurementImportCommitMutation = z.infer<typeof f7MeasurementImportCommitMutationSchema>;
+export type F7MeasurementImportCommitRequest = z.infer<typeof f7MeasurementImportCommitRequestSchema>;
 export type F7DistributionCandidateFamily = z.infer<typeof f7DistributionCandidateFamilySchema>;
 export type F7DistributionFitStatus = z.infer<typeof f7DistributionFitStatusSchema>;
 export type F7DistributionFitCandidate = z.infer<typeof f7DistributionFitCandidateSchema>;
@@ -21535,11 +29271,13 @@ export type F7MeasurementDispositionRequest = z.infer<typeof f7MeasurementDispos
 export type F7SessionSnapshot = z.infer<typeof f7SessionSnapshotSchema>;
 export type F7WorksheetOption = z.infer<typeof f7WorksheetOptionSchema>;
 export type F7WorkbookImportRouteRequest = z.infer<typeof f7WorkbookImportRouteRequestSchema>;
+export type F7MeasurementImportPreviewRouteRequest = z.infer<typeof f7MeasurementImportPreviewRouteRequestSchema>;
 export type F7WorksheetConfirmRouteRequest = z.infer<typeof f7WorksheetConfirmRouteRequestSchema>;
 export type F7FactorConfirmRouteRequest = z.infer<typeof f7FactorConfirmRouteRequestSchema>;
 export type F7FactorModeRouteRequest = z.infer<typeof f7FactorModeRouteRequestSchema>;
 export type F7MeasurementPasteRouteRequest = z.infer<typeof f7MeasurementPasteRouteRequestSchema>;
 export type F7MeasurementDispositionRouteRequest = z.infer<typeof f7MeasurementDispositionRouteRequestSchema>;
+export type F7MeasurementImportCommitRouteRequest = z.infer<typeof f7MeasurementImportCommitRouteRequestSchema>;
 export type F7DistributionFitRouteRequest = z.infer<typeof f7DistributionFitRouteRequestSchema>;
 export type F7DistributionApprovalRouteRequest = z.infer<typeof f7DistributionApprovalRouteRequestSchema>;
 export type F7MonteCarloRunRouteRequest = z.infer<typeof f7MonteCarloRunRouteRequestSchema>;
@@ -21552,6 +29290,11 @@ export interface F7SessionService {
         confirmation: WorksheetSelectionConfirmation;
     }): F7SessionSnapshot;
     confirmFactorSetup(request: F7FactorConfirmRouteRequest): F7SessionSnapshot;
+    getMeasurementImportAuthority(request: {
+        sessionId: string;
+        templateId: string;
+    }): F7MeasurementImportAuthorityContext;
+    commitMeasurementImport(request: F7MeasurementImportCommitMutation): F7SessionSnapshot;
     setFactorMode(request: {
         sessionId: string;
         factorId: string;

@@ -7,7 +7,7 @@ import { generateF7MeasurementTemplate } from "./f7-measurement-template-writer.
 const FACTOR_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 describe("generateF7MeasurementTemplate", () => {
-  it("writes the governed authority at fixed manifest coordinates and warns for cross-zero factors", () => {
+  it("writes the governed authority without warning when the physical LSL is zero", () => {
     const authority = createF7MeasurementImportAuthority({
       sessionId: "session-1",
       templateId: "template-1",
@@ -36,9 +36,9 @@ describe("generateF7MeasurementTemplate", () => {
     ]));
 
     const sheet1 = new TextDecoder().decode(readSafeZip(archive).get("xl/worksheets/sheet1.xml")!);
-    expect(sheet1).toContain('<c r="B2" t="inlineStr" s="3"><is><t>Width</t></is></c>');
-    expect(sheet1).toContain('<c r="B8" s="3"><v>0</v></c>');
-    expect(sheet1).toContain('<c r="B9" s="3"><v>0.15</v></c>');
+    expect(sheet1).toContain('<c r="B2" t="inlineStr" s="0"><is><t>Width</t></is></c>');
+    expect(sheet1).toContain('<c r="B8" s="0"><v>0</v></c>');
+    expect(sheet1).toContain('<c r="B9" s="0"><v>0.15</v></c>');
   });
 
   it("is deterministic for the same authority", () => {
@@ -97,7 +97,7 @@ describe("generateF7MeasurementTemplate", () => {
       { reference: "B8", value: "0" },
       { reference: "B9", value: "0.15" },
       { reference: "B10", value: "Derived" },
-      { reference: "B11", value: "CROSSES_ZERO" },
+      { reference: "B11", value: "VALID" },
     ]));
     expect(worksheet?.cells).toContainEqual({ reference: "B3", value: "" });
     expect(worksheet?.cells).toContainEqual({ reference: "B4", value: "" });
@@ -223,7 +223,7 @@ describe("generateF7MeasurementTemplate", () => {
     const sheet1 = new TextDecoder().decode(parts.get("xl/worksheets/sheet1.xml")!);
     expect(sheet1).toContain('sqref="B13:CW512"');
     expect(sheet1).toContain('<mergeCells count="1"><mergeCell ref="A1:CW1"/></mergeCells>');
-    expect(sheet1).toContain('<c r="CW2" t="inlineStr" s="3"><is><t>Factor 100</t></is></c>');
+    expect(sheet1).toContain('<c r="CW2" t="inlineStr" s="0"><is><t>Factor 100</t></is></c>');
     expect(sheet1).toContain('<c r="CW512" s="1"/>');
   });
 });

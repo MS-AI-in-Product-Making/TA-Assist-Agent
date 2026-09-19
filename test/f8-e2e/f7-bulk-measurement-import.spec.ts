@@ -33,10 +33,7 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await uploadMeasurementWorkbook(page, initialCompleted);
 
   await expect(page.locator("[data-measurement-import-review] .measurement-import-factor-row")).toHaveCount(7);
-  const crossZeroWarning = page.locator("[data-import-warning='cross-zero']").first();
-  await expect(crossZeroWarning).toBeVisible();
-  await expect(crossZeroWarning).toContainText("LSL 0");
-  await expect(crossZeroWarning).toHaveCSS("color", "rgb(181, 57, 47)");
+  await expect(page.locator("[data-import-warning='cross-zero']")).toHaveCount(0);
   await expect(page.locator("[data-confirm-measurement-import]")).toBeEnabled();
   await page.locator("[data-confirm-measurement-import]").click();
 

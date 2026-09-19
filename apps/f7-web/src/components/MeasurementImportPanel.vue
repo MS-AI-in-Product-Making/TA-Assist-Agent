@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload, X } from "lucide-vue-next";
+import { CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload, X } from "lucide-vue-next";
 import { computed, nextTick, ref, watch, type DeepReadonly } from "vue";
 import type { F7MeasurementImportPreviewResponse, F7SessionSnapshot } from "../api/f7-client";
 
@@ -35,10 +35,10 @@ const props = withDefaults(defineProps<{
   readonly busy: boolean;
   readonly action: MeasurementImportAction;
   readonly mode: MeasurementEntryMode;
+  readonly openRequest?: number;
   readonly successMessage: string | null;
-  readonly monteCarloReady?: boolean;
 }>(), {
-  monteCarloReady: false,
+  openRequest: 0,
 });
 
 const emit = defineEmits<{
@@ -47,14 +47,10 @@ const emit = defineEmits<{
   confirm: [];
   cancel: [];
   "close-import": [];
-  "mode-change": [mode: MeasurementEntryMode];
-  "open-monte-carlo": [];
 }>();
 
 const fileInput = ref<HTMLInputElement>();
 const reviewHeading = ref<globalThis.HTMLElement>();
-const importTab = ref<globalThis.HTMLButtonElement>();
-const individualTab = ref<globalThis.HTMLButtonElement>();
 const importDialogOpen = ref(props.preview !== null);
 const closeDialogButton = ref<globalThis.HTMLButtonElement>();
 const importDialog = ref<globalThis.HTMLElement>();
@@ -76,8 +72,17 @@ watch(() => props.preview?.previewId, async (nextPreviewId, previousPreviewId) =
 watch(() => props.successMessage, async (nextMessage, previousMessage) => {
   if (!nextMessage || nextMessage === previousMessage) return;
   importDialogOpen.value = false;
+});
+
+watch(() => props.openRequest, async (nextRequest, previousRequest) => {
+  if (nextRequest === previousRequest || props.mode !== "import") return;
+  importDialogOpen.value = true;
   await nextTick();
-  importTab.value?.focus();
+  closeDialogButton.value?.focus();
+});
+
+watch(() => props.mode, (mode) => {
+  if (mode === "individual") importDialogOpen.value = false;
 });
 
 function openFilePicker(): void {
@@ -96,21 +101,10 @@ function onFileChange(event: Event): void {
   input.value = "";
 }
 
-async function selectMode(mode: MeasurementEntryMode): Promise<void> {
-  if (props.busy) return;
-  if (mode === "import") importDialogOpen.value = true;
-  else importDialogOpen.value = false;
-  if (mode !== props.mode) emit("mode-change", mode);
-  await nextTick();
-  if (mode === "import") closeDialogButton.value?.focus();
-  else individualTab.value?.focus();
-}
-
 function closeImportDialog(): void {
   if (props.busy) return;
   importDialogOpen.value = false;
   emit("close-import");
-  nextTick(() => importTab.value?.focus());
 }
 
 function trapImportDialogFocus(event: globalThis.KeyboardEvent): void {
@@ -133,30 +127,8 @@ function trapImportDialogFocus(event: globalThis.KeyboardEvent): void {
   }
 }
 
-function onTabKeydown(event: globalThis.KeyboardEvent, mode: MeasurementEntryMode): void {
-  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-    event.preventDefault();
-    selectMode(mode === "import" ? "individual" : "import");
-    return;
-  }
-  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-    event.preventDefault();
-    selectMode(mode === "import" ? "individual" : "import");
-    return;
-  }
-  if (event.key === "Home") {
-    event.preventDefault();
-    selectMode("import");
-    return;
-  }
-  if (event.key === "End") {
-    event.preventDefault();
-    selectMode("individual");
-  }
-}
-
 function isCrossZeroWarning(displayMessage: string): boolean {
-  return displayMessage.toLocaleLowerCase().includes("crosses zero");
+  return displayMessage.toLocaleLowerCase().includes("lsl is below 0");
 }
 
 function structureSummary(factor: PreviewFactor): string {
@@ -171,69 +143,6 @@ function replacementCopy(count: number): string {
 
 <template>
   <section class="workbench-panel measurement-import-panel" aria-label="Measurement input">
-    <div class="measurement-process-flow" data-measurement-process-flow>
-      <div class="measurement-entry-mode" data-measurement-entry-choice>
-        <span
-          id="measurement-entry-mode-label"
-          class="measurement-entry-mode-label"
-          data-measurement-entry-mode-label
-        >Measurement Input Mode</span>
-        <div
-          class="measurement-entry-tabs"
-          role="tablist"
-          aria-labelledby="measurement-entry-mode-label"
-        >
-          <button
-            id="measurement-entry-import-tab"
-            ref="importTab"
-            type="button"
-            role="tab"
-            class="measurement-entry-tab"
-            :class="mode === 'import' ? 'is-selected' : ''"
-            :aria-selected="mode === 'import' ? 'true' : 'false'"
-            aria-controls="measurement-entry-import-panel"
-            :tabindex="mode === 'import' ? 0 : -1"
-            @click="selectMode('import')"
-            @keydown="onTabKeydown($event, 'import')"
-          >
-            Excel Bulk Import
-          </button>
-          <button
-            id="measurement-entry-individual-tab"
-            ref="individualTab"
-            type="button"
-            role="tab"
-            class="measurement-entry-tab"
-            :class="mode === 'individual' ? 'is-selected' : ''"
-            :aria-selected="mode === 'individual' ? 'true' : 'false'"
-            aria-controls="measurement-entry-individual-panel"
-            :tabindex="mode === 'individual' ? 0 : -1"
-            @click="selectMode('individual')"
-            @keydown="onTabKeydown($event, 'individual')"
-          >
-            Web Factor Entry
-          </button>
-        </div>
-      </div>
-      <ArrowRight
-        class="measurement-flow-arrow"
-        data-measurement-flow-arrow
-        :size="22"
-        aria-hidden="true"
-      />
-      <button
-        type="button"
-        class="measurement-flow-next action-button"
-        data-open-monte-carlo-flow
-        :disabled="busy || !monteCarloReady"
-        :aria-describedby="monteCarloReady ? undefined : 'measurement-flow-locked'"
-        @click="emit('open-monte-carlo')"
-      >
-        <span>Monte Carlo Calculation &amp; Report</span>
-        <small v-if="!monteCarloReady" id="measurement-flow-locked">Locked</small>
-      </button>
-    </div>
-
     <div
       v-if="!importDialogOpen"
       id="measurement-entry-import-panel"
@@ -393,7 +302,7 @@ function replacementCopy(count: number): string {
             <span>
               <strong>{{ warning.factorName ?? factor.factorName }}</strong>
               <span v-if="warning.sheetCell"> {{ warning.sheetCell }}</span>
-              <span v-if="isCrossZeroWarning(warning.displayMessage)"> Cross-zero specification; physical LSL 0. Review Factor Setup.</span>
+              <span v-if="isCrossZeroWarning(warning.displayMessage)"> Factor LSL is below 0. Review Factor Setup.</span>
               <span v-else> {{ warning.displayMessage }}</span>
             </span>
           </p>

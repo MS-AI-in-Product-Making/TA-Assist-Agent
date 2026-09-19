@@ -139,7 +139,7 @@ describe("Monte Carlo plot", () => {
     expect(model.domainMaximum).toBeGreaterThanOrEqual(22);
     expect(model.setupCurvePath.split("L")).toHaveLength(13);
     expect(model.maximumCount).toBeGreaterThan(10);
-    expect(model.setupCurvePath).toContain(`${model.setupMeanReference!.x.toFixed(2)},72.00`);
+    expect(model.setupCurvePath).toContain(`${model.setupMeanReference!.x.toFixed(2)},82.00`);
   });
 
   it("keeps setup expected counts and geometry finite for extreme finite setup inputs", () => {

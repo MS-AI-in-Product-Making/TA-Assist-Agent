@@ -377,6 +377,37 @@ describe("f7ReportFactorSchema status consistency", () => {
 });
 
 describe("F7 report contracts", () => {
+  it("accepts 300-character Factor names and rejects longer report Factor names", () => {
+    const report = createReportFixture();
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], factorName: "x".repeat(300) }],
+    }).success).toBe(true);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], factorName: "x".repeat(301) }],
+    }).success).toBe(false);
+  });
+
+  it("reports a governed issue above the 100-Factor report and session limit", () => {
+    const report = createReportFixture();
+    const reportResult = f7ReportProjectionSchema.safeParse({ ...report, factors: Array(101).fill(report.factors[0]) });
+    const sessionResult = f7SessionSnapshotSchema.safeParse({
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      sessionId: "session-1",
+      status: "worksheet_selection",
+      workbook: { fileName: "Demo.xlsx", workbookContentHash: SHA256 },
+      selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
+      factors: Array(101).fill(undefined),
+    });
+
+    expect(reportResult.error?.issues).toContainEqual(expect.objectContaining({ code: "too_big", path: ["factors"] }));
+    expect(sessionResult.error?.issues).toContainEqual(expect.objectContaining({ code: "too_big", path: ["factors"] }));
+  });
+
   it("accepts all governed assessment outcomes when they match simulation capability", () => {
     for (const assessment of ["MEETS_TARGET", "BELOW_TARGET", "NOT_EVALUABLE"] as const) {
       expect(f7ReportAssessmentSchema.parse(assessment)).toBe(assessment);
@@ -1256,6 +1287,8 @@ describe("F7 phase 1 factor contracts", () => {
       userAdded: true,
     } as const;
     expect(f7FactorSetupConfirmationSchema.parse(userAdded)).toEqual(userAdded);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...userAdded, factorName: "x".repeat(300) }).success).toBe(true);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...userAdded, factorName: "x".repeat(301) }).success).toBe(false);
     expect(f7FactorSetupConfirmationSchema.safeParse({ ...userAdded, factorName: "" }).success).toBe(false);
     expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, factorName: "Unexpected" }).success).toBe(false);
   });
@@ -1418,6 +1451,8 @@ describe("F7 phase 1 factor contracts", () => {
     } as const;
 
     expect(f7FactorEvidenceSchema.parse(valid)).toEqual(valid);
+    expect(f7FactorEvidenceSchema.safeParse({ ...valid, factorName: "x".repeat(300) }).success).toBe(true);
+    expect(f7FactorEvidenceSchema.safeParse({ ...valid, factorName: "x".repeat(301) }).success).toBe(false);
     expect(f7FactorEvidenceSchema.parse({
       ...valid,
       componentCategory: "cover-fit-and-function",
@@ -1494,6 +1529,8 @@ describe("F7 phase 1 factor contracts", () => {
       upperSpecLimit: 0.5,
     } as const;
     expect(f7FactorCandidateSchema.parse(candidate)).toEqual(candidate);
+    expect(f7FactorCandidateSchema.safeParse({ ...candidate, factorName: "x".repeat(300) }).success).toBe(true);
+    expect(f7FactorCandidateSchema.safeParse({ ...candidate, factorName: "x".repeat(301) }).success).toBe(false);
     expect(f7FactorCandidateSchema.safeParse({
       ...candidate,
       lowerSpecLimit: -0.01,
@@ -3075,6 +3112,14 @@ describe("F7 request/result strict wrappers", () => {
       },
     };
     expect(f7FactorConfirmRouteRequestSchema.safeParse(factorConfirm).success).toBe(true);
+    expect(f7FactorConfirmRouteRequestSchema.safeParse({
+      ...factorConfirm,
+      confirmations: Array.from({ length: 100 }, () => factorConfirmation),
+    }).success).toBe(true);
+    expect(f7FactorConfirmRouteRequestSchema.safeParse({
+      ...factorConfirm,
+      confirmations: Array.from({ length: 101 }, () => factorConfirmation),
+    }).success).toBe(false);
     expect(f7FactorConfirmRouteRequestSchema.safeParse({
       ...factorConfirm,
       systemSpecification: { ...factorConfirm.systemSpecification, upperSpecLimit: -0.2 },

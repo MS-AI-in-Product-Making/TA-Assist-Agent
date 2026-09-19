@@ -47,7 +47,17 @@ export function reduceSessionCommand(snapshotInput, commandInput) {
         case "reset_ado_decision":
             return nextSnapshot(snapshot, { state: "ado_decision_required", activeAttempt: null });
         case "accept_surface_write":
-            return nextSnapshot(snapshot, { state: "review_required", activeAttempt: null });
+            return transitionWithAttempt(snapshot, command, "f6_running", {
+                priorRunReferences: [
+                    ...snapshot.priorRunReferences,
+                    {
+                        featureId: "F3",
+                        referenceId: "ado-updated",
+                        contractVersion: "drawing-governance-v3",
+                        runReference: `f3-ado:updated:${snapshot.sessionId}:${snapshot.inputRevision}`,
+                    },
+                ],
+            });
         case "confirm_image_decision":
             return transitionWithAttempt(snapshot, command, "f5_running");
         case "confirm_analysis_context":
@@ -182,7 +192,9 @@ export function acceptAttemptResult(snapshotInput, result) {
         case "completed": {
             if (activeAttempt.stage === "f5_running")
                 assertCompletedF5MultimodalReference(snapshot, result.result);
-            const nextState = resolveCompletionState(activeAttempt.stage);
+            const nextState = activeAttempt.stage === "f6_running" && hasTerminalAdoReference(snapshot)
+                ? "review_required"
+                : resolveCompletionState(activeAttempt.stage);
             const transitioned = transitionAfterCompletion(snapshot, activeAttempt.stage, nextState, activeAttempt.commandId ?? result.attemptId);
             return annotateSnapshot(transitioned, undefined);
         }
@@ -362,9 +374,7 @@ function reduceConfirmAdoDecision(snapshot, command) {
             activeAttempt: null,
         });
     }
-    return nextSnapshot(snapshot, {
-        state: "review_required",
-        activeAttempt: null,
+    return transitionWithAttempt(snapshot, command, "f6_running", {
         priorRunReferences: [
             ...snapshot.priorRunReferences,
             {
@@ -375,6 +385,12 @@ function reduceConfirmAdoDecision(snapshot, command) {
             },
         ],
     });
+}
+function hasTerminalAdoReference(snapshot) {
+    const expectedSuffix = `:${snapshot.inputRevision}`;
+    return snapshot.priorRunReferences.some((reference) => (reference.featureId === "F3"
+        && (reference.referenceId === "ado-not-requested" || reference.referenceId === "ado-updated")
+        && (reference.runReference ?? "").endsWith(expectedSuffix)));
 }
 function reduceSaveWhatIfDraft(snapshot, command) {
     const draft = command.payload.draft;

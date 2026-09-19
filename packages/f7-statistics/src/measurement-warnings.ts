@@ -21,8 +21,7 @@ export interface FactorMeasurementWarningEvidence {
 export function evaluateFactorMeasurementWarnings(
   input: FactorMeasurementWarningInput,
 ): FactorMeasurementWarningEvidence {
-  const crossesZero = Math.min(input.lowerSpecLimit, input.upperSpecLimit) <= 0
-    && Math.max(input.lowerSpecLimit, input.upperSpecLimit) >= 0;
+  const crossesZero = input.lowerSpecLimit < 0;
   const includedObservations = input.observations.filter(
     (observation) => observation.disposition === "included",
   );
