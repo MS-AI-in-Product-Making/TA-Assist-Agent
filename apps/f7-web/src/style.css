@@ -124,8 +124,8 @@ body {
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, 296px);
+  grid-auto-rows: 1fr;
   justify-content: center;
-  align-items: start;
   gap: 32px;
 }
 
@@ -1186,11 +1186,11 @@ textarea {
 
 @media (max-width: 340px) {
   .workbench-root {
-    padding-inline: 4px;
+    padding-inline: 2px;
   }
 
   .workflow-rail {
-    padding-inline: 4px;
+    padding-inline: 1px;
   }
 }
 

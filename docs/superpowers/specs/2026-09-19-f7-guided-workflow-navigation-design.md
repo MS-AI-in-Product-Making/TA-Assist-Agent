@@ -54,7 +54,7 @@ Each card uses a compact hierarchy:
 2. A centered step title and smaller supporting status remain visible below it, including actionable lock reasons.
 3. A bottom-aligned action area uses centered controls sized to their icon-and-text content.
 
-Cards use the approved balanced proportions: 296px wide with content-driven height. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. Each card determines its own height from its title, status, and actions; there is no shared grid-row height or fixed minimum card height.
+Cards use the approved balanced proportions: 296px wide with shared content-driven height. The three-card grid is centered within the workflow rail with a maximum width sized to the cards and connectors, rather than stretching across the full viewport. The most content-heavy step determines the shared row height, and all three cards stretch to that height without a fixed or minimum card height.
 
 Step titles remain on one line at the desktop card width. The 296px outer width provides enough usable content width for the longest current English title without reducing its 1rem type size. At narrower viewports, the workflow changes to a single column before the three cards and connector gaps can overflow.
 
@@ -101,4 +101,4 @@ Update the workflow markup and state-derived labels in `App.vue`, with presentat
 - Assert that each card renders the intended phase icon and state badge without changing accessible step names or tab semantics.
 - Preserve tests for workbook replacement confirmation, Step 2 mode switching, and Monte Carlo navigation.
 - Run the focused F7 Web unit tests and lint checks.
-- Verify the workflow visually at desktop and narrow viewport widths, including single-line titles, independent content-driven card heights, keyboard focus, connector placement, and absence of overlap.
+- Verify the workflow visually at desktop and narrow viewport widths, including single-line titles, equal content-driven card heights, keyboard focus, connector placement, and absence of overlap.

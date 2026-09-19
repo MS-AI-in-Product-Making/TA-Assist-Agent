@@ -42,16 +42,16 @@ Expected: PASS.
 
 - [ ] **Step 1: Write the failing CSS contract test**
 
-Require a centered card grid with 296px-wide cards, single-line titles, independent content-driven heights, a shared number/icon/state top row, larger readable text, centered content-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and responsive connector orientation below the 1040px three-column boundary. Preserve all existing font families and text colors.
+Require a centered card grid with 296px-wide cards, single-line titles, equal content-driven heights determined by the most content-heavy step, a shared number/icon/state top row, larger readable text, centered content-width bottom actions, stacked Step 2 tabs, 8px-or-smaller corners, state gradients, current outline, and responsive connector orientation below the 1040px three-column boundary. Preserve all existing font families and text colors.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
 Run: `npx.cmd vitest run apps/f7-web/src/App.test.ts -t "workflow rail renders three grouped steps"`
-Expected: FAIL because the current cards are 260px wide, use equal grid rows and a 148px minimum height, and switch to one column at 760px.
+Expected: FAIL because the current cards are 260px wide, use a 148px minimum height, and switch to one column at 760px.
 
 - [ ] **Step 3: Implement the approved visual treatment**
 
-Update `style.css` so the number, icon, and badge share a compact top row above the centered title, supporting status, and centered content-width action area. Set each desktop card to 296px wide, keep titles on one line, remove `grid-auto-rows` and `min-height`, and let each card size independently from its content. Keep Step 2 actions stacked, green enabled actions, gray disabled actions, visible focus, horizontal desktop connectors, and vertical connectors below 1040px. Do not change font families, type sizes, or text colors.
+Update `style.css` so the number, icon, and badge share a compact top row above the centered title, supporting status, and centered content-width action area. Set each desktop card to 296px wide, keep titles on one line, restore shared content-driven grid rows without adding a fixed or minimum card height, and stretch all cards to the tallest step. Keep Step 2 actions stacked, green enabled actions, gray disabled actions, visible focus, horizontal desktop connectors, and vertical connectors below 1040px. Do not change font families, type sizes, or text colors.
 
 - [ ] **Step 4: Run focused and full validation**
 
@@ -64,11 +64,11 @@ Expected: 95 tests pass and ESLint exits with no errors.
 
 - [ ] **Step 5: Perform browser verification**
 
-At `http://127.0.0.1:5177`, verify 1440px, 1000px, and 390px viewports. Confirm 296px desktop card widths, single-line titles, independent content-driven heights, readable English labels, correct state colors, visible connectors, vertical stacking below 1040px, no overlap, and no horizontal overflow.
+At `http://127.0.0.1:5177`, verify 1440px, 1000px, and 390px viewports. Confirm 296px desktop card widths, single-line titles, equal content-driven heights, readable English labels, correct state colors, visible connectors, vertical stacking below 1040px, no overlap, and no horizontal overflow.
 
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add -- apps/f7-web/src/App.vue apps/f7-web/src/App.test.ts apps/f7-web/src/style.css docs/superpowers/plans/2026-09-19-f7-balanced-workflow-cards.md
+git add -- apps/f7-web/src/App.vue apps/f7-web/src/App.test.ts apps/f7-web/src/style.css docs/superpowers/specs/2026-09-19-f7-guided-workflow-navigation-design.md docs/superpowers/plans/2026-09-19-f7-balanced-workflow-cards.md
 git commit -m "style(f7): add balanced workflow cards"
 ```
