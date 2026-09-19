@@ -146,19 +146,28 @@ body {
   background: #fff;
 }
 
+.workflow-steps li:not(:last-child)::before,
 .workflow-steps li:not(:last-child)::after {
-  content: "→";
+  content: "";
   position: absolute;
   top: 50%;
-  right: -27px;
-  width: 20px;
-  color: #8b929c;
-  font-size: 1.35rem;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-  transform: translateY(-50%);
   pointer-events: none;
+}
+
+.workflow-steps li:not(:last-child)::before {
+  right: -21px;
+  width: 18px;
+  height: 3px;
+  background: #596273;
+  transform: translateY(-50%);
+}
+
+.workflow-steps li:not(:last-child)::after {
+  right: -28px;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 10px solid #596273;
+  transform: translateY(-50%);
 }
 
 .step-index {
@@ -234,8 +243,12 @@ body {
   background: #e4f3ee;
 }
 
+.workflow-steps li.step-complete:not(:last-child)::before {
+  background: var(--success);
+}
+
 .workflow-steps li.step-complete:not(:last-child)::after {
-  color: var(--success);
+  border-left-color: var(--success);
 }
 
 .workflow-steps li.step-complete .step-index {
@@ -1082,12 +1095,29 @@ textarea {
     gap: 32px;
   }
 
-  .workflow-steps li:not(:last-child)::after {
-    content: "↓";
+  .workflow-steps li:not(:last-child)::before {
     top: auto;
     right: 50%;
-    bottom: -27px;
+    bottom: -21px;
+    width: 3px;
+    height: 18px;
     transform: translateX(50%);
+  }
+
+  .workflow-steps li:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -28px;
+    border-top: 10px solid #596273;
+    border-right: 7px solid transparent;
+    border-bottom: 0;
+    border-left: 7px solid transparent;
+    transform: translateX(50%);
+  }
+
+  .workflow-steps li.step-complete:not(:last-child)::after {
+    border-top-color: var(--success);
+    border-left-color: transparent;
   }
 
   .workflow-metadata {
