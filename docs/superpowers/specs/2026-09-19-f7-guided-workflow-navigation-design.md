@@ -81,7 +81,7 @@ Directional connectors remain centered between cards. They use a clear line and 
 
 ## Responsive Behavior
 
-The workflow remains a three-column row when at least 1040px of viewport width is available. Below 1040px it becomes a centered single-column sequence in numerical order. Cards use `min(296px, 100%)` in the single-column layout so narrow mobile viewports remain free of horizontal overflow. Step titles remain on one line; status and button labels may wrap only when required by the available mobile width.
+The workflow remains a three-column row when at least 1040px of viewport width is available. Below 1040px it becomes a centered single-column sequence in numerical order, implemented with a `1039.98px` maximum-width query to avoid device-pixel rounding gaps. Cards use `min(296px, 100%)` in the single-column layout, with reduced outer container padding below 340px, so narrow mobile viewports remain free of horizontal overflow. Step titles remain on one line; status and button labels may wrap only when required by the available mobile width.
 
 ## Accessibility
 
