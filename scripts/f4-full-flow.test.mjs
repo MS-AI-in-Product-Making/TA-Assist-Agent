@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { f4ExcelComparisonResultSchema, f4WorkflowCalculationResultSchema } from "../packages/contracts/dist/contracts.js";
-import { runF4FullValidation } from "./run-f4-full-validation.mjs";
+import { runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
 
 const cleanup = [];
 
@@ -193,6 +193,20 @@ function readJson(filePath) {
 }
 
 describe("runF4FullValidation", () => {
+  it("summarizes successful CLI output without embedding calculation payloads", () => {
+    const context = setup();
+    const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
+
+    expect(summarizeF4CliResult(result)).toEqual({
+      status: "completed",
+      outputDirectory: context.runRoot,
+      calculationJsonPath: path.join(context.runRoot, "Feature4-Calculation.json"),
+      reportMdPath: path.join(context.runRoot, "Feature4-Report.md"),
+      manifestPath: path.join(context.runRoot, "manifest.json"),
+      summary: { selectedWorksheetCount: 1, completedWorksheetCount: 1 },
+    });
+  });
+
   it("writes calculation, Markdown, and completed manifest without workbook comparison", () => {
     const context = setup();
     const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
