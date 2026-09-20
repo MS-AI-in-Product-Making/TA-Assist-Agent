@@ -558,6 +558,8 @@ describe("createF7Client", () => {
     const pdf = await createF7Client("http://localhost:3017").generateReportPdf({
       sessionId: "session-01",
       report: validReport,
+      dimensionChainVisual: { status: "empty" },
+      includeFactorDistributionAppendix: true,
     });
 
     expect(pdf.size).toBe(5);
@@ -565,7 +567,12 @@ describe("createF7Client", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toEqual({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: "session-01", report: validReport }),
+      body: JSON.stringify({
+        sessionId: "session-01",
+        report: validReport,
+        dimensionChainVisual: { status: "empty" },
+        includeFactorDistributionAppendix: true,
+      }),
     });
   });
 
@@ -581,6 +588,8 @@ describe("createF7Client", () => {
     await expect(createF7Client().generateReportPdf({
       sessionId: "session-01",
       report: validReport,
+      dimensionChainVisual: { status: "empty" },
+      includeFactorDistributionAppendix: false,
     })).rejects.toEqual({
       code: "request_failed",
       summary: "Unable to complete the F7 workbench request.",

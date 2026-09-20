@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, isReactive } from "vue";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { F7FactorInput } from "@ai-assist/contracts";
 import type { F7SessionSnapshot } from "../api/f7-client";
 import type { AssumptionResultsEngineeringEvidence, DimensionChainReportProjection } from "../assumption-results-pdf-evidence";
@@ -274,6 +274,72 @@ function tableColumnStart(cell: Element): number {
 }
 
 describe("FactorInputTable engineering evidence event", () => {
+  it("limits Setup percent contribution to two decimal places", () => {
+    const session = createSession({ status: "measurement_entry" });
+    const firstFactor = session.factors[0]!;
+    session.factors = [
+      firstFactor,
+      {
+        ...firstFactor,
+        factorCandidate: {
+          ...firstFactor.factorCandidate!,
+          factorCandidateId: HASH_D,
+          factorName: "Factor B",
+          upperTolerance: Math.sqrt(2) * 0.1,
+          lowerTolerance: -Math.sqrt(2) * 0.1,
+        },
+        setup: {
+          ...firstFactor.setup!,
+          factorCandidateId: HASH_D,
+          upperTolerance: Math.sqrt(2) * 0.1,
+          lowerTolerance: -Math.sqrt(2) * 0.1,
+        },
+        evidence: {
+          ...firstFactor.evidence!,
+          factorCandidateId: HASH_D,
+          factorId: HASH_D,
+          factorName: "Factor B",
+          upperTolerance: Math.sqrt(2) * 0.1,
+          lowerTolerance: -Math.sqrt(2) * 0.1,
+          tolerance: Math.sqrt(2) * 0.1,
+          oneSigma: Math.sqrt(2) * 0.025,
+        },
+      },
+    ];
+
+    const wrapper = mountWithFastStubs({ session, busy: false, editingSetup: false });
+
+    expect(wrapper.get("output[aria-label='Factor A Percent Contribution']").text()).toBe("33.33%");
+  });
+
+  it("shows Monte Carlo contribution source and percentage-point delta after simulation", () => {
+    const session = createSession({ status: "phase_1_ready" });
+    session.monteCarloResult = {
+      factorContributions: [{
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: HASH_C,
+        family: "normal",
+        sourceMode: "BASELINE_ASSUMPTION",
+        coefficient: 1,
+        standardDeviation: 0.02,
+        weightedVariance: 0.0004,
+        contribution: 0.64,
+      }],
+    } as F7SessionSnapshot["monteCarloResult"];
+
+    const wrapper = mountWithFastStubs({ session, busy: false, editingSetup: false });
+    const output = wrapper.get("output[aria-label='Factor A Percent Contribution']");
+
+    expect(output.text()).toContain("100%");
+    expect(output.text()).toContain("MC Actual (Baseline) 64.00%");
+    expect(output.text()).toContain("Δ -36.00%");
+    expect(mountWithFastStubs({
+      session: createSession({ status: "measurement_entry" }),
+      busy: false,
+      editingSetup: false,
+    }).text()).not.toContain("MC Actual");
+  });
+
   it("guards every Factor insertion path at the 100-Factor limit", () => {
     expect(COMPONENT_SOURCE).toContain("if (activeFactors.value.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS) return;");
     expect(COMPONENT_SOURCE).toMatch(/data-add-factor[\s\S]*?:disabled="busy \|\| activeFactors\.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS"[\s\S]*?@click="addFactor\(\)"/);
@@ -1091,12 +1157,36 @@ describe("FactorInputTable measurement entry modes", () => {
   }
 
   it("renders measured comparison after Setup with Cpk and explicit Actual and delta metrics", () => {
+    const session = measuredComparisonSession([
+      { originalRow: 1, value: 0.9, disposition: "included" },
+      { originalRow: 2, value: 1, disposition: "included" },
+      { originalRow: 3, value: 1.1, disposition: "included" },
+    ]);
+    session.factors = session.factors.map((factor) => factor.evidence?.factorId === HASH_A
+      ? {
+          ...factor,
+          distributionApproval: {
+            factorId: HASH_A,
+            family: "normal",
+            confirmed: true,
+            approvedAt: "2026-09-20T08:00:00.000Z",
+          },
+        }
+      : factor);
+    session.monteCarloResult = {
+      factorContributions: [{
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: HASH_A,
+        family: "normal",
+        sourceMode: "MEASURED",
+        coefficient: 1,
+        standardDeviation: 0.1,
+        weightedVariance: 0.01,
+        contribution: 0.25,
+      }],
+    } as F7SessionSnapshot["monteCarloResult"];
     const wrapper = mountWithFastStubs({
-      session: measuredComparisonSession([
-        { originalRow: 1, value: 0.9, disposition: "included" },
-        { originalRow: 2, value: 1, disposition: "included" },
-        { originalRow: 3, value: 1.1, disposition: "included" },
-      ]),
+      session,
       busy: false,
       editingSetup: false,
       measurementEntryMode: "import",
@@ -1127,13 +1217,13 @@ describe("FactorInputTable measurement entry modes", () => {
 
     const comparison = wrapper.get(`[data-factor-measured-comparison='${HASH_A}']`);
     const setupRow = comparison.element.previousElementSibling;
-    expect(setupRow?.querySelector("output[aria-label='Measured factor Cpk']")?.textContent).toBe("1.3333");
+    expect(setupRow?.querySelector("output[aria-label='Measured factor Cpk']")?.textContent).toBe("1.33");
     expect(setupRow?.nextElementSibling).toBe(comparison.element);
     expect(setupRow?.querySelector(`[data-open-measurement='${HASH_A}']`)?.textContent?.trim()).toBe("Measured Data");
     expect(comparison.find(`[data-open-measurement='${HASH_A}']`).exists()).toBe(false);
     const setupCells = [...(setupRow?.querySelectorAll("td") ?? [])];
-    expect(setupCells.slice(0, 10).every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
-    expect(setupCells.slice(0, 10).every((cell) => cell.classList.contains("factor-setup-rowspan-cell"))).toBe(true);
+    expect(setupCells.slice(0, 9).every((cell) => cell.getAttribute("rowspan") === "2")).toBe(true);
+    expect(setupCells.slice(0, 9).every((cell) => cell.classList.contains("factor-setup-rowspan-cell"))).toBe(true);
     const measuredRowspanCells = setupCells.slice(-3);
     expect(measuredRowspanCells.map((cell) => cell.getAttribute("data-column-key"))).toEqual([
       "sourceMode",
@@ -1145,16 +1235,112 @@ describe("FactorInputTable measurement entry modes", () => {
     expect(measuredRowspanCells[1]?.textContent?.trim()).toBe("3");
     expect(measuredRowspanCells[2]?.textContent?.trim()).toBe("ready");
     expect(comparison.attributes("aria-label")).toContain("Measured factor");
-    expect(comparison.findAll("td")).toHaveLength(5);
+    expect(comparison.findAll("td")).toHaveLength(6);
 
-    expect(comparison.get("[data-measured-comparison-metric='mean']").text()).toContain("Actual 1");
+    const actualDistribution = comparison.get("[data-measured-comparison-metric='distribution']");
+    expect(actualDistribution.get("strong").text()).toBe("Actual");
+    expect(actualDistribution.get("[data-actual-value]").text()).toBe("Normal");
+    expect(actualDistribution.get("[data-actual-value]").attributes("data-actual-severity")).toBe("normal");
+    expect(actualDistribution.get("[data-actual-value]").classes()).toContain("actual-value-severity-normal");
+    expect(comparison.get("[data-measured-comparison-metric='mean'] [data-actual-value]").attributes("data-actual-severity")).toBe("normal");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-actual-value]").attributes("data-actual-severity")).toBe("critical");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-actual-value]").attributes("data-adverse-percentage")).toBe("200.00");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-actual-value]").attributes("aria-label")).toBe("0.3; Critical: 200.00% adverse difference from Setup");
+    expect(comparison.get("[data-measured-comparison-metric='oneSigma'] [data-actual-value]").attributes("data-actual-severity")).toBe("critical");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] [data-actual-value]").attributes("data-actual-severity")).toBe("critical");
+    expect(comparison.get("[data-measured-comparison-metric='contribution'] [data-actual-value]").attributes("data-actual-severity")).toBe("normal");
+    for (const metric of ["mean", "tolerance", "oneSigma", "cpk", "contribution"] as const) {
+      const actualSeverity = comparison
+        .get(`[data-measured-comparison-metric='${metric}'] [data-actual-value]`)
+        .attributes("data-actual-severity");
+      const percentage = comparison
+        .get(`[data-measured-comparison-metric='${metric}'] [data-comparison-percentage]`);
+      expect(percentage.attributes("data-actual-severity")).toBe(actualSeverity);
+      expect(percentage.classes()).toContain(`actual-value-severity-${actualSeverity}`);
+    }
+    for (const metric of ["mean", "tolerance", "oneSigma", "cpk"] as const) {
+      const metricContainer = comparison.get(`[data-measured-comparison-metric='${metric}']`);
+      expect(metricContainer.classes()).toContain("factor-measured-comparison-metric-three-row");
+      const percentageRow = comparison
+        .get(`[data-measured-comparison-metric='${metric}'] [data-comparison-percentage-row]`);
+      expect(percentageRow.classes()).toContain("comparison-delta-percentage");
+      expect(percentageRow.get(".comparison-percentage-group").text()).toMatch(/^\(.+%\)$/);
+    }
+    expect(comparison.get("[data-measured-comparison-metric='distribution']").classes()).not.toContain("factor-measured-comparison-metric-three-row");
+    expect(comparison.get("[data-measured-comparison-metric='contribution']").classes()).not.toContain("factor-measured-comparison-metric-three-row");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-actual-value]").attributes("title")).toContain("200.00%");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] strong").classes()).not.toContain("actual-value-severity-critical");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] span:last-child").classes()).not.toContain("actual-value-severity-critical");
+    expect(comparison.get("[data-measured-comparison-metric='mean'] [data-actual-value]").text()).toBe("1");
     expect(comparison.get("[data-measured-comparison-metric='mean']").text()).toContain("Δ 0");
-    expect(comparison.get("[data-measured-comparison-metric='tolerance']").text()).toContain("Actual ±3σ 0.3");
+    expect(comparison.get("[data-measured-comparison-metric='mean'] [data-comparison-percentage-row]").text()).toBe("(0.00%)");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-actual-value]").text()).toBe("0.3");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance']").text()).toContain("±3σ");
     expect(comparison.get("[data-measured-comparison-metric='tolerance']").text()).toContain("Δ +0.2");
-    expect(comparison.get("[data-measured-comparison-metric='oneSigma']").text()).toContain("Actual 0.1");
+    expect(comparison.get("[data-measured-comparison-metric='tolerance'] [data-comparison-percentage-row]").text()).toBe("(+200.00%)");
+    expect(comparison.get("[data-measured-comparison-metric='oneSigma'] [data-actual-value]").text()).toBe("0.1");
     expect(comparison.get("[data-measured-comparison-metric='oneSigma']").text()).toContain("Δ +0.075");
-    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Actual 0.6667");
-    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Δ -0.6667");
+    expect(comparison.get("[data-measured-comparison-metric='oneSigma'] [data-comparison-percentage-row]").text()).toBe("(+300.00%)");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] [data-actual-value]").text()).toBe("0.67");
+    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Δ -0.67");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] [data-comparison-percentage-row]").text()).toBe("(-50.00%)");
+    expect(setupRow?.querySelector("output[aria-label='Measured factor Percent Contribution']")?.textContent).toBe("50%");
+    expect(comparison.get("[data-measured-comparison-metric='contribution'] [data-actual-value]").text()).toBe("25.00%");
+    expect(comparison.get("[data-measured-comparison-metric='contribution']").text()).toContain("Δ -25.00%");
+  });
+
+  it("shows N/A for a comparison percentage when Setup is zero", () => {
+    const session = measuredComparisonSession([
+      { originalRow: 1, value: -0.1, disposition: "included" },
+      { originalRow: 2, value: 0.1, disposition: "included" },
+    ]);
+    session.factors = session.factors.map((factor) => ({
+      ...factor,
+      evidence: {
+        ...factor.evidence!,
+        calculatedMean: 0,
+      },
+    }));
+    const wrapper = mountWithFastStubs({
+      session,
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "import",
+    });
+
+    expect(wrapper.get("[data-measured-comparison-metric='mean']").text()).toContain("Δ 0");
+    expect(wrapper.get("[data-measured-comparison-metric='mean'] [data-comparison-percentage-row]").text()).toBe("(N/A)");
+  });
+
+  it("shows a mismatched actual distribution in red", () => {
+    const session = measuredComparisonSession([
+      { originalRow: 1, value: 0.9, disposition: "included" },
+      { originalRow: 2, value: 1.1, disposition: "included" },
+    ]);
+    session.factors = session.factors.map((factor) => factor.evidence?.factorId === HASH_A
+      ? {
+          ...factor,
+          distributionApproval: {
+            factorId: HASH_A,
+            family: "gamma",
+            confirmed: true,
+            approvedAt: "2026-09-20T08:00:00.000Z",
+          },
+        }
+      : factor);
+
+    const wrapper = mountWithFastStubs({ session, busy: false, editingSetup: false });
+    const actualDistribution = wrapper.get("[data-measured-comparison-metric='distribution']");
+
+    expect(actualDistribution.get("strong").text()).toBe("Actual");
+    expect(actualDistribution.get("[data-actual-value]").text()).toBe("Gamma");
+    expect(actualDistribution.classes()).not.toContain("actual-value-severity-critical");
+    expect(actualDistribution.get("[data-actual-value]").classes()).toContain("actual-value-severity-critical");
+    expect(actualDistribution.get("[data-actual-value]").attributes("data-actual-severity")).toBe("critical");
+    expect(actualDistribution.get("[data-actual-value]").attributes("data-adverse-percentage")).toBeUndefined();
+    expect(actualDistribution.get("[data-actual-value]").attributes("aria-label")).toBe("Gamma; Critical: distribution differs from Setup");
+    expect(actualDistribution.get("[data-actual-value]").attributes("title")).toBe("Critical: distribution differs from Setup");
+    expect(session.monteCarloResult).toBeUndefined();
   });
 
   it("omits measured comparison for baseline, unready, editing, and no included finite data", () => {
@@ -1209,7 +1395,9 @@ describe("FactorInputTable measurement entry modes", () => {
     });
 
     const comparison = wrapper.get(`[data-factor-measured-comparison='${HASH_A}']`);
-    expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Actual —");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] strong").text()).toBe("Actual");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] [data-actual-value]").text()).toBe("—");
+    expect(comparison.get("[data-measured-comparison-metric='cpk'] [data-actual-value]").attributes("data-actual-severity")).toBeUndefined();
     expect(comparison.get("[data-measured-comparison-metric='cpk']").text()).toContain("Δ —");
   });
 
@@ -1230,9 +1418,11 @@ describe("FactorInputTable measurement entry modes", () => {
     expect(wrapper.text()).not.toContain("MEASURED");
     expect(wrapper.get(`[data-open-measurement='${HASH_A}']`).text()).toBe("Measured Data");
     expect(wrapper.findAll("input[type='radio']")).toHaveLength(0);
+    expect(wrapper.get("th[data-column-key='sourceMode']").classes()).not.toContain("source-mode-selection-prompt");
+    expect(wrapper.get("td[data-column-key='sourceMode']").classes()).not.toContain("source-mode-selection-prompt");
   });
 
-  it("retains source mode radios in individual mode", () => {
+  it("removes the Source Mode prompt once every factor is ready in individual mode", () => {
     const wrapper = mountWithFastStubs({
       session: createModeSession(),
       busy: false,
@@ -1247,7 +1437,63 @@ describe("FactorInputTable measurement entry modes", () => {
 
     expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
     expect(wrapper.findAll("input[type='radio']").length).toBeGreaterThan(0);
-  expectWorkspaceButtonState(wrapper, "warning", "warning");
+    expect(wrapper.get("th[data-column-key='sourceMode']").classes()).not.toContain("source-mode-selection-prompt");
+    expect(wrapper.get("td[data-column-key='sourceMode']").classes()).not.toContain("source-mode-selection-prompt");
+    expectWorkspaceButtonState(wrapper, "warning", "warning");
+  });
+
+  it("highlights the rounded Source Mode column while an individual factor is pending", () => {
+    const wrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({ ...factor, measurementPasteResult: undefined })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "individual",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "individual";
+    });
+
+    expect(wrapper.get("th[data-column-key='sourceMode']").classes()).toContain("source-mode-selection-prompt");
+    expect(wrapper.get("td[data-column-key='sourceMode']").classes()).toContain("source-mode-selection-prompt");
+    expect(STYLE_SOURCE).toMatch(/\.source-mode-selection-prompt\s*\{[^}]*animation:\s*source-mode-selection-pulse/s);
+    expect(STYLE_SOURCE).toMatch(/@keyframes\s+source-mode-selection-pulse/);
+    expect(STYLE_SOURCE).toMatch(/th\.source-mode-selection-prompt\s*\{[^}]*border-radius:\s*8px 8px 0 0[^}]*animation:\s*source-mode-selection-pulse-top/s);
+    expect(STYLE_SOURCE).toMatch(/tbody\s+tr:last-child\s+td\.source-mode-selection-prompt\s*\{[^}]*border-radius:\s*0 0 8px 8px[^}]*animation:\s*source-mode-selection-pulse-bottom/s);
+    expect(STYLE_SOURCE).toMatch(/background:\s*linear-gradient\(160deg,\s*#e8f2fb,\s*#d8e7f6\)/s);
+    expect(STYLE_SOURCE).toMatch(/@keyframes\s+source-mode-selection-pulse-top/);
+    expect(STYLE_SOURCE).toMatch(/@keyframes\s+source-mode-selection-pulse-bottom/);
+  });
+
+  it("smoothly centers the Source Mode column in the horizontal table viewport", () => {
+    const wrapper = mountWithFastStubs({
+      session: createModeSession((factor) => ({ ...factor, measurementPasteResult: undefined })),
+      busy: false,
+      editingSetup: false,
+      measurementEntryMode: "individual",
+    } as {
+      session: F7SessionSnapshot;
+      busy: boolean;
+      editingSetup: boolean;
+      measurementEntryMode: "individual";
+    });
+    const viewport = wrapper.get<HTMLElement>(".table-scroll").element;
+    const sourceModeHeader = wrapper.get<HTMLElement>("th[data-column-key='sourceMode']").element;
+    const scrollTo = vi.fn();
+    Object.defineProperties(viewport, {
+      clientWidth: { configurable: true, value: 500 },
+      scrollWidth: { configurable: true, value: 1600 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    Object.defineProperties(sourceModeHeader, {
+      offsetLeft: { configurable: true, value: 1000 },
+      offsetWidth: { configurable: true, value: 250 },
+    });
+
+    (wrapper.vm as unknown as { scrollSourceModeIntoView: () => void }).scrollSourceModeIntoView();
+
+    expect(scrollTo).toHaveBeenCalledWith({ left: 875, behavior: "smooth" });
   });
 
   it("keeps the Measured Data workspace action visible in both modes", () => {

@@ -2235,9 +2235,9 @@ describe("DimensionChainPanel", () => {
     expect(opacity.attributes("type")).toBe("range");
     expect(opacity.attributes("min")).toBe("10");
     expect(opacity.attributes("max")).toBe("100");
-    expect(opacity.element).toHaveProperty("value", "60");
+    expect(opacity.element).toHaveProperty("value", "100");
     const opacityOutput = opacity.element.parentElement?.querySelector("output");
-    expect(opacityOutput?.textContent).toBe("60%");
+    expect(opacityOutput?.textContent).toBe("100%");
     expect(opacityOutput?.nextElementSibling).toBe(opacity.element);
     expect(STYLE_SOURCE).toMatch(
       /\.dimension-chain-background-opacity\s*\{[^}]*grid-template-areas:\s*"label value"\s*"slider slider"/s,
@@ -2245,7 +2245,7 @@ describe("DimensionChainPanel", () => {
     expect(STYLE_SOURCE).toMatch(
       /\.dimension-chain-background-opacity\s*\+\s*\.dimension-chain-background-opacity\s*\{[^}]*border-left:/s,
     );
-    expect(wrapper.get("[data-dimension-chain-background]").attributes("opacity")).toBe("0.6");
+    expect(wrapper.get("[data-dimension-chain-background]").attributes("opacity")).toBe("1");
 
     await opacity.setValue("85");
     expect(wrapper.get("[data-dimension-chain-background]").attributes("opacity")).toBe("0.85");

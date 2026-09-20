@@ -10,6 +10,7 @@ import {
   renderF7ReportPdfHtml,
   safeF7ReportPdfFileName,
   safeUnicodeF7ReportPdfFileName,
+  type F7FactorDistributionAppendixEntry,
 } from "./f7-report-pdf-renderer.js";
 
 const HASH = "a".repeat(64);
@@ -268,6 +269,56 @@ function visibleHtmlText(value: string): string {
 }
 
 describe("F7 report PDF renderer", () => {
+  it("renders the Factor distribution Appendix only when authoritative entries are provided", () => {
+    const appendix: readonly F7FactorDistributionAppendixEntry[] = [
+      {
+        factorId: HASH,
+        factorName: "Factor <A>",
+        lowerSpecLimit: 0.8,
+        upperSpecLimit: 1.2,
+        setup: { mean: 1, standardDeviation: 0.05, distribution: "Normal" },
+        selectedCandidate: {
+          family: "normal",
+          parameters: { mean: 1.02, standardDeviation: 0.06 },
+          qqPoints: Array.from({ length: 20 }, (_, index) => ({
+            observed: 0.9 + index * 0.012,
+            theoretical: -2 + index * 0.2,
+          })),
+        },
+      },
+      {
+        factorId: HASH_B,
+        factorName: "Factor B",
+        lowerSpecLimit: 1.8,
+        upperSpecLimit: 2.2,
+        setup: { mean: 2, standardDeviation: 0.04, distribution: "Uniform" },
+        selectedCandidate: {
+          family: "uniform",
+          parameters: { minimum: 1.9, maximum: 2.1 },
+          qqPoints: Array.from({ length: 20 }, (_, index) => ({
+            observed: 1.9 + index * 0.01,
+            theoretical: 1.9 + index * 0.01,
+          })),
+        },
+      },
+    ];
+
+    expect(renderF7ReportPdfHtml(reportFixture())).not.toContain("data-factor-distribution-appendix");
+    const html = renderF7ReportPdfHtml(reportFixture(), undefined, appendix);
+
+    expect(html).toContain("data-factor-distribution-appendix");
+    expect(html).toContain("Factor distribution references");
+    expect(html).toContain("Factor &lt;A&gt;");
+    expect(html).not.toContain("Factor <A>");
+    expect(html.indexOf("Factor &lt;A&gt;")).toBeLessThan(html.indexOf("Factor B"));
+    expect(html.match(/data-factor-distribution-chart/g)).toHaveLength(2);
+    expect(html).toContain("data-factor-distribution-bin");
+    expect(html).toContain("data-selected-distribution-fit");
+    expect(html).toContain("data-factor-setup-distribution-fit");
+    expect(html).toContain('data-reference-id="lower-spec-limit"');
+    expect(html).toContain('data-reference-id="upper-spec-limit"');
+  });
+
   it("derives bounded Factor Setup density styles and rejects invalid values", () => {
     expect(factorSetupDensityStyle(7)).toBe("--factor-setup-table-font-size:6.4pt;--factor-setup-label-font-size:5.8pt;--factor-setup-cell-y:2px;--factor-setup-cell-x:3px;--factor-setup-h3-font-size:10.5pt;--factor-setup-h4-font-size:9pt;--factor-setup-h3-margin-top:9px;--factor-setup-h3-margin-bottom:4px;--factor-setup-h4-margin-top:8px;--factor-setup-h4-margin-bottom:3px;--factor-setup-table-margin:7px;--factor-setup-metric-stack-gap:1px;--factor-setup-metric-line-gap:4px;--factor-setup-border-width:1px;");
     expect(factorSetupDensityStyle(8)).toBe("--factor-setup-table-font-size:5.028571pt;--factor-setup-label-font-size:4.557143pt;--factor-setup-cell-y:1.571429px;--factor-setup-cell-x:2.357143px;--factor-setup-h3-font-size:8.25pt;--factor-setup-h4-font-size:7.071429pt;--factor-setup-h3-margin-top:7.071429px;--factor-setup-h3-margin-bottom:3.142857px;--factor-setup-h4-margin-top:6.285714px;--factor-setup-h4-margin-bottom:2.357143px;--factor-setup-table-margin:5.5px;--factor-setup-metric-stack-gap:0.785714px;--factor-setup-metric-line-gap:3.142857px;--factor-setup-border-width:0.785714px;");
@@ -287,7 +338,17 @@ describe("F7 report PDF renderer", () => {
   });
 
   it("renders the governed report with a side-by-side result visual and F0 evidence", () => {
-    const html = renderF7ReportPdfHtml(reportFixture());
+    const report = reportFixture();
+    const html = renderF7ReportPdfHtml({
+      ...report,
+      simulation: {
+        ...report.simulation,
+        factorContributions: [
+          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH, family: "normal", sourceMode: "MEASURED", coefficient: 1, standardDeviation: 0.06, weightedVariance: 0.0036, contribution: 0.6923076923076923 },
+          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH_B, family: "uniform", sourceMode: "BASELINE_ASSUMPTION", coefficient: -1, standardDeviation: 0.04, weightedVariance: 0.0016, contribution: 0.3076923076923077 },
+        ],
+      },
+    });
 
     expect(html).toContain("F7 Monte Carlo Governed Result Report");
     expect(html).toContain("Design &lt;unsafe&gt; 装配.xlsx");
@@ -295,19 +356,29 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("TA / Result");
     expect(html).toContain("Factor &lt;A&gt;");
     expect(html).not.toContain("Factor <A>");
-    expect(html).toContain("<h2>TA interpretation and optimization report</h2><p class=\"subtle\">Design &lt;unsafe&gt; 装配.xlsx · TA / Result</p>");
+    expect(html).toContain("<h2>Engineering Analysis</h2><p class=\"subtle\">Design &lt;unsafe&gt; 装配.xlsx · TA / Result</p>");
+    expect(html).toContain("Executive Summary");
+    expect(html).toContain("Capability is below target");
+    expect(html).toContain("Measured simulation indicates a capability shortfall.");
+
+    const resultKpis = html.match(/<dl class="monte-carlo-kpis"[\s\S]*?<\/dl>/)?.[0];
+    expect(resultKpis).toContain("Yield");
+    expect(resultKpis).toContain("Cpk");
+    expect(resultKpis).toContain("Mean");
+    expect(resultKpis).toContain("Std Dev");
+    expect(resultKpis).toContain("105,500 PPM out of spec");
 
     const orderedHeadings = [
       "Engineering Inputs",
       "Factor Setup",
-      "Setup Inputs",
-      "Measurement Analysis",
       "Governed result",
       "Dimension Chain",
       "Monte Carlo output distribution",
-      "TA interpretation and optimization report",
+      "Engineering Analysis",
+      "Executive Summary",
       "Factor Setup vs Monte Carlo TA",
-      "Interpretation and optimization direction",
+      "Top Contributors",
+      "Engineering Risks &amp; Recommended Actions",
       "Governed assessment",
     ];
     let previousIndex = -1;
@@ -317,15 +388,12 @@ describe("F7 report PDF renderer", () => {
       previousIndex = headingIndex;
     }
 
-    const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
-    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
-    expect(setupInputsTable).toBeDefined();
-    expect(measurementAnalysisTable).toBeDefined();
+    const factorSetupTable = html.match(/<table data-factor-setup>[\s\S]*?<\/table>/)?.[0];
+    expect(factorSetupTable).toBeDefined();
     expect(html).toContain(`<div class="factor-setup-wrapper" style="${factorSetupDensityStyle(reportFixture().factors.length)}">`);
     expect(html).toContain("font-size: var(--factor-setup-label-font-size);");
     expect(html).not.toContain("dimension-chain-wrapper");
-    const setupHeadings = [...(setupInputsTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
-    const analysisHeadings = [...(measurementAnalysisTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    const setupHeadings = [...(factorSetupTable ?? "").matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     expect(setupHeadings).toEqual([
       "Item",
       "Factor",
@@ -337,51 +405,73 @@ describe("F7 report PDF renderer", () => {
       "Long-term Safety Factor",
       "Sigma Level",
       "Distribution",
-    ]);
-    expect(analysisHeadings).toEqual([
-      "Item",
-      "Factor",
       "Mean",
       "Tolerance",
       "1σ",
       "Cpk",
-      "% Contribution to σ",
+      "% Cont. to σ",
       "Source Mode",
       "Sample Count",
       "Readiness",
     ]);
     expect(html).toContain(".engineering-inputs, .engineering-inputs table { break-inside: auto; }");
     expect(html).toContain(".engineering-inputs tr { break-inside: avoid; }");
-    expect(setupInputsTable).toContain("PN &lt;100&gt;");
-    expect(setupInputsTable).toContain("DIM &amp; 1");
-    expect(setupInputsTable).toContain("Missing");
-    expect(setupInputsTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(setupInputsTable?.indexOf("Factor &amp; B") ?? -1);
-    expect(measurementAnalysisTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(measurementAnalysisTable?.indexOf("Factor &amp; B") ?? -1);
-    expect(html.indexOf("data-factor-setup-inputs")).toBeLessThan(html.indexOf("data-factor-measurement-analysis"));
-    expect(html.indexOf("data-factor-measurement-analysis")).toBeLessThan(html.indexOf("Governed result"));
+    expect(factorSetupTable).toContain("PN &lt;100&gt;");
+    expect(factorSetupTable).toContain("DIM &amp; 1");
+    expect(factorSetupTable).toContain("Missing");
+    expect(factorSetupTable?.indexOf("Factor &lt;A&gt;")).toBeLessThan(factorSetupTable?.indexOf("Factor &amp; B") ?? -1);
+    expect(factorSetupTable).toContain('rowspan="2"');
+    expect(factorSetupTable).toContain(`data-factor-measured-comparison="${HASH}"`);
+    expect(factorSetupTable).toContain('data-measured-comparison-metric="distribution"');
+    expect(factorSetupTable).toContain('data-measured-comparison-metric="contribution"');
+    expect(factorSetupTable).toContain("Actual");
+    expect(factorSetupTable).toContain("Δ");
+    expect(html).not.toContain("<h4>Setup Inputs</h4>");
+    expect(html).not.toContain("<h4>Measurement Analysis</h4>");
+    expect(html.indexOf("data-factor-setup")).toBeLessThan(html.indexOf("Governed result"));
     expect(html.indexOf("Governed result")).toBeLessThan(html.indexOf("Dimension Chain"));
 
-    const measurementAnalysisText = visibleHtmlText(measurementAnalysisTable ?? "");
-    for (const metricValue of ["Setup 1.01", "Actual 1.02", "Δ +0.01", "Setup ±0.2", "Actual ±3σ 0.18", "Δ -0.02", "Setup 0.05", "Actual 0.06", "Setup 1", "Actual 0.9"]) {
-      expect(measurementAnalysisText).toContain(metricValue);
+    const comparisonTable = html.match(/<table data-report-ta-comparison>[\s\S]*?<\/table>/)?.[0];
+    expect(comparisonTable).toBeDefined();
+    for (const metric of ["Mean", "Standard deviation", "Cp", "Cpk", "CPL", "CPU", "Lower DPM", "Upper DPM", "Total DPM", "% Out of Spec"]) {
+      expect(comparisonTable).toContain(`<th>${metric}</th>`);
     }
-    expect(measurementAnalysisTable).toContain("62.5%");
-    expect(measurementAnalysisTable).toContain("37.5%");
-    expect(measurementAnalysisTable).toContain("<th>Source Mode</th>");
-    expect(measurementAnalysisTable).toContain("<th>Readiness</th>");
-    expect(measurementAnalysisTable).toContain("Measured Data");
-    expect(measurementAnalysisTable).toContain("Baseline Assumption");
-    expect(measurementAnalysisTable).toContain("status-ready");
-    expect(measurementAnalysisTable).toContain("status-warning");
-    expect(measurementAnalysisTable).toContain(">32<");
-    expect(measurementAnalysisTable).toContain(">0<");
+    expect(comparisonTable).toContain("+0.024 (+12.15%)");
+    expect(comparisonTable).toContain("actual-value-severity-critical");
+    expect(comparisonTable).toContain("DPM");
+
+    const contributors = html.match(/<ol class="contributor-list"[\s\S]*?<\/ol>/)?.[0];
+    expect(contributors).toContain("Factor &lt;A&gt;");
+    expect(contributors).toContain("62.5%");
+    expect(contributors?.indexOf("Factor &lt;A&gt;")).toBeLessThan(contributors?.indexOf("Factor &amp; B") ?? -1);
+    expect(html).toContain("Specification escapes remain possible.");
+    expect(html).toContain("Recommended Actions");
+    expect(html).toContain("Current σ");
+    expect(html).toContain("Maximum σ");
+    expect(html).toContain("Required reduction");
+
+    const factorSetupText = visibleHtmlText(factorSetupTable ?? "");
+    for (const metricValue of ["1.01", "Actual 1.02", "Δ +0.01 (+0.99%)", "± 0.2", "Actual ±3σ 0.18", "Δ -0.02 (-10.00%)", "0.05", "Actual 0.06", "Actual 0.9"]) {
+      expect(factorSetupText).toContain(metricValue);
+    }
+    expect(factorSetupTable).toContain("62.5%");
+    expect(factorSetupTable).toContain("37.5%");
+    expect(factorSetupTable).toContain("<th>Source Mode</th>");
+    expect(factorSetupTable).toContain("<th>Readiness</th>");
+    expect(factorSetupTable).toContain("Measured Data");
+    expect(factorSetupTable).toContain("Baseline Assumption");
+    expect(factorSetupTable).toContain("status-ready");
+    expect(factorSetupTable).toContain("status-warning");
+    expect(factorSetupTable).toContain("actual-value-severity-critical");
+    expect(factorSetupTable).toContain(">32<");
+    expect(factorSetupTable).toContain(">0<");
 
     expect(html).toContain("data-monte-carlo-chart");
     expect(html).toContain("data-monte-carlo-bin");
     expect(html).toContain("data-monte-carlo-fit");
     expect(html).toContain("data-factor-setup-fit");
     expect(html).toContain("data-factor-setup-mean");
-    expect(html).toContain(">Setup Mean -0.05<");
+    expect(html).toContain(">Setup Mean -0.0500<");
     for (const referenceId of [
       "lower-spec-limit",
       "upper-spec-limit",
@@ -393,10 +483,14 @@ describe("F7 report PDF renderer", () => {
       expect(html).toContain(`data-reference-id="${referenceId}"`);
     }
     expect(html.match(/data-reference-row="top"/g)).toHaveLength(3);
-    expect(html.match(/data-reference-row="bottom"/g)).toHaveLength(4);
-    for (const label of ["LSL -0.15", "Target -0.05", "USL 0.05", "−3σ -0.1958", "Mean -0.0257", "+3σ 0.1444"]) {
+    expect(html.match(/data-reference-row="middle"/g)).toHaveLength(1);
+    expect(html.match(/data-reference-row="bottom"/g)).toHaveLength(3);
+    for (const label of ["LSL -0.1500", "Target -0.0500", "USL 0.0500", "−3σ -0.1958", "Mean -0.0257", "+3σ 0.1444"]) {
       expect(html).toContain(`>${label}<`);
     }
+    expect(html).toContain('class="monte-carlo-reference-badge"');
+    expect(html).toContain('class="monte-carlo-reference-badge setup-mean-badge"');
+    expect(html).toContain('y1="82" y2="278"');
     expect(html.match(/<g><line class="plot-grid"/g)).toHaveLength(5);
     expect(html.match(/<g><line class="plot-tick"/g)).toHaveLength(5);
     for (const legendText of [
@@ -419,6 +513,8 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain(".dimension-chain-fallback { height: 105mm; overflow: hidden; }");
     expect(html).toContain(".dimension-chain-fallback .dimension-chain-pages { display: flex;");
     expect(html).toContain(".result-visual-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);");
+    expect(html).toContain(".result-dimension-chain .dimension-chain-visual { align-items: flex-start;");
+    expect(html).toContain("object-position: center top;");
     expect(html).not.toContain("TA Comparison Matrix");
     expect(html).not.toContain("data-ta-comparison-matrix");
 
@@ -426,14 +522,12 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("F0 interpretation-rules-v2 / performance-cpk-below-target");
     expect(html).toContain("Mean shifted right.");
     expect(html).toContain("Reduce variation.");
-    expect(html).toContain("Applicability: one-dimensional");
     expect(html).toContain("Governed assessment");
     expect(html).toContain("This statistical assessment is not a design or production Release/Hold decision.");
     for (const removed of [
       "Governed engineering detail",
       "Engineering Summary",
       "Root Cause Analysis",
-      "Engineering Risk",
       "Suggested Action Sequence",
       "Validation Requirements",
       "Evidence Disclosure",
@@ -493,18 +587,16 @@ describe("F7 report PDF renderer", () => {
       ...report,
       factors,
     });
-    const setupInputsTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
-    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+    const factorSetupTable = html.match(/<table data-factor-setup>[\s\S]*?<\/table>/)?.[0];
     const dimensionChainPages = [...html.matchAll(/<div data-dimension-chain-page[^>]*>[\s\S]*?<\/svg><\/div>/g)]
       .map((match) => match[0]);
 
-    expect(decodeHtmlAttribute(setupInputsTable ?? "")).toContain(oversizedFactorName);
-    expect(decodeHtmlAttribute(measurementAnalysisTable ?? "")).toContain(oversizedFactorName);
+    expect(decodeHtmlAttribute(factorSetupTable ?? "")).toContain(oversizedFactorName);
     expect(html).toContain(".dimension-chain-svg { width: 100%; height: auto; max-height: none; }");
     expect(html).toContain("thead { display: table-header-group; }");
     expect(html).toContain(".engineering-inputs, .engineering-inputs table { break-inside: auto; }");
     expect(html).toContain(".engineering-inputs tr { break-inside: avoid; }");
-    expect(html).toContain(".metric-stack, .status-stack { display: flex; flex-direction: column; gap: 1px; }");
+    expect(html).toContain(".factor-measured-comparison-metric { display: flex; flex-direction: column;");
     expect(html).toContain(".result-dimension-chain .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
     expect(html).toContain(".result-dimension-chain .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
     expect(dimensionChainPages.length).toBeGreaterThan(5);
@@ -555,16 +647,14 @@ describe("F7 report PDF renderer", () => {
     expect(dimensionChainPages.join("")).not.toMatch(/(?:NaN|-?Infinity)/);
   });
 
-  it.each(["W".repeat(300), "测".repeat(300)])("renders complete wide Factor names in both tables", (factorName) => {
+  it.each(["W".repeat(300), "测".repeat(300)])("renders complete wide Factor names in the unified table", (factorName) => {
     const report = reportFixture();
     const html = renderF7ReportPdfHtml({
       ...report,
       factors: [{ ...report.factors[0]!, factorName }],
     });
 
-    for (const table of ["factor-setup-inputs", "factor-measurement-analysis"]) {
-      expect(html.match(new RegExp(`<table data-${table}>[\\s\\S]*?${factorName}[\\s\\S]*?<\\/table>`))).toBeTruthy();
-    }
+    expect(html.match(new RegExp(`<table data-factor-setup>[\\s\\S]*?${factorName}[\\s\\S]*?<\\/table>`))).toBeTruthy();
   });
 
   it("compresses the Dimension Chain when factor magnitudes differ by more than eight times", () => {
@@ -594,15 +684,12 @@ describe("F7 report PDF renderer", () => {
     const dimensionChain = html.match(/<svg data-dimension-chain[\s\S]*?<\/svg>/)?.[0];
     const nominalLabels = [...(dimensionChain ?? "").matchAll(/<text class="dimension-chain-metadata"[^>]*><tspan>Item \d+<\/tspan><tspan dx="10">([^<]+)<\/tspan>/g)]
       .map((match) => match[1] ?? "");
-    const factorSetupTable = html.match(/<table data-factor-setup-inputs>[\s\S]*?<\/table>/)?.[0];
-    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
-    const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
-      .flatMap((row) => [...row[1]!.matchAll(/<td>([\s\S]*?)<\/td>/g)]
+    const factorSetupTable = html.match(/<table data-factor-setup>[\s\S]*?<\/table>/)?.[0];
+    const factorSetupNumericCells = [...(factorSetupTable ?? "").matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)]
+      .flatMap((row) => [...row[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
         .map((cell, index) => ({ index, value: (cell[1] ?? "").replace(/<[^>]+>/g, "") })))
       .filter(({ index }) => index === 0 || index >= 2 && index <= 6)
       .map(({ value }) => value);
-    const measurementNumericValues = [...(measurementAnalysisTable ?? "").matchAll(/<span class="metric-value">([^<]+)<\/span>/g)]
-      .map((match) => match[1] ?? "");
 
     expect(dimensionChain).toBeDefined();
     expect(dimensionChain).not.toMatch(/(?:NaN|-?Infinity)/);
@@ -610,23 +697,20 @@ describe("F7 report PDF renderer", () => {
     expect(nominalLabels.every((label) => label.length <= 16)).toBe(true);
     expect(nominalLabels[0]).toMatch(/^\+[1-9](?:\.\d+)?e308$/);
     expect(nominalLabels[1]).toMatch(/^-[1-9](?:\.\d+)?e308$/);
-    expect(factorSetupNumericCells).toHaveLength(12);
-    expect(factorSetupNumericCells.every((value) => value.length <= 16)).toBe(true);
+    expect(factorSetupNumericCells.length).toBeGreaterThan(0);
     expect(factorSetupNumericCells).toContain("1.8e308");
     expect(factorSetupNumericCells).toContain("-1.8e308");
-    expect(measurementNumericValues.length).toBeGreaterThan(0);
-    expect(measurementNumericValues.every((value) => value.length <= 16)).toBe(true);
   });
 
   it("allows measurement metric lines to wrap within fixed table cells", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
-    const metricLineRule = html.match(/\.metric-line\s*\{([^}]*)\}/)?.[1];
+    const metricRule = html.match(/\.factor-measured-comparison-metric\s*\{([^}]*)\}/)?.[1];
 
-    expect(metricLineRule).toBeDefined();
-    expect(metricLineRule).toMatch(/display:\s*grid/);
-    expect(metricLineRule).toMatch(/white-space:\s*normal/);
-    expect(metricLineRule).toMatch(/overflow-wrap:\s*anywhere/);
-    expect(metricLineRule).not.toMatch(/white-space:\s*nowrap/);
+    expect(metricRule).toBeDefined();
+    expect(metricRule).toMatch(/display:\s*flex/);
+    expect(metricRule).toMatch(/white-space:\s*normal/);
+    expect(metricRule).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(metricRule).not.toMatch(/white-space:\s*nowrap/);
   });
 
   it("renders em dashes for absent optional measured metrics without inventing values", () => {
@@ -641,17 +725,17 @@ describe("F7 report PDF renderer", () => {
         },
       }],
     });
-    const measurementAnalysisTable = html.match(/<table data-factor-measurement-analysis>[\s\S]*?<\/table>/)?.[0];
+    const factorSetupTable = html.match(/<table data-factor-setup>[\s\S]*?<\/table>/)?.[0];
 
-    expect(measurementAnalysisTable).toBeDefined();
-    expect(measurementAnalysisTable?.match(/<span class="metric-label">Actual<\/span><span class="metric-value">—<\/span>/g)).toHaveLength(3);
-    expect(measurementAnalysisTable?.match(/<span class="metric-label">Δ<\/span><span class="metric-value">—<\/span>/g)).toHaveLength(3);
+    expect(factorSetupTable).toBeDefined();
+    expect(factorSetupTable?.match(/<strong>Actual<\/strong><span class="actual-value-severity-normal">—<\/span>/g)).toHaveLength(3);
+    expect(factorSetupTable?.match(/<strong>Δ<\/strong>—/g)).toHaveLength(3);
   });
 
-  it("places Setup Mean on the fixed bottom label row with its value", () => {
+  it("places Setup Mean on the Web middle label row with a styled badge and fixed precision", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
 
-    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="bottom" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="72" y2="278"\/><text class="monte-carlo-reference-label" x="416\.19" y="31" text-anchor="middle">Setup Mean -0\.05<\/text><\/g>/);
+    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="82" y2="278"\/><g class="monte-carlo-reference-badge setup-mean-badge" transform="translate\([^)]* 31\)"><rect [^>]*\/><text class="monte-carlo-reference-label"[^>]*>Setup Mean -0\.0500<\/text><\/g><\/g>/);
   });
 
   it("keeps every governed reference and finite geometry for extreme finite report values", () => {
@@ -829,7 +913,7 @@ describe("F7 report PDF renderer", () => {
 
     expect(setupPath).toBeDefined();
     expect(setupPath?.split(" ")).toHaveLength(21);
-    expect(setupPath).toContain("L418.00,72.00");
+    expect(setupPath).toContain("L418.00,82.00");
   });
 
   it("uses a controlled reason instead of fabricated F0 values when analysis is unavailable", () => {
@@ -848,9 +932,9 @@ describe("F7 report PDF renderer", () => {
       },
     });
 
-    expect(html).toContain("TA interpretation and optimization report");
-  expect(html).toContain("<h2>TA interpretation and optimization report</h2><p class=\"subtle\">Design &lt;unsafe&gt; 装配.xlsx · TA &lt;unsafe&gt; / Result</p>");
-  expect(html).not.toContain("TA <unsafe> / Result");
+    expect(html).toContain("Engineering Analysis");
+    expect(html).toContain("<h2>Engineering Analysis</h2><p class=\"subtle\">Design &lt;unsafe&gt; 装配.xlsx · TA &lt;unsafe&gt; / Result</p>");
+    expect(html).not.toContain("TA <unsafe> / Result");
     expect(html).toContain("F0 analysis unavailable");
     expect(html).toContain("Governed F0 evidence &lt;not available&gt;.");
     expect(html).not.toContain(reason);
@@ -871,7 +955,7 @@ describe("F7 report PDF renderer", () => {
       expect(html).not.toContain(removed);
     }
     expect(html).not.toContain("data-factor-setup-fit");
-    expect(html).not.toContain("data-report-ta-comparison");
+    expect(html).not.toContain("<table data-report-ta-comparison>");
     expect(html).not.toContain("Factor Setup assumption and measured-data Monte Carlo comparison");
     expect(html).not.toContain("Assumption vs measured evidence");
     expect(html).not.toContain(">0.7396<");

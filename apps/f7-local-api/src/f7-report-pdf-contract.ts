@@ -6,6 +6,7 @@ export const f7ReportPdfRouteRequestSchema = z.object({
   sessionId: z.string().min(1).max(200),
   report: f7ReportProjectionSchema,
   dimensionChainVisual: dimensionChainVisualSchema.optional(),
+  includeFactorDistributionAppendix: z.boolean().optional().default(false),
 }).strict().superRefine((request, context) => {
   if (request.sessionId !== request.report.sessionId) {
     context.addIssue({

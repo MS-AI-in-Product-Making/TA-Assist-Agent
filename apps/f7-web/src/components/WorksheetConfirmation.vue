@@ -52,7 +52,10 @@ function submit(): void {
       ><span /></div>
       <p data-worksheet-analysis-status role="status" aria-live="polite">Analyzing worksheet…</p>
     </div>
-    <fieldset class="worksheet-options-fieldset">
+    <fieldset
+      class="worksheet-options-fieldset"
+      :class="{ 'worksheet-options-selection-required': hasOptions && !selected }"
+    >
       <legend>Worksheet options</legend>
       <div class="worksheet-options-grid">
         <label v-for="option in options" :key="option" class="row-line">

@@ -23,6 +23,12 @@ import {
   buildFactorMeasuredComparison,
   type FactorMeasuredComparison,
 } from "../factor-measured-comparison";
+import {
+  classifyActualValueSeverity,
+  classifyDistributionSeverity,
+  type ActualValueMetric,
+  type ActualValueSeverityResult,
+} from "../actual-value-severity";
 
 const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
   "Normal",
@@ -922,12 +928,25 @@ const currentSessionKey = computed(() => JSON.stringify({
 
 const latestDimensionChainProjection = shallowRef<Readonly<DimensionChainProjectionCacheEntry> | undefined>();
 const dimensionChainPanel = ref<{ captureReportVisual: () => DimensionChainVisual | Promise<DimensionChainVisual> }>();
+const tableScroll = ref<HTMLElement>();
 
 function captureDimensionChainVisual(): DimensionChainVisual | Promise<DimensionChainVisual> {
   return dimensionChainPanel.value?.captureReportVisual() ?? { status: "empty" };
 }
 
-defineExpose({ captureDimensionChainVisual });
+function scrollSourceModeIntoView(): void {
+  const viewport = tableScroll.value;
+  const sourceModeHeader = viewport?.querySelector<HTMLElement>("th[data-column-key='sourceMode']");
+  if (!viewport || !sourceModeHeader) return;
+  const centeredLeft = sourceModeHeader.offsetLeft + sourceModeHeader.offsetWidth / 2 - viewport.clientWidth / 2;
+  const maximumLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+  viewport.scrollTo?.({
+    left: Math.max(0, Math.min(centeredLeft, maximumLeft)),
+    behavior: "smooth",
+  });
+}
+
+defineExpose({ captureDimensionChainVisual, scrollSourceModeIntoView });
 
 const currentSessionProjection = computed<DimensionChainReportProjection | undefined>(() => {
   const cached = latestDimensionChainProjection.value;
@@ -1027,6 +1046,99 @@ function percentContribution(factor: DeepReadonly<F7SessionSnapshot["factors"][n
   return calculatedValues(factor).oneSigma ** 2 / sumOfSigmaSquares.value;
 }
 
+function monteCarloContribution(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>) {
+  const factorId = factor.evidence?.factorId;
+  if (!factorId) return undefined;
+  return props.session.monteCarloResult?.factorContributions?.find(
+    (contribution) => contribution.factorId === factorId,
+  );
+}
+
+function contributionSourceLabel(sourceMode: F7SourceMode): "Measured" | "Baseline" {
+  return sourceMode === "MEASURED" ? "Measured" : "Baseline";
+}
+
+function actualDistributionLabel(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): string | undefined {
+  const family = factor.distributionApproval?.family;
+  return family ? `${family.charAt(0).toUpperCase()}${family.slice(1)}` : undefined;
+}
+
+function actualDistributionDiffers(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): boolean {
+  const actual = actualDistributionLabel(factor);
+  const setup = factor.setup?.distribution ?? factor.evidence?.distribution;
+  return actual !== undefined && setup !== undefined && actual.toLowerCase() !== setup.toLowerCase();
+}
+
+function distributionSeverity(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+): ActualValueSeverityResult | undefined {
+  return classifyDistributionSeverity(
+    factor.setup?.distribution ?? factor.evidence?.distribution,
+    factor.distributionApproval?.family,
+  );
+}
+
+function numericActualSeverity(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+  metric: ActualValueMetric,
+): ActualValueSeverityResult | undefined {
+  if (metric === "contribution") {
+    return classifyActualValueSeverity({
+      metric,
+      setup: percentContribution(factor),
+      actual: monteCarloContribution(factor)?.contribution,
+    });
+  }
+
+  const comparison = factorMeasuredComparison(factor);
+  if (!comparison) return undefined;
+  const value = comparison[metric];
+  return classifyActualValueSeverity({
+    metric,
+    setup: value.setup,
+    actual: value.actual,
+    ...(metric === "mean" ? { normalizationFallback: comparison.tolerance.setup } : {}),
+  });
+}
+
+function actualSeverityTitle(
+  result: ActualValueSeverityResult | undefined,
+  distributionMismatch = false,
+): string | undefined {
+  if (!result) return undefined;
+  const label = result.severity === "normal" ? "Normal" : result.severity === "attention" ? "Attention" : "Critical";
+  if (distributionMismatch) return `${label}: distribution differs from Setup`;
+  if (result.adversePercentage === undefined) return `${label}: difference cannot be normalized against Setup`;
+  return `${label}: ${result.adversePercentage.toFixed(2)}% adverse difference from Setup`;
+}
+
+function actualSeverityAttributes(
+  result: ActualValueSeverityResult | undefined,
+  actualValue: string,
+  distributionMismatch = false,
+): Record<string, string> {
+  if (!result) return {};
+  const title = actualSeverityTitle(result, distributionMismatch)!;
+  return {
+    class: `actual-value-severity-${result.severity}`,
+    title,
+    "aria-label": `${actualValue}; ${title}`,
+    "data-actual-severity": result.severity,
+    ...(result.adversePercentage === undefined
+      ? {}
+      : { "data-adverse-percentage": result.adversePercentage.toFixed(2) }),
+  };
+}
+
+function formatContributionPercent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatContributionDelta(actual: number, setup: number): string {
+  const delta = (actual - setup) * 100;
+  return `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`;
+}
+
 function formatSummary(value: number): string {
   if (!Number.isFinite(value)) return "—";
   const normalized = Object.is(value, -0) ? 0 : value;
@@ -1045,8 +1157,19 @@ function formatComparisonValue(value: number | undefined): string {
   return value === undefined ? "—" : formatSummary(value);
 }
 
-function formatComparisonDelta(value: number | undefined): string {
-  return value === undefined ? "—" : formatSigned(value);
+function formatCpkValue(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return normalized.toLocaleString("en-US", { maximumFractionDigits: 2, useGrouping: false });
+}
+
+function formatComparisonDeltaPercentage(value: number | undefined, setup: number | undefined): string {
+  if (value === undefined || setup === undefined || setup === 0) return "N/A";
+  return `${value > 0 ? "+" : ""}${(value / Math.abs(setup) * 100).toFixed(2)}%`;
+}
+
+function formatCpkDeltaValue(value: number | undefined): string {
+  return value === undefined ? "—" : `${value > 0 ? "+" : ""}${formatCpkValue(value)}`;
 }
 
 function hideDraftCalculation(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): boolean {
@@ -1072,7 +1195,9 @@ function formatFactorContribution(
   factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
   value: number,
 ): string {
-  return hideDraftCalculation(factor) ? "" : formatPercent(value);
+  return hideDraftCalculation(factor)
+    ? ""
+    : `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 2, useGrouping: false })}%`;
 }
 
 function nominalClass(value: number | ""): "nominal-negative" | "nominal-neutral" | "nominal-positive" | "" {
@@ -1088,6 +1213,11 @@ function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][numbe
     ? "ready"
     : "pending";
 }
+
+const sourceModeSelectionRequired = computed(() => (
+  props.measurementEntryMode === "individual"
+  && activeFactors.value.some((factor) => factorReadiness(factor) !== "ready")
+));
 
 function nullableTraceability(value: string): string | null {
   return value.trim() || null;
@@ -1214,7 +1344,7 @@ function onModeChange(factorId: string, event: Event): void {
     <p v-if="setupEditable && activeFactors.length === 0" class="subtle" data-empty-factor-setup>
       No factors. Add a Factor, restore imported factors, or undo the last action.
     </p>
-    <div class="table-scroll">
+    <div ref="tableScroll" class="table-scroll">
       <table
         id="factor-setup-table"
         class="data-table factor-table factor-table-centered"
@@ -1237,6 +1367,7 @@ function onModeChange(factorId: string, event: Event): void {
               :class="{
                 'factor-index-column': column.key === 'index',
                 'factor-header-multiline': column.lines.length > 1,
+                'source-mode-selection-prompt': column.key === 'sourceMode' && sourceModeSelectionRequired,
               }"
               :data-column-key="column.key"
               :aria-label="column.label"
@@ -1497,10 +1628,7 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "sigmaLevel") }}</small>
               </div>
             </td>
-            <td
-              :class="factorMeasuredComparison(factor) ? 'factor-setup-rowspan-cell' : ''"
-              :rowspan="factorMeasuredComparison(factor) ? 2 : undefined"
-            >
+            <td>
               <div class="factor-field" data-factor-field="distribution">
                 <select
                   v-if="setupEditable"
@@ -1524,11 +1652,26 @@ function onModeChange(factorId: string, event: Event): void {
             <td><output :aria-label="`${factorNameFor(factor)} Mean`">{{ formatFactorCalculation(factor, calculatedValues(factor).mean) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
-            <td><output :aria-label="`${factorNameFor(factor)} Cpk`">{{ formatSummary(factorSigmaLevel(factor) / 3) }}</output></td>
-            <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
+            <td><output :aria-label="`${factorNameFor(factor)} Cpk`">{{ formatCpkValue(factorSigmaLevel(factor) / 3) }}</output></td>
+            <td>
+              <output :aria-label="`${factorNameFor(factor)} Percent Contribution`">
+                <span>{{ formatFactorContribution(factor, percentContribution(factor)) }}</span>
+                <span
+                  v-if="monteCarloContribution(factor) && !factorMeasuredComparison(factor)"
+                  class="factor-monte-carlo-contribution"
+                  :data-factor-monte-carlo-contribution="factor.evidence?.factorId"
+                >
+                  <span><strong>MC Actual ({{ contributionSourceLabel(monteCarloContribution(factor)!.sourceMode) }})</strong> {{ formatContributionPercent(monteCarloContribution(factor)!.contribution) }}</span>
+                  <span><strong>Δ</strong> {{ formatContributionDelta(monteCarloContribution(factor)!.contribution, percentContribution(factor)) }}</span>
+                </span>
+              </output>
+            </td>
             <td
               data-column-key="sourceMode"
-              :class="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 'factor-measured-rowspan-cell' : ''"
+              :class="{
+                'factor-measured-rowspan-cell': factorMeasuredComparison(factor) && props.measurementEntryMode === 'import',
+                'source-mode-selection-prompt': sourceModeSelectionRequired,
+              }"
               :rowspan="factorMeasuredComparison(factor) && props.measurementEntryMode === 'import' ? 2 : undefined"
             >
               <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
@@ -1667,31 +1810,143 @@ function onModeChange(factorId: string, event: Event): void {
             :aria-label="`Actual measured comparison for ${factorNameFor(factor)}`"
           >
             <td>
-              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="mean">
-                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.mean.actual) }}</span>
-                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.mean.delta) }}</span>
+              <div
+                v-if="actualDistributionLabel(factor)"
+                class="factor-measured-comparison-metric"
+                data-measured-comparison-metric="distribution"
+              >
+                <span>
+                  <strong>Actual</strong>
+                  <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      distributionSeverity(factor),
+                      actualDistributionLabel(factor)!,
+                      actualDistributionDiffers(factor),
+                    )"
+                  >{{ actualDistributionLabel(factor) }}</span>
+                </span>
               </div>
             </td>
             <td>
-              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="tolerance">
-                <span><strong>Actual</strong> ±3σ {{ formatComparisonValue(factorMeasuredComparison(factor)?.tolerance.actual) }}</span>
-                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.tolerance.delta) }}</span>
+              <div class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="mean">
+                <span>
+                  <strong>Actual</strong>
+                  <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      numericActualSeverity(factor, 'mean'),
+                      formatComparisonValue(factorMeasuredComparison(factor)?.mean.actual),
+                    )"
+                  >{{ formatComparisonValue(factorMeasuredComparison(factor)?.mean.actual) }}</span>
+                </span>
+                <span><strong>Δ</strong> {{ formatSigned(factorMeasuredComparison(factor)!.mean.delta) }}</span>
+                <span class="comparison-delta-percentage" data-comparison-percentage-row><strong></strong><span class="comparison-percentage-group">(<span
+                  data-comparison-percentage
+                  v-bind="actualSeverityAttributes(
+                    numericActualSeverity(factor, 'mean'),
+                    formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.mean.delta, factorMeasuredComparison(factor)?.mean.setup),
+                  )"
+                >{{ formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.mean.delta, factorMeasuredComparison(factor)?.mean.setup) }}</span>)</span></span>
               </div>
             </td>
             <td>
-              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="oneSigma">
-                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.oneSigma.actual) }}</span>
-                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.oneSigma.delta) }}</span>
+              <div class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="tolerance">
+                <span>
+                  <strong>Actual</strong>
+                  <span>±3σ <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      numericActualSeverity(factor, 'tolerance'),
+                      formatComparisonValue(factorMeasuredComparison(factor)?.tolerance.actual),
+                    )"
+                  >{{ formatComparisonValue(factorMeasuredComparison(factor)?.tolerance.actual) }}</span></span>
+                </span>
+                <span><strong>Δ</strong> {{ formatSigned(factorMeasuredComparison(factor)!.tolerance.delta) }}</span>
+                <span class="comparison-delta-percentage" data-comparison-percentage-row><strong></strong><span class="comparison-percentage-group">(<span
+                  data-comparison-percentage
+                  v-bind="actualSeverityAttributes(
+                    numericActualSeverity(factor, 'tolerance'),
+                    formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.tolerance.delta, factorMeasuredComparison(factor)?.tolerance.setup),
+                  )"
+                >{{ formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.tolerance.delta, factorMeasuredComparison(factor)?.tolerance.setup) }}</span>)</span></span>
               </div>
             </td>
             <td>
-              <div class="factor-measured-comparison-metric" data-measured-comparison-metric="cpk">
-                <span><strong>Actual</strong> {{ formatComparisonValue(factorMeasuredComparison(factor)?.cpk.actual) }}</span>
-                <span><strong>Δ</strong> {{ formatComparisonDelta(factorMeasuredComparison(factor)?.cpk.delta) }}</span>
+              <div class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="oneSigma">
+                <span>
+                  <strong>Actual</strong>
+                  <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      numericActualSeverity(factor, 'oneSigma'),
+                      formatComparisonValue(factorMeasuredComparison(factor)?.oneSigma.actual),
+                    )"
+                  >{{ formatComparisonValue(factorMeasuredComparison(factor)?.oneSigma.actual) }}</span>
+                </span>
+                <span><strong>Δ</strong> {{ formatSigned(factorMeasuredComparison(factor)!.oneSigma.delta) }}</span>
+                <span class="comparison-delta-percentage" data-comparison-percentage-row><strong></strong><span class="comparison-percentage-group">(<span
+                  data-comparison-percentage
+                  v-bind="actualSeverityAttributes(
+                    numericActualSeverity(factor, 'oneSigma'),
+                    formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.oneSigma.delta, factorMeasuredComparison(factor)?.oneSigma.setup),
+                  )"
+                >{{ formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.oneSigma.delta, factorMeasuredComparison(factor)?.oneSigma.setup) }}</span>)</span></span>
               </div>
             </td>
-            <td></td>
-            <td v-if="props.measurementEntryMode !== 'import'" data-column-key="sourceMode"></td>
+            <td>
+              <div class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="cpk">
+                <span>
+                  <strong>Actual</strong>
+                  <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      numericActualSeverity(factor, 'cpk'),
+                      formatCpkValue(factorMeasuredComparison(factor)?.cpk.actual),
+                    )"
+                  >{{ formatCpkValue(factorMeasuredComparison(factor)?.cpk.actual) }}</span>
+                </span>
+                <span><strong>Δ</strong> {{ formatCpkDeltaValue(factorMeasuredComparison(factor)?.cpk.delta) }}</span>
+                <span class="comparison-delta-percentage" data-comparison-percentage-row><strong></strong><span class="comparison-percentage-group">(<span
+                  data-comparison-percentage
+                  v-bind="actualSeverityAttributes(
+                    numericActualSeverity(factor, 'cpk'),
+                    formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.cpk.delta, factorMeasuredComparison(factor)?.cpk.setup),
+                  )"
+                >{{ formatComparisonDeltaPercentage(factorMeasuredComparison(factor)?.cpk.delta, factorMeasuredComparison(factor)?.cpk.setup) }}</span>)</span></span>
+              </div>
+            </td>
+            <td>
+              <div
+                v-if="monteCarloContribution(factor)"
+                class="factor-measured-comparison-metric"
+                data-measured-comparison-metric="contribution"
+                :data-factor-monte-carlo-contribution="factor.evidence?.factorId"
+              >
+                <span>
+                  <strong>Actual</strong>
+                  <span
+                    data-actual-value
+                    v-bind="actualSeverityAttributes(
+                      numericActualSeverity(factor, 'contribution'),
+                      formatContributionPercent(monteCarloContribution(factor)!.contribution),
+                    )"
+                  >{{ formatContributionPercent(monteCarloContribution(factor)!.contribution) }}</span>
+                </span>
+                <span><strong>Δ</strong> <span
+                  data-comparison-percentage
+                  v-bind="actualSeverityAttributes(
+                    numericActualSeverity(factor, 'contribution'),
+                    formatContributionDelta(monteCarloContribution(factor)!.contribution, percentContribution(factor)),
+                  )"
+                >{{ formatContributionDelta(monteCarloContribution(factor)!.contribution, percentContribution(factor)) }}</span></span>
+              </div>
+            </td>
+            <td
+              v-if="props.measurementEntryMode !== 'import'"
+              :class="{ 'source-mode-selection-prompt': sourceModeSelectionRequired }"
+              data-column-key="sourceMode"
+            ></td>
             <td v-if="props.measurementEntryMode !== 'import'" data-column-key="sampleCount">{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
             <td v-if="props.measurementEntryMode !== 'import'" data-column-key="readiness">
               <span class="status-chip" :class="factorReadiness(factor) === 'ready' ? 'chip-ready' : 'chip-pending'">

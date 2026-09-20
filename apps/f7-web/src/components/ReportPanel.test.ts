@@ -313,9 +313,115 @@ describe("ReportPanel", () => {
     expect(comparison.text()).toContain("Standard deviation");
     expect(comparison.text()).toContain("Cp");
     expect(comparison.text()).toContain("Cpk");
-    expect(guidance.text()).toContain("F0 v1 / default-cpk-target");
+    expect(comparison.text()).toContain("CPL");
+    expect(comparison.text()).toContain("CPU");
+    expect(comparison.text()).toContain("Lower DPM");
+    expect(comparison.text()).toContain("Upper DPM");
+    expect(comparison.text()).toContain("Total DPM");
+    expect(comparison.text()).toContain("% Out of Spec");
     expect(guidance.text()).toContain("Measured variation is wider");
+    expect(guidance.text()).toContain("Engineering Risks & Recommended Actions");
     expect(guidance.text()).toContain("Prioritize reducing and stabilizing");
+    expect(guidance.find(".risk-lead").exists()).toBe(false);
+    expect(guidance.text()).not.toContain("governed validation is still required before operational use");
+    expect(wrapper.find("[data-report-actions]").exists()).toBe(false);
+    expect(wrapper.find("[data-report-methodology]").exists()).toBe(false);
+  });
+
+  it("presents the analysis as an engineering decision dashboard", () => {
+    const report = createReport();
+    if (report.analysis?.status !== "available") throw new Error("expected available analysis");
+    report.simulation.factorContributions = [{
+      methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+      factorId: WORKBOOK_HASH,
+      family: "normal",
+      sourceMode: "MEASURED",
+      coefficient: 1,
+      standardDeviation: 0.1,
+      weightedVariance: 0.01,
+      contribution: 1,
+    }];
+    const wrapper = mountReport(report);
+
+    expect(wrapper.get("[data-executive-summary]").text()).toContain("Executive Summary");
+    expect(wrapper.get("[data-report-decision]").attributes("data-assessment")).toBe("MEETS_TARGET");
+    expect(wrapper.get("[data-report-metric='mean']").findAll("td").map((cell) => cell.text())).toEqual([
+      "0",
+      "0.012",
+      "+0.012 (+1.23%)",
+    ]);
+    expect(wrapper.get("[data-report-metric='standardDeviation']").findAll("td").map((cell) => cell.text())).toEqual([
+      "0.08",
+      "0.1",
+      "+0.02 (+25%)",
+    ]);
+    expect(wrapper.get("[data-report-difference='standardDeviation']").classes()).toContain("actual-value-severity-critical");
+    expect(wrapper.get("[data-report-metric='cp']").findAll("td").map((cell) => cell.text())).toEqual([
+      "2.0833",
+      "1.6667",
+      "-0.4167 (-20%)",
+    ]);
+    expect(wrapper.get("[data-report-difference='cp']").classes()).toContain("actual-value-severity-critical");
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.report-difference\s*\{[^}]*background:\s*#fff/s);
+    expect(REPORT_PANEL_SOURCE).not.toMatch(/\.report-difference\.actual-value-severity-(?:attention|critical)\s*\{[^}]*background:/s);
+    expect(wrapper.get("[data-report-metric='cpl'] [data-monte-carlo-value]").text()).toBe("1.7078");
+    expect(wrapper.get("[data-report-metric='cpu'] [data-monte-carlo-value]").text()).toBe("1.6255");
+    expect(wrapper.get("[data-report-metric='lowerDpm'] [data-monte-carlo-value]").text()).toBe("100 DPM");
+    expect(wrapper.get("[data-report-metric='upperDpm'] [data-monte-carlo-value]").text()).toBe("200 DPM");
+    expect(wrapper.get("[data-report-metric='totalDpm'] [data-monte-carlo-value]").text()).toBe("300 DPM");
+    expect(wrapper.get("[data-report-metric='outOfSpec'] [data-monte-carlo-value]").text()).toBe("0.03%");
+    expect(wrapper.get("[data-report-top-contributors]").text()).toContain("Gap");
+    const decision = wrapper.get("[data-report-risk-summary]");
+    expect(decision.text()).toContain("Engineering Risks & Recommended Actions");
+    expect(decision.text()).toContain("Recommended Actions");
+    expect(wrapper.text()).not.toContain("Controlled improvement sequence");
+    expect(wrapper.text()).not.toContain("Methodology and run provenance");
+  });
+
+  it("renders DPM values as whole-part counts", () => {
+    const report = createReport();
+    if (report.analysis?.status !== "available") throw new Error("expected available analysis");
+    report.analysis.comparison.setup.standardDeviation = 0.2;
+    report.simulation.normalModel = {
+      status: "available",
+      lowerTailDpm: 13_250.095074,
+      upperTailDpm: 90_896.990782,
+      totalDpm: 104_147.085856,
+      expectedYield: 0.895852914144,
+    };
+    const wrapper = mountReport(report);
+
+    expect(wrapper.get("[data-report-metric='lowerDpm'] [data-monte-carlo-value]").text()).toBe("13,250 DPM");
+    expect(wrapper.get("[data-report-metric='upperDpm'] [data-monte-carlo-value]").text()).toBe("90,897 DPM");
+    expect(wrapper.get("[data-report-metric='totalDpm'] [data-monte-carlo-value]").text()).toBe("104,147 DPM");
+    expect(wrapper.get("[data-report-difference='lowerDpm']").text()).toMatch(/^[-+]?\d[\d,]* \([-+]?\d[\d,.]*%\)$/);
+    expect(wrapper.get("[data-report-difference='upperDpm']").text()).toMatch(/^[-+]?\d[\d,]* \([-+]?\d[\d,.]*%\)$/);
+    expect(wrapper.get("[data-report-difference='totalDpm']").text()).toMatch(/^[-+]?\d[\d,]* \([-+]?\d[\d,.]*%\)$/);
+    expect(wrapper.get("[data-report-difference='lowerDpm']").text()).toContain("(+113.38%)");
+    expect(wrapper.get("[data-report-difference='upperDpm']").text()).toContain("(+1,363.8%)");
+    expect(wrapper.get("[data-report-difference='totalDpm']").text()).toContain("(+738.59%)");
+  });
+
+  it("adds concrete engineering targets to each recommended action", () => {
+    const wrapper = mountReport(createReport("BELOW_TARGET"));
+    const actions = wrapper.findAll("[data-recommended-action]");
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.text()).toContain("Prioritize reducing and stabilizing");
+    expect(actions[0]?.findAll("dt").map((item) => item.text())).toEqual(["Current σ", "Maximum σ", "Required reduction"]);
+    expect(actions[0]?.findAll("dd").map((item) => item.text())).toEqual(["0.1", "0.081276", "0.018724 (18.72%)"]);
+
+    const report = createReport("BELOW_TARGET");
+    if (report.analysis?.status !== "available") throw new Error("expected available analysis");
+    report.analysis.optimizationDirections = [
+      "Center the process mean",
+      "Reduce total variation",
+      "Relax the final specification as a fallback",
+    ];
+    const complete = mountReport(report).findAll("[data-recommended-action]");
+
+    expect(complete[0]?.findAll("dd").map((item) => item.text())).toEqual(["0.012345", "0", "-0.012345"]);
+    expect(complete[2]?.findAll("dd").map((item) => item.text())).toEqual(["-0.5 / 0.5", "≤ -0.587655", "≥ 0.612345"]);
   });
 
   it("uses scientific notation instead of rounding a tiny non-zero comparison value", () => {

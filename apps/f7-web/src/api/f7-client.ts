@@ -268,6 +268,7 @@ export interface F7Client {
     readonly sessionId: string;
     readonly report: DeepReadonly<F7ReportProjection>;
     readonly dimensionChainVisual: DimensionChainVisual;
+    readonly includeFactorDistributionAppendix: boolean;
   }): Promise<Blob>;
   generateAssumptionResultsPdf(request: AssumptionResultsPdfRequest): Promise<Blob>;
   getSession(sessionId: F7SessionRouteParams["sessionId"]): Promise<F7SessionSnapshot>;

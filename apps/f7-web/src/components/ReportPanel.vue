@@ -2,6 +2,7 @@
 /* global Blob, document */
 import { computed, toRaw, type DeepReadonly } from "vue";
 import type { F7ReportProjection } from "../api/f7-client";
+import { classifyActualValueSeverity, type ActualValueMetric } from "../actual-value-severity";
 
 const props = defineProps<{
   readonly report: DeepReadonly<F7ReportProjection>;
@@ -24,6 +25,118 @@ const assessmentContent = computed(() => ({
 
 const analysis = computed(() => toRaw(props.report.analysis));
 
+function standardNormalCdf(value: number): number {
+  const absolute = Math.abs(value);
+  const scale = 1 / (1 + 0.2316419 * absolute);
+  const density = Math.exp(-0.5 * absolute * absolute) / Math.sqrt(2 * Math.PI);
+  const tail = density * scale * (
+    0.319381530
+    + scale * (-0.356563782 + scale * (1.781477937 + scale * (-1.821255978 + scale * 1.330274429)))
+  );
+  return Math.min(1, Math.max(0, value >= 0 ? 1 - tail : tail));
+}
+
+const comparisonRows = computed(() => {
+  if (analysis.value?.status !== "available") return [];
+  const comparison = analysis.value.comparison;
+  const { lowerSpecLimit, upperSpecLimit } = props.report.summary;
+  const setupCpl = (comparison.setup.mean - lowerSpecLimit) / (3 * comparison.setup.standardDeviation);
+  const setupCpu = (upperSpecLimit - comparison.setup.mean) / (3 * comparison.setup.standardDeviation);
+  const setupLowerDpm = standardNormalCdf(-setupCpl * 3) * 1_000_000;
+  const setupUpperDpm = standardNormalCdf(-setupCpu * 3) * 1_000_000;
+  const setupTotalDpm = setupLowerDpm + setupUpperDpm;
+  const capability = props.report.simulation.capability;
+  const normalModel = props.report.simulation.normalModel;
+  const rows: Array<{
+    key: string;
+    label: string;
+    metric: ActualValueMetric;
+    setup: number;
+    actual: number | undefined;
+    format?: "dpm" | "percent";
+    percentageDenominator?: number;
+    maximumFractionDigits: number;
+  }> = [
+    {
+      key: "mean",
+      label: "Mean",
+      metric: "mean",
+      setup: comparison.setup.mean,
+      actual: comparison.monteCarlo.mean,
+      percentageDenominator: upperSpecLimit - lowerSpecLimit,
+      maximumFractionDigits: 3,
+    },
+    { key: "standardDeviation", label: "Standard deviation", metric: "oneSigma", setup: comparison.setup.standardDeviation, actual: comparison.monteCarlo.standardDeviation, maximumFractionDigits: 4 },
+    { key: "cp", label: "Cp", metric: "cp", setup: comparison.setup.cp, actual: comparison.monteCarlo.cp, maximumFractionDigits: 4 },
+    { key: "cpk", label: "Cpk", metric: "cpk", setup: comparison.setup.cpk, actual: comparison.monteCarlo.cpk, maximumFractionDigits: 4 },
+    { key: "cpl", label: "CPL", metric: "cpk", setup: setupCpl, actual: capability.status === "available" ? capability.lowerCpk : undefined, maximumFractionDigits: 4 },
+    { key: "cpu", label: "CPU", metric: "cpk", setup: setupCpu, actual: capability.status === "available" ? capability.upperCpk : undefined, maximumFractionDigits: 4 },
+    { key: "lowerDpm", label: "Lower DPM", metric: "tolerance", setup: setupLowerDpm, actual: normalModel.status === "available" ? normalModel.lowerTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
+    { key: "upperDpm", label: "Upper DPM", metric: "tolerance", setup: setupUpperDpm, actual: normalModel.status === "available" ? normalModel.upperTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
+    { key: "totalDpm", label: "Total DPM", metric: "tolerance", setup: setupTotalDpm, actual: normalModel.status === "available" ? normalModel.totalDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
+    { key: "outOfSpec", label: "% Out of Spec", metric: "tolerance", setup: setupTotalDpm / 1_000_000, actual: props.report.simulation.outOfSpecProbability, format: "percent", maximumFractionDigits: 2 },
+  ];
+  return rows.map((row) => ({
+    ...row,
+    delta: row.actual === undefined ? undefined : row.actual - row.setup,
+    severity: classifyActualValueSeverity({
+      metric: row.metric,
+      setup: row.setup,
+      actual: row.actual,
+      normalizationFallback: props.report.summary.upperSpecLimit - props.report.summary.lowerSpecLimit,
+    })?.severity ?? "normal",
+  }));
+});
+const contributors = computed(() => [...props.report.factors]
+  .sort((left, right) => right.percentContributionToSigma - left.percentContributionToSigma)
+  .slice(0, 5));
+const recommendedActions = computed(() => {
+  if (analysis.value?.status !== "available") return [];
+  const { mean, standardDeviation, lowerSpecLimit, upperSpecLimit, targetCpk } = props.report.summary;
+  const targetMean = (lowerSpecLimit + upperSpecLimit) / 2;
+  const meanAdjustment = targetMean - mean;
+  const nearestClearance = Math.min(mean - lowerSpecLimit, upperSpecLimit - mean);
+  const maximumStandardDeviation = nearestClearance / (3 * targetCpk);
+  const standardDeviationReduction = Math.max(0, standardDeviation - maximumStandardDeviation);
+  const reductionPercentage = standardDeviation > 0 ? standardDeviationReduction / standardDeviation * 100 : 0;
+  const requiredHalfRange = 3 * targetCpk * standardDeviation;
+
+  return analysis.value.optimizationDirections.map((title) => {
+    const normalized = title.toLowerCase();
+    if (normalized.includes("center") && normalized.includes("mean")) {
+      return {
+        title,
+        metrics: [
+          ["Current mean", formatNumber(mean)],
+          ["Target mean", formatNumber(targetMean)],
+          ["Required adjustment", formatSigned(meanAdjustment)],
+        ],
+      };
+    }
+    if (normalized.includes("variation")) {
+      return {
+        title,
+        metrics: [
+          ["Current σ", formatNumber(standardDeviation)],
+          ["Maximum σ", formatNumber(maximumStandardDeviation)],
+          ["Required reduction", `${formatNumber(standardDeviationReduction)} (${reductionPercentage.toFixed(2)}%)`],
+        ],
+      };
+    }
+    if (normalized.includes("specification")) {
+      return {
+        title,
+        metrics: [
+          ["Current limits", `${formatNumber(lowerSpecLimit)} / ${formatNumber(upperSpecLimit)}`],
+          ["Required LSL", `≤ ${formatNumber(mean - requiredHalfRange)}`],
+          ["Required USL", `≥ ${formatNumber(mean + requiredHalfRange)}`],
+        ],
+      };
+    }
+    return { title, metrics: [] };
+  });
+});
+
 function formatScientific(value: number): string {
   return value.toExponential(2)
     .replace(/\.0+(?=e)/, "")
@@ -31,20 +144,49 @@ function formatScientific(value: number): string {
     .replace("e+", "e");
 }
 
-function formatNumber(value: number): string {
-  if (value !== 0 && Number.isFinite(value) && Math.abs(value) < 0.000001) {
+function formatNumber(value: number, maximumFractionDigits = 6): string {
+  if (value !== 0 && Number.isFinite(value) && Number(value.toFixed(maximumFractionDigits)) === 0) {
     return formatScientific(value);
   }
-  return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+  return value.toLocaleString("en-US", { maximumFractionDigits });
 }
 
-function formatPercent(value: number): string {
+function formatPercent(value: number, maximumFractionDigits = 2): string {
   const percentage = value * 100;
   const distanceFromHundred = (1 - value) * 100;
   if (value < 1 && distanceFromHundred > 0 && distanceFromHundred < 0.000001) {
     return `100% - ${formatScientific(distanceFromHundred)}%`;
   }
-  return `${formatNumber(percentage)}%`;
+  return `${formatNumber(percentage, maximumFractionDigits)}%`;
+}
+
+function formatSigned(value: number, maximumFractionDigits = 6): string {
+  if (value === 0) return "0";
+  return `${value > 0 ? "+" : ""}${formatNumber(value, maximumFractionDigits)}`;
+}
+
+function formatDifference(
+  delta: number,
+  setup: number,
+  format?: "dpm" | "percent",
+  denominator = Math.abs(setup),
+  maximumFractionDigits = 6,
+): string {
+  const percentageDenominator = Math.abs(denominator);
+  const relative = percentageDenominator === 0
+    ? "N/A"
+    : `${formatSigned(delta / percentageDenominator * 100, 2)}%`;
+  const formattedDelta = format === "dpm"
+    ? `${delta > 0 ? "+" : ""}${Math.round(delta).toLocaleString("en-US")}`
+    : formatSigned(delta, maximumFractionDigits);
+  return `${formattedDelta} (${relative})`;
+}
+
+function formatMetricValue(value: number | undefined, format?: "dpm" | "percent", maximumFractionDigits = 6): string {
+  if (value === undefined) return "—";
+  if (format === "dpm") return `${Math.round(value).toLocaleString("en-US")} DPM`;
+  if (format === "percent") return formatPercent(value, maximumFractionDigits);
+  return formatNumber(value, maximumFractionDigits);
 }
 
 function safeDownloadBase(fileName: string): string {
@@ -84,8 +226,8 @@ function downloadMarkdown(): void {
   <section class="workbench-panel report-panel" aria-labelledby="report-title">
     <header class="factor-workspace-header report-header">
       <div>
-        <p class="workspace-eyebrow">Step 5 · F0 interpretation</p>
-        <h2 id="report-title">TA interpretation and optimization report</h2>
+        <p class="workspace-eyebrow">Governed engineering report</p>
+        <h2 id="report-title">Engineering Analysis</h2>
         <p class="subtle">{{ report.workbook.fileName }} · {{ report.workbook.worksheetName }}</p>
       </div>
       <div class="report-actions">
@@ -95,7 +237,21 @@ function downloadMarkdown(): void {
       </div>
     </header>
 
-    <section v-if="analysis?.status === 'available'" data-report-ta-comparison aria-labelledby="report-comparison-title">
+    <section v-if="analysis?.status === 'available'" class="executive-summary" data-executive-summary>
+      <div
+        class="report-decision"
+        :class="`report-decision-${analysis.narrative.resultJudgment.status}`"
+        data-report-decision
+        :data-assessment="report.assessment"
+      >
+        <p class="workspace-eyebrow">Executive Summary</p>
+        <h3>{{ analysis.narrative.resultJudgment.headline }}</h3>
+        <p>{{ analysis.narrative.resultJudgment.judgment }}</p>
+      </div>
+      <p>{{ analysis.narrative.engineeringSummary }}</p>
+    </section>
+
+    <section v-if="analysis?.status === 'available'" class="report-section" data-report-ta-comparison aria-labelledby="report-comparison-title">
       <div class="report-section-heading">
         <div>
           <p class="workspace-eyebrow">Assumption vs measured evidence</p>
@@ -115,61 +271,73 @@ function downloadMarkdown(): void {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <th scope="row">Mean</th>
-              <td>{{ formatNumber(analysis.comparison.setup.mean) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.mean) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.mean - analysis.comparison.setup.mean) }}</td>
-            </tr>
-            <tr>
-              <th scope="row">Standard deviation</th>
-              <td>{{ formatNumber(analysis.comparison.setup.standardDeviation) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.standardDeviation) }}</td>
-              <td>{{ formatPercent(analysis.comparison.monteCarlo.standardDeviation / analysis.comparison.setup.standardDeviation - 1) }}</td>
-            </tr>
-            <tr>
-              <th scope="row">Cp</th>
-              <td>{{ formatNumber(analysis.comparison.setup.cp) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.cp) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.cp - analysis.comparison.setup.cp) }}</td>
-            </tr>
-            <tr>
-              <th scope="row">Cpk</th>
-              <td>{{ formatNumber(analysis.comparison.setup.cpk) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.cpk) }}</td>
-              <td>{{ formatNumber(analysis.comparison.monteCarlo.cpk - analysis.comparison.setup.cpk) }}</td>
+            <tr v-for="row in comparisonRows" :key="row.key" :data-report-metric="row.key">
+              <th scope="row">{{ row.label }}</th>
+              <td>{{ formatMetricValue(row.setup, row.format, row.maximumFractionDigits) }}</td>
+              <td data-monte-carlo-value>{{ formatMetricValue(row.actual, row.format, row.maximumFractionDigits) }}</td>
+              <td
+                class="report-difference"
+                :class="`actual-value-severity-${row.severity}`"
+                :data-report-difference="row.key"
+                :data-actual-severity="row.severity"
+              >
+                {{ row.delta === undefined
+                  ? "—"
+                  : formatDifference(row.delta, row.setup, row.format, row.percentageDenominator, row.maximumFractionDigits) }}
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <section v-if="analysis?.status === 'available'" class="f0-guidance" data-report-f0-guidance aria-labelledby="report-guidance-title">
-      <div class="report-section-heading">
-        <div>
-          <p class="workspace-eyebrow">F0 {{ analysis.provenance.knowledgeBaseVersion }} / {{ analysis.provenance.ruleId }}</p>
-          <h3 id="report-guidance-title">Interpretation and optimization direction</h3>
+    <div v-if="analysis?.status === 'available'" class="report-guidance-stack" data-report-f0-guidance>
+    <section class="report-insight-grid" aria-labelledby="report-guidance-title">
+      <article class="report-section" data-report-top-contributors>
+        <div class="report-section-heading">
+          <div>
+            <p class="workspace-eyebrow">Variation ownership</p>
+            <h3>Top Contributors</h3>
+          </div>
         </div>
-        <span class="status-chip" :class="report.assessment === 'MEETS_TARGET' ? 'chip-success' : 'chip-blocked'">
-          {{ assessmentContent.title }}
-        </span>
-      </div>
-      <div class="guidance-grid">
-        <article>
-          <h4>Interpretation</h4>
-          <ul>
-            <li v-for="item in analysis.interpretations" :key="item">{{ item }}</li>
-          </ul>
-        </article>
-        <article>
-          <h4>Optimization direction</h4>
-          <ol>
-            <li v-for="item in analysis.optimizationDirections" :key="item">{{ item }}</li>
+        <ol class="contributor-list">
+          <li v-for="factor in contributors" :key="factor.factorId">
+            <div><strong>{{ factor.factorName }}</strong><span>{{ formatPercent(factor.percentContributionToSigma) }}</span></div>
+            <span class="contributor-track"><span :style="{ width: `${factor.percentContributionToSigma * 100}%` }"></span></span>
+          </li>
+        </ol>
+      </article>
+
+      <article class="report-section" data-report-risk-summary>
+        <div class="report-section-heading">
+          <div>
+            <p class="workspace-eyebrow">Decision context · F0 {{ analysis.provenance.knowledgeBaseVersion }} / {{ analysis.provenance.ruleId }}</p>
+            <h3 id="report-guidance-title">Engineering Risks &amp; Recommended Actions</h3>
+          </div>
+          <span class="status-chip" :class="report.assessment === 'MEETS_TARGET' ? 'chip-success' : 'chip-blocked'">
+            {{ assessmentContent.title }}
+          </span>
+        </div>
+        <ul>
+          <li v-for="item in analysis.interpretations" :key="item">{{ item }}</li>
+        </ul>
+        <div class="embedded-actions">
+          <h4>Recommended Actions</h4>
+          <ol class="action-list">
+            <li v-for="item in recommendedActions" :key="item.title" data-recommended-action>
+              <strong>{{ item.title }}</strong>
+              <dl v-if="item.metrics.length" class="action-metrics">
+                <div v-for="metric in item.metrics" :key="metric[0]">
+                  <dt>{{ metric[0] }}</dt>
+                  <dd>{{ metric[1] }}</dd>
+                </div>
+              </dl>
+            </li>
           </ol>
-        </article>
-      </div>
-      <p class="f0-applicability">Applicability: {{ analysis.provenance.applicability }}</p>
+        </div>
+      </article>
     </section>
+    </div>
 
     <section v-else class="assessment-banner assessment-not_evaluable" data-report-analysis-unavailable>
       <div>
@@ -206,8 +374,52 @@ function downloadMarkdown(): void {
 .report-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
+  gap: 20px;
   border-top: 4px solid var(--accent);
+}
+
+.executive-summary {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 18px;
+  border: 1px solid var(--line);
+  background: #f7f8f9;
+}
+
+.executive-summary > p {
+  margin: 0;
+  padding: 16px 18px 16px 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.report-decision {
+  align-self: stretch;
+  border-left: 5px solid var(--attention);
+  padding: 14px 16px;
+  background: #fff8ed;
+}
+
+.report-decision-meets-target {
+  border-left-color: var(--success);
+  background: #edf7f4;
+}
+
+.report-decision h3,
+.report-decision p {
+  margin: 0;
+}
+
+.report-decision h3 {
+  margin: 3px 0 5px;
+}
+
+.report-section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  padding: 16px;
+  background: var(--panel);
 }
 
 .report-section-heading {
@@ -219,6 +431,132 @@ function downloadMarkdown(): void {
 
 .report-section-heading p {
   margin: 0;
+}
+
+.report-section-heading h3 {
+  margin: 2px 0 0;
+}
+
+.report-section-heading > p {
+  max-width: 52ch;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.report-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+}
+
+.report-guidance-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.contributor-list,
+.action-list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contributor-list li + li {
+  margin-top: 12px;
+}
+
+.contributor-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 0.86rem;
+}
+
+.contributor-track {
+  display: block;
+  height: 7px;
+  overflow: hidden;
+  background: #e4e8eb;
+}
+
+.contributor-track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.report-insight-grid ul {
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+
+.embedded-actions {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.embedded-actions h4 {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.action-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  counter-reset: action;
+  gap: 1px;
+  background: var(--line);
+}
+
+.action-list li {
+  position: relative;
+  min-height: 58px;
+  padding: 13px 14px 13px 48px;
+  background: #f7f8f9;
+  counter-increment: action;
+}
+
+.action-metrics {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  font-size: 0.76rem;
+}
+
+.action-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+}
+
+.action-metrics dt {
+  color: var(--ink-soft);
+}
+
+.action-metrics dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+
+.action-list li::before {
+  position: absolute;
+  top: 12px;
+  left: 13px;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  background: var(--accent);
+  color: white;
+  content: counter(action);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .guidance-grid {
@@ -359,7 +697,20 @@ function downloadMarkdown(): void {
 }
 
 .report-table thead th {
-  background: #edf0f3;
+  background: #e9edf0;
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.report-table tbody tr:nth-child(even) {
+  background: #fafbfb;
+}
+
+.report-difference {
+  border-left-width: 3px !important;
+  background: #fff;
+  font-weight: 800;
 }
 
 @media (max-width: 720px) {
@@ -377,8 +728,18 @@ function downloadMarkdown(): void {
     flex-direction: column;
   }
 
-  .guidance-grid {
+  .report-section-heading > p {
+    text-align: left;
+  }
+
+  .guidance-grid,
+  .executive-summary,
+  .report-insight-grid {
     grid-template-columns: 1fr;
+  }
+
+  .executive-summary > p {
+    padding: 0 16px 16px;
   }
 
   .report-actions {

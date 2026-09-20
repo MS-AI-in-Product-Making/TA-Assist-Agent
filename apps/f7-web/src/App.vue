@@ -8,6 +8,7 @@ import MeasurementImportPanel from "./components/MeasurementImportPanel.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
 import MonteCarloPanel from "./components/MonteCarloPanel.vue";
 import ReportPanel from "./components/ReportPanel.vue";
+import FactorDistributionAppendix from "./components/FactorDistributionAppendix.vue";
 import TAResultsInterpretation from "./components/TAResultsInterpretation.vue";
 import {
   type AssumptionResultsEngineeringEvidence,
@@ -41,6 +42,7 @@ let measurementTemplateDownloadRequestToken = 0;
 const reportRetryAvailable = ref(false);
 const reportPdfBusy = ref(false);
 const reportPdfError = ref("");
+const includeFactorDistributionAppendix = ref(false);
 const workbookInput = ref<HTMLInputElement>();
 const measurementImportTab = ref<globalThis.HTMLButtonElement>();
 const measurementIndividualTab = ref<globalThis.HTMLButtonElement>();
@@ -71,7 +73,10 @@ interface SessionEngineeringEvidence {
 }
 
 const cachedEngineeringEvidence = shallowRef<Readonly<SessionEngineeringEvidence> | undefined>();
-const factorInputTable = ref<{ captureDimensionChainVisual: () => DimensionChainVisual | Promise<DimensionChainVisual> }>();
+const factorInputTable = ref<{
+  captureDimensionChainVisual: () => DimensionChainVisual | Promise<DimensionChainVisual>;
+  scrollSourceModeIntoView: () => void;
+}>();
 const cachedDimensionChainVisual = shallowRef<DimensionChainVisual>();
 
 async function captureDimensionChainVisual(): Promise<DimensionChainVisual> {
@@ -174,6 +179,7 @@ async function downloadReportPdf(): Promise<void> {
       sessionId,
       report,
       dimensionChainVisual: await captureDimensionChainVisual(),
+      includeFactorDistributionAppendix: includeFactorDistributionAppendix.value,
     });
     if (requestToken !== reportPdfRequestToken || store.session.value?.sessionId !== sessionId) return;
     const objectUrl = globalThis.URL.createObjectURL(pdf);
@@ -318,6 +324,7 @@ async function importWorkbookFile(file: File): Promise<void> {
   reportPdfRequestToken += 1;
   reportPdfBusy.value = false;
   reportPdfError.value = "";
+  includeFactorDistributionAppendix.value = false;
   importingWorkbookFileName.value = file.name;
   try {
     await store.importWorkbook(file);
@@ -476,6 +483,9 @@ function onMeasurementEntryModeChange(mode: "import" | "individual"): void {
     measurementEntryMode.value = mode;
   }
   if (mode === "import") measurementImportOpenRequest.value += 1;
+  if (mode === "individual") {
+    void nextTick(() => factorInputTable.value?.scrollSourceModeIntoView());
+  }
 }
 
 function onMeasurementEntryModeKeydown(event: globalThis.KeyboardEvent): void {
@@ -663,7 +673,7 @@ async function openMonteCarlo(): Promise<void> {
     lowerSpecLimit: specification.lowerSpecLimit.actualValue,
     upperSpecLimit: specification.upperSpecLimit.actualValue,
     targetSigmaLevel: specification.targetSigmaLevel.actualValue,
-    iterations: 100_000,
+    iterations: 1_000_000,
     runSeed: BigInt(12_345).toString(16).padStart(64, "0"),
     correlationMode: "INDEPENDENT",
   });
@@ -673,7 +683,7 @@ async function onRunMonteCarlo(request: {
   lowerSpecLimit: number;
   upperSpecLimit: number;
   targetSigmaLevel: number;
-  iterations: 10_000 | 100_000;
+  iterations: 10_000 | 100_000 | 1_000_000;
   runSeed: string;
   correlationMode: "INDEPENDENT";
 }): Promise<void> {
@@ -776,7 +786,7 @@ async function openReport(): Promise<void> {
               v-else-if="step.id === 2"
               class="workflow-step-actions measurement-entry-tabs"
               role="tablist"
-              aria-label="Measurement input mode"
+              aria-label="Choose one measurement input mode"
             >
               <button
                 id="measurement-entry-import-tab"
@@ -798,6 +808,12 @@ async function openReport(): Promise<void> {
                 />
                 Excel Bulk Import
               </button>
+              <span
+                class="measurement-mode-choice-separator"
+                data-measurement-mode-choice-separator
+                role="separator"
+                aria-label="or"
+              >OR</span>
               <button
                 id="measurement-entry-individual-tab"
                 :ref="setMeasurementIndividualTab"
@@ -816,7 +832,7 @@ async function openReport(): Promise<void> {
                   :size="15"
                   aria-hidden="true"
                 />
-                Web Factor Entry
+                Individual Factor Entry
               </button>
             </div>
             <div
@@ -992,6 +1008,12 @@ async function openReport(): Promise<void> {
         <ReportPanel
           v-if="activeMeasurementStage === 'monteCarlo' && store.report.value"
           :report="store.report.value"
+        />
+
+        <FactorDistributionAppendix
+          v-if="activeMeasurementStage === 'monteCarlo' && store.report.value"
+          v-model:include-in-pdf="includeFactorDistributionAppendix"
+          :session="store.session.value"
         />
 
         <TAResultsInterpretation
