@@ -7,6 +7,7 @@ const skillPath = path.join(root, ".github", "skills", "design-optimization", "S
 const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].join("-"), "json"].join(".");
 
 const allowedCommands = [
+  "npm run prepare:ta-runtime",
   "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
@@ -46,7 +47,7 @@ function commandLines(markdown) {
   const section = markdown.match(/## Allowed commands\r?\n([\s\S]*?)(?=\r?\n## |$)/)?.[1] ?? "";
   return section.split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("- `npm run workflow:"))
+    .filter((line) => line.startsWith("- `npm run "))
     .map((line) => line.replace(/^- `|`$/g, ""));
 }
 
@@ -60,6 +61,21 @@ function expectOrdered(markdown, markers) {
 }
 
 describe("Design Optimization skill contract", () => {
+  it("prepares a clean checkout before the first governed workbook command", () => {
+    const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    const { internal } = splitSkillSections(readSkill());
+
+    expect(packageJson.scripts["prepare:ta-runtime"]).toBe("node scripts/prepare-ta-runtime.mjs");
+    expectOrdered(internal, [
+      "### Phase W-1 - Prepare local runtime",
+      "npm run prepare:ta-runtime",
+      "### Phase W0 - Validate workbook and F0 capabilities",
+      "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
+    ]);
+    expect(internal).toContain("- `npm run prepare:ta-runtime`");
+    expect(internal).toContain("automatically install locked dependencies and build missing runtime outputs");
+  });
+
   it("exists with product discovery metadata and no legacy stage codenames", () => {
     expect(existsSync(skillPath)).toBe(true);
     const metadata = frontmatter(readSkill());

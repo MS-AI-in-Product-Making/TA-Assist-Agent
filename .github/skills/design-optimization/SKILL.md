@@ -61,6 +61,10 @@ Preserve the same analysis request context for the entire workbook run. Never re
 
 ## Entry mode 1 - TA workbook
 
+### Phase W-1 - Prepare local runtime
+
+Run `npm run prepare:ta-runtime` exactly once before any governed workbook command. Require a successful exit before continuing. The preparation command must reuse an already complete environment; when dependencies or compiled modules are absent, it must automatically install locked dependencies and build missing runtime outputs. If preparation fails, stop with its actionable diagnostic and do not attempt W0 or any later phase.
+
 ### Phase W0 - Validate workbook and F0 capabilities
 
 Run `npm run workflow:ta-entry-validation -- <ta-workbook-path>` exactly once. Require its completed result, canonical `.xlsx` path, regular non-linked file validation, workbook content hash, and controlled version list. Preserve the workbook read-only. The command validates repository-backed capabilities through their controlled loaders: public knowledge base `v1`, internal tolerance guidance `internal-v1`, interpretation rules `interpretation-rules-v2`, and process requirements `process-requirements-v3`. Never recursively scan repository contents to validate controlled versions. Stop if the command fails or a required controlled version is unavailable.
@@ -225,6 +229,7 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 
 ## Allowed commands
 
+- `npm run prepare:ta-runtime`
 - `npm run workflow:ta-entry-validation -- <ta-workbook-path>`
 - `npm run workflow:f2:excel -- <ta-workbook-path>`
 - `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm`

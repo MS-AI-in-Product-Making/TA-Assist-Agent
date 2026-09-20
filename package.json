@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare:ta-runtime": "node scripts/prepare-ta-runtime.mjs",
     "build": "tsc -b",
     "build:beta": "npm --workspace apps/vscode-extension run build:beta",
     "package:vsix": "npm --workspace apps/vscode-extension run package:vsix",
