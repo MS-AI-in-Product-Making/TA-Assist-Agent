@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- dynamically imported workflow scripts are validated at runtime boundaries. */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -115,7 +116,13 @@ export async function runProductionStage(stage: string, environment: ProductionS
     const completedWorksheetNames = completedMultimodalWorksheetNames(multimodal.artifact);
     const scripts = await loadF6(environment.repositoryRoot);
     const f6Base = join(outputBase, "f6");
-    const layout = scripts.resolveFeature6OutputLayout({ f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root }, f6Base, () => new Date(), publishRoot);
+    const layout = scripts.resolveFeature6OutputLayout(
+      { f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root },
+      f6Base,
+      () => new Date(),
+      publishRoot,
+      basename(environment.workbookPath),
+    );
     const request = {
       f2ArtifactRoot: environment.roots.f2Root,
       f3ArtifactRoot: environment.roots.f3Root,

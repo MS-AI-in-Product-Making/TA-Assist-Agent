@@ -1,6 +1,7 @@
 export * from "./analysis-request-context.js";
 export * from "./contracts.js";
 export * from "./errors.js";
+export * from "./f6-artifact-names.js";
 export * from "./process-requirements-contracts.js";
 export * from "./f7-contracts.js";
 export * from "./f8-contracts.js";

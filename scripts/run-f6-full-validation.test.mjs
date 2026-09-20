@@ -156,6 +156,38 @@ function reportProjection() {
 }
 
 describe("runF6FullValidation", () => {
+  it("derives the default v4 report names from the governed F2 workbook identity", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const previousOutputRoot = process.env.AI_TVA_F6_OUTPUT_ROOT;
+    const previousPublishRoot = process.env.AI_TVA_F6_PUBLISH_ROOT;
+    process.env.AI_TVA_F6_OUTPUT_ROOT = path.join(bundle.publishRoot, "f6-runs", "default-layout");
+    process.env.AI_TVA_F6_PUBLISH_ROOT = bundle.publishRoot;
+    try {
+      const result = runF6FullValidation({ now: () => new Date("2026-09-18T12:00:00.000Z") }, {
+        parseArgs: () => ({
+          ...bundle,
+          interactionLanguage: INTERACTION_LANGUAGE,
+          analysisRequestContext: REQUEST_CONTEXT,
+          modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact),
+        }),
+        createOptimization: optimizationV4,
+        createFinalReport: reportProjection,
+        renderFinalReportPdf: () => Buffer.from("%PDF-1.7\nvalidated report\n"),
+      });
+
+      expect(result.status).toBe("completed");
+      expect(path.basename(result.finalReportMdPath)).toBe("Anonymous - TA ENGINEERING ANALYSIS REPORT.md");
+      expect(path.basename(result.finalReportPdfPath)).toBe("Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf");
+    } finally {
+      if (previousOutputRoot === undefined) delete process.env.AI_TVA_F6_OUTPUT_ROOT;
+      else process.env.AI_TVA_F6_OUTPUT_ROOT = previousOutputRoot;
+      if (previousPublishRoot === undefined) delete process.env.AI_TVA_F6_PUBLISH_ROOT;
+      else process.env.AI_TVA_F6_PUBLISH_ROOT = previousPublishRoot;
+    }
+  });
+
   it("uses one resolved output layout for bundle loading and runner output", () => {
     const bundle = createF6ArtifactBundleFixture();
     cleanup.push(bundle.root);

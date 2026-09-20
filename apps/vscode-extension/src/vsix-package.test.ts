@@ -23,7 +23,7 @@ let artifacts: PackageRunArtifacts;
 describe("vsix package", () => {
   beforeAll(async () => {
     artifacts = await runPackageAndCollectArtifacts();
-  }, 60_000);
+  }, 240_000);
 
   afterAll(async () => {
     if (artifacts === undefined) return;

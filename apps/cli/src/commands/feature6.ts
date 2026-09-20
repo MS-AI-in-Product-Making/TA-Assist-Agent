@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createTypedError } from "@ai-assist/contracts";
+import { createF6ReportFileNames, createTypedError } from "@ai-assist/contracts";
 
 const execFileAsync = promisify(execFile);
 const trustedRepositoryRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
@@ -149,6 +149,20 @@ function validateTrustedExecutionRoot(rootDir: string): void {
   }
 }
 
+function expectedReportNames(outputDirectory: string): { finalReportMdName: string; finalReportPdfName: string } {
+  const manifestPath = join(outputDirectory, "manifest.json");
+  if (!existsSync(manifestPath) || !lstatSync(manifestPath).isFile()) throw new Error("invalid runner output");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { artifactSetVersion?: unknown };
+  if (manifest.artifactSetVersion === "f6-artifact-set-v3") {
+    return { finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf" };
+  }
+  if (manifest.artifactSetVersion !== "f6-artifact-set-v4") throw new Error("invalid runner output");
+  const optimizationPath = join(outputDirectory, "Feature6-Optimization.json");
+  if (!existsSync(optimizationPath) || !lstatSync(optimizationPath).isFile()) throw new Error("invalid runner output");
+  const optimization = JSON.parse(readFileSync(optimizationPath, "utf8")) as { workbook?: { fileName?: unknown } };
+  return createF6ReportFileNames(optimization.workbook?.fileName as string);
+}
+
 function formatFeature6Output(value: unknown): string {
   if (typeof value !== "object" || value === null) throw new Error("invalid runner output");
   const output = value as Record<string, unknown>;
@@ -168,6 +182,7 @@ function formatFeature6Output(value: unknown): string {
   const realPublishRoot = realpathSync(trustedPublishRoot);
   const realOutput = realpathSync(resolvedOutput);
   if (!isContained(realPublishRoot, realOutput)) throw new Error("invalid runner output");
+  const reportNames = expectedReportNames(realOutput);
   if (typeof output.finalReportMdPath !== "string" || output.finalReportMdPath.length === 0
     || output.finalReportMdPath.trim() !== output.finalReportMdPath
     || containsControlCharacter(output.finalReportMdPath)
@@ -181,7 +196,7 @@ function formatFeature6Output(value: unknown): string {
     throw new Error("invalid runner output");
   }
   const realFinalReport = realpathSync(resolvedFinalReport);
-  if (parse(realFinalReport).base !== "Feature6-Report.md") throw new Error("invalid runner output");
+  if (parse(realFinalReport).base !== reportNames.finalReportMdName) throw new Error("invalid runner output");
   if (!isContained(realPublishRoot, realFinalReport) || !isContained(realOutput, realFinalReport)) {
     throw new Error("invalid runner output");
   }
@@ -199,7 +214,7 @@ function formatFeature6Output(value: unknown): string {
   }
   const realPdfReport = realpathSync(resolvedPdfReport);
   const pdfBytes = readFileSync(realPdfReport);
-  if (parse(realPdfReport).base !== "Feature6-Report.pdf"
+  if (parse(realPdfReport).base !== reportNames.finalReportPdfName
     || !isContained(realPublishRoot, realPdfReport)
     || !isContained(realOutput, realPdfReport)
     || pdfBytes.length < 8
@@ -303,7 +318,7 @@ export async function runFeature6WorkflowCommand(
       env: feature6RunnerEnvironment(),
       encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
-      timeout: 120_000,
+      timeout: 240_000,
       killSignal: "SIGTERM",
     });
     return formatFeature6Output(JSON.parse(stdout));

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createF6ReportFileNames } from "../packages/contracts/dist/index.js";
 import { safeName } from "./f1-output-layout.mjs";
 
 const DEFAULT_PUBLISH_ROOT = path.posix.join("test", "demo-output");
@@ -71,7 +72,7 @@ function runStem(f5ArtifactRoot) {
   return stem;
 }
 
-export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot) {
+export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot, workbookFileName) {
   const roots = [parsed?.f2ArtifactRoot, parsed?.f3ArtifactRoot, parsed?.f4ArtifactRoot, parsed?.f5ArtifactRoot];
   roots.forEach((root, index) => validatePathValue(root, `F${index + 2} artifact root`));
   const stem = runStem(parsed.f5ArtifactRoot);
@@ -96,17 +97,18 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   if (candidates.some((candidate) => !isContained(realPublishRoot, candidate))) {
     throw new Error("Feature 6 input and output roots must remain inside the publish root.");
   }
+  const resolvedWorkbookFileName = typeof workbookFileName === "function" ? workbookFileName() : workbookFileName;
+  const reportNames = createF6ReportFileNames(resolvedWorkbookFileName);
 
   const runId = now().toISOString().replace(/[:.]/g, "-");
   const normalizedBase = normalizedResultPath(outputBase);
   return {
-    artifactSetVersion: "f6-artifact-set-v3",
+    artifactSetVersion: "f6-artifact-set-v4",
     runId,
     runRoot: path.isAbsolute(normalizedBase) ? path.join(normalizedBase, runId) : path.posix.join(normalizedBase, runId),
     publishRoot: normalizedResultPath(controlledPublishRoot),
     optimizationJsonName: "Feature6-Optimization.json",
-    finalReportMdName: "Feature6-Report.md",
-    finalReportPdfName: "Feature6-Report.pdf",
+    ...reportNames,
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",
   };

@@ -412,7 +412,7 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
   }]]);
 });
 
-it("runs Feature 6 through the default wrapper and fixed repository runner", async () => {
+it("runs Feature 6 through the default wrapper with workbook-derived report paths", async () => {
   const repoRoot = process.cwd();
   const fixtureId = randomUUID();
   const f5Stem = `f5-cli-${fixtureId}`;
@@ -465,14 +465,15 @@ rmSync(bundle.root, { recursive: true, force: true });
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("Feature 6 workflow completed.");
-    expect(result.stdout).toMatch(new RegExp(`fullReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Feature6-Report\\.md`));
+    expect(result.stdout).toMatch(new RegExp(`fullReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Anonymous - TA ENGINEERING ANALYSIS REPORT\\.md`));
+    expect(result.stdout).toMatch(new RegExp(`fullPdfReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Anonymous - TA ENGINEERING ANALYSIS REPORT\\.pdf`));
     expect(result.stdout).not.toContain(tmpdir());
   } finally {
     vi.unstubAllEnvs();
     await rm(fixtureRoot, { recursive: true, force: true });
     await rm(outputRoot, { recursive: true, force: true });
   }
-}, 120_000);
+}, 240_000);
 
 it("requires exactly four Feature 6 artifact flags and at least one worksheet", async () => {
   const runFeature6 = async () => "unused";

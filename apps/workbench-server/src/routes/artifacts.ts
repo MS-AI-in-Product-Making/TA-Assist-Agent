@@ -46,7 +46,11 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 
     try {
       const pdf = await context.f6PdfService.render({ markdown: bytes.toString("utf8"), sourceHash, reportPath, managedRoot: context.rootDir });
-      reply.header("content-disposition", 'attachment; filename="Feature6-Report.pdf"');
+      const markdownFileName = basename(reportPath);
+      const pdfFileName = extname(markdownFileName).toLowerCase() === ".md"
+        ? `${markdownFileName.slice(0, -3)}.pdf`
+        : "TA ENGINEERING ANALYSIS REPORT.pdf";
+      reply.header("content-disposition", `attachment; filename="${pdfFileName.replace(/"/g, "_")}"`);
       reply.type("application/pdf");
       return reply.send(pdf);
     } catch (error) {
@@ -135,7 +139,7 @@ async function readPersistedArtifact(
       if (reference.contentHash === undefined || !/^[a-f0-9]{64}$/.test(reference.contentHash)) return undefined;
       return {
         relativePath: reference.relativePath,
-        fileName: "Feature6-Report.md",
+        fileName: basename(reference.relativePath),
         classification: "confidential" as const,
         mimeType: "text/markdown; charset=utf-8",
         contentHash: reference.contentHash,

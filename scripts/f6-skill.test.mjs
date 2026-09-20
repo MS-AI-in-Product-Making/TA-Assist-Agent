@@ -7,6 +7,7 @@ const skillPath = path.join(root, ".github", "skills", "design-optimization", "S
 const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].join("-"), "json"].join(".");
 
 const allowedCommands = [
+  "npm run prepare:ta-runtime",
   "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path>",
   "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
@@ -46,7 +47,7 @@ function commandLines(markdown) {
   const section = markdown.match(/## Allowed commands\r?\n([\s\S]*?)(?=\r?\n## |$)/)?.[1] ?? "";
   return section.split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("- `npm run workflow:"))
+    .filter((line) => line.startsWith("- `npm run "))
     .map((line) => line.replace(/^- `|`$/g, ""));
 }
 
@@ -60,6 +61,21 @@ function expectOrdered(markdown, markers) {
 }
 
 describe("Design Optimization skill contract", () => {
+  it("prepares a clean checkout before the first governed workbook command", () => {
+    const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    const { internal } = splitSkillSections(readSkill());
+
+    expect(packageJson.scripts["prepare:ta-runtime"]).toBe("node scripts/prepare-ta-runtime.mjs");
+    expectOrdered(internal, [
+      "### Phase W-1 - Prepare local runtime",
+      "npm run prepare:ta-runtime",
+      "### Phase W0 - Validate workbook and F0 capabilities",
+      "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
+    ]);
+    expect(internal).toContain("- `npm run prepare:ta-runtime`");
+    expect(internal).toContain("automatically install locked dependencies and build missing runtime outputs");
+  });
+
   it("exists with product discovery metadata and no legacy stage codenames", () => {
     expect(existsSync(skillPath)).toBe(true);
     const metadata = frontmatter(readSkill());
@@ -163,7 +179,8 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("specification relaxation only after tolerance cannot meet target");
     expect(internal).toContain("OP1/OP2/OP3 are sensitivity/fallback and never selectedResult");
     expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
-    expect(internal).toContain("f6-artifact-set-v3 remains the five-file publication contract");
+    expect(internal).toContain("Current writes use `f6-artifact-set-v4`");
+    expect(internal).toContain("`f6-artifact-set-v3` with fixed `Feature6-Report.md` and `Feature6-Report.pdf` remains historical read-only compatibility");
     expect(internal).not.toContain("reduce_top_contributor_20");
     expect(internal).not.toContain("Confirm analysis context");
     expect(internal).not.toContain("Confirm optimization targets");
@@ -350,7 +367,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("five-file");
     expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
     expect(internal).not.toContain("Feature6-Optimization.md");
-    expect(internal).toContain("final Markdown and PDF report links");
+    expect(internal).toContain("final Markdown and PDF report paths");
     expect(internal).toContain("reportSummary");
     expect(internal).not.toContain(deprecatedF6ReportArtifactJsonName);
     expect(internal).toContain("without rerunning F0, F1, F2, F3, F4, F5, or F6");
@@ -360,27 +377,19 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("contract, containment, identity, manifest, and recorded hashes");
   });
 
-  it("requires validator-confirmed Markdown and PDF links for every successful completion", () => {
+  it("requires validator-confirmed canonical absolute Markdown and PDF paths for every successful completion", () => {
     const { internal } = splitSkillSections(readSkill());
-    const markdownLabel = "<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT";
-    const pdfLabel = "<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF";
 
     expect(internal).toContain("For every successful completion response");
-    expect(internal).toContain("exactly two workspace-relative links");
-    expect(internal).toContain("basename from the validator-confirmed source workbook path with .xlsx removed");
-    expect(internal).toContain(`[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`);
-    expect(internal).toContain(`[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`);
-    expect(internal).toContain("Do not render absolute paths in the success response");
+    expect(internal).toContain("exactly two validator-confirmed canonical absolute paths");
+    expect(internal).toContain("<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.md");
+    expect(internal).toContain("<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.pdf");
+    expect(internal).toContain("Present the Markdown path first and the PDF path second");
+    expect(internal).toContain("Do not convert either report path to a workspace-relative link");
     expect(internal).toContain("use only the validated final report paths");
-    expect(internal).toContain("do not present any report link");
-    expect(internal).not.toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
-    expect(internal).not.toContain("[Design Optimization PDF](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)");
-    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.md\)/g)).toHaveLength(1);
-    expect(internal.match(/\[<Excel basename> - TA ENGINEERING ANALYSIS REPORT - TA ASSIST AGENT DRAFT PDF\]\(test\/demo-output\/f6-runs\/<run-id>\/Feature6-Report\.pdf\)/g)).toHaveLength(1);
-    expectOrdered(internal, [
-      `[${markdownLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`,
-      `[${pdfLabel}](test/demo-output/f6-runs/<run-id>/Feature6-Report.pdf)`,
-    ]);
+    expect(internal).toContain("Do not present Optimization JSON, run summary, or manifest as user reports");
+    expect(internal).not.toContain("exactly two workspace-relative links");
+    expect(internal).not.toContain("Do not render absolute paths in the success response");
   });
 
   it("documents final report scope from validated summary and manifest instead of Optimization alone", () => {

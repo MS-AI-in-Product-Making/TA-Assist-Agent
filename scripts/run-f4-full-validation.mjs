@@ -109,6 +109,19 @@ export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
   }
 }
 
+export function summarizeF4CliResult(result) {
+  return {
+    status: result.status,
+    ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+    outputDirectory: result.outputDirectory,
+    ...(result.calculationJsonPath ? { calculationJsonPath: result.calculationJsonPath } : {}),
+    ...(result.comparisonJsonPath ? { comparisonJsonPath: result.comparisonJsonPath } : {}),
+    ...(result.reportMdPath ? { reportMdPath: result.reportMdPath } : {}),
+    manifestPath: result.manifestPath,
+    ...(result.summary ? { summary: result.summary } : {}),
+  };
+}
+
 function isDirectExecution() {
   return process.argv[1] !== undefined
     && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
@@ -117,7 +130,7 @@ function isDirectExecution() {
 if (isDirectExecution()) {
   try {
     const result = runF4FullValidation({ args: process.argv.slice(2) });
-    console.log(json(result).trimEnd());
+    console.log(json(summarizeF4CliResult(result)).trimEnd());
     if (result.status !== "completed") process.exitCode = 1;
   } catch {
     console.log(json({ status: "failed", reasonCode: "invalid_arguments_or_output_root" }).trimEnd());

@@ -15,7 +15,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runF6Optimization } from "../packages/workflow-runners/dist/index.js";
-import { createTypedError } from "../packages/contracts/dist/index.js";
+import { createTypedError, f2UserReportSchema } from "../packages/contracts/dist/index.js";
 import { createF6OptimizationV4 } from "../packages/workbook-catalog/dist/index.js";
 import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
@@ -24,6 +24,11 @@ import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function governedWorkbookFileName(f2ArtifactRoot) {
+  const reportPath = path.join(f2ArtifactRoot, "Feature2-Report.json");
+  return f2UserReportSchema.parse(JSON.parse(readFileSync(reportPath, "utf8"))).workbook.fileName;
 }
 
 function loaderOptions(parsed) {
@@ -67,6 +72,7 @@ function normalizeDependencies(overrides = {}) {
       process.env.AI_TVA_F6_OUTPUT_ROOT,
       options.now,
       process.env.AI_TVA_F6_PUBLISH_ROOT,
+      () => governedWorkbookFileName(parsed.f2ArtifactRoot),
     )),
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
     createOptimization: overrides.createOptimization ?? createF6OptimizationV4,
