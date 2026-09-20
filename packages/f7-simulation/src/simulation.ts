@@ -110,6 +110,82 @@ function sampleFactor(factor: SimulationFactor, random: DeterministicRandom): nu
   }
 }
 
+function logGamma(value: number): number {
+  const coefficients = [
+    676.5203681218851,
+    -1259.1392167224028,
+    771.3234287776531,
+    -176.6150291621406,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.984369578019572e-6,
+    1.5056327351493116e-7,
+  ];
+  if (value < 0.5) return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * value)) - logGamma(1 - value);
+  const shifted = value - 1;
+  let series = 0.9999999999998099;
+  for (let index = 0; index < coefficients.length; index += 1) {
+    series += coefficients[index]! / (shifted + index + 1);
+  }
+  const t = shifted + coefficients.length - 0.5;
+  return 0.5 * Math.log(2 * Math.PI) + (shifted + 0.5) * Math.log(t) - t + Math.log(series);
+}
+
+function factorStandardDeviation(factor: SimulationFactor): number {
+  switch (factor.family) {
+    case "normal":
+      return requiredParameter(factor.parameters, "standardDeviation");
+    case "uniform": {
+      const minimum = requiredParameter(factor.parameters, "minimum");
+      const maximum = requiredParameter(factor.parameters, "maximum");
+      if (!(minimum < maximum)) throw new Error("Uniform minimum must be less than maximum.");
+      return (maximum - minimum) / Math.sqrt(12);
+    }
+    case "lognormal": {
+      const logMean = requiredParameter(factor.parameters, "logMean");
+      const logStandardDeviation = requiredParameter(factor.parameters, "logStandardDeviation");
+      const logVariance = logStandardDeviation ** 2;
+      return Math.sqrt(Math.expm1(logVariance) * Math.exp(2 * logMean + logVariance));
+    }
+    case "gamma": {
+      const shape = requiredParameter(factor.parameters, "shape");
+      const scale = requiredParameter(factor.parameters, "scale");
+      if (!(shape > 0) || !(scale > 0)) throw new Error("Gamma shape and scale must be positive.");
+      return Math.sqrt(shape) * scale;
+    }
+    case "weibull": {
+      const shape = requiredParameter(factor.parameters, "shape");
+      const scale = requiredParameter(factor.parameters, "scale");
+      if (!(shape > 0) || !(scale > 0)) throw new Error("Weibull shape and scale must be positive.");
+      const firstMoment = Math.exp(logGamma(1 + 1 / shape));
+      const secondMoment = Math.exp(logGamma(1 + 2 / shape));
+      return scale * Math.sqrt(Math.max(0, secondMoment - firstMoment ** 2));
+    }
+  }
+}
+
+function createFactorContributions(factors: readonly SimulationFactor[]) {
+  const values = factors.map((factor) => {
+    const standardDeviation = factorStandardDeviation(factor);
+    const effectiveCoefficient = factor.coefficient === 0 ? 1 : factor.coefficient;
+    const weightedVariance = (effectiveCoefficient * standardDeviation) ** 2;
+    assertFiniteDerived(standardDeviation, weightedVariance);
+    return { factor, standardDeviation, weightedVariance };
+  });
+  const totalWeightedVariance = values.reduce((sum, value) => sum + value.weightedVariance, 0);
+  assertFiniteDerived(totalWeightedVariance);
+  return values.map(({ factor, standardDeviation, weightedVariance }) => ({
+    methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1" as const,
+    factorId: factor.factorId,
+    family: factor.family,
+    sourceMode: factor.sourceMode,
+    coefficient: factor.coefficient,
+    standardDeviation,
+    weightedVariance,
+    contribution: totalWeightedVariance === 0 ? 0 : weightedVariance / totalWeightedVariance,
+  }));
+}
+
 function quantile(sorted: readonly number[], probability: number): number {
   const position = probability * (sorted.length - 1);
   const lowerIndex = Math.floor(position);
@@ -373,5 +449,6 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
     capability,
     normalModel,
     factorManifest: request.factors.map(({ factorId, family, sourceMode }) => ({ factorId, family, sourceMode })),
+    factorContributions: createFactorContributions(request.factors),
   });
 }

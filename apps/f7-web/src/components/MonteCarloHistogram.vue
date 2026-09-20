@@ -63,11 +63,11 @@ function yPosition(value: number): number {
 }
 
 function formatTick(value: number): string {
-  return value.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+  return value.toLocaleString("en-US", { maximumFractionDigits: 3, useGrouping: false });
 }
 
 function formatReference(value: number): string {
-  return value.toFixed(4);
+  return value.toLocaleString("en-US", { maximumFractionDigits: 3, useGrouping: false });
 }
 
 function referenceText(reference: { readonly id: MonteCarloReferenceId; readonly value: number }): string {
@@ -76,6 +76,12 @@ function referenceText(reference: { readonly id: MonteCarloReferenceId; readonly
 
 function referenceRow(referenceId: MonteCarloReferenceId): "top" | "bottom" {
   return topReferenceIds.has(referenceId) ? "top" : "bottom";
+}
+
+function referenceRowY(row: "top" | "middle" | "bottom"): number {
+  if (row === "top") return 5;
+  if (row === "middle") return 31;
+  return 57;
 }
 
 function referenceLabelWidth(text: string): number {
@@ -117,19 +123,23 @@ function layoutLabelRow(items: readonly LabelLayoutItem[]): ReadonlyMap<string, 
 }
 
 const referenceLabelPositions = computed(() => {
-  const rows = model.value.references.reduce<Record<"top" | "bottom", LabelLayoutItem[]>>((result, reference) => {
+  const rows = model.value.references.reduce<Record<"top" | "middle" | "bottom", LabelLayoutItem[]>>((result, reference) => {
     result[referenceRow(reference.id)].push({ id: reference.id, x: reference.x, text: referenceText(reference) });
     return result;
-  }, { top: [], bottom: [] });
+  }, { top: [], middle: [], bottom: [] });
   if (model.value.setupMeanReference !== undefined) {
     const setupReference = model.value.setupMeanReference;
-    rows.bottom.push({
+    rows.middle.push({
       id: "setup-mean",
       x: setupReference.x,
       text: `Setup Mean ${formatReference(setupReference.value)}`,
     });
   }
-  return new Map([...layoutLabelRow(rows.top), ...layoutLabelRow(rows.bottom)]);
+  return new Map([
+    ...layoutLabelRow(rows.top),
+    ...layoutLabelRow(rows.middle),
+    ...layoutLabelRow(rows.bottom),
+  ]);
 });
 
 function positionedReferenceLabelX(reference: { readonly id: MonteCarloReferenceId; readonly x: number }): number {
@@ -180,7 +190,7 @@ function setupMeanLabelX(): number {
         />
         <g
           class="monte-carlo-reference-badge"
-          :transform="`translate(${positionedReferenceLabelX(reference)} ${referenceRow(reference.id) === 'top' ? 5 : 31})`"
+          :transform="`translate(${positionedReferenceLabelX(reference)} ${referenceRowY(referenceRow(reference.id))})`"
         >
           <rect
             :x="-referenceLabelWidth(referenceText(reference)) / 2"
@@ -211,7 +221,7 @@ function setupMeanLabelX(): number {
         <g
           v-if="model.setupMeanReference"
           data-factor-setup-mean
-          data-reference-row="bottom"
+          data-reference-row="middle"
           class="factor-setup-mean"
         >
           <line
@@ -222,7 +232,7 @@ function setupMeanLabelX(): number {
           />
           <g
             class="monte-carlo-reference-badge setup-mean-badge"
-            :transform="`translate(${setupMeanLabelX()} 31)`"
+            :transform="`translate(${setupMeanLabelX()} ${referenceRowY('middle')})`"
           >
             <rect
               :x="-referenceLabelWidth(`Setup Mean ${formatReference(model.setupMeanReference.value)}`) / 2"

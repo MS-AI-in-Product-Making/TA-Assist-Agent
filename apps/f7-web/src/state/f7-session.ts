@@ -338,7 +338,7 @@ export function createF7SessionStore(client: F7Client) {
       readonly lowerSpecLimit: number;
       readonly upperSpecLimit: number;
       readonly targetSigmaLevel: number;
-      readonly iterations: 10_000 | 100_000;
+      readonly iterations: 10_000 | 100_000 | 1_000_000;
       readonly runSeed: string;
       readonly correlationMode: "INDEPENDENT";
     }): Promise<void> {

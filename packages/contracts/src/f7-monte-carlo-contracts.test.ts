@@ -66,6 +66,9 @@ describe("F7 Monte Carlo contracts", () => {
 
     expect(f7MonteCarloRunRouteRequestSchema.parse(request)).toEqual(request);
     expect(f7MonteCarloRunRouteRequestSchema.safeParse({
+      body: { ...request.body, iterations: 1_000_000 },
+    }).success).toBe(true);
+    expect(f7MonteCarloRunRouteRequestSchema.safeParse({
       body: { ...request.body, lowerSpecLimit: 0.5, upperSpecLimit: -0.5 },
     }).success).toBe(false);
     expect(f7MonteCarloRunRouteRequestSchema.safeParse({
@@ -132,6 +135,16 @@ describe("F7 Monte Carlo contracts", () => {
       expectedYield: 0.9997,
     },
     factorManifest: [{ factorId: FACTOR_ID, family: "normal", sourceMode: "MEASURED" }],
+    factorContributions: [{
+      methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+      factorId: FACTOR_ID,
+      family: "normal",
+      sourceMode: "MEASURED",
+      coefficient: 1,
+      standardDeviation: 0.1,
+      weightedVariance: 0.01,
+      contribution: 1,
+    }],
   } as const;
 
   const withHistogramBinCount = (count: number) => {
@@ -149,6 +162,12 @@ describe("F7 Monte Carlo contracts", () => {
     normalFit: { ...result.normalFit, standardDeviation: 0 },
     capability: { status: "not_available", reason: "zero_variance", targetCpk: 2 },
     normalModel: { status: "not_available", reason: "zero_variance" },
+    factorContributions: result.factorContributions.map((factor) => ({
+      ...factor,
+      standardDeviation: 0,
+      weightedVariance: 0,
+      contribution: 0,
+    })),
   } as const;
 
   it("requires governed Monte Carlo outputs, analysis summaries, and manifest", () => {
@@ -158,6 +177,26 @@ describe("F7 Monte Carlo contracts", () => {
     expect(f7MonteCarloResultSchema.safeParse({ ...result, yield: 0.99 }).success).toBe(false);
     expect(f7MonteCarloResultSchema.safeParse({ ...result, targetSigmaLevel: -1 }).success).toBe(false);
     expect(f7MonteCarloResultSchema.safeParse({ ...result, extra: true }).success).toBe(false);
+  });
+
+  it("requires contributions to align with the manifest and normalize their variance share", () => {
+    expect(f7MonteCarloResultSchema.safeParse({
+      ...result,
+      factorContributions: result.factorContributions.map((factor) => ({ ...factor, contribution: 0.5 })),
+    }).success).toBe(false);
+    expect(f7MonteCarloResultSchema.safeParse({
+      ...result,
+      factorContributions: result.factorContributions.map((factor) => ({ ...factor, sourceMode: "BASELINE_ASSUMPTION" })),
+    }).success).toBe(false);
+    expect(f7MonteCarloResultSchema.safeParse(zeroVarianceResult).success).toBe(true);
+    expect(f7MonteCarloResultSchema.safeParse({
+      ...zeroVarianceResult,
+      factorContributions: zeroVarianceResult.factorContributions.map((factor) => ({ ...factor, contribution: 1 })),
+    }).success).toBe(false);
+    expect(f7MonteCarloResultSchema.safeParse({
+      ...result,
+      factorContributions: result.factorContributions.map((factor) => ({ ...factor, weightedVariance: 0.02 })),
+    }).success).toBe(false);
   });
 
   it("enforces strict finite, ordered, contiguous histogram bins that reconcile to iterations", () => {

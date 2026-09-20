@@ -9844,7 +9844,7 @@ export declare const f7DistributionApprovalSchema: z.ZodObject<{
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     approvedAt: string;
 }>;
-export declare const f7MonteCarloIterationsSchema: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+export declare const f7MonteCarloIterationsSchema: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
 export declare const f7CorrelationModeSchema: z.ZodLiteral<"INDEPENDENT">;
 export declare const f7MonteCarloFactorManifestEntrySchema: z.ZodObject<{
     factorId: z.ZodString;
@@ -9859,13 +9859,41 @@ export declare const f7MonteCarloFactorManifestEntrySchema: z.ZodObject<{
     family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
 }>;
+export declare const f7MonteCarloFactorContributionSchema: z.ZodObject<{
+    methodId: z.ZodLiteral<"F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1">;
+    factorId: z.ZodString;
+    family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+    sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
+    coefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
+    standardDeviation: z.ZodNumber;
+    weightedVariance: z.ZodNumber;
+    contribution: z.ZodNumber;
+}, "strict", z.ZodTypeAny, {
+    contribution: number;
+    standardDeviation: number;
+    factorId: string;
+    methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    coefficient: 0 | 1 | -1;
+    weightedVariance: number;
+}, {
+    contribution: number;
+    standardDeviation: number;
+    factorId: string;
+    methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+    sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+    coefficient: 0 | 1 | -1;
+    weightedVariance: number;
+}>;
 export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     methodId: z.ZodLiteral<"F7_MONTE_CARLO_V1">;
     status: z.ZodLiteral<"complete">;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
     targetSigmaLevel: z.ZodNumber;
-    iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+    iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
     runSeed: z.ZodString;
     correlationMode: z.ZodLiteral<"INDEPENDENT">;
     mean: z.ZodNumber;
@@ -10040,6 +10068,34 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }>, "many">;
+    factorContributions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        methodId: z.ZodLiteral<"F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1">;
+        factorId: z.ZodString;
+        family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+        sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
+        coefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
+        standardDeviation: z.ZodNumber;
+        weightedVariance: z.ZodNumber;
+        contribution: z.ZodNumber;
+    }, "strict", z.ZodTypeAny, {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }, {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }>, "many">>;
 }, "strict", z.ZodTypeAny, {
     status: "complete";
     capability: {
@@ -10062,7 +10118,7 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     targetSigmaLevel: number;
     yield: number;
     methodId: "F7_MONTE_CARLO_V1";
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
     quantiles: {
@@ -10107,6 +10163,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
+    factorContributions?: {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }[] | undefined;
 }, {
     status: "complete";
     capability: {
@@ -10129,7 +10195,7 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     targetSigmaLevel: number;
     yield: number;
     methodId: "F7_MONTE_CARLO_V1";
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
     quantiles: {
@@ -10174,6 +10240,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
+    factorContributions?: {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }[] | undefined;
 }>, {
     status: "complete";
     capability: {
@@ -10196,7 +10272,7 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     targetSigmaLevel: number;
     yield: number;
     methodId: "F7_MONTE_CARLO_V1";
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
     quantiles: {
@@ -10241,6 +10317,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
+    factorContributions?: {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }[] | undefined;
 }, {
     status: "complete";
     capability: {
@@ -10263,7 +10349,7 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     targetSigmaLevel: number;
     yield: number;
     methodId: "F7_MONTE_CARLO_V1";
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
     quantiles: {
@@ -10308,6 +10394,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
+    factorContributions?: {
+        contribution: number;
+        standardDeviation: number;
+        factorId: string;
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+        sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        coefficient: 0 | 1 | -1;
+        weightedVariance: number;
+    }[] | undefined;
 }>;
 export declare const f7ReportAssessmentSchema: z.ZodEnum<["MEETS_TARGET", "BELOW_TARGET", "NOT_EVALUABLE"]>;
 export declare const f7ReportWorkbookSchema: z.ZodObject<{
@@ -10725,7 +10821,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     }>;
     seed: z.ZodString;
-    iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+    iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
     factorManifest: z.ZodArray<z.ZodObject<{
         factorId: z.ZodString;
         family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -10743,7 +10839,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: string;
     workbookContentHash: string;
     seed: string;
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     factorManifest: {
         factorId: string;
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -10768,7 +10864,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: string;
     workbookContentHash: string;
     seed: string;
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     factorManifest: {
         factorId: string;
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -10793,7 +10889,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: string;
     workbookContentHash: string;
     seed: string;
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     factorManifest: {
         factorId: string;
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -10818,7 +10914,7 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: string;
     workbookContentHash: string;
     seed: string;
-    iterations: 10000 | 100000;
+    iterations: 1000000 | 10000 | 100000;
     factorManifest: {
         factorId: string;
         family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -11430,7 +11526,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         lowerSpecLimit: z.ZodNumber;
         upperSpecLimit: z.ZodNumber;
         targetSigmaLevel: z.ZodNumber;
-        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
         runSeed: z.ZodString;
         correlationMode: z.ZodLiteral<"INDEPENDENT">;
         mean: z.ZodNumber;
@@ -11605,6 +11701,34 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }>, "many">;
+        factorContributions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            methodId: z.ZodLiteral<"F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1">;
+            factorId: z.ZodString;
+            family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+            sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
+            coefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
+            standardDeviation: z.ZodNumber;
+            weightedVariance: z.ZodNumber;
+            contribution: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }, {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }>, "many">>;
     }, "strict", z.ZodTypeAny, {
         status: "complete";
         capability: {
@@ -11627,7 +11751,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -11672,6 +11796,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }, {
         status: "complete";
         capability: {
@@ -11694,7 +11828,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -11739,6 +11873,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }>, {
         status: "complete";
         capability: {
@@ -11761,7 +11905,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -11806,6 +11950,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }, {
         status: "complete";
         capability: {
@@ -11828,7 +11982,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -11873,6 +12027,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }>;
     factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
         longTermSafetyFactor: z.ZodNumber;
@@ -12690,7 +12854,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         }>;
         seed: z.ZodString;
-        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
         factorManifest: z.ZodArray<z.ZodObject<{
             factorId: z.ZodString;
             family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
@@ -12708,7 +12872,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -12733,7 +12897,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -12758,7 +12922,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -12783,7 +12947,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -12873,7 +13037,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -12918,7 +13082,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -12963,6 +13127,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
@@ -13120,7 +13294,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -13165,7 +13339,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -13210,6 +13384,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
@@ -13367,7 +13551,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -13412,7 +13596,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -13457,6 +13641,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
@@ -13614,7 +13808,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         worksheetName: string;
         workbookContentHash: string;
         seed: string;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         factorManifest: {
             factorId: string;
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
@@ -13659,7 +13853,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -13704,6 +13898,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
@@ -17957,7 +18161,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         lowerSpecLimit: z.ZodNumber;
         upperSpecLimit: z.ZodNumber;
         targetSigmaLevel: z.ZodNumber;
-        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
         runSeed: z.ZodString;
         correlationMode: z.ZodLiteral<"INDEPENDENT">;
         mean: z.ZodNumber;
@@ -18132,6 +18336,34 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }>, "many">;
+        factorContributions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            methodId: z.ZodLiteral<"F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1">;
+            factorId: z.ZodString;
+            family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+            sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
+            coefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
+            standardDeviation: z.ZodNumber;
+            weightedVariance: z.ZodNumber;
+            contribution: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }, {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }>, "many">>;
     }, "strict", z.ZodTypeAny, {
         status: "complete";
         capability: {
@@ -18154,7 +18386,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -18199,6 +18431,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }, {
         status: "complete";
         capability: {
@@ -18221,7 +18463,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -18266,6 +18508,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }>, {
         status: "complete";
         capability: {
@@ -18288,7 +18540,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -18333,6 +18585,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }, {
         status: "complete";
         capability: {
@@ -18355,7 +18617,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -18400,6 +18662,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     }>>;
 }, "strict", z.ZodTypeAny, {
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -18905,7 +19177,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -18950,6 +19222,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     } | undefined;
 }, {
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -19455,7 +19737,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -19500,6 +19782,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     } | undefined;
 }>, {
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -20005,7 +20297,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -20050,6 +20342,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     } | undefined;
 }, {
     status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -20555,7 +20857,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         targetSigmaLevel: number;
         yield: number;
         methodId: "F7_MONTE_CARLO_V1";
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
         quantiles: {
@@ -20600,6 +20902,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
+        factorContributions?: {
+            contribution: number;
+            standardDeviation: number;
+            factorId: string;
+            methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+            coefficient: 0 | 1 | -1;
+            weightedVariance: number;
+        }[] | undefined;
     } | undefined;
 }>;
 export declare const f7WorkbookImportRequestSchema: z.ZodObject<{
@@ -24819,7 +25131,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
             targetSigmaLevel: z.ZodNumber;
-            iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+            iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
             runSeed: z.ZodString;
             correlationMode: z.ZodLiteral<"INDEPENDENT">;
             mean: z.ZodNumber;
@@ -24994,6 +25306,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }>, "many">;
+            factorContributions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                methodId: z.ZodLiteral<"F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1">;
+                factorId: z.ZodString;
+                family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
+                sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
+                coefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
+                standardDeviation: z.ZodNumber;
+                weightedVariance: z.ZodNumber;
+                contribution: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }, {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }>, "many">>;
         }, "strict", z.ZodTypeAny, {
             status: "complete";
             capability: {
@@ -25016,7 +25356,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -25061,6 +25401,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         }, {
             status: "complete";
             capability: {
@@ -25083,7 +25433,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -25128,6 +25478,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         }>, {
             status: "complete";
             capability: {
@@ -25150,7 +25510,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -25195,6 +25555,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         }, {
             status: "complete";
             capability: {
@@ -25217,7 +25587,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -25262,6 +25632,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         }>>;
     }, "strict", z.ZodTypeAny, {
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -25767,7 +26147,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -25812,6 +26192,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     }, {
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -26317,7 +26707,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -26362,6 +26752,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     }>, {
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -26867,7 +27267,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -26912,6 +27312,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     }, {
         status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
@@ -27417,7 +27827,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -27462,6 +27872,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     }>;
 }, "strict", z.ZodTypeAny, {
@@ -27971,7 +28391,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -28016,6 +28436,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     };
 }, {
@@ -28525,7 +28955,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             targetSigmaLevel: number;
             yield: number;
             methodId: "F7_MONTE_CARLO_V1";
-            iterations: 10000 | 100000;
+            iterations: 1000000 | 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
             quantiles: {
@@ -28570,6 +29000,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
+            factorContributions?: {
+                contribution: number;
+                standardDeviation: number;
+                factorId: string;
+                methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+                sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+                coefficient: 0 | 1 | -1;
+                weightedVariance: number;
+            }[] | undefined;
         } | undefined;
     };
 }>;
@@ -29127,7 +29567,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: z.ZodNumber;
         upperSpecLimit: z.ZodNumber;
         targetSigmaLevel: z.ZodNumber;
-        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
+        iterations: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>, z.ZodLiteral<1000000>]>;
         runSeed: z.ZodString;
         correlationMode: z.ZodLiteral<"INDEPENDENT">;
     }, "strict", z.ZodTypeAny, {
@@ -29135,7 +29575,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     }, {
@@ -29143,7 +29583,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     }>;
@@ -29153,7 +29593,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     };
@@ -29163,7 +29603,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     };
@@ -29173,7 +29613,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     };
@@ -29183,7 +29623,7 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
-        iterations: 10000 | 100000;
+        iterations: 1000000 | 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
     };

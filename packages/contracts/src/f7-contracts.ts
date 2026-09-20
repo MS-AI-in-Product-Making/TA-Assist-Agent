@@ -1878,7 +1878,11 @@ export const f7DistributionApprovalSchema = z
   })
   .strict();
 
-export const f7MonteCarloIterationsSchema = z.union([z.literal(10_000), z.literal(100_000)]);
+export const f7MonteCarloIterationsSchema = z.union([
+  z.literal(10_000),
+  z.literal(100_000),
+  z.literal(1_000_000),
+]);
 export const f7CorrelationModeSchema = z.literal("INDEPENDENT");
 
 const f7MonteCarloQuantilesSchema = z
@@ -1960,6 +1964,19 @@ export const f7MonteCarloFactorManifestEntrySchema = z
   })
   .strict();
 
+export const f7MonteCarloFactorContributionSchema = z
+  .object({
+    methodId: z.literal("F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1"),
+    factorId: sha256LowerSchema,
+    family: f7DistributionCandidateFamilySchema,
+    sourceMode: f7FactorSourceModeSchema,
+    coefficient: f7LoopCoefficientSchema,
+    standardDeviation: z.number().finite().nonnegative(),
+    weightedVariance: z.number().finite().nonnegative(),
+    contribution: z.number().finite().min(0).max(1),
+  })
+  .strict();
+
 export const f7MonteCarloResultSchema = z
   .object({
     methodId: z.literal("F7_MONTE_CARLO_V1"),
@@ -1983,6 +2000,7 @@ export const f7MonteCarloResultSchema = z
     capability: f7CapabilitySchema,
     normalModel: f7NormalModelSchema,
     factorManifest: z.array(f7MonteCarloFactorManifestEntrySchema).min(1),
+    factorContributions: z.array(f7MonteCarloFactorContributionSchema).min(1).optional(),
   })
   .strict()
   .superRefine((result, context) => {
@@ -2128,6 +2146,65 @@ export const f7MonteCarloResultSchema = z
       || !nearlyEqual(result.outOfSpecProbability, expectedOutOfSpecProbability)
       || !nearlyEqual(result.ppm, expectedPpm)) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "Monte Carlo rates must match counts", path: ["yield"] });
+    }
+
+    if (result.factorContributions === undefined) return;
+    requireUniqueFactorIds(
+      result.factorContributions,
+      context,
+      ["factorContributions"],
+      "factorContributions factorIds must be unique",
+    );
+    if (result.factorContributions.length !== result.factorManifest.length
+      || result.factorContributions.some((contribution, index) => {
+        const manifest = result.factorManifest[index];
+        return manifest === undefined
+          || contribution.factorId !== manifest.factorId
+          || contribution.family !== manifest.family
+          || contribution.sourceMode !== manifest.sourceMode;
+      })) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "factorContributions must match factorManifest order and identity",
+        path: ["factorContributions"],
+      });
+    }
+    const totalWeightedVariance = result.factorContributions.reduce(
+      (sum, factor) => sum + factor.weightedVariance,
+      0,
+    );
+    const totalContribution = result.factorContributions.reduce(
+      (sum, factor) => sum + factor.contribution,
+      0,
+    );
+    result.factorContributions.forEach((factor, index) => {
+      const effectiveCoefficient = factor.coefficient === 0 ? 1 : factor.coefficient;
+      const expectedWeightedVariance = (effectiveCoefficient * factor.standardDeviation) ** 2;
+      const expectedContribution = totalWeightedVariance === 0
+        ? 0
+        : factor.weightedVariance / totalWeightedVariance;
+      if (!nearlyEqual(factor.weightedVariance, expectedWeightedVariance)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "weightedVariance must equal squared effective coefficient times distribution variance",
+          path: ["factorContributions", index, "weightedVariance"],
+        });
+      }
+      if (!nearlyEqual(factor.contribution, expectedContribution)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "contribution must equal the normalized weighted variance",
+          path: ["factorContributions", index, "contribution"],
+        });
+      }
+    });
+    if ((totalWeightedVariance === 0 && totalContribution !== 0)
+      || (totalWeightedVariance > 0 && !nearlyEqual(totalContribution, 1))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "factorContributions must sum to one when total weighted variance is positive, otherwise zero",
+        path: ["factorContributions"],
+      });
     }
   });
 

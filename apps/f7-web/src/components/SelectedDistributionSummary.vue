@@ -29,6 +29,7 @@ const props = defineProps<{
   readonly showHeading?: boolean;
   readonly display?: "all" | "summary" | "plot";
   readonly selectableSigmaLevels?: boolean;
+  readonly plotIdPrefix?: string;
 }>();
 
 const selected = computed(() => props.result
@@ -124,6 +125,7 @@ function familyLabel(family: string): string {
       :references="plotReferences"
       :assumption="setupAssumption"
       :selectable-sigma-levels="selectableSigmaLevels"
+      :id-prefix="plotIdPrefix"
     />
   </div>
   <DistributionFitPlot
@@ -133,5 +135,6 @@ function familyLabel(family: string): string {
     :references="plotReferences"
     :assumption="setupAssumption"
     :selectable-sigma-levels="selectableSigmaLevels"
+    :id-prefix="plotIdPrefix"
   />
 </template>

@@ -211,6 +211,16 @@ function createMonteCarloResult(
       expectedYield: 1,
     },
     factorManifest: request.factors.map(({ factorId, family, sourceMode }) => ({ factorId, family, sourceMode })),
+    factorContributions: request.factors.map(({ factorId, family, sourceMode, coefficient }) => ({
+      methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+      factorId,
+      family,
+      sourceMode,
+      coefficient,
+      standardDeviation: 1,
+      weightedVariance: 1,
+      contribution: 1 / request.factors.length,
+    })),
   });
 }
 
@@ -1033,6 +1043,14 @@ describe("createF7SessionService", () => {
       runSeed: "c".repeat(64),
       factorManifest: expect.arrayContaining([
         expect.objectContaining({ factorId: factorIds[0], sourceMode: "MEASURED", family: proposedFamily }),
+      ]),
+      factorContributions: expect.arrayContaining([
+        expect.objectContaining({
+          factorId: factorIds[0],
+          sourceMode: "MEASURED",
+          family: proposedFamily,
+          methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        }),
       ]),
     }));
 

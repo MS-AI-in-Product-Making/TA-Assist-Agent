@@ -17,8 +17,12 @@ import { buildF7EngineeringNarrative } from "@ai-assist/product-language/f7-engi
 type ReportWithoutMarkdown = Omit<F7ReportProjection, "markdown">;
 type AvailableF7ReportAnalysis = Extract<NonNullable<F7ReportProjection["analysis"]>, { status: "available" }>;
 
-function formatSigned(value: number, digits: number): string {
-  return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
+function formatReportNumber(value: number, maximumFractionDigits = 3): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits, useGrouping: false });
+}
+
+function formatSigned(value: number, maximumFractionDigits = 3): string {
+  return `${value >= 0 ? "+" : "-"}${formatReportNumber(Math.abs(value), maximumFractionDigits)}`;
 }
 
 function requireNarrativeProvenance(item: {
@@ -180,13 +184,13 @@ function createF0Analysis(
   const rootCauseRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "root-cause-signal");
   const improvementRules = evaluation.matchedRules.filter(({ entryType }) => entryType === "improvement-option");
   const targetAssessment = monteCarlo.cpk >= target
-    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the resolved target of ${target}.`
-    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the resolved target of ${target}.`;
+    ? `Monte Carlo Cpk ${formatReportNumber(monteCarlo.cpk)} meets the resolved target of ${formatReportNumber(target)}.`
+    : `Monte Carlo Cpk ${formatReportNumber(monteCarlo.cpk)} is below the resolved target of ${formatReportNumber(target)}.`;
   const interpretations = [
-    `Mean changed from Setup ${setupMean.toFixed(4)} to Monte Carlo ${simulation.mean.toFixed(4)} (${formatSigned(meanDelta, 4)}).`,
-    `Standard deviation changed from Setup ${setupStandardDeviation.toFixed(4)} to Monte Carlo ${simulation.standardDeviation.toFixed(4)} (${formatSigned(sigmaRelativeChange * 100, 1)}%).`,
-    `Cp changed from Setup ${setupCp.toFixed(3)} to Monte Carlo ${monteCarlo.cp.toFixed(3)} (${formatSigned(cpDelta, 3)}).`,
-    `Cpk changed from Setup ${setupCpk.toFixed(3)} to Monte Carlo ${monteCarlo.cpk.toFixed(3)} (${formatSigned(cpkDelta, 3)}); ${targetAssessment}`,
+    `Mean changed from Setup ${formatReportNumber(setupMean)} to Monte Carlo ${formatReportNumber(simulation.mean)} (${formatSigned(meanDelta)}).`,
+    `Standard deviation changed from Setup ${formatReportNumber(setupStandardDeviation)} to Monte Carlo ${formatReportNumber(simulation.standardDeviation)} (${formatSigned(sigmaRelativeChange * 100, 2)}%).`,
+    `Cp changed from Setup ${formatReportNumber(setupCp)} to Monte Carlo ${formatReportNumber(monteCarlo.cp)} (${formatSigned(cpDelta)}).`,
+    `Cpk changed from Setup ${formatReportNumber(setupCpk)} to Monte Carlo ${formatReportNumber(monteCarlo.cpk)} (${formatSigned(cpkDelta)}); ${targetAssessment}`,
   ];
   const optimizationDirections = improvementRules.map(({ title }) => title);
   if (optimizationDirections.length === 0) {

@@ -1789,6 +1789,44 @@ describe("f7 local server", () => {
       report: report.json,
     });
 
+    const reportPdfWithAppendix = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report/pdf",
+      body: {
+        sessionId: importJson.sessionId,
+        report: report.json,
+        includeFactorDistributionAppendix: true,
+      },
+    });
+    expect(reportPdfWithAppendix.status).toBe(200);
+    const authoritativeFactor = service.getSession(importJson.sessionId).factors[0]!;
+    const selectedFamily = authoritativeFactor.distributionApproval!.family;
+    expect(reportPdfRenderer.render).toHaveBeenLastCalledWith({
+      sessionId: importJson.sessionId,
+      report: report.json,
+      factorDistributionAppendix: [{
+        factorId: authoritativeFactor.evidence!.factorId,
+        factorName: authoritativeFactor.factorCandidate.factorName,
+        lowerSpecLimit: authoritativeFactor.evidence!.lowerSpecLimit,
+        upperSpecLimit: authoritativeFactor.evidence!.upperSpecLimit,
+        setup: {
+          mean: Math.abs(authoritativeFactor.evidence!.calculatedMean),
+          standardDeviation: authoritativeFactor.evidence!.oneSigma,
+          distribution: authoritativeFactor.evidence!.distribution,
+        },
+        selectedCandidate: expect.objectContaining({
+          family: selectedFamily,
+          parameters: authoritativeFactor.distributionFitResult!.candidates.find(
+            (candidate) => candidate.family === selectedFamily,
+          )!.parameters,
+          qqPoints: authoritativeFactor.distributionFitResult!.candidates.find(
+            (candidate) => candidate.family === selectedFamily,
+          )!.qqPoints,
+        }),
+      }],
+    });
+
     const reportWithUnknownKey = await httpJson({
       port: address.port,
       method: "POST",

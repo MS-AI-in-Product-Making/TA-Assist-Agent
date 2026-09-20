@@ -88,6 +88,28 @@ describe("runF7MonteCarlo", () => {
       { factorId: FACTOR_A, family: "normal", sourceMode: "MEASURED" },
       { factorId: FACTOR_B, family: "normal", sourceMode: "BASELINE_ASSUMPTION" },
     ]);
+    expect(first.factorContributions).toEqual([
+      {
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: FACTOR_A,
+        family: "normal",
+        sourceMode: "MEASURED",
+        coefficient: -1,
+        standardDeviation: 0.04,
+        weightedVariance: 0.0016,
+        contribution: 0.64,
+      },
+      {
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: FACTOR_B,
+        family: "normal",
+        sourceMode: "BASELINE_ASSUMPTION",
+        coefficient: 1,
+        standardDeviation: 0.03,
+        weightedVariance: 0.0009,
+        contribution: 0.36,
+      },
+    ]);
     expect(empiricalFields(first)).toEqual({
       mean: -0.05068562276677794,
       standardDeviation: 0.050251750462061776,
@@ -133,6 +155,34 @@ describe("runF7MonteCarlo", () => {
 
     expect(neutral.standardDeviation).toBeGreaterThan(0.03);
     expect(empiricalFields(neutral)).toEqual(empiricalFields(additive));
+    expect(neutral.factorContributions[0]).toMatchObject({
+      coefficient: 0,
+      weightedVariance: 0.0016,
+      contribution: 1,
+    });
+  });
+
+  it.each([
+    ["normal", { mean: 0, standardDeviation: 2 }, 2],
+    ["uniform", { minimum: -Math.sqrt(12), maximum: 0 }, 1],
+    ["lognormal", { logMean: 0, logStandardDeviation: Math.sqrt(Math.log(2)) }, Math.sqrt(2)],
+    ["gamma", { shape: 4, scale: 1.5 }, 3],
+    ["weibull", { shape: 1, scale: 2 }, 2],
+  ] as const)("derives analytical standard deviation for %s", (family, parameters, expected) => {
+    const result = runF7MonteCarlo({
+      ...request,
+      factors: [{
+        factorId: FACTOR_A,
+        coefficient: 1,
+        sourceMode: "MEASURED",
+        family,
+        parameters,
+      }],
+    });
+
+    expect(result.factorContributions[0]!.standardDeviation).toBeCloseTo(expected, 12);
+    expect(result.factorContributions[0]!.weightedVariance).toBeCloseTo(expected ** 2, 12);
+    expect(result.factorContributions[0]!.contribution).toBe(1);
   });
 
   it("applies the system additional mean shift once to every simulated response", () => {
@@ -373,6 +423,16 @@ describe("runF7MonteCarlo", () => {
       targetCpk: 2,
     });
     expect(result.normalModel).toEqual({ status: "not_available", reason: "zero_variance" });
+    expect(result.factorContributions).toEqual([{
+      methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+      factorId: FACTOR_A,
+      family: "normal",
+      sourceMode: "MEASURED",
+      coefficient: 1,
+      standardDeviation: 0,
+      weightedVariance: 0,
+      contribution: 0,
+    }]);
   });
 
   it("changes only target capability fields when target sigma changes", () => {

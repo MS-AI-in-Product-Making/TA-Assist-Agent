@@ -34,6 +34,10 @@ import type {
   DimensionChainReportProjection,
   DimensionChainVisual,
 } from "../assumption-results-pdf-evidence";
+import {
+  dimensionChainRasterScale,
+  findDimensionChainContentBounds,
+} from "../dimension-chain-image-crop";
 
 const props = withDefaults(defineProps<{
   readonly factors: readonly DimensionChainFactor[];
@@ -73,7 +77,7 @@ const backgroundInput = ref<HTMLInputElement>();
 const backgroundUrl = ref("");
 const backgroundNaturalWidth = ref(0);
 const backgroundNaturalHeight = ref(0);
-const backgroundOpacity = ref(0.6);
+const backgroundOpacity = ref(1);
 const backgroundScale = ref(1);
 const backgroundError = ref("");
 const backgroundUrlOwned = ref(false);
@@ -393,21 +397,44 @@ async function captureSvgReportVisual(clone: SVGSVGElement): Promise<DimensionCh
       candidate.onerror = () => reject(new Error("Unable to render the Dimension Chain image."));
       candidate.src = svgUrl;
     });
-    let scale = Math.min(1, 1600 / width, 1000 / height);
+    let scale = dimensionChainRasterScale(width, height);
+    const rasterCanvas = document.createElement("canvas");
     const canvas = document.createElement("canvas");
     let outputWidth = 1;
     let outputHeight = 1;
     let dataUrl = "";
     do {
-      outputWidth = Math.max(1, Math.round(width * scale));
-      outputHeight = Math.max(1, Math.round(height * scale));
+      const rasterWidth = Math.max(1, Math.round(width * scale));
+      const rasterHeight = Math.max(1, Math.round(height * scale));
+      rasterCanvas.width = rasterWidth;
+      rasterCanvas.height = rasterHeight;
+      const rasterContext = rasterCanvas.getContext("2d");
+      if (!rasterContext) throw new Error("Unable to create the Dimension Chain image.");
+      rasterContext.fillStyle = "#ffffff";
+      rasterContext.fillRect(0, 0, rasterWidth, rasterHeight);
+      rasterContext.drawImage(image, 0, 0, rasterWidth, rasterHeight);
+      const pixels = rasterContext.getImageData(0, 0, rasterWidth, rasterHeight).data;
+      const padding = Math.max(8, Math.round(Math.min(rasterWidth, rasterHeight) * 0.02));
+      const crop = findDimensionChainContentBounds(pixels, rasterWidth, rasterHeight, padding);
+      outputWidth = crop.width;
+      outputHeight = crop.height;
       canvas.width = outputWidth;
       canvas.height = outputHeight;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Unable to create the Dimension Chain image.");
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, outputWidth, outputHeight);
-      context.drawImage(image, 0, 0, outputWidth, outputHeight);
+      context.drawImage(
+        rasterCanvas,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        outputWidth,
+        outputHeight,
+      );
       dataUrl = canvas.toDataURL("image/png");
       scale *= 0.75;
     } while (dataUrl.length > 700_000 && outputWidth > 240 && outputHeight > 160);

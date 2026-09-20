@@ -44,6 +44,7 @@ import { f7ReportPdfRouteRequestSchema } from "./f7-report-pdf-contract.js";
 import {
   safeF7ReportPdfFileName,
   safeUnicodeF7ReportPdfFileName,
+  type F7FactorDistributionAppendixEntry,
   type F7ReportPdfRenderer,
 } from "./f7-report-pdf-renderer.js";
 import { F7_SESSION_NOT_FOUND_REASON_CODE } from "./f7-session-service.js";
@@ -844,8 +845,9 @@ async function handleRequest(
     const body = await readStrictJsonObject(request, PDF_JSON_ROUTE_LIMIT_BYTES);
     const routeRequest = f7ReportPdfRouteRequestSchema.safeParse(body);
     if (!routeRequest.success) rejectBadRequest();
+    let session: ReturnType<F7SessionService["getSession"]>;
     try {
-      service.getSession(routeRequest.data.sessionId);
+      session = service.getSession(routeRequest.data.sessionId);
     } catch (error) {
       const parsedError = typedErrorSchema.safeParse(error);
       const reasonCode = error && typeof error === "object" && "reasonCode" in error
@@ -857,12 +859,39 @@ async function handleRequest(
       throw error;
     }
     const authoritativeReport = service.generateReport({ sessionId: routeRequest.data.sessionId });
+    const factorDistributionAppendix: readonly F7FactorDistributionAppendixEntry[] = routeRequest.data.includeFactorDistributionAppendix
+      ? session.factors.flatMap((factor) => {
+          const evidence = factor.evidence;
+          const fit = factor.distributionFitResult;
+          const approval = factor.distributionApproval;
+          if (!evidence || !fit || !approval) return [];
+          const selectedCandidate = fit.candidates.find((candidate) => candidate.family === approval.family);
+          if (!selectedCandidate) return [];
+          return [{
+            factorId: evidence.factorId,
+            factorName: factor.factorCandidate.factorName,
+            lowerSpecLimit: evidence.lowerSpecLimit,
+            upperSpecLimit: evidence.upperSpecLimit,
+            setup: {
+              mean: Math.abs(evidence.calculatedMean),
+              standardDeviation: evidence.oneSigma,
+              distribution: evidence.distribution,
+            },
+            selectedCandidate: {
+              family: selectedCandidate.family,
+              parameters: selectedCandidate.parameters,
+              qqPoints: selectedCandidate.qqPoints,
+            },
+          }];
+        })
+      : [];
     const pdfBytes = await reportPdfRenderer.render({
       sessionId: routeRequest.data.sessionId,
       report: authoritativeReport,
       ...(routeRequest.data.dimensionChainVisual === undefined
         ? {}
         : { dimensionChainVisual: routeRequest.data.dimensionChainVisual }),
+      ...(factorDistributionAppendix.length === 0 ? {} : { factorDistributionAppendix }),
     });
     if (pdfBytes.length === 0 || pdfBytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
       throw new Error("Report renderer returned invalid PDF bytes.");

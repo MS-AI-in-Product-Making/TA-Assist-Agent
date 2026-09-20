@@ -26,6 +26,7 @@ const props = defineProps<{
   readonly references: DistributionFitReferences;
   readonly assumption: FactorSetupAssumption | undefined;
   readonly selectableSigmaLevels?: boolean;
+  readonly idPrefix?: string;
 }>();
 
 const standardSigmaLevels: readonly SigmaLevelOption[] = [
@@ -135,7 +136,7 @@ const visibleReferences = computed(() => {
   }
   return references;
 });
-const titleId = computed(() => `distribution-fit-${props.candidate.family}-title`);
+const titleId = computed(() => `${props.idPrefix ?? `distribution-fit-${props.candidate.family}`}-title`);
 
 function xFraction(value: number): number {
   const minimum = model.value.domainMinimum;
