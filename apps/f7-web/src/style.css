@@ -598,6 +598,18 @@ body {
   }
 }
 
+@keyframes monte-carlo-progress-dot {
+  0%,
+  20% {
+    opacity: 0.2;
+  }
+
+  40%,
+  100% {
+    opacity: 1;
+  }
+}
+
 .worksheet-options-fieldset {
   min-width: 0;
   border-radius: 8px;
@@ -1490,6 +1502,24 @@ textarea {
 .automatic-analysis-spinner {
   flex: 0 0 auto;
   animation: worksheet-analysis-spin 0.9s linear infinite;
+}
+
+.monte-carlo-progress-dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: -4px;
+}
+
+.monte-carlo-progress-dots span {
+  animation: monte-carlo-progress-dot 1.2s ease-in-out infinite;
+}
+
+.monte-carlo-progress-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.monte-carlo-progress-dots span:nth-child(3) {
+  animation-delay: 0.32s;
 }
 
 .factor-workspace-button[data-measured-state="empty"] {

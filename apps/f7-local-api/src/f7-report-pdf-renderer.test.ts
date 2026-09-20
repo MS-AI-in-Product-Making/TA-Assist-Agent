@@ -366,7 +366,19 @@ describe("F7 report PDF renderer", () => {
     expect(resultKpis).toContain("Cpk");
     expect(resultKpis).toContain("Mean");
     expect(resultKpis).toContain("Std Dev");
+    expect(resultKpis).toContain("89.45%");
+    expect(resultKpis).toContain("0.445");
+    expect(resultKpis).toContain("-0.026");
+    expect(resultKpis).toContain("0.057");
+    expect(resultKpis).not.toContain("0.445032");
     expect(resultKpis).toContain("105,500 PPM out of spec");
+
+    const governedResult = html.match(/<section class="monte-carlo-decision[^"]*"[\s\S]*?<\/section>/)?.[0];
+    expect(governedResult).toContain("Attention required");
+    expect(governedResult).toContain("Mean -0.026 differs from Factor Setup Mean -0.05.");
+    expect(governedResult).toContain("Cpk 0.445 is below the target Cpk 1.");
+    expect(governedResult).toContain('class="monte-carlo-decision-details"');
+    expect(html).toContain(".monte-carlo-decision.decision-below-target");
 
     const orderedHeadings = [
       "Engineering Inputs",
@@ -400,10 +412,10 @@ describe("F7 report PDF renderer", () => {
       "Part Number",
       "DIM ID",
       "Design Nominal",
-      "+Tol",
-      "-Tol",
-      "Long-term Safety Factor",
-      "Sigma Level",
+      "+ Tol",
+      "- Tol",
+      "Long Term/Safety Factor",
+      "σ Level",
       "Distribution",
       "Mean",
       "Tolerance",
@@ -424,6 +436,13 @@ describe("F7 report PDF renderer", () => {
     expect(factorSetupTable).toContain(`data-factor-measured-comparison="${HASH}"`);
     expect(factorSetupTable).toContain('data-measured-comparison-metric="distribution"');
     expect(factorSetupTable).toContain('data-measured-comparison-metric="contribution"');
+    expect(factorSetupTable).toContain('class="nominal-positive">1</span>');
+    expect(factorSetupTable).toContain('class="nominal-negative">-2</span>');
+    expect(factorSetupTable).toContain('class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="cpk"');
+    expect(factorSetupTable).toContain('<span class="actual-value-severity-attention">0.9</span>');
+    expect(factorSetupTable).toContain('<span class="comparison-percentage-group actual-value-severity-attention">(-10.00%)</span>');
+    expect(factorSetupTable).toContain('<td>1.33</td>');
+    expect(factorSetupTable).toContain('<span class="source-mode-badge source-mode-warning">Measured Data</span>');
     expect(factorSetupTable).toContain("Actual");
     expect(factorSetupTable).toContain("Δ");
     expect(html).not.toContain("<h4>Setup Inputs</h4>");
@@ -439,6 +458,10 @@ describe("F7 report PDF renderer", () => {
     expect(comparisonTable).toContain("+0.024 (+12.15%)");
     expect(comparisonTable).toContain("actual-value-severity-critical");
     expect(comparisonTable).toContain("DPM");
+    expect(comparisonTable).not.toMatch(/\d+\.\d{4,}/);
+    for (const percentage of comparisonTable?.matchAll(/[+-]?\d+(?:\.\d+)?%/g) ?? []) {
+      expect(percentage[0]).not.toMatch(/\.\d{3,}%/);
+    }
 
     const contributors = html.match(/<ol class="contributor-list"[\s\S]*?<\/ol>/)?.[0];
     expect(contributors).toContain("Factor &lt;A&gt;");
@@ -449,6 +472,12 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("Current σ");
     expect(html).toContain("Maximum σ");
     expect(html).toContain("Required reduction");
+    const recommendedActions = html.match(/<div class="embedded-actions" data-report-recommended-actions>[\s\S]*?<\/ol><\/div>/)?.[0];
+    expect(recommendedActions).toBeDefined();
+    expect(recommendedActions).not.toMatch(/\d+\.\d{4,}/);
+    for (const percentage of recommendedActions?.matchAll(/[+-]?\d+(?:\.\d+)?%/g) ?? []) {
+      expect(percentage[0]).not.toMatch(/\.\d{3,}%/);
+    }
 
     const factorSetupText = visibleHtmlText(factorSetupTable ?? "");
     for (const metricValue of ["1.01", "Actual 1.02", "Δ +0.01 (+0.99%)", "± 0.2", "Actual ±3σ 0.18", "Δ -0.02 (-10.00%)", "0.05", "Actual 0.06", "Actual 0.9"]) {
@@ -463,6 +492,9 @@ describe("F7 report PDF renderer", () => {
     expect(factorSetupTable).toContain("status-ready");
     expect(factorSetupTable).toContain("status-warning");
     expect(factorSetupTable).toContain("actual-value-severity-critical");
+    expect(html).toContain(".factor-measured-comparison-metric-three-row");
+    expect(html).toContain(".nominal-positive");
+    expect(html).toContain(".source-mode-warning");
     expect(factorSetupTable).toContain(">32<");
     expect(factorSetupTable).toContain(">0<");
 
@@ -471,7 +503,7 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("data-monte-carlo-fit");
     expect(html).toContain("data-factor-setup-fit");
     expect(html).toContain("data-factor-setup-mean");
-    expect(html).toContain(">Setup Mean -0.0500<");
+    expect(html).toContain(">Setup Mean -0.05<");
     for (const referenceId of [
       "lower-spec-limit",
       "upper-spec-limit",
@@ -485,12 +517,18 @@ describe("F7 report PDF renderer", () => {
     expect(html.match(/data-reference-row="top"/g)).toHaveLength(3);
     expect(html.match(/data-reference-row="middle"/g)).toHaveLength(1);
     expect(html.match(/data-reference-row="bottom"/g)).toHaveLength(3);
-    for (const label of ["LSL -0.1500", "Target -0.0500", "USL 0.0500", "−3σ -0.1958", "Mean -0.0257", "+3σ 0.1444"]) {
+    for (const label of ["LSL -0.15", "Target -0.05", "USL 0.05", "−3σ -0.196", "Mean -0.026", "+3σ 0.144"]) {
       expect(html).toContain(`>${label}<`);
+    }
+    const chart = html.match(/<svg data-monte-carlo-chart[\s\S]*?<\/svg>/)?.[0];
+    expect(chart).toBeDefined();
+    for (const label of chart?.matchAll(/class="(?:plot-tick-label|monte-carlo-reference-label)"[^>]*>([^<]+)<\/text>/g) ?? []) {
+      expect(label[1]).not.toMatch(/\d+\.\d{4,}/);
+      expect(label[1]).not.toMatch(/\.\d*0$/);
     }
     expect(html).toContain('class="monte-carlo-reference-badge"');
     expect(html).toContain('class="monte-carlo-reference-badge setup-mean-badge"');
-    expect(html).toContain('y1="82" y2="278"');
+    expect(html).toContain('y1="106" y2="300"');
     expect(html.match(/<g><line class="plot-grid"/g)).toHaveLength(5);
     expect(html.match(/<g><line class="plot-tick"/g)).toHaveLength(5);
     for (const legendText of [
@@ -596,7 +634,7 @@ describe("F7 report PDF renderer", () => {
     expect(html).toContain("thead { display: table-header-group; }");
     expect(html).toContain(".engineering-inputs, .engineering-inputs table { break-inside: auto; }");
     expect(html).toContain(".engineering-inputs tr { break-inside: avoid; }");
-    expect(html).toContain(".factor-measured-comparison-metric { display: flex; flex-direction: column;");
+    expect(html).toContain(".factor-measured-comparison-metric { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr));");
     expect(html).toContain(".result-dimension-chain .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }");
     expect(html).toContain(".result-dimension-chain .dimension-chain-page { break-inside: avoid; page-break-inside: avoid;");
     expect(dimensionChainPages.length).toBeGreaterThan(5);
@@ -707,10 +745,12 @@ describe("F7 report PDF renderer", () => {
     const metricRule = html.match(/\.factor-measured-comparison-metric\s*\{([^}]*)\}/)?.[1];
 
     expect(metricRule).toBeDefined();
-    expect(metricRule).toMatch(/display:\s*flex/);
+    expect(metricRule).toMatch(/display:\s*grid/);
+    expect(metricRule).toMatch(/grid-template-rows:\s*repeat\(2, minmax\(0, 1fr\)\)/);
     expect(metricRule).toMatch(/white-space:\s*normal/);
     expect(metricRule).toMatch(/overflow-wrap:\s*anywhere/);
     expect(metricRule).not.toMatch(/white-space:\s*nowrap/);
+    expect(html).toContain(".factor-measured-comparison-metric-three-row { grid-template-rows: repeat(3, minmax(0, 1fr)); }");
   });
 
   it("renders em dashes for absent optional measured metrics without inventing values", () => {
@@ -728,14 +768,19 @@ describe("F7 report PDF renderer", () => {
     const factorSetupTable = html.match(/<table data-factor-setup>[\s\S]*?<\/table>/)?.[0];
 
     expect(factorSetupTable).toBeDefined();
-    expect(factorSetupTable?.match(/<strong>Actual<\/strong><span class="actual-value-severity-normal">—<\/span>/g)).toHaveLength(3);
-    expect(factorSetupTable?.match(/<strong>Δ<\/strong>—/g)).toHaveLength(3);
+    expect(factorSetupTable?.match(/<strong>Actual<\/strong>(?:<span>±3σ )?<span class="actual-value-severity-normal">—<\/span>(?:<\/span>)?/g)).toHaveLength(3);
+    expect(factorSetupTable?.match(/<strong>Δ<\/strong><span>—<\/span>/g)).toHaveLength(3);
+    expect(factorSetupTable?.match(/<span class="comparison-percentage-group actual-value-severity-normal">\(N\/A\)<\/span>/g)).toHaveLength(3);
   });
 
-  it("places Setup Mean on the Web middle label row with a styled badge and fixed precision", () => {
+  it("keeps the three PDF label rows legible at half-page width", () => {
     const html = renderF7ReportPdfHtml(reportFixture());
 
-    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="82" y2="278"\/><g class="monte-carlo-reference-badge setup-mean-badge" transform="translate\([^)]* 31\)"><rect [^>]*\/><text class="monte-carlo-reference-label"[^>]*>Setup Mean -0\.0500<\/text><\/g><\/g>/);
+    expect(html).toContain('viewBox="0 0 800 350"');
+    expect(html).toMatch(/data-reference-row="top"[^>]*>[\s\S]*?transform="translate\([^)]* 4\)"/);
+    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="106" y2="300"\/><g class="monte-carlo-reference-badge setup-mean-badge" transform="translate\([^)]* 38\)"><rect [^>]*height="22"[^>]*\/><text class="monte-carlo-reference-label"[^>]*>Setup Mean -0\.05<\/text><\/g><\/g>/);
+    expect(html).toMatch(/data-reference-row="bottom"[^>]*>[\s\S]*?transform="translate\([^)]* 72\)"/);
+    expect(html).toMatch(/\.monte-carlo-reference-label\s*\{[^}]*font:\s*700 13px/);
   });
 
   it("keeps every governed reference and finite geometry for extreme finite report values", () => {
@@ -913,7 +958,7 @@ describe("F7 report PDF renderer", () => {
 
     expect(setupPath).toBeDefined();
     expect(setupPath?.split(" ")).toHaveLength(21);
-    expect(setupPath).toContain("L418.00,82.00");
+    expect(setupPath).toContain("L418.00,106.00");
   });
 
   it("uses a controlled reason instead of fabricated F0 values when analysis is unavailable", () => {

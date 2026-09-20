@@ -63,11 +63,11 @@ function yPosition(value: number): number {
 }
 
 function formatTick(value: number): string {
-  return value.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+  return value.toLocaleString("en-US", { maximumFractionDigits: 3, useGrouping: false });
 }
 
 function formatReference(value: number): string {
-  return value.toFixed(4);
+  return value.toLocaleString("en-US", { maximumFractionDigits: 3, useGrouping: false });
 }
 
 function referenceText(reference: { readonly id: MonteCarloReferenceId; readonly value: number }): string {

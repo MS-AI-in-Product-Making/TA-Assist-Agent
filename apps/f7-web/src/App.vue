@@ -988,6 +988,7 @@ async function openReport(): Promise<void> {
           v-if="activeMeasurementStage === 'monteCarlo' && simulationReady"
           :session="store.session.value"
           :busy="store.isBusy.value"
+          :running="store.busyAction.value === 'runMonteCarlo'"
           :report-pdf-busy="reportPdfBusy"
           :report-pdf-error="reportPdfError"
           @download-report-pdf="downloadReportPdf"

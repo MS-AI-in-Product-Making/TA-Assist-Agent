@@ -11,6 +11,7 @@ import MonteCarloHistogram from "./MonteCarloHistogram.vue";
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
+  readonly running: boolean;
   readonly reportPdfBusy: boolean;
   readonly reportPdfError: string;
 }>();
@@ -62,8 +63,8 @@ const decision = computed(() => {
   };
 });
 
-function format(value: number): string {
-  return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+function format(value: number, maximumFractionDigits = 3): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits });
 }
 
 function formatDecisionValue(value: number): string {
@@ -97,6 +98,30 @@ function formatDecisionValue(value: number): string {
     </header>
     <p v-if="reportPdfError" class="report-pdf-error" role="alert">{{ reportPdfError }}</p>
 
+    <div
+      v-if="running"
+      class="automatic-analysis-feedback monte-carlo-progress"
+      data-monte-carlo-progress
+      role="status"
+      aria-live="polite"
+    >
+      <p>
+        <LoaderCircle class="automatic-analysis-spinner" :size="14" aria-hidden="true" />
+        <span>Running Monte Carlo simulation</span>
+        <span
+          class="monte-carlo-progress-dots"
+          data-monte-carlo-progress-dots
+          aria-hidden="true"
+        ><span>.</span><span>.</span><span>.</span></span>
+      </p>
+      <div
+        class="automatic-analysis-bar"
+        data-monte-carlo-progress-bar
+        role="progressbar"
+        aria-label="Monte Carlo simulation in progress"
+      ><span /></div>
+    </div>
+
     <section v-if="result" class="monte-carlo-results" data-monte-carlo-results aria-live="polite">
       <div
         class="monte-carlo-decision"
@@ -122,7 +147,7 @@ function formatDecisionValue(value: number): string {
       <dl class="monte-carlo-kpis" aria-label="Key simulation results">
         <div data-monte-carlo-kpi>
           <dt>Yield</dt>
-          <dd>{{ format(result.yield * 100) }}%</dd>
+          <dd>{{ format(result.yield * 100, 2) }}%</dd>
           <span>{{ format(result.ppm) }} PPM out of spec</span>
         </div>
         <div data-monte-carlo-kpi>

@@ -66,11 +66,11 @@ const comparisonRows = computed(() => {
       percentageDenominator: upperSpecLimit - lowerSpecLimit,
       maximumFractionDigits: 3,
     },
-    { key: "standardDeviation", label: "Standard deviation", metric: "oneSigma", setup: comparison.setup.standardDeviation, actual: comparison.monteCarlo.standardDeviation, maximumFractionDigits: 4 },
-    { key: "cp", label: "Cp", metric: "cp", setup: comparison.setup.cp, actual: comparison.monteCarlo.cp, maximumFractionDigits: 4 },
-    { key: "cpk", label: "Cpk", metric: "cpk", setup: comparison.setup.cpk, actual: comparison.monteCarlo.cpk, maximumFractionDigits: 4 },
-    { key: "cpl", label: "CPL", metric: "cpk", setup: setupCpl, actual: capability.status === "available" ? capability.lowerCpk : undefined, maximumFractionDigits: 4 },
-    { key: "cpu", label: "CPU", metric: "cpk", setup: setupCpu, actual: capability.status === "available" ? capability.upperCpk : undefined, maximumFractionDigits: 4 },
+    { key: "standardDeviation", label: "Standard deviation", metric: "oneSigma", setup: comparison.setup.standardDeviation, actual: comparison.monteCarlo.standardDeviation, maximumFractionDigits: 3 },
+    { key: "cp", label: "Cp", metric: "cp", setup: comparison.setup.cp, actual: comparison.monteCarlo.cp, maximumFractionDigits: 3 },
+    { key: "cpk", label: "Cpk", metric: "cpk", setup: comparison.setup.cpk, actual: comparison.monteCarlo.cpk, maximumFractionDigits: 3 },
+    { key: "cpl", label: "CPL", metric: "cpk", setup: setupCpl, actual: capability.status === "available" ? capability.lowerCpk : undefined, maximumFractionDigits: 3 },
+    { key: "cpu", label: "CPU", metric: "cpk", setup: setupCpu, actual: capability.status === "available" ? capability.upperCpk : undefined, maximumFractionDigits: 3 },
     { key: "lowerDpm", label: "Lower DPM", metric: "tolerance", setup: setupLowerDpm, actual: normalModel.status === "available" ? normalModel.lowerTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
     { key: "upperDpm", label: "Upper DPM", metric: "tolerance", setup: setupUpperDpm, actual: normalModel.status === "available" ? normalModel.upperTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
     { key: "totalDpm", label: "Total DPM", metric: "tolerance", setup: setupTotalDpm, actual: normalModel.status === "available" ? normalModel.totalDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
@@ -119,7 +119,7 @@ const recommendedActions = computed(() => {
         metrics: [
           ["Current σ", formatNumber(standardDeviation)],
           ["Maximum σ", formatNumber(maximumStandardDeviation)],
-          ["Required reduction", `${formatNumber(standardDeviationReduction)} (${reductionPercentage.toFixed(2)}%)`],
+          ["Required reduction", `${formatNumber(standardDeviationReduction)} (${formatNumber(reductionPercentage, 2)}%)`],
         ],
       };
     }
@@ -144,7 +144,7 @@ function formatScientific(value: number): string {
     .replace("e+", "e");
 }
 
-function formatNumber(value: number, maximumFractionDigits = 6): string {
+function formatNumber(value: number, maximumFractionDigits = 3): string {
   if (value !== 0 && Number.isFinite(value) && Number(value.toFixed(maximumFractionDigits)) === 0) {
     return formatScientific(value);
   }
@@ -160,7 +160,7 @@ function formatPercent(value: number, maximumFractionDigits = 2): string {
   return `${formatNumber(percentage, maximumFractionDigits)}%`;
 }
 
-function formatSigned(value: number, maximumFractionDigits = 6): string {
+function formatSigned(value: number, maximumFractionDigits = 3): string {
   if (value === 0) return "0";
   return `${value > 0 ? "+" : ""}${formatNumber(value, maximumFractionDigits)}`;
 }
@@ -170,7 +170,7 @@ function formatDifference(
   setup: number,
   format?: "dpm" | "percent",
   denominator = Math.abs(setup),
-  maximumFractionDigits = 6,
+  maximumFractionDigits = 3,
 ): string {
   const percentageDenominator = Math.abs(denominator);
   const relative = percentageDenominator === 0
@@ -182,7 +182,7 @@ function formatDifference(
   return `${formattedDelta} (${relative})`;
 }
 
-function formatMetricValue(value: number | undefined, format?: "dpm" | "percent", maximumFractionDigits = 6): string {
+function formatMetricValue(value: number | undefined, format?: "dpm" | "percent", maximumFractionDigits = 3): string {
   if (value === undefined) return "—";
   if (format === "dpm") return `${Math.round(value).toLocaleString("en-US")} DPM`;
   if (format === "percent") return formatPercent(value, maximumFractionDigits);

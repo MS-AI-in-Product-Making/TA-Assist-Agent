@@ -116,7 +116,7 @@ function chartCoordinate(value: number): string {
 
 function formatChartTick(value: number): string {
   if (!Number.isFinite(value)) return "N/A";
-  const formatted = value.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+  const formatted = value.toLocaleString("en-US", { maximumFractionDigits: 3, useGrouping: false });
   return formatted.length <= 16 ? formatted : formatScientific(value, 3);
 }
 
@@ -152,11 +152,6 @@ export function factorSetupDensityStyle(factorCount: number): string {
   return dimensions
     .map(([name, value, unit, minimum]) => `--factor-setup-${name}:${formatDensityNumber(Math.max(minimum, value * scale))}${unit};`)
     .join("");
-}
-
-function list(items: readonly string[], emptyMessage = "None identified."): string {
-  if (items.length === 0) return `<p class="muted">${escapeHtml(emptyMessage)}</p>`;
-  return `<ol>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
 }
 
 function unorderedList(items: readonly string[], emptyMessage: string): string {
@@ -390,17 +385,22 @@ function factorMeasuredMetric(
   options: { readonly tolerance?: boolean; readonly normalizationFallback?: number } = {},
 ): string {
   const actual = measured?.actual;
-  const actualText = actual === undefined ? "—" : `${options.tolerance ? "±3σ " : ""}${formatNumber(actual)}`;
-  const deltaText = measured === undefined ? "—" : formatComparisonDelta(measured.delta, setup);
+  const formatValue = metric === "cpk"
+    ? (value: number): string => formatNumber(value, 2)
+    : (value: number): string => formatNumber(value);
+  const actualText = actual === undefined ? "—" : formatValue(actual);
   const severity = factorActualSeverity(metric, setup, actual, options.normalizationFallback);
-  return `<div class="factor-measured-comparison-metric" data-measured-comparison-metric="${metric}"><span><strong>Actual</strong><span class="actual-value-severity-${severity}">${actualText}</span></span><span><strong>Δ</strong>${deltaText}</span></div>`;
+  const actualContent = options.tolerance
+    ? `<span>±3σ <span class="actual-value-severity-${severity}">${actualText}</span></span>`
+    : `<span class="actual-value-severity-${severity}">${actualText}</span>`;
+  const deltaText = measured === undefined ? "—" : formatSigned(measured.delta, metric === "cpk" ? 2 : 4);
+  const percentageText = measured === undefined ? "N/A" : formatComparisonDeltaPercentage(measured.delta, setup);
+  return `<div class="factor-measured-comparison-metric factor-measured-comparison-metric-three-row" data-measured-comparison-metric="${metric}"><span><strong>Actual</strong>${actualContent}</span><span><strong>Δ</strong><span>${deltaText}</span></span><span class="comparison-delta-percentage"><strong></strong><span class="comparison-percentage-group actual-value-severity-${severity}">(${percentageText})</span></span></div>`;
 }
 
-function formatComparisonDelta(delta: number, setup: number): string {
-  const relative = setup === 0
-    ? "N/A"
-    : `${delta > 0 ? "+" : ""}${(delta / Math.abs(setup) * 100).toFixed(2)}%`;
-  return `${formatSigned(delta, 4)} (${relative})`;
+function formatComparisonDeltaPercentage(delta: number, setup: number): string {
+  if (setup === 0) return "N/A";
+  return `${delta > 0 ? "+" : ""}${(delta / Math.abs(setup) * 100).toFixed(2)}%`;
 }
 
 function renderFactorSetup(report: F7ReportProjection): string {
@@ -410,19 +410,24 @@ function renderFactorSetup(report: F7ReportProjection): string {
   const rows = report.factors.map((factor, index) => {
     const comparison = factor.measurementComparison;
     const rowspan = comparison === undefined ? "" : ` rowspan="2" class="factor-setup-rowspan-cell"`;
-    const sourceMode = `<span class="status-stack"><span>${sourceModeLabel(factor.sourceMode)}</span>${factor.sourceMode === "MEASURED" && factor.measurementWarning ? `<span class="status-label status-warning">Warning</span>` : ""}</span>`;
+    const sourceModeClass = factor.sourceMode === "MEASURED"
+      ? factor.measurementWarning ? "source-mode-warning" : "source-mode-ready"
+      : "source-mode-baseline";
+    const sourceMode = `<span class="status-stack"><span class="source-mode-badge ${sourceModeClass}">${sourceModeLabel(factor.sourceMode)}</span>${factor.sourceMode === "MEASURED" && factor.measurementWarning ? `<span class="status-label status-warning">Warning</span>` : ""}</span>`;
     const readiness = factor.readiness === "ready" ? "Ready" : "Pending";
-    const setupRow = `<tr data-factor-setup-row="${escapeHtml(factor.factorId)}"><td${rowspan}>${index + 1}</td><td${rowspan}>${escapeHtml(factor.factorName)}</td><td${rowspan}>${factor.partNumber === undefined ? "Missing" : escapeHtml(factor.partNumber)}</td><td${rowspan}>${factor.dimId === undefined ? "Missing" : escapeHtml(factor.dimId)}</td><td${rowspan}>${formatNumber(factor.designNominal)}</td><td${rowspan}>${formatNumber(factor.upperTolerance)}</td><td${rowspan}>${formatNumber(factor.lowerTolerance)}</td><td${rowspan}>${formatNumber(factor.longTermSafetyFactor)}</td><td${rowspan}>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td><td>${formatNumber(factor.setupMean)}</td><td>± ${formatNumber(factor.setupTolerance)}</td><td>${formatNumber(factor.setupOneSigma)}</td><td>${formatNumber(factor.setupCpk)}</td><td>${formatNumber(factor.percentContributionToSigma * 100)}%</td><td${rowspan}>${sourceMode}</td><td${rowspan}>${formatNumber(factor.sampleCount, 0)}</td><td${rowspan}><span class="status-label status-${factor.readiness}">${readiness}</span></td></tr>`;
+    const nominalClass = factor.designNominal < 0 ? "nominal-negative" : factor.designNominal > 0 ? "nominal-positive" : "nominal-neutral";
+    const setupRow = `<tr data-factor-setup-row="${escapeHtml(factor.factorId)}"><td${rowspan}>${index + 1}</td><td${rowspan}>${escapeHtml(factor.factorName)}</td><td${rowspan}>${factor.partNumber === undefined ? "Missing" : escapeHtml(factor.partNumber)}</td><td${rowspan}>${factor.dimId === undefined ? "Missing" : escapeHtml(factor.dimId)}</td><td${rowspan}><span class="${nominalClass}">${formatNumber(factor.designNominal)}</span></td><td${rowspan}>${formatNumber(factor.upperTolerance)}</td><td${rowspan}>${formatNumber(factor.lowerTolerance)}</td><td${rowspan}>${formatNumber(factor.longTermSafetyFactor)}</td><td${rowspan}>${formatNumber(factor.sigmaLevel)}</td><td>${escapeHtml(factor.setupDistribution)}</td><td>${formatNumber(factor.setupMean)}</td><td>± ${formatNumber(factor.setupTolerance)}</td><td>${formatNumber(factor.setupOneSigma)}</td><td>${formatNumber(factor.setupCpk, 2)}</td><td>${formatNumber(factor.percentContributionToSigma * 100, 2)}%</td><td${rowspan}>${sourceMode}</td><td${rowspan}>${formatNumber(factor.sampleCount, 0)}</td><td${rowspan}><span class="status-label status-${factor.readiness}">${readiness}</span></td></tr>`;
     if (comparison === undefined) return setupRow;
     const actualContribution = actualContributions.get(factor.factorId);
+    const contributionSeverity = factorActualSeverity("contribution", factor.percentContributionToSigma, actualContribution);
     const contributionMetric = actualContribution === undefined
       ? ""
-      : `<div class="factor-measured-comparison-metric" data-measured-comparison-metric="contribution"><span><strong>Actual</strong><span class="actual-value-severity-${factorActualSeverity("contribution", factor.percentContributionToSigma, actualContribution)}">${(actualContribution * 100).toFixed(2)}%</span></span><span><strong>Δ</strong>${formatSigned((actualContribution - factor.percentContributionToSigma) * 100, 2)}%</span></div>`;
+      : `<div class="factor-measured-comparison-metric" data-measured-comparison-metric="contribution"><span><strong>Actual</strong><span class="actual-value-severity-${contributionSeverity}">${(actualContribution * 100).toFixed(2)}%</span></span><span><strong>Δ</strong><span class="actual-value-severity-${contributionSeverity}">${formatSigned((actualContribution - factor.percentContributionToSigma) * 100, 2)}%</span></span></div>`;
     const distributionSeverity = factor.approvedDistribution.toLowerCase() === factor.setupDistribution.toLowerCase() ? "normal" : "critical";
     const measuredRow = `<tr class="factor-measured-comparison-row" data-factor-measured-comparison="${escapeHtml(factor.factorId)}"><td><div class="factor-measured-comparison-metric" data-measured-comparison-metric="distribution"><span><strong>Actual</strong><span class="actual-value-severity-${distributionSeverity}">${escapeHtml(factor.approvedDistribution.charAt(0).toUpperCase() + factor.approvedDistribution.slice(1))}</span></span></div></td><td>${factorMeasuredMetric("mean", factor.setupMean, comparison.mean, { normalizationFallback: factor.setupTolerance })}</td><td>${factorMeasuredMetric("tolerance", factor.setupTolerance, comparison.tolerance, { tolerance: true })}</td><td>${factorMeasuredMetric("oneSigma", factor.setupOneSigma, comparison.oneSigma)}</td><td>${factorMeasuredMetric("cpk", factor.setupCpk, comparison.cpk)}</td><td>${contributionMetric}</td></tr>`;
     return `${setupRow}${measuredRow}`;
   }).join("");
-  return `<table data-factor-setup><thead><tr><th>Item</th><th>Factor</th><th>Part Number</th><th>DIM ID</th><th>Design Nominal</th><th>+Tol</th><th>-Tol</th><th>Long-term Safety Factor</th><th>Sigma Level</th><th>Distribution</th><th>Mean</th><th>Tolerance</th><th>1σ</th><th>Cpk</th><th>% Cont. to σ</th><th>Source Mode</th><th>Sample Count</th><th>Readiness</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table data-factor-setup><thead><tr><th>Item</th><th>Factor</th><th>Part Number</th><th>DIM ID</th><th>Design Nominal</th><th>+ Tol</th><th>- Tol</th><th>Long Term/Safety Factor</th><th>σ Level</th><th>Distribution</th><th>Mean</th><th>Tolerance</th><th>1σ</th><th>Cpk</th><th>% Cont. to σ</th><th>Source Mode</th><th>Sample Count</th><th>Readiness</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderEngineeringInputs(report: F7ReportProjection): string {
@@ -571,8 +576,8 @@ function renderDistributionChart(report: F7ReportProjection): string {
   );
   const plotLeft = 56;
   const plotRight = 780;
-  const plotTop = 82;
-  const plotBottom = 278;
+  const plotTop = 106;
+  const plotBottom = 300;
   const scaledRange = finiteDifference(domainMaximum / 2, domainMinimum / 2);
   const plotWidth = finiteDifference(plotRight, plotLeft);
   const x = (value: number): number => scaledRange > 0
@@ -591,8 +596,8 @@ function renderDistributionChart(report: F7ReportProjection): string {
     row: topReferenceIds.has(reference.id) ? "top" as const : "bottom" as const,
   }));
   const setupMeanX = setup === undefined ? undefined : x(setup.mean);
-  const referenceText = (label: string, value: number): string => `${label} ${value.toFixed(4)}`;
-  const referenceLabelWidth = (text: string): number => Math.min(160, Math.max(64, text.length * 6.3 + 12));
+  const referenceText = (label: string, value: number): string => `${label} ${formatChartTick(value)}`;
+  const referenceLabelWidth = (text: string): number => Math.min(190, Math.max(76, text.length * 8.2 + 16));
   const referenceLabelX = (referenceX: number, text: string): number => {
     const halfWidth = referenceLabelWidth(text) / 2;
     return Math.min(plotRight - halfWidth, Math.max(plotLeft + halfWidth, referenceX));
@@ -635,8 +640,8 @@ function renderDistributionChart(report: F7ReportProjection): string {
   const referenceBadge = (id: string, label: string, value: number, referenceX: number, rowY: number, extraClass = ""): string => {
     const text = referenceText(label, value);
     const width = referenceLabelWidth(text);
-    const textLength = text.length * 6.3 + 12 > 160 ? ` textLength="148" lengthAdjust="spacingAndGlyphs"` : "";
-    return `<g class="monte-carlo-reference-badge${extraClass}" transform="translate(${coordinate(labelPositions.get(id) ?? referenceX)} ${rowY})"><rect x="${coordinate(-width / 2)}" y="0" width="${coordinate(width)}" height="18" rx="2"/><text class="monte-carlo-reference-label" x="0" y="13" text-anchor="middle"${textLength}>${text}</text></g>`;
+    const textLength = text.length * 8.2 + 16 > 190 ? ` textLength="174" lengthAdjust="spacingAndGlyphs"` : "";
+    return `<g class="monte-carlo-reference-badge${extraClass}" transform="translate(${coordinate(labelPositions.get(id) ?? referenceX)} ${rowY})"><rect x="${coordinate(-width / 2)}" y="0" width="${coordinate(width)}" height="22" rx="2"/><text class="monte-carlo-reference-label" x="0" y="16" text-anchor="middle"${textLength}>${text}</text></g>`;
   };
   const yTicks = Array.from({ length: 5 }, (_, index) => maximumCount * index / 4);
   const xTicks = Array.from({ length: 5 }, (_, index) => {
@@ -648,11 +653,11 @@ function renderDistributionChart(report: F7ReportProjection): string {
   });
 
   return `<figure class="distribution-figure">
-    <svg data-monte-carlo-chart viewBox="0 0 800 320" role="img" aria-labelledby="monte-carlo-chart-title monte-carlo-chart-description">
+    <svg data-monte-carlo-chart viewBox="0 0 800 350" role="img" aria-labelledby="monte-carlo-chart-title monte-carlo-chart-description">
       <title id="monte-carlo-chart-title">Monte Carlo output distribution</title>
       <desc id="monte-carlo-chart-description">Observed simulation histogram with fitted distributions and governed references.</desc>
       ${yTicks.map((tick) => `<g><line class="plot-grid" x1="56" x2="780" y1="${coordinate(y(tick))}" y2="${coordinate(y(tick))}"/><text class="plot-tick-label" x="50" y="${coordinate(y(tick) + 4)}" text-anchor="end">${formatChartTick(tick)}</text></g>`).join("")}
-      <line class="plot-axis" x1="56" x2="780" y1="278" y2="278"/><line class="plot-axis" x1="56" x2="56" y1="82" y2="278"/>
+      <line class="plot-axis" x1="56" x2="780" y1="300" y2="300"/><line class="plot-axis" x1="56" x2="56" y1="106" y2="300"/>
       ${bins.map((bin) => {
         const specificationStatus = bin.maximum < simulation.lowerSpecLimit || bin.minimum > simulation.upperSpecLimit
           ? "out-of-spec"
@@ -663,11 +668,11 @@ function renderDistributionChart(report: F7ReportProjection): string {
         const barY = y(bin.observedCount);
         return `<rect data-monte-carlo-bin data-specification-status="${specificationStatus}" class="monte-carlo-bin monte-carlo-bin-${specificationStatus}" x="${coordinate(barX)}" y="${coordinate(barY)}" width="${coordinate(Math.max(1, finiteDifference(finiteDifference(x(bin.maximum), barX), 1)))}" height="${coordinate(Math.max(0, finiteDifference(plotBottom, barY)))}"/>`;
       }).join("")}
-      ${positionedReferences.map((reference) => `<g data-monte-carlo-reference data-reference-id="${reference.id}" data-reference-row="${reference.row}"><line class="monte-carlo-reference reference-${reference.id}" x1="${coordinate(reference.x)}" x2="${coordinate(reference.x)}" y1="82" y2="278"/>${referenceBadge(reference.id, reference.label, reference.value, reference.x, reference.row === "top" ? 5 : 57)}</g>`).join("")}
+      ${positionedReferences.map((reference) => `<g data-monte-carlo-reference data-reference-id="${reference.id}" data-reference-row="${reference.row}"><line class="monte-carlo-reference reference-${reference.id}" x1="${coordinate(reference.x)}" x2="${coordinate(reference.x)}" y1="106" y2="300"/>${referenceBadge(reference.id, reference.label, reference.value, reference.x, reference.row === "top" ? 4 : 72)}</g>`).join("")}
       <path data-monte-carlo-fit class="monte-carlo-fit" d="${curvePath(expectedCounts)}"/>
-      ${setup === undefined ? "" : `<path data-factor-setup-fit class="factor-setup-fit" d="${setupSamples.map((sample, index) => `${index === 0 ? "M" : "L"}${coordinate(x(sample.value))},${coordinate(y(sample.expectedCount))}`).join(" ")}"/><g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="${coordinate(setupMeanX ?? 0)}" x2="${coordinate(setupMeanX ?? 0)}" y1="82" y2="278"/>${referenceBadge("setup-mean", "Setup Mean", setup.mean, setupMeanX ?? 0, 31, " setup-mean-badge")}</g>`}
-      ${xTicks.map((tick) => `<g><line class="plot-tick" x1="${coordinate(x(tick))}" x2="${coordinate(x(tick))}" y1="278" y2="283"/><text class="plot-tick-label" x="${coordinate(x(tick))}" y="298" text-anchor="middle">${formatChartTick(tick)}</text></g>`).join("")}
-      <text class="plot-axis-label" x="418" y="316" text-anchor="middle">Simulated system output</text><text class="plot-axis-label" transform="translate(15 175) rotate(-90)" text-anchor="middle">Count</text>
+      ${setup === undefined ? "" : `<path data-factor-setup-fit class="factor-setup-fit" d="${setupSamples.map((sample, index) => `${index === 0 ? "M" : "L"}${coordinate(x(sample.value))},${coordinate(y(sample.expectedCount))}`).join(" ")}"/><g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="${coordinate(setupMeanX ?? 0)}" x2="${coordinate(setupMeanX ?? 0)}" y1="106" y2="300"/>${referenceBadge("setup-mean", "Setup Mean", setup.mean, setupMeanX ?? 0, 38, " setup-mean-badge")}</g>`}
+      ${xTicks.map((tick) => `<g><line class="plot-tick" x1="${coordinate(x(tick))}" x2="${coordinate(x(tick))}" y1="300" y2="305"/><text class="plot-tick-label" x="${coordinate(x(tick))}" y="320" text-anchor="middle">${formatChartTick(tick)}</text></g>`).join("")}
+      <text class="plot-axis-label" x="418" y="342" text-anchor="middle">Simulated system output</text><text class="plot-axis-label" transform="translate(15 203) rotate(-90)" text-anchor="middle">Count</text>
     </svg>
     <figcaption class="monte-carlo-legend" data-monte-carlo-legend><span><i class="monte-carlo-in-spec-legend"></i>In specification</span><span><i class="monte-carlo-out-of-spec-legend"></i>Out of specification</span><span><i class="monte-carlo-mixed-legend"></i>Crosses specification limit</span><span><i class="monte-carlo-fit-legend"></i>Moment-fitted Normal expected count</span>${setup === undefined ? "" : `<span><i class="factor-setup-fit-legend"></i>Factor Setup TA Normal expected count</span><span><i class="factor-setup-mean-legend"></i>Setup Mean</span>`}<span><i class="monte-carlo-spec-legend"></i>Specification limits</span><span><i class="monte-carlo-center-target-legend"></i>Target (specification midpoint)</span><span><i class="monte-carlo-target-legend"></i>Target sigma range</span></figcaption>
   </figure>`;
@@ -763,11 +768,11 @@ function reportComparisonRows(report: F7ReportProjection): readonly PdfCompariso
   const normalModel = report.simulation.normalModel;
   return [
     { key: "mean", label: "Mean", metric: "mean", setup: comparison.setup.mean, actual: comparison.monteCarlo.mean, percentageDenominator: upperSpecLimit - lowerSpecLimit, maximumFractionDigits: 3 },
-    { key: "standardDeviation", label: "Standard deviation", metric: "oneSigma", setup: comparison.setup.standardDeviation, actual: comparison.monteCarlo.standardDeviation, maximumFractionDigits: 4 },
-    { key: "cp", label: "Cp", metric: "cp", setup: comparison.setup.cp, actual: comparison.monteCarlo.cp, maximumFractionDigits: 4 },
-    { key: "cpk", label: "Cpk", metric: "cpk", setup: comparison.setup.cpk, actual: comparison.monteCarlo.cpk, maximumFractionDigits: 4 },
-    { key: "cpl", label: "CPL", metric: "cpk", setup: setupCpl, actual: capability.status === "available" ? capability.lowerCpk : undefined, maximumFractionDigits: 4 },
-    { key: "cpu", label: "CPU", metric: "cpk", setup: setupCpu, actual: capability.status === "available" ? capability.upperCpk : undefined, maximumFractionDigits: 4 },
+    { key: "standardDeviation", label: "Standard deviation", metric: "oneSigma", setup: comparison.setup.standardDeviation, actual: comparison.monteCarlo.standardDeviation, maximumFractionDigits: 3 },
+    { key: "cp", label: "Cp", metric: "cp", setup: comparison.setup.cp, actual: comparison.monteCarlo.cp, maximumFractionDigits: 3 },
+    { key: "cpk", label: "Cpk", metric: "cpk", setup: comparison.setup.cpk, actual: comparison.monteCarlo.cpk, maximumFractionDigits: 3 },
+    { key: "cpl", label: "CPL", metric: "cpk", setup: setupCpl, actual: capability.status === "available" ? capability.lowerCpk : undefined, maximumFractionDigits: 3 },
+    { key: "cpu", label: "CPU", metric: "cpk", setup: setupCpu, actual: capability.status === "available" ? capability.upperCpk : undefined, maximumFractionDigits: 3 },
     { key: "lowerDpm", label: "Lower DPM", metric: "tolerance", setup: setupLowerDpm, actual: normalModel.status === "available" ? normalModel.lowerTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
     { key: "upperDpm", label: "Upper DPM", metric: "tolerance", setup: setupUpperDpm, actual: normalModel.status === "available" ? normalModel.upperTailDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
     { key: "totalDpm", label: "Total DPM", metric: "tolerance", setup: setupTotalDpm, actual: normalModel.status === "available" ? normalModel.totalDpm : undefined, format: "dpm", maximumFractionDigits: 0 },
@@ -797,15 +802,15 @@ function renderRecommendedActions(report: F7ReportProjection): string {
   const actions = analysis.optimizationDirections.map((title) => {
     const normalized = title.toLowerCase();
     const metrics = normalized.includes("center") && normalized.includes("mean")
-      ? [["Current mean", formatNumber(mean)], ["Target mean", formatNumber(targetMean)], ["Required adjustment", formatSigned(meanAdjustment)]]
+      ? [["Current mean", formatNumber(mean, 3)], ["Target mean", formatNumber(targetMean, 3)], ["Required adjustment", formatSigned(meanAdjustment, 3)]]
       : normalized.includes("variation")
-        ? [["Current σ", formatNumber(standardDeviation)], ["Maximum σ", formatNumber(maximumStandardDeviation)], ["Required reduction", `${formatNumber(standardDeviationReduction)} (${reductionPercentage.toFixed(2)}%)`]]
+        ? [["Current σ", formatNumber(standardDeviation, 3)], ["Maximum σ", formatNumber(maximumStandardDeviation, 3)], ["Required reduction", `${formatNumber(standardDeviationReduction, 3)} (${formatNumber(reductionPercentage, 2)}%)`]]
         : normalized.includes("specification")
-          ? [["Current limits", `${formatNumber(lowerSpecLimit)} / ${formatNumber(upperSpecLimit)}`], ["Required LSL", `≤ ${formatNumber(mean - requiredHalfRange)}`], ["Required USL", `≥ ${formatNumber(mean + requiredHalfRange)}`]]
+          ? [["Current limits", `${formatNumber(lowerSpecLimit, 3)} / ${formatNumber(upperSpecLimit, 3)}`], ["Required LSL", `≤ ${formatNumber(mean - requiredHalfRange, 3)}`], ["Required USL", `≥ ${formatNumber(mean + requiredHalfRange, 3)}`]]
           : [];
     return `<li><strong>${escapeHtml(title)}</strong>${metrics.length === 0 ? "" : `<dl class="action-metrics">${metrics.map(([label, value]) => `<div><dt>${escapeHtml(label!)}</dt><dd>${escapeHtml(value!)}</dd></div>`).join("")}</dl>`}</li>`;
   }).join("");
-  return `<div class="embedded-actions"><h4>Recommended Actions</h4><ol class="action-list">${actions}</ol></div>`;
+  return `<div class="embedded-actions" data-report-recommended-actions><h4>Recommended Actions</h4><ol class="action-list">${actions}</ol></div>`;
 }
 
 function renderResultVisuals(report: F7ReportProjection, dimensionChainVisual?: DimensionChainVisual): string {
@@ -820,12 +825,23 @@ function renderResultVisuals(report: F7ReportProjection, dimensionChainVisual?: 
     ? `<section class="dimension-chain-audit page-break" data-reconstructed-dimension-chain-audit><p class="eyebrow">Governed traceability</p><h2>Dimension Chain audit appendix</h2>${reconstructedDimensionChain}</section>`
     : "";
   const content = assessmentContent(report);
-  const decisionDetail = report.simulation.capability.status === "available"
-    ? `Cpk ${formatNumber(report.simulation.capability.cpk)} ${report.simulation.capability.targetStatus === "meets_target" ? "meets" : "is below"} the ${formatNumber(report.simulation.capability.targetCpk)} target.`
-    : "Variation evidence is insufficient for a capability decision.";
+  const setupComparison = report.analysis?.status === "available" ? report.analysis.comparison : undefined;
+  const meanWarning = setupComparison !== undefined
+    && Math.abs(setupComparison.monteCarlo.mean - setupComparison.setup.mean) >= 0.5e-4;
+  const decisionDetails = report.simulation.capability.status === "available"
+    ? [
+      ...(meanWarning && setupComparison !== undefined
+        ? [`Mean ${formatNumber(setupComparison.monteCarlo.mean, 3)} differs from Factor Setup Mean ${formatNumber(setupComparison.setup.mean, 3)}.`]
+        : []),
+      `Cpk ${formatNumber(report.simulation.capability.cpk, 3)} ${report.simulation.capability.targetStatus === "meets_target" ? "meets" : "is below"} the target Cpk ${formatNumber(report.simulation.capability.targetCpk, 3)}.`,
+    ]
+    : ["Variation evidence is insufficient for a capability decision."];
+  const decisionStatus = report.simulation.capability.status === "available"
+    ? report.simulation.capability.targetStatus === "below_target" || meanWarning ? "below-target" : "meets-target"
+    : "not-evaluable";
   return `<section class="result-visuals" data-result-visuals>
-    <section class="monte-carlo-decision"><div><p class="eyebrow">Governed result</p><h2>${content.title === "Meets target" ? "Target met" : content.title === "Below target" ? "Attention required" : content.title}</h2></div><p>${decisionDetail}</p></section>
-    <dl class="monte-carlo-kpis"><div><dt>Yield</dt><dd>${formatNumber(report.simulation.yield * 100, 6)}%</dd><span>${formatNumber(report.simulation.ppm, 0)} PPM out of spec</span></div><div><dt>Cpk</dt><dd>${report.summary.cpk === undefined ? "—" : formatNumber(report.summary.cpk, 6)}</dd><span>Target ${formatNumber(report.summary.targetCpk, 6)}</span></div><div><dt>Mean</dt><dd>${formatNumber(report.simulation.mean, 6)}</dd><span>Simulated output center</span></div><div><dt>Std Dev</dt><dd>${formatNumber(report.simulation.standardDeviation, 6)}</dd><span>Measured output spread</span></div></dl>
+    <section class="monte-carlo-decision decision-${decisionStatus}"><div><p class="eyebrow">Governed result</p><h2>${content.title === "Meets target" ? "Target met" : content.title === "Below target" ? "Attention required" : content.title}</h2></div><div class="monte-carlo-decision-details">${decisionDetails.map((detail) => `<p>${detail}</p>`).join("")}</div></section>
+    <dl class="monte-carlo-kpis"><div><dt>Yield</dt><dd>${formatNumber(report.simulation.yield * 100, 2)}%</dd><span>${formatNumber(report.simulation.ppm, 0)} PPM out of spec</span></div><div><dt>Cpk</dt><dd>${report.summary.cpk === undefined ? "—" : formatNumber(report.summary.cpk, 3)}</dd><span>Target ${formatNumber(report.summary.targetCpk, 3)}</span></div><div><dt>Mean</dt><dd>${formatNumber(report.simulation.mean, 3)}</dd><span>Simulated output center</span></div><div><dt>Std Dev</dt><dd>${formatNumber(report.simulation.standardDeviation, 3)}</dd><span>Measured output spread</span></div></dl>
     <div class="distribution-section-heading"><div><p class="eyebrow">Output distribution</p><h2>Monte Carlo response</h2></div><span>${report.simulation.iterations.toLocaleString("en-US")} iterations</span></div>
     <div class="result-visual-grid">
       <section class="result-visual-panel result-dimension-chain" data-result-dimension-chain><h2>Dimension Chain</h2>${dimensionChain}</section>
@@ -943,10 +959,15 @@ function renderFactorDistributionAppendix(entries: readonly F7FactorDistribution
 export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChainVisual?: DimensionChainVisual, factorDistributionAppendix?: readonly F7FactorDistributionAppendixEntry[]): string {
   const statusClass = report.assessment === "MEETS_TARGET" ? "pass" : report.assessment === "BELOW_TARGET" ? "review" : "not-evaluable";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>F7 Monte Carlo Governed Result Report</title><style>
-    .monte-carlo-decision, .executive-summary { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8mm; align-items: center; padding: 8px 12px; border-left: 5px solid #0b7a75; background: #f3f6f7; }
+    .monte-carlo-decision, .executive-summary { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8mm; align-items: center; padding: 8px 12px; border: 1px solid #d8dde3; border-left: 5px solid #b46318; background: #fff8ed; }
+    .monte-carlo-decision.decision-below-target { border-left-color: #b46318; background: #fff8ed; }
+    .monte-carlo-decision.decision-meets-target { border-left-color: #0b7a75; background: #edf7f4; }
+    .monte-carlo-decision.decision-not-evaluable { border-left-color: #6f7b83; background: #f4f5f6; }
     .monte-carlo-decision h2, .executive-summary h3 { margin: 2px 0; }
+    .monte-carlo-decision-details { display: grid; gap: 3px; }
+    .monte-carlo-decision-details p { margin: 0; color: #364b5a; }
     .monte-carlo-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4mm; margin: 6mm 0; }
-    .monte-carlo-kpis > div { padding: 8px 10px; border-top: 3px solid #3f6f82; background: #f5f7f8; }
+    .monte-carlo-kpis > div { padding: 8px 10px; border: 1px solid #d8dde3; border-top: 3px solid #c65d1e; background: #fff; }
     .monte-carlo-kpis dt, .monte-carlo-kpis span { color: #5c6b76; font-size: 7.5pt; }
     .monte-carlo-kpis dt { font-weight: 700; text-transform: uppercase; }
     .monte-carlo-kpis dd { margin: 2px 0; color: #102a43; font-size: 15pt; font-weight: 700; }
@@ -1007,7 +1028,7 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     [data-monte-carlo-chart] .factor-setup-mean line { stroke: var(--monte-carlo-reference-color); stroke-width: 2; stroke-dasharray: none; }
     [data-monte-carlo-chart] .monte-carlo-reference-badge rect { fill: #f7f9fb; stroke: var(--monte-carlo-reference-color); stroke-width: 1; }
     [data-monte-carlo-chart] .factor-setup-mean .setup-mean-badge rect { fill: #fff7ef; stroke: #e1a678; }
-    [data-monte-carlo-chart] .monte-carlo-reference-label { fill: var(--monte-carlo-reference-color); font: 700 10px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+    [data-monte-carlo-chart] .monte-carlo-reference-label { fill: var(--monte-carlo-reference-color); font: 700 13px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
     .monte-carlo-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 6px; color: #4e606c; font-size: 7.5pt; }
     .monte-carlo-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
     .monte-carlo-legend i { display: inline-block; width: 15px; height: 3px; background: #182b3a; }
@@ -1033,15 +1054,24 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     .metric-value { text-align: right; font-variant-numeric: tabular-nums; }
     .status-label { display: inline-block; width: fit-content; padding: 1px 4px; border-radius: 2px; font-size: 7.2pt; font-weight: 700; white-space: nowrap; }
     .factor-setup-wrapper .metric-label, .factor-setup-wrapper .status-label { font-size: var(--factor-setup-label-font-size); }
-    .status-ready { background: #dcefe9; color: #076b4b; } .status-pending { background: #edf0f3; color: #52616b; } .status-warning { background: #fff0c2; color: #7a4b00; }
+    .status-ready { background: #0d7a69; color: #fff; } .status-pending { background: #5f6d80; color: #fff; } .status-warning { background: #fff0c2; color: #7a4b00; }
+    .source-mode-badge { display: inline-block; padding: 2px 6px; border: 1px solid #5f6d80; border-radius: 4px; background: #fff; color: #16253d; white-space: nowrap; }
+    .source-mode-ready { border-color: #0d7a69; background: #f0f7f5; color: #0d6a5c; }
+    .source-mode-warning { border-color: #b54708; background: #fff8e8; color: #694600; }
+    .source-mode-baseline { border-color: #5f6d80; background: #fff; color: #16253d; }
+    .nominal-negative { color: #1f62a6; font-weight: 700; }
+    .nominal-positive { color: #168447; font-weight: 700; }
+    .nominal-neutral { color: #182b3a; font-weight: 700; }
     .factor-setup-wrapper [data-factor-setup] { table-layout: fixed; margin: var(--factor-setup-table-margin) 0; font-size: min(5.2pt, var(--factor-setup-table-font-size)); line-height: 1.12; }
     [data-factor-setup] th, [data-factor-setup] td { padding: 2px 3px; text-align: center; vertical-align: middle; }
     [data-factor-setup] th:nth-child(2) { width: 11%; } [data-factor-setup] th:nth-child(3) { width: 8%; }
     [data-factor-setup] th:nth-child(n+10):nth-child(-n+15) { width: 7%; } [data-factor-setup] th:nth-child(16) { width: 8%; }
     .factor-setup-rowspan-cell { background: #fafbfc; }
     .factor-measured-comparison-row td { background: #f3f6f7; }
-    .factor-measured-comparison-metric { display: flex; flex-direction: column; gap: 1px; white-space: normal; overflow-wrap: anywhere; text-align: left; }
-    .factor-measured-comparison-metric > span { display: flex; justify-content: space-between; gap: 3px; }
+    .factor-measured-comparison-metric { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 1px; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+    .factor-measured-comparison-metric-three-row { grid-template-rows: repeat(3, minmax(0, 1fr)); }
+    .factor-measured-comparison-metric > span { display: grid; grid-template-columns: minmax(18px, auto) minmax(0, 1fr); gap: 3px; align-items: center; font-variant-numeric: tabular-nums; }
+    .comparison-percentage-group { white-space: nowrap; }
     .factor-measured-comparison-metric strong { font-size: var(--factor-setup-label-font-size); }
     .result-dimension-chain .dimension-chain-pages { break-inside: auto; page-break-inside: auto; }
     .result-dimension-chain .dimension-chain-page { break-inside: avoid; page-break-inside: avoid; margin: 7px 0 10px; }

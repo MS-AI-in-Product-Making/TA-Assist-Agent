@@ -666,6 +666,15 @@ describe("createF7ReportProjection", () => {
         factorManifest: snapshot.monteCarloResult?.factorManifest,
       },
     });
+
+    expect(report.analysis?.status).toBe("available");
+    if (report.analysis?.status !== "available") throw new Error("Expected available report analysis");
+    for (const interpretation of report.analysis.interpretations) {
+      expect(interpretation).not.toMatch(/\d+\.\d{4,}/);
+      for (const percentage of interpretation.matchAll(/[+-]?\d+(?:\.\d+)?%/g)) {
+        expect(percentage[0]).not.toMatch(/\.\d{3,}%/);
+      }
+    }
     expect(report.factors).toEqual([
       {
         factorId: BASELINE_FACTOR_ID,

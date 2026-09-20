@@ -3080,7 +3080,9 @@ describe("F7 workbench shell", () => {
     expect(decisionDetails).toHaveLength(2);
     expect(decisionDetails[0]!.text()).toBe("Mean -0.02 differs from Factor Setup Mean -0.57.");
     expect(decisionDetails[1]!.text()).toBe("Cpk 0.583 is below the target Cpk 1.333.");
-    expect(wrapper.findAll("[data-monte-carlo-kpi]")).toHaveLength(4);
+    const kpis = wrapper.findAll("[data-monte-carlo-kpi]");
+    expect(kpis).toHaveLength(4);
+    expect(kpis.map((kpi) => kpi.get("dd").text())).toEqual(["95%", "0.583", "-0.02", "0.04"]);
     const restartFromStepOne = wrapper.findAll(".workflow-steps li")[0]!.get("[data-workflow-restart]");
     expect(restartFromStepOne.attributes("disabled")).toBeUndefined();
     expect(restartFromStepOne.text()).toBe("Change selection");
@@ -3109,12 +3111,12 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='out-of-spec']").length).toBeGreaterThan(0);
     expect(wrapper.find("[data-monte-carlo-fit]").exists()).toBe(true);
     expect(wrapper.findAll("[data-monte-carlo-reference]")).toHaveLength(6);
-    expect(wrapper.get("[data-reference-id='lower-spec-limit']").text()).toContain("LSL -0.1500");
-    expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target -0.0500");
-    expect(wrapper.get("[data-reference-id='upper-spec-limit']").text()).toContain("USL 0.0500");
-    expect(wrapper.get("[data-reference-id='minus-target-sigma']").text()).toContain("−4σ -0.1800");
-    expect(wrapper.get("[data-reference-id='mean']").text()).toContain("Mean -0.0200");
-    expect(wrapper.get("[data-reference-id='plus-target-sigma']").text()).toContain("+4σ 0.1400");
+    expect(wrapper.get("[data-reference-id='lower-spec-limit']").text()).toContain("LSL -0.15");
+    expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target -0.05");
+    expect(wrapper.get("[data-reference-id='upper-spec-limit']").text()).toContain("USL 0.05");
+    expect(wrapper.get("[data-reference-id='minus-target-sigma']").text()).toContain("−4σ -0.18");
+    expect(wrapper.get("[data-reference-id='mean']").text()).toContain("Mean -0.02");
+    expect(wrapper.get("[data-reference-id='plus-target-sigma']").text()).toContain("+4σ 0.14");
     expect(wrapper.findAll("[data-reference-row='top']")).toHaveLength(3);
     expect(wrapper.findAll("[data-reference-row='middle']")).toHaveLength(1);
     expect(wrapper.findAll("[data-reference-row='bottom']")).toHaveLength(3);
@@ -3133,7 +3135,11 @@ describe("F7 workbench shell", () => {
     }
     expect(wrapper.get("[data-factor-setup-fit]").attributes("d")).not.toBe("");
     expect(wrapper.get(".monte-carlo-histogram").attributes("aria-label")).toContain("Factor Setup");
-    expect(wrapper.get("[data-factor-setup-mean]").text()).toContain("Setup Mean -0.5700");
+    expect(wrapper.get("[data-factor-setup-mean]").text()).toContain("Setup Mean -0.57");
+    for (const label of wrapper.findAll(".plot-tick-label, .monte-carlo-reference-label")) {
+      expect(label.text()).not.toMatch(/\d+\.\d{4,}/);
+      expect(label.text()).not.toMatch(/\.\d*0$/);
+    }
     expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Factor Setup TA Normal expected count");
     expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Setup Mean");
     expect(STYLE_SOURCE).toMatch(/\[data-reference-id="lower-spec-limit"\]\s*\{[^}]*--monte-carlo-reference-color:\s*var\(--danger\)/s);
@@ -3147,7 +3153,38 @@ describe("F7 workbench shell", () => {
     expect(STYLE_SOURCE).toMatch(/\.monte-carlo-reference-label\s*\{[^}]*fill:\s*var\(--monte-carlo-reference-color/s);
   });
 
-  it("8e.1) fails closed when Factor Setup evidence is unavailable", async () => {
+  it("8e.1) shows an animated waiting indicator while Monte Carlo is running", async () => {
+    const approved = approvedDistributionSnapshot();
+    const completed = completedMonteCarloSnapshot();
+    let finishSimulation!: (snapshot: F7SessionSnapshot) => void;
+    const pendingSimulation = new Promise<F7SessionSnapshot>((resolve) => {
+      finishSimulation = resolve;
+    });
+    const client = createMockClient(approved, { importWorkbook: approved });
+    client.runMonteCarlo = vi.fn(async () => await pendingSimulation);
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    await wrapper.get("[data-workflow-open-monte-carlo]").trigger("click");
+    await vi.waitFor(() => expect(client.runMonteCarlo).toHaveBeenCalledTimes(1));
+
+    const feedback = wrapper.get("[data-monte-carlo-progress]");
+    expect(feedback.attributes("role")).toBe("status");
+    expect(feedback.text()).toContain("Running Monte Carlo simulation");
+    const dots = feedback.get("[data-monte-carlo-progress-dots]");
+    expect(dots.attributes("aria-hidden")).toBe("true");
+    expect(dots.findAll("span")).toHaveLength(3);
+    expect(STYLE_SOURCE).toMatch(/\.monte-carlo-progress-dots span\s*\{[^}]*animation:\s*monte-carlo-progress-dot/s);
+    expect(feedback.find(".automatic-analysis-spinner").exists()).toBe(true);
+    expect(feedback.find("[data-monte-carlo-progress-bar]").attributes("role")).toBe("progressbar");
+
+    finishSimulation(completed);
+    await vi.waitFor(() => expect(wrapper.find("[data-monte-carlo-progress]").exists()).toBe(false));
+    expect(wrapper.find("[data-monte-carlo-results]").exists()).toBe(true);
+  });
+
+  it("8e.2) fails closed when Factor Setup evidence is unavailable", async () => {
     const completed = completedMonteCarloSnapshot();
     const unavailable = createSnapshot({
       ...completed,
