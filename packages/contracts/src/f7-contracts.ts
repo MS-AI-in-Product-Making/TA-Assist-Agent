@@ -265,7 +265,7 @@ export const f7FactorCandidateSchema = z
     sourceRow: z.number().int().positive(),
     sourceCells: sourceCellsSchema,
     factorCandidateId: sha256LowerSchema,
-    factorName: z.string().min(1),
+    factorName: z.string().min(1).max(300),
     partNumber: factorTraceabilitySchema.optional(),
     dimId: factorTraceabilitySchema.optional(),
     userAdded: z.literal(true).optional(),
@@ -291,7 +291,7 @@ export const f7FactorCandidateSchema = z
 export const f7FactorSetupConfirmationSchema = z
   .object({
     factorCandidateId: sha256LowerSchema,
-    factorName: z.string().trim().min(1).optional(),
+    factorName: z.string().trim().min(1).max(300).optional(),
     partNumber: factorTraceabilitySchema.nullable().optional(),
     dimId: factorTraceabilitySchema.nullable().optional(),
     userAdded: z.literal(true).optional(),
@@ -325,7 +325,7 @@ export const f7FactorEvidenceSchema = z
     sourceCells: sourceCellsSchema,
     factorCandidateId: sha256LowerSchema,
     factorId: sha256LowerSchema,
-    factorName: z.string().min(1),
+    factorName: z.string().min(1).max(300),
     partNumber: factorTraceabilitySchema.optional(),
     dimId: factorTraceabilitySchema.optional(),
     userAdded: z.literal(true).optional(),
@@ -2180,7 +2180,7 @@ const f7ReportMeasurementComparisonSchema = z
 export const f7ReportFactorSchema = z
   .object({
     factorId: sha256LowerSchema,
-    factorName: z.string().min(1),
+    factorName: z.string().min(1).max(300),
     partNumber: factorTraceabilitySchema.optional(),
     dimId: factorTraceabilitySchema.optional(),
     loopCoefficient: f7LoopCoefficientSchema,
@@ -2493,7 +2493,7 @@ export const f7ReportProjectionSchema = z
     workbook: f7ReportWorkbookSchema,
     summary: f7ReportSummarySchema,
     simulation: f7MonteCarloResultSchema,
-    factors: z.array(f7ReportFactorSchema).min(1),
+    factors: z.array(f7ReportFactorSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     analysis: f7ReportAnalysisSchema.optional(),
     evidence: f7ReportEvidenceSchema,
     markdown: z.string().min(1),
@@ -2990,7 +2990,7 @@ export const f7SessionSnapshotSchema = z
       url: z.string().regex(/^\/f7\/session\/[^/]+\/dimension-chain-image$/),
     }).strict().optional(),
     systemSpecification: worksheetSystemSpecificationSchema.optional(),
-    factors: z.array(f7SessionFactorStateSchema),
+    factors: z.array(f7SessionFactorStateSchema).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     monteCarloResult: f7MonteCarloResultSchema.optional(),
   })
   .strict()
@@ -3098,7 +3098,7 @@ export const f7WorksheetConfirmRouteRequestSchema = z
 export const f7FactorConfirmRouteRequestSchema = z
   .object({
     sessionId: z.string().min(1),
-    confirmations: z.array(f7FactorSetupConfirmationSchema).min(1),
+    confirmations: z.array(f7FactorSetupConfirmationSchema).min(1).max(F7_MEASUREMENT_IMPORT_MAX_FACTORS),
     systemSpecification: z.object({
       lowerSpecLimit: finiteNumberSchema,
       upperSpecLimit: finiteNumberSchema,

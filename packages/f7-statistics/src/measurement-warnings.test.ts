@@ -30,6 +30,21 @@ describe("factor measurement warning evidence", () => {
     expect(hasFactorMeasurementWarning(evidence)).toBe(true);
   });
 
+  it("does not warn at an LSL of zero but warns when the LSL is negative", () => {
+    const observations = [{ value: 0.4, disposition: "included" as const }];
+
+    expect(evaluateFactorMeasurementWarnings({
+      lowerSpecLimit: 0,
+      upperSpecLimit: 0.8,
+      observations,
+    }).crossesZero).toBe(false);
+    expect(evaluateFactorMeasurementWarnings({
+      lowerSpecLimit: -0.1,
+      upperSpecLimit: 0.8,
+      observations,
+    }).crossesZero).toBe(true);
+  });
+
   it("reports candidate outliers from included observations", () => {
     const values = [...Array.from({ length: 30 }, (_, index) => 10 + (index % 5) * 0.1), 100];
     const evidence = evaluateFactorMeasurementWarnings({

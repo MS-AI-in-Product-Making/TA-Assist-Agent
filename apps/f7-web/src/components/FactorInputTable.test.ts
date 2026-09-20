@@ -274,6 +274,13 @@ function tableColumnStart(cell: Element): number {
 }
 
 describe("FactorInputTable engineering evidence event", () => {
+  it("guards every Factor insertion path at the 100-Factor limit", () => {
+    expect(COMPONENT_SOURCE).toContain("if (activeFactors.value.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS) return;");
+    expect(COMPONENT_SOURCE).toMatch(/data-add-factor[\s\S]*?:disabled="busy \|\| activeFactors\.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS"[\s\S]*?@click="addFactor\(\)"/);
+    expect(COMPONENT_SOURCE).toMatch(/factor-delete-control[\s\S]*?:disabled="busy"[\s\S]*?@click="removeFactor\(factor\)"/);
+    expect(COMPONENT_SOURCE).toMatch(/factor-insert-control[\s\S]*?:disabled="busy \|\| activeFactors\.length >= F7_MEASUREMENT_IMPORT_MAX_FACTORS"[\s\S]*?@click="addFactor\(factor\)"/);
+  });
+
   it("keeps every response-summary footer row aligned with all factor headers", () => {
     const wrapper = mountWithFastStubs({
       session: createSession({ status: "measurement_entry" }),

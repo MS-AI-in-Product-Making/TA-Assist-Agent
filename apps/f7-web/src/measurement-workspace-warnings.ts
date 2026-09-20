@@ -30,7 +30,7 @@ export function measurementWorkspaceWarnings(factor: MeasurementWarningFactor): 
   });
   const warnings: string[] = [];
   if (warningEvidence.crossesZero) {
-    warnings.push("Factor specification crosses zero; physical LSL is 0.");
+    warnings.push("Factor LSL is below 0. Review Factor Setup.");
   }
 
   const outOfSpecCount = warningEvidence.outOfSpecCount;

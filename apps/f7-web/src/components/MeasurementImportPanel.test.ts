@@ -101,7 +101,7 @@ function createPreview(status: "ready" | "blocked"): F7MeasurementImportPreviewR
         reason: "sample_validation_failure" as const,
         factorId: HASH_C,
         factorName: "Cross-zero factor",
-        displayMessage: "Factor specification crosses zero; physical LSL is 0.",
+        displayMessage: "Factor LSL is below 0. Review Factor Setup.",
       },
     ],
     validation: {
@@ -188,7 +188,7 @@ function createPreview(status: "ready" | "blocked"): F7MeasurementImportPreviewR
 }
 
 describe("MeasurementImportPanel", () => {
-  it("connects the exclusive input mode group to the Monte Carlo next action", async () => {
+  it("does not duplicate the input mode or Monte Carlo workflow controls", () => {
     const wrapper = mount(MeasurementImportPanel, {
       props: {
         session: createSession(),
@@ -196,27 +196,17 @@ describe("MeasurementImportPanel", () => {
         busy: false,
         action: null,
         mode: "import",
+        openRequest: 0,
         successMessage: null,
-        monteCarloReady: false,
       },
     });
 
-    expect(wrapper.get("[data-measurement-process-flow]").exists()).toBe(true);
-    expect(wrapper.get("[data-measurement-entry-choice]").findAll("[role='tab']")).toHaveLength(2);
-    expect(wrapper.findAll("[role='tab'][aria-selected='true']")).toHaveLength(1);
-    expect(wrapper.get("[data-measurement-flow-arrow]").attributes("aria-hidden")).toBe("true");
-
-    const nextAction = wrapper.get("[data-open-monte-carlo-flow]");
-    expect(nextAction.text()).toContain("Monte Carlo Calculation & Report");
-    expect(nextAction.attributes("disabled")).toBeDefined();
-
-    await wrapper.setProps({ monteCarloReady: true });
-    expect(nextAction.attributes("disabled")).toBeUndefined();
-    await nextAction.trigger("click");
-    expect(wrapper.emitted("open-monte-carlo")).toEqual([[]]);
+    expect(wrapper.find("[data-measurement-process-flow]").exists()).toBe(false);
+    expect(wrapper.find("[role='tab']").exists()).toBe(false);
+    expect(wrapper.find("[data-open-monte-carlo-flow]").exists()).toBe(false);
   });
 
-  it("renders keyboard-accessible segmented tabs, moves focus, and hides the import surface in individual mode", async () => {
+  it("opens the import dialog when Workflow requests Excel Bulk Import", async () => {
     const wrapper = mount(MeasurementImportPanel, {
       attachTo: document.body,
       props: {
@@ -225,25 +215,18 @@ describe("MeasurementImportPanel", () => {
         busy: false,
         action: null,
         mode: "import",
+        openRequest: 0,
         successMessage: null,
       },
     });
 
-    const tabs = wrapper.findAll("[role='tab']");
-    expect(tabs).toHaveLength(2);
     expect(wrapper.get("section").attributes("aria-label")).toBe("Measurement input");
-    expect(wrapper.get("[data-measurement-entry-mode-label]").text()).toBe("Measurement Input Mode");
-    expect(tabs.map((tab) => tab.text())).toEqual(["Excel Bulk Import", "Web Factor Entry"]);
-    expect(wrapper.get("[role='tab'][aria-selected='true']").text()).toBe("Excel Bulk Import");
-
-    await wrapper.get("[role='tab'][aria-selected='true']").trigger("keydown", { key: "ArrowRight" });
-
-    expect(wrapper.emitted("mode-change")).toEqual([[("individual")]]);
-    expect(document.activeElement).toBe(tabs[1]!.element);
+    expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false);
+    await wrapper.setProps({ openRequest: 1 });
+    expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(true);
 
     await wrapper.setProps({ mode: "individual" });
     expect(wrapper.find("[data-measurement-import-surface]").exists()).toBe(false);
-    expect(tabs[1]!.attributes("aria-controls")).toBe("measurement-entry-individual-panel");
     wrapper.unmount();
   });
 
@@ -261,7 +244,7 @@ describe("MeasurementImportPanel", () => {
     });
 
     expect(wrapper.find("[data-measurement-import-dialog]").exists()).toBe(false);
-    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await wrapper.setProps({ openRequest: 1 });
 
     const dialog = wrapper.get("[data-measurement-import-dialog]");
     expect(dialog.attributes("aria-modal")).toBe("true");
@@ -294,7 +277,7 @@ describe("MeasurementImportPanel", () => {
       },
     });
 
-    await wrapper.get("[role='tab'][aria-selected='true']").trigger("click");
+    await wrapper.setProps({ openRequest: 1 });
     await wrapper.setProps({ busy: true, action: "previewMeasurementImport" });
 
     expect(wrapper.text()).toContain("demo.xlsx");
@@ -335,7 +318,7 @@ describe("MeasurementImportPanel", () => {
     expect(wrapper.text()).toContain("RATIONAL_SUBGROUP");
     expect(wrapper.text()).toContain("ready");
     expect(wrapper.text()).toContain("blocked");
-    expect(wrapper.get("[data-import-warning='cross-zero']").text()).toContain("LSL 0");
+    expect(wrapper.get("[data-import-warning='cross-zero']").text()).toContain("LSL is below 0");
     expect(wrapper.get("[data-import-warning='cross-zero']").classes()).toContain("is-danger");
     expect(wrapper.text()).toContain("Measurements!C12");
     expect(wrapper.text()).toContain("Measurements must be nonnegative.");

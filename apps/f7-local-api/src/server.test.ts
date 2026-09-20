@@ -800,6 +800,8 @@ describe("f7 local server", () => {
     expect(parsed.factors.every((factor) => factor.sampleCount === 20 && factor.status === "ready")).toBe(true);
     expect(parsed.factors.flatMap((factor) => factor.warnings)
       .some((warning) => warning.displayMessage.includes("governed dataset validation"))).toBe(false);
+    expect(parsed.factors.flatMap((factor) => factor.warnings)
+      .some((warning) => warning.displayMessage.includes("LSL is below 0"))).toBe(false);
     expect(JSON.stringify(preview.json)).not.toContain('"authority"');
     expect(parsed.factors.every((factor) => !("dataset" in factor))).toBe(true);
     expect(JSON.stringify(preview.json)).not.toContain('"dataset"');
