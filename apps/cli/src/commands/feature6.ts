@@ -318,7 +318,7 @@ export async function runFeature6WorkflowCommand(
       env: feature6RunnerEnvironment(),
       encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
-      timeout: 120_000,
+      timeout: 240_000,
       killSignal: "SIGTERM",
     });
     return formatFeature6Output(JSON.parse(stdout));

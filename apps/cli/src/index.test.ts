@@ -473,7 +473,7 @@ rmSync(bundle.root, { recursive: true, force: true });
     await rm(fixtureRoot, { recursive: true, force: true });
     await rm(outputRoot, { recursive: true, force: true });
   }
-}, 120_000);
+}, 240_000);
 
 it("requires exactly four Feature 6 artifact flags and at least one worksheet", async () => {
   const runFeature6 = async () => "unused";

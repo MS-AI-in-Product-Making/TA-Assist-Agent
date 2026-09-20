@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   calculateF6Scenario,
@@ -32,6 +33,7 @@ import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
+const execFileAsync = promisify(execFile);
 const cleanup = [];
 const deprecatedF6ReportArtifactName = ["Feature6", "Composed", "Report"].join("-");
 const HASH = "a".repeat(64);
@@ -943,7 +945,7 @@ describe("F6 real artifact full flow", () => {
     }
   });
 
-  it("runs the package workflow:f6 script and succeeds for multimodal v4 with governed artifacts", () => {
+  it("runs the package workflow:f6 script and succeeds for multimodal v4 with governed artifacts", async () => {
     const bundle = createRealBundle();
     const evidence = installF6V2Evidence(bundle);
     const outputRoot = path.join(bundle.publishRoot, "f6-runs", "package-script");
@@ -963,7 +965,7 @@ describe("F6 real artifact full flow", () => {
     const npmExecutable = process.platform === "win32" ? process.execPath : "npm";
     const npmPrefixArgs = process.platform === "win32" ? [process.env.npm_execpath] : [];
 
-    const child = spawnSync(npmExecutable, [
+    const child = await execFileAsync(npmExecutable, [
       ...npmPrefixArgs,
       "run",
       "--silent",
@@ -988,10 +990,9 @@ describe("F6 real artifact full flow", () => {
         npm_config_update_notifier: "false",
       },
       shell: false,
+      maxBuffer: 4 * 1024 * 1024,
     });
 
-    expect(child.error).toBeUndefined();
-    expect(child.status, child.stderr || child.stdout).toBe(0);
     expect(child.stderr).toBe("");
     const result = JSON.parse(child.stdout);
     expect(result).toMatchObject({ status: "completed" });
@@ -1019,7 +1020,7 @@ describe("F6 real artifact full flow", () => {
     expect(readFileSync(bundle.paths.f5).equals(f5Bytes)).toBe(true);
     expect(fixtureFileSha256(bundle.paths.f5)).toBe(f5Sha256);
     expect(readFileSync(modelPath)).not.toEqual(originalModel);
-  });
+  }, 240_000);
 
   it("rejects an out-of-bound core root when layout validation is bypassed", () => {
     const bundle = createRealBundle();

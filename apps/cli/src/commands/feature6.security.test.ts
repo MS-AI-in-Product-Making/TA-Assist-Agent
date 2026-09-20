@@ -184,7 +184,7 @@ describe("Feature 6 CLI trust boundary", () => {
       "--image-observations", "evidence/images.json",
     ]);
     expect(calls[0].options).toMatchObject({
-      cwd: trustedRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, killSignal: "SIGTERM",
+      cwd: trustedRoot, timeout: 240_000, maxBuffer: 4 * 1024 * 1024, killSignal: "SIGTERM",
     });
     expect(calls[0].options.env).toMatchObject({
       PATH: "trusted-path",

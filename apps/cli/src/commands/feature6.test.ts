@@ -164,7 +164,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       cwd: setup.rootDir,
     });
     expect(execFileState.options).toContainEqual(expect.objectContaining({
-      timeout: 120_000,
+      timeout: 240_000,
       maxBuffer: 4 * 1024 * 1024,
       killSignal: "SIGTERM",
     }));
