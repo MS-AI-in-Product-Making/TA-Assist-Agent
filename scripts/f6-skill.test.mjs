@@ -15,8 +15,8 @@ const allowedCommands = [
   "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
-  "npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact>",
-  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
+  "npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact> --analysis-root <analysis-root>",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> --analysis-root <analysis-root> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -126,6 +126,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Pass the workflow-locked language tag with `--language <locked-language-tag>`");
     expect(internal).toContain("preserve the interaction language as audit metadata without using it to select report prose");
     expect(internal).toContain("Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`");
+    expect(internal).toContain("pass the explicit validated `--analysis-root <analysis-root>`");
     expect(internal).toContain("Generate every report-bound model interpretation field in English");
     expect(internal).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(internal).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
@@ -181,6 +182,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("one Raw Data vs Optimized Data page for every under-target worksheet");
     expect(internal).toContain("Current writes use `f6-artifact-set-v4`");
     expect(internal).toContain("`f6-artifact-set-v3` with fixed `Feature6-Report.md` and `Feature6-Report.pdf` remains historical read-only compatibility");
+    expect(internal).toContain("never create new `f6-runs`, `f6-model-responses`, `f6-model-interpretations`");
     expect(internal).not.toContain("reduce_top_contributor_20");
     expect(internal).not.toContain("Confirm analysis context");
     expect(internal).not.toContain("Confirm optimization targets");
@@ -336,7 +338,7 @@ describe("Design Optimization skill contract", () => {
     ]);
     for (const marker of [
       "f5-multimodal-artifact-v3",
-      "test/demo-output/f6-model-interpretations/<workbook-content-hash>/<system-generated-uuid>/Feature6-Model-Interpretation.json",
+      "<analysis-root>/06 - F6 Design Optimization/evidence/model-interpretation/Feature6-Model-Interpretation.json",
       "f5MultimodalArtifactV3Schema",
       "validateF5MultimodalArtifactV3",
       "each selected worksheet independently",
@@ -350,6 +352,8 @@ describe("Design Optimization skill contract", () => {
       "must be reviewed by ME",
       "hallucinations, label mismatches, or omissions",
       "--model-interpretation <artifact-path>",
+      "--analysis-root <analysis-root>",
+      "evidence/model-response/Feature6-Model-Response.json",
     ]) expect(internal).toContain(marker);
     expect(internal).not.toContain("f6-model-interpretation-v2");
     expect(internal).toContain("Never edit, overwrite, append to, repair, or reuse a model interpretation target");

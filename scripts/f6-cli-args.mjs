@@ -44,6 +44,7 @@ export function parseF6CliArgs(args = []) {
   const selectedWorksheetNames = [];
   let languageTag;
   let analysisRequestContext;
+  let analysisRoot;
   const optionalPaths = Object.fromEntries(Object.values(OPTIONAL_PATHS).map((field) => [field, undefined]));
   for (let index = 4; index < args.length; index += 1) {
     const option = args[index];
@@ -61,6 +62,9 @@ export function parseF6CliArgs(args = []) {
     } else if (option === "--language") {
       if (languageTag !== undefined) throw new Error("Feature 6 --language option is duplicated.");
       languageTag = value.trim();
+    } else if (option === "--analysis-root") {
+      if (analysisRoot !== undefined) throw new Error("Feature 6 --analysis-root option is duplicated.");
+      analysisRoot = value;
     } else if (OPTIONAL_PATHS[option] !== undefined) {
       const field = OPTIONAL_PATHS[option];
       if (optionalPaths[field] !== undefined) throw new Error(`Feature 6 ${option} option is duplicated.`);
@@ -90,6 +94,7 @@ export function parseF6CliArgs(args = []) {
     f4ArtifactRoot,
     f5ArtifactRoot,
     analysisRequestContext,
+    analysisRoot,
     selectedWorksheetNames,
     interactionLanguage: {
       languageTag,

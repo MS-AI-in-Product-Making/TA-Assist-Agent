@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -83,6 +84,7 @@ function normalizeDependencies(overrides = {}) {
     realpath: overrides.realpath ?? realpathSync,
     lstat: overrides.lstat ?? lstatSync,
     stat: overrides.stat ?? statSync,
+    readdir: overrides.readdir ?? readdirSync,
     open: overrides.open ?? openSync,
     writeFd: overrides.writeFd ?? ((descriptor, content) => writeFileSync(descriptor, content, "utf8")),
     close: overrides.close ?? closeSync,
@@ -127,11 +129,54 @@ function normalizeF6Result(result) {
   };
 }
 
+function outputPaths(layout) {
+  return {
+    manifestPath: path.join(layout.runRoot, layout.manifestName),
+  };
+}
+
+function failedManifest(layout, reasonCode) {
+  return {
+    contractVersion: "v1",
+    artifactSetVersion: layout.artifactSetVersion,
+    featureId: "F6",
+    status: "failed",
+    runId: layout.runId,
+    reasonCode,
+    artifacts: {},
+  };
+}
+
+function atomicWrite(filePath, content, dependencies) {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  let descriptor;
+  let committed = false;
+  try {
+    descriptor = dependencies.open(temporaryPath, "wx");
+    dependencies.writeFd(descriptor, content);
+    dependencies.close(descriptor);
+    descriptor = undefined;
+    dependencies.rename(temporaryPath, filePath);
+    committed = true;
+  } finally {
+    if (descriptor !== undefined) dependencies.close(descriptor);
+    if (!committed) dependencies.rm(temporaryPath, { force: true });
+  }
+}
+
+function reasonCodeForWorkspacePreflight(error) {
+  if (error?.code !== "prerequisite_not_ready") return undefined;
+  return error?.details?.reasonCode === "workspace_stage_not_empty"
+    || error?.reasonCode === "workspace_stage_not_empty"
+    ? "workspace_stage_not_empty"
+    : "workspace_stage_not_empty";
+}
+
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
+  const layout = dependencies.resolveLayout(parsed, options);
   try {
-    const layout = dependencies.resolveLayout(parsed, options);
     return normalizeF6Result(runF6Optimization({
       f2ArtifactRoot: parsed.f2ArtifactRoot,
       f3ArtifactRoot: parsed.f3ArtifactRoot,
@@ -190,10 +235,17 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       rename: dependencies.rename,
       beforeRename: dependencies.beforeRename,
       afterRename: dependencies.afterRename,
+      readdir: dependencies.readdir,
       rmdir: dependencies.rmdir,
       rm: dependencies.rm,
     }));
   } catch (error) {
+    const workspaceReasonCode = reasonCodeForWorkspacePreflight(error);
+    if (workspaceReasonCode !== undefined && layout.allowExistingRunRoot) {
+      const { manifestPath } = outputPaths(layout);
+      atomicWrite(manifestPath, json(failedManifest(layout, workspaceReasonCode)), dependencies);
+      return { status: "failed", reasonCode: workspaceReasonCode, outputDirectory: layout.runRoot, manifestPath };
+    }
     const typed = error?.code === undefined ? createTypedError({
       code: "internal_error",
       summary: "Feature 6 workflow execution failed.",

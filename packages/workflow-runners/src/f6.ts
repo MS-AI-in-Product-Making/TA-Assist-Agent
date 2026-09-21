@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
   closeSync,
+  readdirSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -32,6 +33,25 @@ interface F6Layout {
   readonly finalReportPdfName: string;
   readonly runSummaryJsonName: string;
   readonly manifestName: string;
+  readonly allowExistingRunRoot?: boolean;
+  readonly workspaceBoundary?: {
+    readonly publishRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+    readonly runRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+  };
 }
 
 export interface F6Dependencies {
@@ -51,6 +71,7 @@ export interface F6Dependencies {
   readonly rename?: typeof renameSync;
   readonly beforeRename?: (info: { temporaryPath: string; filePath: string }) => void;
   readonly afterRename?: (info: { temporaryPath: string; filePath: string }) => void;
+  readonly readdir?: typeof readdirSync;
   readonly rmdir?: typeof rmdirSync;
   readonly rm?: typeof rmSync;
 }
@@ -82,6 +103,66 @@ function sameIdentity(expected: { dev: unknown; ino: unknown }, actual: { dev: u
   return !identityAvailable(expected) || (identityAvailable(actual) && expected.dev === actual.dev && expected.ino === actual.ino);
 }
 
+function captureDirectoryIdentity(
+  targetPath: string,
+  dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>,
+) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = dependencies.lstat(requestedPath);
+  if (!requestedStats.isDirectory()) {
+    throw new Error("Feature 6 workspace root identity is invalid.");
+  }
+  const canonicalPath = dependencies.realpath(requestedPath);
+  const canonicalStats = dependencies.stat(canonicalPath);
+  if (!canonicalStats.isDirectory()) {
+    throw new Error("Feature 6 workspace root identity is invalid.");
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function samePinnedIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  actual: ReturnType<typeof captureDirectoryIdentity>,
+): boolean {
+  return expected.requestedPath === actual.requestedPath
+    && expected.canonicalPath === actual.canonicalPath
+    && expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno;
+}
+
+function assertPinnedDirectoryIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>,
+): void {
+  const actual = captureDirectoryIdentity(expected.requestedPath, dependencies);
+  if (!samePinnedIdentity(expected, actual)) {
+    throw new Error("Feature 6 workspace root changed after validation.");
+  }
+}
+
 function captureBoundary(layout: F6Layout, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "rmdir">>) {
   const realPublishRoot = dependencies.realpath(path.resolve(layout.publishRoot));
   const realRunRoot = dependencies.realpath(path.resolve(layout.runRoot));
@@ -98,15 +179,21 @@ function captureBoundary(layout: F6Layout, dependencies: Required<Pick<F6Depende
   };
 }
 
-function assertPublishBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat">>): void {
+function assertPublishBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>): void {
+  if (boundary.layout.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(boundary.layout.workspaceBoundary.publishRootIdentity, dependencies);
+  }
   const realPublishRoot = dependencies.realpath(path.resolve(boundary.layout.publishRoot));
   if (realPublishRoot !== boundary.realPublishRoot || !sameIdentity(boundary.publishIdentity, identity(realPublishRoot, dependencies))) {
     throw new Error("Feature 6 publish root changed after creation.");
   }
 }
 
-function assertBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat">>): void {
+function assertBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>): void {
   assertPublishBoundary(boundary, dependencies);
+  if (boundary.layout.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(boundary.layout.workspaceBoundary.runRootIdentity, dependencies);
+  }
   const realPublishRoot = boundary.realPublishRoot;
   const realRunRoot = dependencies.realpath(path.resolve(boundary.layout.runRoot));
   if (!isContained(realPublishRoot, realRunRoot)
@@ -239,6 +326,26 @@ function outputPaths(layout: F6Layout) {
     runSummary: path.join(layout.runRoot, layout.runSummaryJsonName),
     manifest: path.join(layout.runRoot, layout.manifestName),
   };
+}
+
+function assertWorkspaceStageReady(
+  layout: F6Layout,
+  dependencies: Required<Pick<F6Dependencies, "readdir" | "lstat">>,
+): void {
+  if (!layout.allowExistingRunRoot) return;
+  const entries = dependencies.readdir(layout.runRoot, { withFileTypes: true });
+  const hasOnlySemanticEvidence = entries.length === 1
+    && entries[0]?.name === "evidence"
+    && entries[0].isDirectory()
+    && !dependencies.lstat(path.join(layout.runRoot, entries[0].name)).isSymbolicLink();
+  if (entries.length === 0 || hasOnlySemanticEvidence) return;
+  throw createTypedError({
+    code: "prerequisite_not_ready",
+    summary: "Workspace stage already contains published artifacts.",
+    suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+    affectedInputReferences: [layout.runRoot],
+    details: { reasonCode: "workspace_stage_not_empty" },
+  });
 }
 
 function generatedAtFromRunId(runId: string): string {
@@ -374,6 +481,7 @@ export function runF6Optimization(
   const rename = dependencies.rename ?? renameSync;
   const beforeRename = dependencies.beforeRename ?? (() => {});
   const afterRename = dependencies.afterRename ?? (() => {});
+  const readdir = dependencies.readdir ?? readdirSync;
   const rmdir = dependencies.rmdir ?? rmdirSync;
   const rm = dependencies.rm ?? rmSync;
   if (!resolveOutputLayout || !loadBundle || !createFinalReport) {
@@ -392,8 +500,9 @@ export function runF6Optimization(
     const layout = resolveOutputLayout(request, context);
     const paths = outputPaths(layout);
     mkdir(path.dirname(layout.runRoot), { recursive: true });
-    mkdir(layout.runRoot);
+    if (!layout.allowExistingRunRoot) mkdir(layout.runRoot);
     boundary = captureBoundary(layout, { realpath, stat, rmdir });
+    assertWorkspaceStageReady(layout, { readdir, lstat });
     staging = captureStagingBoundary(boundary, { realpath, stat, lstat, mkdir, randomUUID: randomUuid });
     artifacts = {};
     failureStage = "input";
@@ -552,6 +661,9 @@ export function runF6Optimization(
       } finally {
         cleanupStaging(boundary, staging, { realpath, stat, lstat, rmdir, rm });
       }
+    }
+    if (error instanceof Error && "code" in error && (error as any).code === "prerequisite_not_ready") {
+      throw error;
     }
     throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f6"] });
   } finally {

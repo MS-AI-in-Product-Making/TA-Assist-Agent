@@ -23,6 +23,12 @@ import {
   f5DataInterpretationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+  resolveAnalysisWorkspaceStagePaths,
+  validateAnalysisWorkspaceLayout,
+  validateAnalysisWorkspaceSummary,
+} from "../packages/workflow-runners/dist/index.js";
+import {
   createF5MultimodalFactorSetHash,
   createF5MultimodalRequestHash,
   f5MultimodalArtifactV3Schema,
@@ -75,6 +81,7 @@ export function parseModelInterpretationArgs(args) {
   const [f2ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, f5ArtifactRoot] = args;
   const selectedWorksheetNames = [];
   let responsePath;
+  let analysisRoot;
   for (let index = 4; index < args.length; index += 1) {
     const option = args[index];
     const value = requiredValue(args, index, option);
@@ -85,6 +92,9 @@ export function parseModelInterpretationArgs(args) {
     } else if (option === "--response") {
       if (responsePath !== undefined) throw new Error("Model interpretation --response option is duplicated.");
       responsePath = value;
+    } else if (option === "--analysis-root") {
+      if (analysisRoot !== undefined) throw new Error("Model interpretation --analysis-root option is duplicated.");
+      analysisRoot = value;
     } else {
       throw new Error(`Unknown option: ${option}`);
     }
@@ -92,7 +102,7 @@ export function parseModelInterpretationArgs(args) {
   }
   if (selectedWorksheetNames.length === 0) throw new Error("Model interpretation requires at least one --worksheet selection.");
   if (responsePath === undefined) throw new Error("Model interpretation requires one --response artifact.");
-  return { f2ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, f5ArtifactRoot, selectedWorksheetNames, responsePath };
+  return { f2ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, f5ArtifactRoot, selectedWorksheetNames, responsePath, analysisRoot };
 }
 
 function sha256(bytes) {
@@ -137,7 +147,145 @@ function containedFile(root, relativePath) {
   return realCandidate;
 }
 
-function readGovernedResponse(responsePath, outputRoot, workbookHash) {
+function captureDirectoryIdentity(targetPath, label) {
+  const requestedPath = path.resolve(targetPath);
+  if (!existsSync(requestedPath)) throw new Error(`${label} is missing.`);
+  const requestedStats = lstatSync(requestedPath);
+  if (!requestedStats.isDirectory()) throw new Error(`${label} is invalid.`);
+  const canonicalPath = realpathSync(requestedPath);
+  const canonicalStats = statSync(canonicalPath);
+  if (!canonicalStats.isDirectory()) throw new Error(`${label} is invalid.`);
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function captureFileIdentity(targetPath, label) {
+  const requestedPath = path.resolve(targetPath);
+  if (!existsSync(requestedPath)) throw new Error(`${label} is missing.`);
+  const requestedStats = lstatSync(requestedPath);
+  if (!requestedStats.isFile()) throw new Error(`${label} is invalid.`);
+  const canonicalPath = realpathSync(requestedPath);
+  const canonicalStats = statSync(canonicalPath);
+  if (!canonicalStats.isFile()) throw new Error(`${label} is invalid.`);
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function sameIdentity(expected, actual) {
+  return expected.requestedPath === actual.requestedPath
+    && expected.canonicalPath === actual.canonicalPath
+    && expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno;
+}
+
+function assertIdentityUnchanged(expected, label, capture) {
+  const current = capture(expected.requestedPath, label);
+  if (!sameIdentity(expected, current)) throw new Error(`${label} changed during validation.`);
+  return current;
+}
+
+function resolveAnalysisWorkspace(analysisRoot) {
+  const resolvedRoot = path.resolve(analysisRoot);
+  const summaryPath = path.join(resolvedRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+  const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+  validateAnalysisWorkspaceSummary(summary);
+  const layout = {
+    contractVersion: summary.contractVersion,
+    analysisRoot: summary.analysisRoot,
+    summaryPath: summary.summaryPath,
+    workbookFileName: summary.workbook.fileName,
+    workbookContentHash: summary.workbook.contentHash,
+    allocationDate: summary.allocationDate,
+    stagePaths: resolveAnalysisWorkspaceStagePaths(summary.analysisRoot),
+  };
+  validateAnalysisWorkspaceLayout(layout);
+  const analysisRootIdentity = captureDirectoryIdentity(resolvedRoot, "Feature 6 analysis workspace root");
+  if (analysisRootIdentity.canonicalPath !== path.resolve(layout.analysisRoot)) {
+    throw new Error("Feature 6 analysis workspace root does not match the validated summary.");
+  }
+  const stageIdentities = {
+    f2: captureDirectoryIdentity(layout.stagePaths.f2, "Feature 6 validated F2 stage path"),
+    f3: captureDirectoryIdentity(layout.stagePaths.f3, "Feature 6 validated F3 stage path"),
+    f4: captureDirectoryIdentity(layout.stagePaths.f4, "Feature 6 validated F4 stage path"),
+    f5: captureDirectoryIdentity(layout.stagePaths.f5, "Feature 6 validated F5 stage path"),
+    f6: captureDirectoryIdentity(layout.stagePaths.f6, "Feature 6 validated F6 stage path"),
+  };
+  return { layout, analysisRootIdentity, stageIdentities };
+}
+
+function assertExpectedWorkspaceArtifact(stageIdentity, artifactFileName, label) {
+  const currentStageIdentity = assertIdentityUnchanged(stageIdentity, label, captureDirectoryIdentity);
+  if (currentStageIdentity.canonicalPath !== stageIdentity.canonicalPath) {
+    throw new Error(`${label} changed during validation.`);
+  }
+  const artifactIdentity = captureFileIdentity(path.join(stageIdentity.requestedPath, artifactFileName), `${label} artifact`);
+  if (!artifactIdentity.canonicalPath.startsWith(stageIdentity.canonicalPath + path.sep)) {
+    throw new Error(`${label} artifact escaped the validated stage.`);
+  }
+  const expectedArtifactPath = path.join(stageIdentity.canonicalPath, artifactFileName);
+  if (artifactIdentity.canonicalPath !== expectedArtifactPath) {
+    throw new Error(`${label} artifact is invalid.`);
+  }
+}
+
+function assertExactWorkspaceStage(requestedStagePath, stageIdentity, artifactFileName, label, workspaceRootIdentity) {
+  assertIdentityUnchanged(workspaceRootIdentity, "Feature 6 analysis workspace root", captureDirectoryIdentity);
+  const requestedIdentity = captureDirectoryIdentity(requestedStagePath, label);
+  if (!requestedIdentity.canonicalPath.startsWith(workspaceRootIdentity.canonicalPath + path.sep)
+    || !sameIdentity(stageIdentity, requestedIdentity)) {
+    throw new Error(`Feature 6 current workspace flow requires the exact validated ${label.match(/F\d/)?.[0] ?? "workspace"} stage path.`);
+  }
+  assertExpectedWorkspaceArtifact(stageIdentity, artifactFileName, label);
+}
+
+function resolveWorkspaceMode(options) {
+  if (typeof options.analysisRoot !== "string") return undefined;
+  const workspace = resolveAnalysisWorkspace(options.analysisRoot);
+  assertExactWorkspaceStage(options.f2ArtifactRoot, workspace.stageIdentities.f2, "Feature2-Report.json", "Feature 6 validated F2 stage path", workspace.analysisRootIdentity);
+  assertExactWorkspaceStage(options.f3ArtifactRoot, workspace.stageIdentities.f3, "Feature3-Report.json", "Feature 6 validated F3 stage path", workspace.analysisRootIdentity);
+  assertExactWorkspaceStage(options.f4ArtifactRoot, workspace.stageIdentities.f4, "Feature4-Calculation.json", "Feature 6 validated F4 stage path", workspace.analysisRootIdentity);
+  assertExactWorkspaceStage(options.f5ArtifactRoot, workspace.stageIdentities.f5, "Feature5-Report.json", "Feature 6 validated F5 stage path", workspace.analysisRootIdentity);
+  return workspace;
+}
+
+function semanticEvidenceRoots(stageRoot) {
+  const evidenceRoot = path.join(stageRoot, "evidence");
+  return {
+    evidenceRoot,
+    responseRoot: path.join(evidenceRoot, "model-response"),
+    interpretationRoot: path.join(evidenceRoot, "model-interpretation"),
+  };
+}
+
+function readGovernedResponse(responsePath, outputRoot, workbookHash, workspace) {
+  if (workspace) {
+    const { responseRoot } = semanticEvidenceRoots(workspace.layout.stagePaths.f6);
+    const expectedPath = path.join(responseRoot, "Feature6-Model-Response.json");
+    const candidate = path.resolve(responsePath);
+    if (candidate !== path.resolve(expectedPath)) {
+      throw new Error("Model response must remain beneath the validated stage6 semantic evidence root.");
+    }
+    const responseIdentity = captureFileIdentity(candidate, "Feature 6 model response artifact");
+    if (responseIdentity.canonicalPath !== path.resolve(expectedPath)) {
+      throw new Error("Model response must remain beneath the validated stage6 semantic evidence root.");
+    }
+    if (statSync(responseIdentity.canonicalPath).size > MAX_JSON_BYTES) throw new Error("Model response artifact is invalid.");
+    return readFileSync(responseIdentity.canonicalPath);
+  }
   const root = realpathSync(path.resolve(outputRoot));
   const governedRoot = path.join(root, "f6-model-responses", workbookHash);
   const candidate = path.resolve(responsePath);
@@ -219,7 +367,20 @@ function assertDisclosure(value, worksheetName) {
   }
 }
 
-function ensureOutputDirectory(outputRoot, workbookHash, targetId) {
+function ensureOutputDirectory(outputRoot, workbookHash, targetId, workspace) {
+  if (workspace) {
+    const { evidenceRoot, interpretationRoot } = semanticEvidenceRoots(workspace.layout.stagePaths.f6);
+    for (const target of [evidenceRoot, interpretationRoot]) {
+      if (existsSync(target)) {
+        if (lstatSync(target).isSymbolicLink() || !statSync(target).isDirectory()) throw new Error("Model interpretation output ancestry is invalid.");
+      } else {
+        mkdirSync(target, { recursive: true });
+      }
+    }
+    const realInterpretationRoot = realpathSync(interpretationRoot);
+    if (realInterpretationRoot !== interpretationRoot) throw new Error("Model interpretation output escaped its controlled root.");
+    return realInterpretationRoot;
+  }
   const root = path.resolve(outputRoot);
   mkdirSync(root, { recursive: true });
   if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error("Model interpretation output root is invalid.");
@@ -263,7 +424,8 @@ export function materializeF6ModelInterpretation(options) {
     throw new Error("Model interpretation inputs do not share one completed workbook lineage.");
   }
 
-  const responseBytes = readGovernedResponse(options.responsePath, options.outputRoot, workbookHash);
+  const workspace = resolveWorkspaceMode(options);
+  const responseBytes = readGovernedResponse(options.responsePath, options.outputRoot, workbookHash, workspace);
   const response = responseSchema.parse(JSON.parse(responseBytes.toString("utf8")));
   if (!isDeepStrictEqual(response.worksheets.map(({ worksheetName }) => worksheetName), options.selectedWorksheetNames)) {
     throw new Error("Model response worksheet order does not match the confirmed scope.");
@@ -372,7 +534,7 @@ export function materializeF6ModelInterpretation(options) {
   };
   if (!validateF5MultimodalArtifactV3(artifact, authority).success) throw new Error("Generated model interpretation failed authority validation.");
 
-  const targetDirectory = ensureOutputDirectory(options.outputRoot, workbookHash, randomUUID());
+  const targetDirectory = ensureOutputDirectory(options.outputRoot, workbookHash, randomUUID(), workspace);
   const artifactPath = path.join(targetDirectory, "Feature6-Model-Interpretation.json");
   const descriptor = openSync(artifactPath, "wx");
   try {

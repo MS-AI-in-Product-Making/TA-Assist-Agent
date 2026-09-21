@@ -20,6 +20,50 @@ function roots(publishRoot = "test/demo-output") {
   };
 }
 
+function createAnalysisWorkspaceRoot() {
+  const analysisRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f6-layout-workspace-"));
+  cleanup.push(analysisRoot);
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) fs.mkdirSync(stagePath, { recursive: true });
+  fs.writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), "{}\n");
+  fs.writeFileSync(path.join(stagePaths.f3, "Feature3-Report.json"), "{}\n");
+  fs.writeFileSync(path.join(stagePaths.f4, "Feature4-Calculation.json"), "{}\n");
+  fs.writeFileSync(path.join(stagePaths.f5, "Feature5-Report.json"), "{}\n");
+  fs.writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 describe("resolveFeature6OutputLayout", () => {
   it("builds the workbook-derived current artifact layout", () => {
     const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow, undefined, "Anonymous.xlsx");
@@ -34,6 +78,62 @@ describe("resolveFeature6OutputLayout", () => {
     expect(layout).not.toHaveProperty("optimizationMdName");
     expect(layout).not.toHaveProperty("composedReportJsonName");
     expect(layout).not.toHaveProperty("composedReportMdName");
+  });
+
+  it("routes current workspace writes directly into the validated stage6 root", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const layout = resolveFeature6OutputLayout({
+      f2ArtifactRoot: stagePaths.f2,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      f5ArtifactRoot: stagePaths.f5,
+      analysisRoot,
+    }, undefined, fixedNow, undefined, "Anonymous.xlsx");
+    expect(layout).toMatchObject({
+      artifactSetVersion: "f6-artifact-set-v4",
+      publishRoot: analysisRoot,
+      runRoot: stagePaths.f6,
+      finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: expect.objectContaining({ canonicalPath: analysisRoot }),
+        runRootIdentity: expect.objectContaining({ canonicalPath: stagePaths.f6 }),
+      },
+    });
+  });
+
+  it("rejects a workspace root combined with an explicit output override", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    expect(() => resolveFeature6OutputLayout({
+      f2ArtifactRoot: stagePaths.f2,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      f5ArtifactRoot: stagePaths.f5,
+      analysisRoot,
+    }, path.join(analysisRoot, "custom"), fixedNow, analysisRoot, "Anonymous.xlsx"))
+      .toThrow(/analysis workspace root cannot be combined/i);
+  });
+
+  it.each([
+    ["F2", "f2ArtifactRoot", "outside-f2", "Feature2-Report.json"],
+    ["F3", "f3ArtifactRoot", "outside-f3", "Feature3-Report.json"],
+    ["F4", "f4ArtifactRoot", "outside-f4", "Feature4-Calculation.json"],
+    ["F5", "f5ArtifactRoot", "outside-f5", "Feature5-Report.json"],
+  ])("requires the exact validated %s stage path in workspace mode", (_stageName, field, directoryName, artifactFileName) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const lookalikeRoot = path.join(analysisRoot, directoryName);
+    fs.mkdirSync(lookalikeRoot, { recursive: true });
+    fs.writeFileSync(path.join(lookalikeRoot, artifactFileName), "{}\n");
+    expect(() => resolveFeature6OutputLayout({
+      f2ArtifactRoot: stagePaths.f2,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      f5ArtifactRoot: stagePaths.f5,
+      [field]: lookalikeRoot,
+      analysisRoot,
+    }, undefined, fixedNow, undefined, "Anonymous.xlsx"))
+      .toThrow(new RegExp(`exact validated ${_stageName} stage path`, "i"));
   });
 
   it("accepts an override only with an existing explicit publish root", () => {

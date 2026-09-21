@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,49 @@ function layoutFor(bundle, runId = "2026-08-24T07-00-00-000Z") {
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",
   };
+}
+
+function createAnalysisWorkspaceRoot(bundle) {
+  const analysisRoot = path.join(bundle.root, "20260921 - Anonymous");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), readFileSync(bundle.paths.f2));
+  writeFileSync(path.join(stagePaths.f3, "Feature3-Report.json"), readFileSync(bundle.paths.f3));
+  writeFileSync(path.join(stagePaths.f4, "Feature4-Calculation.json"), readFileSync(bundle.paths.f4));
+  writeFileSync(path.join(stagePaths.f5, "Feature5-Report.json"), readFileSync(bundle.paths.f5));
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), `${JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2)}\n`, "utf8");
+  return { analysisRoot, stagePaths };
 }
 
 function artifactReference(artifact) {
@@ -358,5 +401,50 @@ describe("runF6FullValidation", () => {
     });
 
     expect(loadBundle).toHaveBeenCalledWith(expect.objectContaining({ analysisRequestContext: REQUEST_CONTEXT }));
+  });
+
+  it("fails closed with a manifest when the validated stage6 root is already dirty", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    cleanup.push(bundle.root);
+    const workspace = createAnalysisWorkspaceRoot(bundle);
+    writeFileSync(path.join(workspace.stagePaths.f6, "stale.txt"), "stale\n", "utf8");
+
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({
+        f2ArtifactRoot: workspace.stagePaths.f2,
+        f3ArtifactRoot: workspace.stagePaths.f3,
+        f4ArtifactRoot: workspace.stagePaths.f4,
+        f5ArtifactRoot: workspace.stagePaths.f5,
+        analysisRoot: workspace.analysisRoot,
+        selectedWorksheetNames: ["Analysis-A"],
+        interactionLanguage: INTERACTION_LANGUAGE,
+        analysisRequestContext: REQUEST_CONTEXT,
+        modelInterpretationArtifact: path.join(workspace.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+        expectedModelInterpretationContentHash: "a".repeat(64),
+      }),
+      resolveLayout: () => ({
+        artifactSetVersion: "f6-artifact-set-v4",
+        runId: "2026-09-21T12-00-00-000Z",
+        runRoot: workspace.stagePaths.f6,
+        publishRoot: workspace.analysisRoot,
+        optimizationJsonName: "Feature6-Optimization.json",
+        finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+        finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+        runSummaryJsonName: "Feature6-Run-Summary.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+      }),
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+      manifestPath: path.join(workspace.stagePaths.f6, "manifest.json"),
+    });
+    expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
+      artifactSetVersion: "f6-artifact-set-v4",
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
   });
 });
