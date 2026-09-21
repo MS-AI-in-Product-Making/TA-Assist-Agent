@@ -1582,7 +1582,7 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
-    expect(report.markdown).toContain("| Missing Info | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
+    expect(report.markdown).toContain("| Block | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
     expect(report.markdown).toContain("[Analysis-B](#worksheet-2)");
     expect(report.markdown).toContain('<a id="worksheet-1"></a>');
@@ -1807,7 +1807,7 @@ describe("createF6FinalReportProjection v3", () => {
     expect(calculation.capability.upperCpkStatus).toBe("FAIL");
     expect(report.markdown).toContain(`CpkL ${numberText(calculation.capability.lowerCpk)} and CpkU ${numberText(calculation.capability.upperCpk)} do not meet Target Cpk ${numberText(calculation.capability.targetCpk)}.`);
     expect(report.markdown).not.toContain("ME review of the TA result is required");
-    expect(report.markdown).toContain("| Fail |");
+    expect(report.markdown).toContain("| Cpk Fail |");
   });
 
   it("preserves the engineering Key Finding in the structured v3 projection", () => {
@@ -1977,7 +1977,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(report.markdown).not.toMatch(/\p{Script=Han}/u);
   });
 
-  it("accepts mixed multimodal v4 outcomes in the required multimodal path and renders failed worksheets as FAIL", () => {
+  it("accepts mixed multimodal v4 outcomes and renders blocked worksheets as Block", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],
       f5Variant: "supported",
@@ -1994,7 +1994,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(report.markdown).toContain("# TA Engineering Analysis Report");
     expect(report.markdown).not.toContain("## Optimization Comparison");
     expect(report.markdown).not.toContain("<!-- f6-optimization-comparison -->");
-    expect(report.markdown).toContain("| Fail | [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_failed): worksheet image evaluation failed. |");
+    expect(report.markdown).toContain("| Block | [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_failed): worksheet image evaluation failed. |");
   });
 
   it("omits the optimization comparison block for baseline PASS worksheets", () => {

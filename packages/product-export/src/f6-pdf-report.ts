@@ -166,7 +166,7 @@ function specificationRangeGraph(requirements: ReadonlyMap<string, string>, rows
     return `<div class="range-row range-row--${result.className}"><span>${escapeHtml(label.replace(" Range", ""))}</span><span class="range-track"><b class="range-spec-line range-spec-line--lower" aria-hidden="true" style="left:${lowerSpecPosition}%"></b><i style="left:${graphPosition(lower!, minimum, maximum)}%;width:${Math.max(1, graphPosition(upper!, minimum, maximum) - graphPosition(lower!, minimum, maximum))}%"></i><em style="left:${graphPosition(nominal, minimum, maximum)}%"></em><b class="range-spec-line range-spec-line--upper" aria-hidden="true" style="left:${upperSpecPosition}%"></b></span><strong${semanticClass === "" ? "" : ` class="${semanticClass}"`}>${result.display}</strong><small class="range-values">${threeSignificantFigures(lower!)} to ${threeSignificantFigures(upper!)}</small></div>`;
   }).join("");
   const worstCaseResult = ranges.find(({ label }) => label === "Worst-Case Range")?.result.display ?? "N/A";
-  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption><div class="range-spec-labels"><b class="range-spec-label range-spec-label--lower">LSL ${threeSignificantFigures(lowerSpec)}</b><b class="range-spec-label range-spec-label--upper">USL ${threeSignificantFigures(upperSpec)}</b></div>${rangeRows}<div class="range-axis"><span>${threeSignificantFigures(minimum)}</span><span>Nominal ${threeSignificantFigures(nominal)}</span><span>${threeSignificantFigures(maximum)}</span></div></figure>`;
+  return `<figure class="spec-range-graph" data-statistical-result="${ranges[0]?.result.display ?? "N/A"}" data-worst-case-result="${worstCaseResult}"><figcaption>Specification range</figcaption><div class="range-spec-labels"><b class="range-spec-label range-spec-label--lower">LSL ${threeSignificantFigures(lowerSpec)}</b><b class="range-spec-label range-spec-label--upper">USL ${threeSignificantFigures(upperSpec)}</b></div>${rangeRows}<div class="range-axis"><span>Nominal ${threeSignificantFigures(nominal)}</span></div></figure>`;
 }
 
 function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: readonly Tokens.TableCell[][]): string {
@@ -382,8 +382,11 @@ class F6PdfRenderer extends Renderer {
         const cells = row.map((cell, index) => {
           if (index !== 0) return `<td>${this.parser.parseInline(cell.tokens)}</td>`;
           const comment = cellText(cell);
-          const status = comment.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
-          const displayComment = status === "fail" ? "CPK FAIL" : comment;
+          const sourceStatus = comment.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
+          const cpkFail = sourceStatus === "cpk-fail";
+          const blocked = sourceStatus === "block" || sourceStatus === "fail" || sourceStatus === "missing-info";
+          const status = cpkFail ? "cpk-fail" : blocked ? "block" : sourceStatus;
+          const displayComment = cpkFail ? "CPK FAIL" : blocked ? "BLOCK" : comment;
           return `<td><span class="comment comment--${status}">${escapeHtml(displayComment)}</span></td>`;
         }).join("");
         return `<tr>${cells}</tr>`;
@@ -445,7 +448,8 @@ class F6PdfRenderer extends Renderer {
           if (index !== 1 || marker === undefined) return `<td>${factorTableCellHtml(headers, cell, index, (tokens) => this.parser.parseInline(tokens))}</td>`;
           const before = this.parser.parseInline(cell.tokens.slice(0, marker.index));
           const after = this.parser.parseInline(cell.tokens.slice(marker.index + 2));
-          return `<td>${before}<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${marker.sourceRow}" hidden="" aria-hidden="true"></span>${after}</td>`;
+          const missingDescriptionClass = cellText(cell).toUpperCase() === "MISSING" ? ' class="status-missing"' : "";
+          return `<td${missingDescriptionClass}>${before}<span class="f6-inline-marker" data-f6-marker="required-missing" data-source-row="${marker.sourceRow}" hidden="" aria-hidden="true"></span>${after}</td>`;
         }).join("");
         return `<tr${rowClass}>${cells}</tr>`;
       }).join("");
@@ -483,7 +487,7 @@ class F6PdfRenderer extends Renderer {
 }
 
 const PRINT_CSS = `
-  :root { --p-black:#000000; --p-white:#FFFFFF; --p-gray-242:#F2F2F2; --p-gray-210:#D2D2D2; --p-gray-80:#505050; --p-orange:#FF9349; --p-yellow:#FEF000; --p-green:#9BF00B; --p-aqua:#30E5D0; --p-cyan:#50E6FF; --p-purple:#D59DFF; --p-dark-red:#A72929; --raw-data:#0078D4; --interpretation:#50E6FF; --optimization:#D59DFF; --ink:var(--p-black); --muted:var(--p-gray-80); --line:var(--p-gray-210); --paper:var(--p-white); --wash:var(--p-gray-242); --blue:var(--p-cyan); --pass:var(--p-green); --warn:var(--p-orange); --fail:var(--p-dark-red); --signal-red:var(--p-dark-red); --signal-green:var(--p-green); }
+  :root { --p-black:#000000; --p-white:#FFFFFF; --p-gray-242:#F2F2F2; --p-gray-210:#D2D2D2; --p-gray-80:#505050; --p-orange:#FF9349; --p-yellow:#FEF000; --p-green:#107C10; --p-aqua:#30E5D0; --p-cyan:#50E6FF; --p-purple:#8661C5; --p-dark-red:#A72929; --raw-data:#0078D4; --interpretation:#50E6FF; --optimization:#8661C5; --ink:var(--p-black); --muted:var(--p-gray-80); --line:var(--p-gray-210); --paper:var(--p-white); --wash:var(--p-gray-242); --blue:var(--p-cyan); --pass:var(--p-green); --warn:var(--p-orange); --fail:var(--p-dark-red); --signal-red:var(--p-dark-red); --signal-green:var(--p-green); }
   * { box-sizing:border-box; }
   @page { size:A4 landscape; margin:10mm 8mm 12mm; }
   html { background:var(--wash); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:10pt; line-height:1.25; font-variant-numeric:tabular-nums; }
@@ -495,8 +499,8 @@ const PRINT_CSS = `
   .document-overview th:first-child,.document-overview td:first-child { width:34%; }
   .workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:9%; text-align:center; }
   .workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:21%; }
-  .workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:25%; }
-  .workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:45%; }
+  .workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:35%; }
+  .workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:35%; }
   .worksheet-section { margin:0 0 6mm; break-before:page; page-break-before:always; }
   .worksheet-fit { width:100%; padding:0; }
   h1 { margin:0 0 1.5mm; padding:0 0 1mm; border-bottom:2px solid var(--blue); font-size:20pt; font-weight:650; letter-spacing:0; }
@@ -517,12 +521,12 @@ const PRINT_CSS = `
   .factor-table th:nth-child(3),.factor-table td:nth-child(3) { width:6%; }
   .factor-table th:nth-child(4),.factor-table td:nth-child(4) { width:6%; }
   .factor-table th:nth-child(5),.factor-table td:nth-child(5) { width:6%; }
-  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:3%; }
+  .factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:4.5%; }
   .factor-table th:nth-child(7),.factor-table td:nth-child(7) { width:6%; text-align:right; }
   .factor-table th:nth-child(8),.factor-table td:nth-child(8) { width:6%; text-align:right; }
   .factor-table th:nth-child(9),.factor-table td:nth-child(9) { width:6%; text-align:right; }
   .factor-table th:nth-child(10),.factor-table td:nth-child(10) { width:5%; text-align:right; }
-  .factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:5%; text-align:right; }
+  .factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:3.5%; text-align:right; }
   .factor-table th:nth-child(12),.factor-table td:nth-child(12) { width:6%; text-align:right; }
   .factor-table th:nth-child(13),.factor-table td:nth-child(13) { width:6%; text-align:right; }
   .factor-table th:nth-child(14),.factor-table td:nth-child(14) { width:6%; text-align:right; }
@@ -535,7 +539,7 @@ const PRINT_CSS = `
   .stack-image { margin:0; text-align:center; break-inside:avoid; } .stack-image img { width:100%; max-height:62mm; object-fit:contain; }
   figure { margin:0; } figcaption { margin-bottom:1.2mm; color:var(--ink); font-size:8pt; font-weight:650; }
   .spec-range-graph,.capability-spectrum,.mean-offset-graph,.spec-change-graph { min-width:0; }
-  .range-spec-labels { position:relative; margin:0 12% 1mm; color:var(--signal-red); font-size:6.5pt; min-height:2.4mm; } .range-spec-label { position:absolute; top:0; transform:translateX(-50%); white-space:nowrap; } .range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4; transform:translateX(-50%); } .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--p-black); margin:0; } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:var(--p-gray-210); } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; } .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:space-between; color:var(--muted); font-size:6.5pt; }
+  .range-spec-labels { position:relative; margin:0 12% 1mm; color:var(--signal-red); font-size:6.5pt; min-height:2.4mm; } .range-spec-label { position:absolute; top:0; transform:translateX(-50%); white-space:nowrap; } .range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4; transform:translateX(-50%); } .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--p-black); margin:0; } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:var(--p-gray-210); } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; }   .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:center; color:var(--muted); font-size:6.5pt; }
   .capability-spectrum figcaption strong { color:var(--blue); } .capability-row { display:grid; grid-template-columns:12mm 1fr 14mm; gap:1mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .capability-track i { display:block; height:100%; background:var(--p-gray-80); } .capability-row--pass .capability-track i { background:var(--pass); } .capability-row--fail .capability-track i { background:var(--fail); } .capability-track b { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); } .capability-spectrum>p,.system-summary { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .offset-track { margin:3mm 0 2mm; background:var(--p-gray-210); } .offset-track .mean-marker--nominal { position:absolute; left:50%; top:-1mm; width:2px; height:6mm; background:var(--signal-red); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-value--nominal,.spec-value--current { color:var(--signal-red); font-weight:700; } .mean-value--adjusted,.spec-value--proposed { color:var(--signal-green); font-weight:700; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:var(--p-gray-210); } .contribution-fill { display:block; height:100%; background:var(--p-gray-80); } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:normal; word-break:normal; }
@@ -561,11 +565,11 @@ const PRINT_CSS = `
   .workbook-summary td:nth-child(1) { white-space:nowrap; }
   .workbook-summary td:nth-child(2) a { color:var(--raw-data); font-weight:700; }
   .workbook-summary .comment { display:inline-block; padding:3px 6px; border-radius:999px; background:var(--p-gray-210); color:var(--p-black); font:800 12px/1 var(--st-meta); text-transform:uppercase; }
-  .workbook-summary .comment--fail { color:var(--p-dark-red) !important; }
+  .workbook-summary .comment--cpk-fail,.workbook-summary .comment--block { color:var(--p-dark-red) !important; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { position:relative; display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
-  .report-stage-legend { position:absolute; top:0; right:0; display:flex; gap:16px; align-items:center; font:700 14px/1 var(--st-meta); text-transform:uppercase; }
+  .report-stage-legend { position:absolute; top:-12px; right:0; display:flex; gap:16px; align-items:center; font:700 14px/1 var(--st-meta); text-transform:uppercase; }
   .stage-key { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; } .stage-key::before { width:28px; height:7px; content:""; } .stage-key--raw::before { background:var(--raw-data); } .stage-key--interpretation::before { background:var(--interpretation); } .stage-key--optimization::before { background:var(--optimization); }
   .slide-optimization { display:flex; flex-direction:column; border:0; }
   .slide-optimization>.optimization-fit { display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 1fr; gap:10px; }
@@ -606,10 +610,10 @@ const PRINT_CSS = `
   .factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap; }
   .factor-table--dense th:nth-child(3),.factor-table--dense td:nth-child(3),.factor-table--dense th:nth-child(4),.factor-table--dense td:nth-child(4) { width:5.5%; }
   .factor-table--dense th:nth-child(5),.factor-table--dense td:nth-child(5) { width:7%; }
-  .factor-table--dense th:nth-child(6),.factor-table--dense td:nth-child(6) { width:3.5%; }
+  .factor-table--dense th:nth-child(6),.factor-table--dense td:nth-child(6) { width:5%; }
   .factor-table--dense th:nth-child(7),.factor-table--dense td:nth-child(7),.factor-table--dense th:nth-child(8),.factor-table--dense td:nth-child(8),.factor-table--dense th:nth-child(9),.factor-table--dense td:nth-child(9),.factor-table--dense th:nth-child(12),.factor-table--dense td:nth-child(12),.factor-table--dense th:nth-child(13),.factor-table--dense td:nth-child(13),.factor-table--dense th:nth-child(14),.factor-table--dense td:nth-child(14) { width:5.5%; }
   .factor-table--dense th:nth-child(10),.factor-table--dense td:nth-child(10) { width:5%; }
-  .factor-table--dense th:nth-child(11),.factor-table--dense td:nth-child(11) { width:4.5%; }
+  .factor-table--dense th:nth-child(11),.factor-table--dense td:nth-child(11) { width:3%; }
   .factor-table--dense th:nth-child(15),.factor-table--dense td:nth-child(15) { width:12.5%; }
   .factor-table tbody tr.missing td { background:transparent; }
   .factor-table tbody tr.missing td:nth-child(5) { color:var(--p-dark-red); font-weight:700; }
@@ -638,12 +642,12 @@ const PRINT_CSS = `
   .analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { color:var(--optimization); }
   .step-label { flex:0 0 auto; display:inline-block; margin-left:8px; color:var(--p-black); font:800 13px/1 var(--st-meta); vertical-align:middle; }
   .analysis-panel--center,.analysis-panel--contributors { position:relative; overflow:visible; }
-  .analysis-panel--center::after,.analysis-panel--contributors::after { content:"→"; position:absolute; top:50%; right:-20px; z-index:5; color:var(--optimization); font:800 26px/1 var(--st-meta); transform:translateY(-50%); }
+  .analysis-panel--center::after,.analysis-panel--contributors::after { content:""; position:absolute; top:50%; right:-25px; z-index:5; width:34px; height:22px; background:var(--optimization); clip-path:polygon(0 25%,62% 25%,62% 0,100% 50%,62% 100%,62% 75%,0 75%); transform:translateY(-50%); }
   .analysis-panel--contributors:last-child::after { display:none; }
   .analysis-panel--image>h2 { grid-column:1/-1; }
   .analysis-panel--image>.stack-image { display:block; min-width:0; grid-column:1; grid-row:2/span 4; width:100%; margin:0; }
   .analysis-panel--image .stack-image img { width:100%; height:248px; max-height:248px; object-fit:contain; }
-  .analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28; }
+  .analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0; color:var(--p-black); font-size:15px; line-height:1.28; transform:translateY(-8px); }
   .analysis-panel--results .spec-range-graph,.analysis-panel--results .capability-spectrum { width:49%; }
   .analysis-panel--results .spec-range-graph { float:left; }
   .analysis-panel--results .capability-spectrum { float:right; }
@@ -657,6 +661,7 @@ const PRINT_CSS = `
   .capability-row { grid-template-columns:38px 1fr 45px; min-height:28px; margin:0; gap:8px; font-size:12px; }
   .capability-spectrum figcaption span,.capability-spectrum figcaption strong { display:block; }
   .capability-spectrum figcaption strong { margin-top:5px; }
+  .capability-spectrum>p { font-size:11px; font-weight:700; }
   .capability-row>strong,.range-row>strong { color:var(--p-black); }
   .analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px; }
   .analysis-panel--center .offset-track { margin-top:34px; background:rgba(242,242,242,.55); }

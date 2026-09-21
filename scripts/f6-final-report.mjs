@@ -433,7 +433,7 @@ function renderF6V3WorkbookSummary(worksheets, catalog) {
     "| Result | Worksheet | Tolerance Loop Description | Key Finding |", "|---|---|---|---|",
   ];
   worksheets.forEach((worksheet, index) => lines.push(row([
-    dispositionComment(worksheet.disposition),
+    dispositionComment(worksheet),
     `[${clean(worksheet.worksheetName)}](#worksheet-${index + 1})`,
     clean(worksheet.f2Worksheet.toleranceLoopDescription),
     worksheet.f2Worksheet.status === "ready" ? v3PrimaryFinding(worksheet) : blockedWorksheetFinding(worksheet, "en"),
@@ -1269,10 +1269,11 @@ function dispositionText(value) {
   return F6_DISPOSITION_RANK[value] === undefined ? "FAIL" : value;
 }
 
-function dispositionComment(value) {
-  if (value === "PASS") return "Pass";
-  if (value === "CONDITIONAL_PASS") return "Missing Info";
-  return "Fail";
+function dispositionComment(worksheet) {
+  if (worksheet.disposition === "PASS") return "Pass";
+  const capability = worksheet.f4Calculation?.capability;
+  if (capability?.lowerCpkStatus === "FAIL" || capability?.upperCpkStatus === "FAIL") return "Cpk Fail";
+  return "Block";
 }
 
 function numberText(value, fallback = NA) {
