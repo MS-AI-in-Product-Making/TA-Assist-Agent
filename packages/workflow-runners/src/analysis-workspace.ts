@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import path from "node:path";
 
 import { workbookCatalogFileNameSchema } from "@ai-assist/contracts";
@@ -48,6 +49,13 @@ export interface AnalysisWorkspaceLayout {
 	readonly stagePaths: AnalysisWorkspaceResolvedStagePaths;
 }
 
+export interface AllocateAnalysisWorkspaceInput {
+	readonly testRoot: string;
+	readonly workbookFileName: string;
+	readonly workbookContentHash: string;
+	readonly now: Date;
+}
+
 export interface AnalysisWorkspaceStageSummary {
 	readonly status: AnalysisStageStatus;
 	readonly artifacts: Readonly<Record<string, string>>;
@@ -75,6 +83,7 @@ const STAGE_STATUS_SET: ReadonlySet<AnalysisStageStatus> = new Set(["pending", "
 const OVERALL_STATUS_SET: ReadonlySet<AnalysisWorkspaceOverallStatus> = new Set(["in_progress", "completed", "failed"]);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const LOCAL_DATE_PATTERN = /^\d{8}$/;
+const MAX_ALLOCATION_ATTEMPTS = 1_000;
 
 export function formatLocalDateYYYYMMDD(now: Date): string {
 	const year = String(now.getFullYear());
@@ -93,6 +102,46 @@ export function resolveAnalysisWorkspaceStagePaths(analysisRoot: string): Analys
 		f5: path.join(resolvedRoot, ANALYSIS_STAGE_DIRS.f5),
 		f6: path.join(resolvedRoot, ANALYSIS_STAGE_DIRS.f6),
 	};
+}
+
+export function allocateAnalysisWorkspace(input: AllocateAnalysisWorkspaceInput): AnalysisWorkspaceLayout {
+	const resolvedTestRoot = path.resolve(input.testRoot);
+	const workbookFileName = workbookCatalogFileNameSchema.parse(input.workbookFileName);
+	validateContentHash(input.workbookContentHash, "Analysis workspace workbook content hash");
+	validateNow(input.now);
+
+	fs.mkdirSync(resolvedTestRoot, { recursive: true });
+
+	const allocationDate = formatLocalDateYYYYMMDD(input.now);
+	validateAllocationDate(allocationDate);
+	const workbookBaseName = workbookFileName.slice(0, -path.extname(workbookFileName).length);
+	const allocationRootBaseName = `${allocationDate} - ${workbookBaseName}`;
+
+	for (let suffixIndex = 0; suffixIndex < MAX_ALLOCATION_ATTEMPTS; suffixIndex += 1) {
+		const allocationRootName = suffixIndex === 0 ? allocationRootBaseName : `${allocationRootBaseName} -${suffixIndex}`;
+		const analysisRoot = path.resolve(path.join(resolvedTestRoot, allocationRootName));
+		assertPathWithinRoot(resolvedTestRoot, analysisRoot, "Analysis workspace root");
+
+		try {
+			fs.mkdirSync(analysisRoot);
+		} catch (error) {
+			if (isDirectoryAlreadyAllocated(error)) {
+				continue;
+			}
+			throw error;
+		}
+
+		try {
+			const layout = createAllocatedLayout(analysisRoot, workbookFileName, input.workbookContentHash, allocationDate);
+			validateAnalysisWorkspaceLayout(layout);
+			return layout;
+		} catch (error) {
+			cleanupPartialAllocation(analysisRoot);
+			throw error;
+		}
+	}
+
+	throw new Error(`Analysis workspace root allocation exceeded ${MAX_ALLOCATION_ATTEMPTS} attempts.`);
 }
 
 export function validateAnalysisWorkspaceLayout(layout: AnalysisWorkspaceLayout): void {
@@ -195,6 +244,12 @@ function validateWorkbookIdentity(fileName: string, contentHash: string, label: 
 	validateContentHash(contentHash, `${label} content hash`);
 }
 
+function validateNow(now: Date): void {
+	if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+		throw new Error("Analysis workspace allocation time is invalid.");
+	}
+}
+
 function validateContentHash(contentHash: string, label: string): void {
 	if (!SHA256_PATTERN.test(contentHash)) {
 		throw new Error(`${label} must be a lowercase sha256.`);
@@ -259,4 +314,113 @@ function isSafeStageRelativePath(analysisRoot: string, stage: AnalysisStage, art
 
 function isAbsoluteAny(candidatePath: string): boolean {
 	return path.isAbsolute(candidatePath) || path.posix.isAbsolute(candidatePath) || path.win32.isAbsolute(candidatePath);
+}
+
+function createAllocatedLayout(
+	analysisRoot: string,
+	workbookFileName: string,
+	workbookContentHash: string,
+	allocationDate: string,
+): AnalysisWorkspaceLayout {
+	const stagePaths = resolveAnalysisWorkspaceStagePaths(analysisRoot);
+	createStageDirectories(analysisRoot, stagePaths);
+
+	return {
+		contractVersion: ANALYSIS_WORKSPACE_VERSION,
+		analysisRoot,
+		summaryPath: path.join(analysisRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME),
+		workbookFileName,
+		workbookContentHash,
+		allocationDate,
+		stagePaths,
+	};
+}
+
+function createStageDirectories(
+	analysisRoot: string,
+	stagePaths: AnalysisWorkspaceResolvedStagePaths,
+): void {
+	const createdStagePaths: string[] = [];
+	try {
+		for (const stage of ANALYSIS_STAGES) {
+			const stagePath = stagePaths[stage];
+			assertPathWithinRoot(analysisRoot, stagePath, `Analysis workspace stage path for ${stage}`);
+			fs.mkdirSync(stagePath);
+			createdStagePaths.push(stagePath);
+		}
+	} catch (error) {
+		const cleanupError = cleanupCreatedStageDirectories(analysisRoot, createdStagePaths);
+		if (cleanupError !== undefined) {
+			throw new Error(
+				`${formatErrorMessage(error)} Cleanup after partial stage-directory creation also failed: ${cleanupError.message}`,
+			);
+		}
+		throw error;
+	}
+}
+
+function cleanupPartialAllocation(analysisRoot: string): void {
+	assertPathWithinRoot(path.resolve(path.dirname(analysisRoot)), analysisRoot, "Analysis workspace cleanup root");
+	if (!fs.existsSync(analysisRoot)) {
+		return;
+	}
+	const cleanupError = cleanupCreatedStageDirectories(analysisRoot, existingCreatedStageDirectories(analysisRoot));
+	if (cleanupError !== undefined) {
+		throw cleanupError;
+	}
+	removeEmptyAllocationRoot(analysisRoot);
+}
+
+function cleanupCreatedStageDirectories(analysisRoot: string, createdStagePaths: readonly string[]): Error | undefined {
+	for (const stagePath of [...createdStagePaths].reverse()) {
+		try {
+			assertPathWithinRoot(analysisRoot, stagePath, "Analysis workspace cleanup stage path");
+			if (fs.existsSync(stagePath)) {
+				fs.rmSync(stagePath, { recursive: true, force: false });
+			}
+		} catch (error) {
+			return new Error(`Analysis workspace cleanup failed for ${stagePath}: ${formatErrorMessage(error)}`);
+		}
+	}
+	return undefined;
+}
+
+function existingCreatedStageDirectories(analysisRoot: string): string[] {
+	const stagePaths = resolveAnalysisWorkspaceStagePaths(analysisRoot);
+	const createdStagePaths: string[] = [];
+	for (const stage of ANALYSIS_STAGES) {
+		const stagePath = stagePaths[stage];
+		if (fs.existsSync(stagePath)) {
+			createdStagePaths.push(stagePath);
+		}
+	}
+	return createdStagePaths;
+}
+
+function removeEmptyAllocationRoot(analysisRoot: string): void {
+	if (!fs.existsSync(analysisRoot)) {
+		return;
+	}
+	const remainingEntries = fs.readdirSync(analysisRoot);
+	if (remainingEntries.length === 0) {
+		fs.rmdirSync(analysisRoot);
+	}
+}
+
+function assertPathWithinRoot(rootPath: string, candidatePath: string, label: string): void {
+	if (!isWithinOrEqual(rootPath, candidatePath)) {
+		throw new Error(`${label} escaped the test root.`);
+	}
+}
+
+function isDirectoryAlreadyAllocated(error: unknown): boolean {
+	return isNodeErrorWithCode(error, "EEXIST");
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+	return typeof error === "object" && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === code;
+}
+
+function formatErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }

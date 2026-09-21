@@ -1,9 +1,11 @@
+import * as fs from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	ANALYSIS_STAGE_DIRS,
+	allocateAnalysisWorkspace,
 	assertAnalysisWorkspaceWorkbookIdentity,
 	formatLocalDateYYYYMMDD,
 	resolveAnalysisWorkspaceStagePaths,
@@ -18,6 +20,8 @@ import {
 
 const HASH = "a".repeat(64);
 const ROOT = path.resolve("test", "20260921 - Demo");
+const ALLOCATION_TEST_ROOT = path.resolve("test-output", "analysis-workspace");
+const cleanupRoots: string[] = [];
 
 function stageStatuses(
 	statusByStage: Partial<Record<AnalysisStage, AnalysisWorkspaceSummary["stages"][AnalysisStage]["status"]>>,
@@ -79,6 +83,32 @@ function summaryFixture(
 	};
 }
 
+function allocationInput(testRoot: string, workbookFileName = "Demo.xlsx") {
+	return {
+		testRoot,
+		workbookFileName,
+		workbookContentHash: HASH,
+		now: new Date(2026, 8, 21, 23, 59),
+	};
+}
+
+function testRootFor(name: string): string {
+	const root = path.join(ALLOCATION_TEST_ROOT, name);
+	fs.rmSync(root, { recursive: true, force: true });
+	cleanupRoots.push(root);
+	return root;
+}
+
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.doUnmock("node:fs");
+	vi.doUnmock("node:path");
+	vi.resetModules();
+	for (const root of cleanupRoots.splice(0)) {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
 describe("analysis workspace contract", () => {
 	it("defines the exact fixed stage directories", () => {
 		expect(ANALYSIS_STAGE_DIRS).toEqual({
@@ -93,6 +123,108 @@ describe("analysis workspace contract", () => {
 
 	it("formats local dates as YYYYMMDD", () => {
 		expect(formatLocalDateYYYYMMDD(new Date(2026, 8, 21, 23, 59))).toBe("20260921");
+	});
+
+	it("allocates exclusive analysis roots with exact suffixes and fixed stage directories", () => {
+		const testRoot = testRootFor("allocate-suffixes");
+		const workbookFileName = "Maera_gap_TP_brkt_and _battery_20260305V1 - test.xlsx";
+
+		const first = allocateAnalysisWorkspace(allocationInput(testRoot, workbookFileName));
+		const second = allocateAnalysisWorkspace(allocationInput(testRoot, workbookFileName));
+		const third = allocateAnalysisWorkspace(allocationInput(testRoot, workbookFileName));
+
+		expect(path.relative(testRoot, first.analysisRoot)).toBe(
+			"20260921 - Maera_gap_TP_brkt_and _battery_20260305V1 - test",
+		);
+		expect(path.relative(testRoot, second.analysisRoot)).toBe(
+			"20260921 - Maera_gap_TP_brkt_and _battery_20260305V1 - test -1",
+		);
+		expect(path.relative(testRoot, third.analysisRoot)).toBe(
+			"20260921 - Maera_gap_TP_brkt_and _battery_20260305V1 - test -2",
+		);
+		expect(Object.values(first.stagePaths)).toEqual([
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f1),
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f2),
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f3),
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f4),
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f5),
+			path.join(first.analysisRoot, ANALYSIS_STAGE_DIRS.f6),
+		]);
+		for (const stagePath of Object.values(first.stagePaths)) {
+			expect(fs.statSync(stagePath).isDirectory()).toBe(true);
+		}
+	});
+
+	it("never collides across concurrent allocations", async () => {
+		const testRoot = testRootFor("allocate-concurrently");
+		const [first, second] = await Promise.all([
+			Promise.resolve().then(() => allocateAnalysisWorkspace(allocationInput(testRoot))),
+			Promise.resolve().then(() => allocateAnalysisWorkspace(allocationInput(testRoot))),
+		]);
+
+		expect(new Set([first.analysisRoot, second.analysisRoot]).size).toBe(2);
+		expect(() => validateAnalysisWorkspaceLayout(first)).not.toThrow();
+		expect(() => validateAnalysisWorkspaceLayout(second)).not.toThrow();
+	});
+
+	it("rejects unsafe workbook names and escaped allocation roots", async () => {
+		const unsafeRoot = testRootFor("rejects-unsafe-workbook");
+		expect(() => allocateAnalysisWorkspace(allocationInput(unsafeRoot, "..\\escape.xlsx"))).toThrow();
+
+		const escapedRootParent = testRootFor("rejects-escaped-root");
+		const resolvedTestRoot = path.resolve(escapedRootParent);
+		const escapedRoot = path.resolve(resolvedTestRoot, "..", "escaped-root");
+		vi.doMock("node:path", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:path")>();
+			const originalJoin = actual.join;
+			const mockedPath = {
+				...actual,
+				join: (...parts: string[]) => {
+					if (parts.length === 2 && path.resolve(parts[0] ?? "") === resolvedTestRoot && parts[1]?.startsWith("20260921 - Demo")) {
+						return escapedRoot;
+					}
+					return originalJoin(...parts);
+				},
+			};
+			return {
+				...actual,
+				default: mockedPath,
+			};
+		});
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(escapedRootParent))).toThrow(/test root/i);
+	});
+
+	it("cleans up partially created stage directories without deleting an existing root", async () => {
+		const testRoot = testRootFor("cleanup-partial-stages");
+		const existingRoot = path.join(testRoot, "20260921 - Demo");
+		const existingMarker = path.join(existingRoot, "keep.txt");
+		fs.mkdirSync(existingRoot, { recursive: true });
+		fs.writeFileSync(existingMarker, "keep");
+
+		const allocatedRoot = `${existingRoot} -1`;
+		const failingStagePath = path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f2);
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			const mkdirSync: typeof actual.mkdirSync = ((target, options) => {
+				if (typeof target === "string" && path.resolve(target) === failingStagePath) {
+					throw new Error("simulated stage creation failure");
+				}
+				return actual.mkdirSync(target, options);
+			}) as typeof actual.mkdirSync;
+			return {
+				...actual,
+				mkdirSync,
+			};
+		});
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/simulated stage creation failure/i);
+		expect(fs.existsSync(existingRoot)).toBe(true);
+		expect(fs.readFileSync(existingMarker, "utf8")).toBe("keep");
+		expect(fs.existsSync(path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f1))).toBe(false);
+		expect(fs.existsSync(allocatedRoot)).toBe(false);
 	});
 
 	it("resolves canonical stage paths beneath the analysis root", () => {

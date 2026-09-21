@@ -21,6 +21,7 @@ export {
 	ANALYSIS_STAGE_DIRS,
 	ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
 	ANALYSIS_WORKSPACE_VERSION,
+	allocateAnalysisWorkspace,
 	assertAnalysisWorkspaceWorkbookIdentity,
 	formatLocalDateYYYYMMDD,
 	resolveAnalysisWorkspaceStagePaths,
@@ -30,6 +31,7 @@ export {
 export type {
 	AnalysisStage,
 	AnalysisStageStatus,
+	AllocateAnalysisWorkspaceInput,
 	AnalysisWorkspaceLayout,
 	AnalysisWorkspaceOverallStatus,
 	AnalysisWorkspaceResolvedStagePaths,
