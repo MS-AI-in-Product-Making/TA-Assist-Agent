@@ -10,6 +10,7 @@ import {
 } from "@ai-assist/contracts";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
+import { isWithinOrEqual } from "./path-containment.js";
 import type {
   F1F2ConfirmedRequest,
   F1F2ConfirmedResult,
@@ -193,11 +194,6 @@ function createLayout(managedOutputRoot: string, workbookPath: string, now: () =
     validationRoot: path.join(runRoot, "validation"),
     manifestPath: path.join(runRoot, "manifest.json"),
   };
-}
-
-function isWithinOrEqual(parentPath: string, childPath: string): boolean {
-  const relative = path.relative(parentPath, childPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function pathChain(value: string): string[] {

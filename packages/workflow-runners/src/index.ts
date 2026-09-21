@@ -17,6 +17,25 @@ export { runF4Calculation } from "./f4.js";
 export { runF4WhatIfCalculation } from "./f4-what-if.js";
 export { createF4WhatIfBaselineRequest } from "./f4-what-if-baseline.js";
 export type { F4WhatIfPatch, F4WhatIfRequest, F4WhatIfResult } from "./f4-what-if.js";
+export {
+	ANALYSIS_STAGE_DIRS,
+	ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+	ANALYSIS_WORKSPACE_VERSION,
+	assertAnalysisWorkspaceWorkbookIdentity,
+	formatLocalDateYYYYMMDD,
+	resolveAnalysisWorkspaceStagePaths,
+	validateAnalysisWorkspaceLayout,
+	validateAnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
+export type {
+	AnalysisStage,
+	AnalysisStageStatus,
+	AnalysisWorkspaceLayout,
+	AnalysisWorkspaceOverallStatus,
+	AnalysisWorkspaceStagePaths,
+	AnalysisWorkspaceStageSummary,
+	AnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
 export { runF5Interpretation } from "./f5.js";
 export { runF6Optimization } from "./f6.js";
 export {
