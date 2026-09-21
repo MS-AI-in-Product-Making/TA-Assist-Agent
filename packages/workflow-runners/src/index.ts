@@ -32,7 +32,8 @@ export type {
 	AnalysisStageStatus,
 	AnalysisWorkspaceLayout,
 	AnalysisWorkspaceOverallStatus,
-	AnalysisWorkspaceStagePaths,
+	AnalysisWorkspaceResolvedStagePaths,
+	AnalysisWorkspaceStageDirectoryNames,
 	AnalysisWorkspaceStageSummary,
 	AnalysisWorkspaceSummary,
 } from "./analysis-workspace.js";

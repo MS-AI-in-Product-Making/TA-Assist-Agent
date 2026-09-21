@@ -20,13 +20,22 @@ export type AnalysisStage = keyof typeof ANALYSIS_STAGE_DIRS;
 export type AnalysisStageStatus = "pending" | "running" | "completed" | "failed" | "blocked";
 export type AnalysisWorkspaceOverallStatus = "in_progress" | "completed" | "failed";
 
-export interface AnalysisWorkspaceStagePaths {
+export interface AnalysisWorkspaceResolvedStagePaths {
 	readonly f1: string;
 	readonly f2: string;
 	readonly f3: string;
 	readonly f4: string;
 	readonly f5: string;
 	readonly f6: string;
+}
+
+export interface AnalysisWorkspaceStageDirectoryNames {
+	readonly f1: typeof ANALYSIS_STAGE_DIRS.f1;
+	readonly f2: typeof ANALYSIS_STAGE_DIRS.f2;
+	readonly f3: typeof ANALYSIS_STAGE_DIRS.f3;
+	readonly f4: typeof ANALYSIS_STAGE_DIRS.f4;
+	readonly f5: typeof ANALYSIS_STAGE_DIRS.f5;
+	readonly f6: typeof ANALYSIS_STAGE_DIRS.f6;
 }
 
 export interface AnalysisWorkspaceLayout {
@@ -36,7 +45,7 @@ export interface AnalysisWorkspaceLayout {
 	readonly workbookFileName: string;
 	readonly workbookContentHash: string;
 	readonly allocationDate: string;
-	readonly stagePaths: AnalysisWorkspaceStagePaths;
+	readonly stagePaths: AnalysisWorkspaceResolvedStagePaths;
 }
 
 export interface AnalysisWorkspaceStageSummary {
@@ -54,7 +63,7 @@ export interface AnalysisWorkspaceSummary {
 	};
 	readonly allocationDate: string;
 	readonly currentStage: AnalysisStage;
-	readonly stagePaths: AnalysisWorkspaceStagePaths;
+	readonly stageDirectories: AnalysisWorkspaceStageDirectoryNames;
 	readonly stages: Readonly<Record<AnalysisStage, AnalysisWorkspaceStageSummary>>;
 	readonly overallStatus: AnalysisWorkspaceOverallStatus;
 	readonly failedStage?: AnalysisStage;
@@ -66,13 +75,6 @@ const STAGE_STATUS_SET: ReadonlySet<AnalysisStageStatus> = new Set(["pending", "
 const OVERALL_STATUS_SET: ReadonlySet<AnalysisWorkspaceOverallStatus> = new Set(["in_progress", "completed", "failed"]);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const LOCAL_DATE_PATTERN = /^\d{8}$/;
-const COMPLETED_F6_ARTIFACT_KEYS = [
-	"optimizationJson",
-	"finalReportMarkdown",
-	"finalReportPdf",
-	"runSummary",
-	"manifest",
-] as const;
 
 export function formatLocalDateYYYYMMDD(now: Date): string {
 	const year = String(now.getFullYear());
@@ -81,7 +83,7 @@ export function formatLocalDateYYYYMMDD(now: Date): string {
 	return `${year}${month}${day}`;
 }
 
-export function resolveAnalysisWorkspaceStagePaths(analysisRoot: string): AnalysisWorkspaceStagePaths {
+export function resolveAnalysisWorkspaceStagePaths(analysisRoot: string): AnalysisWorkspaceResolvedStagePaths {
 	const resolvedRoot = path.resolve(analysisRoot);
 	return {
 		f1: path.join(resolvedRoot, ANALYSIS_STAGE_DIRS.f1),
@@ -150,7 +152,7 @@ export function validateAnalysisWorkspaceSummary(summary: AnalysisWorkspaceSumma
 		throw new Error("Analysis workspace current stage is invalid.");
 	}
 
-	validateSummaryStagePaths(summary.stagePaths);
+	validateSummaryStageDirectories(summary.stageDirectories);
 
 	for (const stage of ANALYSIS_STAGES) {
 		const stageSummary = summary.stages[stage];
@@ -164,14 +166,13 @@ export function validateAnalysisWorkspaceSummary(summary: AnalysisWorkspaceSumma
 	}
 
 	validateStageOrdering(summary.stages);
-	validateCurrentStage(summary);
 
 	if (!OVERALL_STATUS_SET.has(summary.overallStatus)) {
 		throw new Error("Analysis workspace overall status is invalid.");
 	}
 
-	if (summary.overallStatus === "completed" && summary.stages.f6.status !== "completed") {
-		throw new Error("Analysis workspace overall status cannot be completed before F6 completion.");
+	if (summary.overallStatus === "completed" && ANALYSIS_STAGES.some((stage) => summary.stages[stage].status !== "completed")) {
+		throw new Error("Analysis workspace overall status requires every stage to be completed.");
 	}
 
 	if (summary.overallStatus === "failed") {
@@ -206,12 +207,12 @@ function validateAllocationDate(allocationDate: string): void {
 	}
 }
 
-function validateSummaryStagePaths(stagePaths: AnalysisWorkspaceSummary["stagePaths"]): void {
+function validateSummaryStageDirectories(stageDirectories: AnalysisWorkspaceSummary["stageDirectories"]): void {
 	for (const stage of ANALYSIS_STAGES) {
-		if (stagePaths[stage] !== ANALYSIS_STAGE_DIRS[stage]) {
+		if (stageDirectories[stage] !== ANALYSIS_STAGE_DIRS[stage]) {
 			throw new Error(`Analysis workspace stage path for ${stage} is invalid.`);
 		}
-		if (isAbsoluteAny(stagePaths[stage])) {
+		if (isAbsoluteAny(stageDirectories[stage])) {
 			throw new Error(`Analysis workspace stage path for ${stage} must remain relative.`);
 		}
 	}
@@ -225,13 +226,6 @@ function validateStageArtifacts(
 	const artifacts = Object.entries(stageSummary.artifacts);
 	if (stageSummary.status === "completed" && artifacts.length === 0) {
 		throw new Error(`Analysis workspace stage ${stage} requires validated artifacts before completion.`);
-	}
-	if (stage === "f6" && stageSummary.status === "completed") {
-		for (const artifactKey of COMPLETED_F6_ARTIFACT_KEYS) {
-			if (!(artifactKey in stageSummary.artifacts)) {
-				throw new Error("Analysis workspace F6 publish set is incomplete.");
-			}
-		}
 	}
 
 	for (const [artifactName, artifactPath] of artifacts) {
@@ -252,26 +246,6 @@ function validateStageOrdering(stages: AnalysisWorkspaceSummary["stages"]): void
 		else if (predecessorIncomplete) {
 			throw new Error(`Analysis workspace stage ${stage} cannot be completed before its completed predecessor chain.`);
 		}
-	}
-}
-
-function validateCurrentStage(summary: AnalysisWorkspaceSummary): void {
-	if (summary.overallStatus === "completed") {
-		if (summary.currentStage !== "f6") {
-			throw new Error("Analysis workspace current stage is invalid for a completed summary.");
-		}
-		return;
-	}
-
-	if (summary.overallStatus === "failed") return;
-
-	const firstIncompleteStage = ANALYSIS_STAGES.find((stage) => summary.stages[stage].status !== "completed");
-	if (!firstIncompleteStage) {
-		throw new Error("Analysis workspace current stage is invalid for a summary with all stages completed.");
-	}
-
-	if (summary.currentStage !== firstIncompleteStage) {
-		throw new Error("Analysis workspace current stage must match the first incomplete stage.");
 	}
 }
 

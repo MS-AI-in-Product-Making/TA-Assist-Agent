@@ -11,6 +11,8 @@ import {
 	validateAnalysisWorkspaceSummary,
 	type AnalysisStage,
 	type AnalysisWorkspaceLayout,
+	type AnalysisWorkspaceResolvedStagePaths,
+	type AnalysisWorkspaceStageDirectoryNames,
 	type AnalysisWorkspaceSummary,
 } from "./analysis-workspace.js";
 
@@ -53,6 +55,10 @@ function layoutFixture(): AnalysisWorkspaceLayout {
 	};
 }
 
+function summaryStageDirectories(): AnalysisWorkspaceStageDirectoryNames {
+	return { ...ANALYSIS_STAGE_DIRS };
+}
+
 function summaryFixture(
 	overrides: Partial<AnalysisWorkspaceSummary> = {},
 ): AnalysisWorkspaceSummary {
@@ -66,7 +72,7 @@ function summaryFixture(
 		},
 		allocationDate: "20260921",
 		currentStage: "f1",
-		stagePaths: { ...ANALYSIS_STAGE_DIRS },
+		stageDirectories: summaryStageDirectories(),
 		stages: stageStatuses({}),
 		overallStatus: "in_progress",
 		...overrides,
@@ -105,6 +111,13 @@ describe("analysis workspace contract", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summaryFixture())).not.toThrow();
 	});
 
+	it("uses distinct stage-path types for layout and summary contracts", () => {
+		const resolved: AnalysisWorkspaceResolvedStagePaths = resolveAnalysisWorkspaceStagePaths(ROOT);
+		const directories: AnalysisWorkspaceStageDirectoryNames = summaryStageDirectories();
+		expect(resolved.f1).toBe(path.join(ROOT, ANALYSIS_STAGE_DIRS.f1));
+		expect(directories.f1).toBe(ANALYSIS_STAGE_DIRS.f1);
+	});
+
 	it("rejects changed workbook identity after allocation", () => {
 		expect(() => assertAnalysisWorkspaceWorkbookIdentity(layoutFixture(), "Other.xlsx", HASH))
 			.toThrow(/workbook identity/i);
@@ -112,9 +125,9 @@ describe("analysis workspace contract", () => {
 			.toThrow(/workbook identity/i);
 	});
 
-	it("rejects absolute stage paths in the summary contract", () => {
+	it("rejects absolute stage directory paths in the summary contract", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
-			stagePaths: {
+			stageDirectories: {
 				...ANALYSIS_STAGE_DIRS,
 				f2: path.win32.join("C:\\analysis", ANALYSIS_STAGE_DIRS.f2),
 			},
@@ -135,11 +148,41 @@ describe("analysis workspace contract", () => {
 
 	it("rejects renamed stages", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
-			stagePaths: {
+			stageDirectories: {
 				...ANALYSIS_STAGE_DIRS,
 				f6: "06 - F6 Final Report",
 			},
 		}))).toThrow(/stage path/i);
+	});
+
+	it("rejects renamed absolute layout stage paths", () => {
+		expect(() => validateAnalysisWorkspaceLayout({
+			...layoutFixture(),
+			stagePaths: {
+				...resolveAnalysisWorkspaceStagePaths(ROOT),
+				f3: path.join(ROOT, "03 - F3 Governed Drawing"),
+			},
+		})).toThrow(/stage path/i);
+	});
+
+	it("rejects sibling absolute layout stage paths", () => {
+		expect(() => validateAnalysisWorkspaceLayout({
+			...layoutFixture(),
+			stagePaths: {
+				...resolveAnalysisWorkspaceStagePaths(ROOT),
+				f4: path.resolve(ROOT, "..", "04 - F4 Calculation Engine"),
+			},
+		})).toThrow(/stage path/i);
+	});
+
+	it("rejects escaping absolute layout stage paths", () => {
+		expect(() => validateAnalysisWorkspaceLayout({
+			...layoutFixture(),
+			stagePaths: {
+				...resolveAnalysisWorkspaceStagePaths(ROOT),
+				f5: path.resolve(ROOT, "..", "..", "escaped"),
+			},
+		})).toThrow(/stage path/i);
 	});
 
 	it("rejects a completed downstream stage with an incomplete predecessor", () => {
@@ -156,20 +199,31 @@ describe("analysis workspace contract", () => {
 		}))).toThrow(/overall status/i);
 	});
 
-	it("rejects completed F6 stages that do not have the full publish set", () => {
+	it("accepts a completed F6 stage without local artifact-name completeness rules", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
 			stages: {
 				...stageStatuses({ f1: "completed", f2: "completed", f3: "completed", f4: "completed", f5: "completed", f6: "completed" }),
 				f6: {
 					status: "completed",
 					artifacts: {
-						optimizationJson: path.join(ANALYSIS_STAGE_DIRS.f6, "Feature6-Optimization.json"),
+						report: path.join(ANALYSIS_STAGE_DIRS.f6, "Feature6-Optimization.json"),
 					},
 				},
 			},
 			currentStage: "f6",
 			overallStatus: "completed",
-		}))).toThrow(/f6 publish set/i);
+		}))).not.toThrow();
+	});
+
+	it("rejects completed summaries until every stage is completed", () => {
+		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
+			stages: {
+				...stageStatuses({ f1: "completed", f2: "completed", f3: "completed", f4: "completed", f5: "completed", f6: "running" }),
+				f6: { status: "running", artifacts: {} },
+			},
+			currentStage: "f6",
+			overallStatus: "completed",
+		}))).toThrow(/overall status/i);
 	});
 
 	it("rejects completed stages that have no validated artifacts", () => {
@@ -181,11 +235,12 @@ describe("analysis workspace contract", () => {
 		}))).toThrow(/validated artifacts/i);
 	});
 
-	it("rejects a current stage that does not match the first incomplete stage", () => {
+	it("allows valid in-progress persistence windows after all stages complete", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
-			stages: stageStatuses({ f1: "completed", f2: "pending", f3: "pending", f4: "pending", f5: "pending", f6: "pending" }),
-			currentStage: "f4",
-		}))).toThrow(/current stage/i);
+			stages: stageStatuses({ f1: "completed", f2: "completed", f3: "completed", f4: "completed", f5: "completed", f6: "completed" }),
+			currentStage: "f6",
+			overallStatus: "in_progress",
+		}))).not.toThrow();
 	});
 
 	it("rejects a failed stage that does not match the recorded failed stage", () => {
