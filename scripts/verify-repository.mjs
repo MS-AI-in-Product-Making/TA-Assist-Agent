@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 const forbiddenPatterns = [
   /(^|\/)\.env(?:\.(?!example$).+)?$/,
   /(^|\/)(?:runtime|exports)(?:\/|$)/,
-  /(^|\/)f8-session-output(?:\/|$)/,
   /(^|\/)fixtures\/confidential(?:\/|$)/i,
   /\.(xls|xlsx|xlsm)$/i,
 ];

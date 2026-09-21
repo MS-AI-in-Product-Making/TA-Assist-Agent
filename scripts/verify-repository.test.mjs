@@ -93,9 +93,9 @@ describe("isForbiddenRepositoryPath", () => {
     expect(hasCjkText("English only")).toBe(false);
     expect(hasCjkText("中文 product copy")).toBe(true);
     expect(isEnglishEngineeringPath("README.md")).toBe(true);
-    expect(isEnglishEngineeringPath("apps/vscode-extension/src/participant.ts")).toBe(false);
+    expect(isEnglishEngineeringPath("apps/f7-web/src/product-copy.ts")).toBe(false);
     expect(findEngineeringLanguageViolations(
-      ["README.md", "apps/vscode-extension/src/participant.ts"],
+      ["README.md", "apps/f7-web/src/product-copy.ts"],
       (repositoryPath) => repositoryPath === "README.md" ? "中文 developer guide" : "中文 localized response",
     )).toEqual(["README.md"]);
   });
@@ -129,9 +129,6 @@ describe("isForbiddenRepositoryPath", () => {
     "sample.xls",
     "sample.xlsx",
     "sample.xlsm",
-    "F8-session-output/probe.json",
-    "nested/F8-session-output/probe.json",
-    "F8-SESSION-OUTPUT/probe.json",
   ])(
     "rejects %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
@@ -160,10 +157,13 @@ describe("isForbiddenRepositoryPath", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
   });
   it.each([
+    "F8-session-output/probe.json",
+    "nested/F8-session-output/probe.json",
+    "F8-SESSION-OUTPUT/probe.json",
     "F8-session-output-notes/probe.json",
     "nested/F8-session-output-notes/probe.json",
     "F8-session-output-example/probe.json",
-  ])("allows safe neighbors at %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(false));
+  ])("allows retired F8-only output path %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(false));
   it.each([
     "fixtures/confidential/sample.json",
     "fixtures/Confidential/sample.json",
@@ -250,13 +250,13 @@ describe("isForbiddenRepositoryPath", () => {
       expect(result.stderr).toContain("RUNTIME/run.json");
       expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
-      expect(result.stderr).toContain("F8-session-output/probe.json");
-      expect(result.stderr).toContain("nested/F8-session-output/probe.json");
       expect(result.stderr).toContain("sample.XLS");
       expect(result.stderr).toContain("sample.XLSX");
       expect(result.stderr).not.toContain(".ENV.EXAMPLE");
       expect(result.stderr).not.toContain("fixtures/public/smoke-request.json");
       expect(result.stderr).not.toContain("fixtures/confidential-notes/sample.json");
+      expect(result.stderr).not.toContain("F8-session-output/probe.json");
+      expect(result.stderr).not.toContain("nested/F8-session-output/probe.json");
       expect(result.stderr).not.toContain("F8-session-output-notes/probe.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });

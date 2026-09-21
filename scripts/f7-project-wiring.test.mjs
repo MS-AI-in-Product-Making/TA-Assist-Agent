@@ -57,9 +57,9 @@ describe("f7 project wiring", () => {
 
     const projects = vitestConfig?.test?.projects;
     expect(Array.isArray(projects)).toBe(true);
-    expect(projects).toHaveLength(3);
+    expect(projects).toHaveLength(2);
 
-    const [nodeProject, workbenchWebProject, webProject] = projects;
+    const [nodeProject, webProject] = projects;
     expect(nodeProject?.test?.name).toBe("node");
     expect(nodeProject?.test?.testTimeout).toBe(60_000);
     expect(nodeProject?.test?.maxWorkers).toBe(4);
@@ -70,16 +70,8 @@ describe("f7 project wiring", () => {
     ]);
     expect(nodeProject?.test?.exclude).toEqual([
       "apps/f7-web/**/*.test.ts",
-      "apps/workbench-web/**/*.test.ts",
       "scripts/f4-excel-regression.test.mjs",
     ]);
-
-    expect(workbenchWebProject?.test?.name).toBe("workbench-web");
-    expect(workbenchWebProject?.test?.include).toEqual([
-      "apps/workbench-web/src/**/*.test.ts",
-      "apps/workbench-web/src/**/*.test.tsx",
-    ]);
-    expect(workbenchWebProject?.test?.environment).toBe("jsdom");
 
     expect(webProject?.test?.name).toBe("f7-web");
     expect(webProject?.test?.include).toEqual(["apps/f7-web/**/*.test.ts"]);
@@ -87,8 +79,18 @@ describe("f7 project wiring", () => {
     expect(Array.isArray(webProject?.plugins)).toBe(true);
     expect(webProject?.plugins?.some((plugin) => typeof plugin === "object" && plugin !== null && typeof plugin.name === "string" && plugin.name.toLowerCase().includes("vue"))).toBe(true);
 
+    expect(projects.some((project) => project?.test?.name === "workbench-web")).toBe(false);
+
     const workspaceConfigPath = path.join(rootDir, "vitest.workspace.ts");
     expect(fs.existsSync(workspaceConfigPath)).toBe(false);
+
+    expect(rootPackage.overrides).toBeUndefined();
+
+    const playwrightConfigPath = path.join(rootDir, "playwright.config.ts");
+    const playwrightConfigModule = await import(pathToFileURL(playwrightConfigPath).href);
+    const playwrightConfig = playwrightConfigModule.default;
+    expect(playwrightConfig?.testDir).toBe("test/e2e");
+    expect(playwrightConfig?.testMatch).toBe("**/*.spec.ts");
 
     const eslintConfigModule = await import(pathToFileURL(path.join(rootDir, "eslint.config.mjs")).href);
     const ignoreConfig = eslintConfigModule.default.find((entry) => Array.isArray(entry.ignores));

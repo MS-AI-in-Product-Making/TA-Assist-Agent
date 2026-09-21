@@ -18,8 +18,6 @@ fixtures/confidential/
 
 # Internal HTML reports (not for repo)
 *.html
-F8-session-output/
-**/F8-session-output/
 
 # OS / editor
 Thumbs.db

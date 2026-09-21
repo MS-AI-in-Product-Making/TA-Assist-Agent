@@ -63,6 +63,26 @@ const workflowScripts = [
   "build:f7:web",
 ];
 
+const retiredWorkspaceReferences = [
+  "./apps/workbench-server",
+  "./packages/agent-runtime",
+  "./packages/conversation",
+  "./packages/workbench",
+];
+
+const retiredLockfileEntries = [
+  "apps/workbench-server",
+  "apps/workbench-web",
+  "packages/agent-runtime",
+  "packages/conversation",
+  "packages/workbench",
+  "node_modules/@ai-assist/agent-runtime",
+  "node_modules/@ai-assist/conversation",
+  "node_modules/@ai-assist/workbench",
+  "node_modules/@ai-assist/workbench-server",
+  "node_modules/@ai-assist/workbench-web",
+];
+
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, relativePath), "utf8"));
 }
@@ -86,5 +106,32 @@ describe("F8 retirement retained surfaces", () => {
     for (const scriptName of workflowScripts) {
       expect(scripts[scriptName]).toBeDefined();
     }
+  });
+
+  it("removes retired F8 workspace references from root configuration", () => {
+    const rootTsconfig = readJson("tsconfig.json");
+    const references = (rootTsconfig.references ?? []).map(({ path: referencePath }) => referencePath);
+
+    for (const retiredReference of retiredWorkspaceReferences) {
+      expect(references).not.toContain(retiredReference);
+    }
+
+    const packageJson = readJson("package.json");
+    expect(packageJson.overrides).toBeUndefined();
+
+    const packageLock = readJson("package-lock.json");
+    const lockfilePackages = packageLock.packages ?? {};
+    for (const retiredEntry of retiredLockfileEntries) {
+      expect(lockfilePackages[retiredEntry]).toBeUndefined();
+    }
+  });
+
+  it("keeps repository ignores and e2e wiring scoped to retained surfaces", () => {
+    const gitignore = fs.readFileSync(path.join(rootDir, ".gitignore"), "utf8");
+    expect(gitignore).not.toContain("F8-session-output");
+
+    const ciExample = fs.readFileSync(path.join(rootDir, ".github/ci.example.yml"), "utf8");
+    expect(ciExample).not.toContain("workbench");
+    expect(ciExample).not.toContain("vsix");
   });
 });
