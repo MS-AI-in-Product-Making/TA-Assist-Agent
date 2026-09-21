@@ -254,7 +254,7 @@ function validateBoundary(runRoot, publishRoot) {
   return isContained(realPublishRoot, realRunRoot);
 }
 
-function validateWorkspaceFinalSet(publishRoot, runRoot, contract) {
+function validateWorkspaceFinalSet(publishRoot, runRoot, optimization, contract) {
   try {
     const summaryPath = path.join(path.resolve(publishRoot), ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
     if (!existsSync(summaryPath)) return true;
@@ -264,7 +264,9 @@ function validateWorkspaceFinalSet(publishRoot, runRoot, contract) {
       || summary.analysisRoot !== path.resolve(publishRoot)
       || summary.overallStatus !== "completed"
       || summary.currentStage !== "f6"
-      || summary.stages?.f6?.status !== "completed") {
+      || summary.stages?.f6?.status !== "completed"
+      || summary.workbook?.fileName !== optimization?.workbook?.fileName
+      || summary.workbook?.contentHash !== optimization?.workbook?.contentHash) {
       return false;
     }
     const stagePaths = resolveAnalysisWorkspaceStagePaths(summary.analysisRoot);
@@ -532,7 +534,7 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
     const contract = artifactContract(manifest, optimization);
     const workspaceEvidence = options.workspaceModelInterpretationPath !== undefined;
     if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence)) return rejected("artifact_file_set_invalid");
-    if (!validateWorkspaceFinalSet(options.publishRoot, runRoot, contract)) return rejected("artifact_validation_failed");
+    if (!validateWorkspaceFinalSet(options.publishRoot, runRoot, optimization, contract)) return rejected("artifact_validation_failed");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");

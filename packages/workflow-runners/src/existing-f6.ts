@@ -183,6 +183,7 @@ function validateBoundary(runRoot: string, publishRoot: string): boolean {
 function validateWorkspaceFinalSet(
   publishRoot: string,
   runRoot: string,
+  optimization: any,
   contract: NonNullable<ReturnType<typeof artifactContract>>,
 ): boolean {
   try {
@@ -194,7 +195,9 @@ function validateWorkspaceFinalSet(
       || summary.analysisRoot !== path.resolve(publishRoot)
       || summary.overallStatus !== "completed"
       || summary.currentStage !== "f6"
-      || summary.stages?.f6?.status !== "completed") {
+      || summary.stages?.f6?.status !== "completed"
+      || summary.workbook?.fileName !== optimization?.workbook?.fileName
+      || summary.workbook?.contentHash !== optimization?.workbook?.contentHash) {
       return false;
     }
     const stagePaths = resolveAnalysisWorkspaceStagePaths(summary.analysisRoot);
@@ -500,7 +503,7 @@ function inspectF6Publication(entryPath: string, request: ExistingF6ValidationRe
     if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence, candidateReceipt)) return rejected("artifact_file_set_invalid");
     if (candidateReceipt && !validateF6CandidateReceipt(runRoot)) return rejected("candidate_receipt_invalid");
     if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, request.workspaceModelInterpretationPath!, optimization)) return rejected("artifact_workspace_evidence_invalid");
-    if (!validateWorkspaceFinalSet(request.publishRoot, runRoot, contract)) return rejected("artifact_validation_failed");
+    if (!validateWorkspaceFinalSet(request.publishRoot, runRoot, optimization, contract)) return rejected("artifact_validation_failed");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");
