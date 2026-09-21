@@ -77,6 +77,58 @@ function setupBundle({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = 
   return bundle;
 }
 
+function createAnalysisWorkspaceRoot(bundle) {
+  const analysisRoot = path.join(bundle.root, "20260921 - Anonymous");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  Object.values(stagePaths).forEach((stagePath) => mkdirSync(stagePath, { recursive: true }));
+  writeJson(path.join(stagePaths.f2, "Feature2-Report.json"), readJson(bundle.paths.f2));
+  writeJson(path.join(stagePaths.f3, "Feature3-Report.json"), readJson(bundle.paths.f3));
+  writeJson(path.join(stagePaths.f4, "Feature4-Calculation.json"), readJson(bundle.paths.f4));
+  writeJson(path.join(stagePaths.f5, "Feature5-Report.json"), readJson(bundle.paths.f5));
+  writeJson(path.join(analysisRoot, "analysis-run-summary.json"), {
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  });
+  Object.assign(bundle, {
+    analysisRoot,
+    publishRoot: analysisRoot,
+    f2ArtifactRoot: stagePaths.f2,
+    f3ArtifactRoot: stagePaths.f3,
+    f4ArtifactRoot: stagePaths.f4,
+    f5ArtifactRoot: stagePaths.f5,
+    workspaceStagePaths: stagePaths,
+  });
+  return { analysisRoot, stagePaths };
+}
+
 function installRequiredMultimodalV3(bundle) {
   const f2 = readJson(bundle.paths.f2);
   const f5 = readJson(bundle.paths.f5);
@@ -1058,6 +1110,50 @@ describe("F6 optional governed evidence", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.modelInterpretation).toEqual(artifact);
     expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "CALLER_AUTHORIZED" });
+  });
+
+  it("rejects a rogue copied workspace interpretation outside the authoritative stage6 evidence path", () => {
+    const bundle = setupBundle();
+    installRequiredMultimodalV3(bundle);
+    const workspace = createAnalysisWorkspaceRoot(bundle);
+    const authoritativeRoot = path.join(workspace.stagePaths.f6, "evidence", "model-interpretation");
+    mkdirSync(authoritativeRoot, { recursive: true });
+    writeJson(path.join(authoritativeRoot, "Feature6-Model-Interpretation.json"), readJson(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)));
+    const rogueRoot = path.join(workspace.analysisRoot, "other-evidence");
+    mkdirSync(rogueRoot, { recursive: true });
+    writeJson(path.join(rogueRoot, bundle.modelInterpretationArtifact), readJson(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)));
+    bundle.modelInterpretationArtifactRoot = rogueRoot;
+    bundle.expectedModelInterpretationContentHash = sha256(path.join(rogueRoot, bundle.modelInterpretationArtifact));
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expectRejected(result, "artifact_identity_mismatch", "modelInterpretationArtifact");
+  });
+
+  it("rejects a workspace interpretation supplied through a linked alias", ({ skip }) => {
+    if (!FILE_SYMLINKS_AVAILABLE) return skip();
+    const bundle = setupBundle();
+    installRequiredMultimodalV3(bundle);
+    const workspace = createAnalysisWorkspaceRoot(bundle);
+    const authoritativeRoot = path.join(workspace.stagePaths.f6, "evidence", "model-interpretation");
+    mkdirSync(authoritativeRoot, { recursive: true });
+    const authoritativePath = path.join(authoritativeRoot, "Feature6-Model-Interpretation.json");
+    writeJson(authoritativePath, readJson(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)));
+    const aliasRoot = path.join(workspace.analysisRoot, "alias-root");
+    mkdirSync(aliasRoot, { recursive: true });
+    const aliasPath = path.join(aliasRoot, "Feature6-Model-Interpretation.json");
+    try {
+      symlinkSync(authoritativePath, aliasPath, "file");
+    } catch (error) {
+      if (["EACCES", "EPERM", "UNKNOWN"].includes(error?.code)) return skip();
+      throw error;
+    }
+    bundle.modelInterpretationArtifactRoot = aliasRoot;
+    bundle.expectedModelInterpretationContentHash = sha256(authoritativePath);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expectRejected(result, "artifact_identity_mismatch", "modelInterpretationArtifact");
   });
 
   it("accepts equivalent numeric F2 and textual multimodal DIM IDs", () => {

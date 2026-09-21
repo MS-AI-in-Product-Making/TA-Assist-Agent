@@ -313,6 +313,58 @@ describe("runF6FullValidation", () => {
     }));
   });
 
+  it("pins workspace mode to the authoritative stage6 interpretation path instead of a rogue supplied copy", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    cleanup.push(bundle.root);
+    installRequiredMultimodalV3(bundle);
+    const workspace = createAnalysisWorkspaceRoot(bundle);
+    const authoritativeRoot = path.join(workspace.stagePaths.f6, "evidence", "model-interpretation");
+    mkdirSync(authoritativeRoot, { recursive: true });
+    writeFileSync(
+      path.join(authoritativeRoot, "Feature6-Model-Interpretation.json"),
+      readFileSync(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)),
+    );
+    const rogueRoot = path.join(workspace.analysisRoot, "rogue");
+    mkdirSync(rogueRoot, { recursive: true });
+    const roguePath = path.join(rogueRoot, "Feature6-Model-Interpretation.json");
+    writeFileSync(roguePath, readFileSync(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)));
+    const loadBundle = vi.fn(() => ({ status: "rejected", reasonCode: "test_rejection" }));
+
+    runF6FullValidation({}, {
+      parseArgs: () => ({
+        f2ArtifactRoot: workspace.stagePaths.f2,
+        f3ArtifactRoot: workspace.stagePaths.f3,
+        f4ArtifactRoot: workspace.stagePaths.f4,
+        f5ArtifactRoot: workspace.stagePaths.f5,
+        analysisRoot: workspace.analysisRoot,
+        selectedWorksheetNames: ["Analysis-A"],
+        interactionLanguage: INTERACTION_LANGUAGE,
+        analysisRequestContext: REQUEST_CONTEXT,
+        modelInterpretationArtifact: roguePath,
+      }),
+      resolveLayout: () => ({
+        artifactSetVersion: "f6-artifact-set-v4",
+        runId: "2026-09-21T12-00-00-000Z",
+        runRoot: workspace.stagePaths.f6,
+        publishRoot: workspace.analysisRoot,
+        optimizationJsonName: "Feature6-Optimization.json",
+        finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+        finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+        runSummaryJsonName: "Feature6-Run-Summary.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+      }),
+      loadBundle,
+    });
+
+    expect(loadBundle).toHaveBeenCalledWith(expect.objectContaining({
+      analysisRoot: workspace.analysisRoot,
+      modelInterpretationArtifactRoot: authoritativeRoot,
+      modelInterpretationArtifact: "Feature6-Model-Interpretation.json",
+      expectedModelInterpretationContentHash: expect.any(String),
+    }));
+  });
+
   it("does not rewrite a failure manifest produced by the governed runner", () => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);
@@ -446,5 +498,48 @@ describe("runF6FullValidation", () => {
       status: "failed",
       reasonCode: "workspace_stage_not_empty",
     });
+  });
+
+  it("allows the authorized stage6 evidence subtree to exist before five-file publication", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    cleanup.push(bundle.root);
+    installRequiredMultimodalV3(bundle);
+    const workspace = createAnalysisWorkspaceRoot(bundle);
+    mkdirSync(path.join(workspace.stagePaths.f6, "evidence", "model-response"), { recursive: true });
+    mkdirSync(path.join(workspace.stagePaths.f6, "evidence", "model-interpretation"), { recursive: true });
+    writeFileSync(
+      path.join(workspace.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+      readFileSync(path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact)),
+    );
+    const loadBundle = vi.fn(() => ({ status: "rejected", reasonCode: "test_rejection" }));
+
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({
+        f2ArtifactRoot: workspace.stagePaths.f2,
+        f3ArtifactRoot: workspace.stagePaths.f3,
+        f4ArtifactRoot: workspace.stagePaths.f4,
+        f5ArtifactRoot: workspace.stagePaths.f5,
+        analysisRoot: workspace.analysisRoot,
+        selectedWorksheetNames: ["Analysis-A"],
+        interactionLanguage: INTERACTION_LANGUAGE,
+        analysisRequestContext: REQUEST_CONTEXT,
+      }),
+      resolveLayout: () => ({
+        artifactSetVersion: "f6-artifact-set-v4",
+        runId: "2026-09-21T12-00-00-000Z",
+        runRoot: workspace.stagePaths.f6,
+        publishRoot: workspace.analysisRoot,
+        optimizationJsonName: "Feature6-Optimization.json",
+        finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+        finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+        runSummaryJsonName: "Feature6-Run-Summary.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+      }),
+      loadBundle,
+    });
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(loadBundle).toHaveBeenCalledTimes(1);
   });
 });

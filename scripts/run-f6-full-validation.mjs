@@ -32,6 +32,10 @@ function governedWorkbookFileName(f2ArtifactRoot) {
   return f2UserReportSchema.parse(JSON.parse(readFileSync(reportPath, "utf8"))).workbook.fileName;
 }
 
+function authoritativeWorkspaceModelInterpretationPath(layout) {
+  return path.join(layout.runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+}
+
 function loaderOptions(parsed) {
   const evidenceFields = [
     "supplierCapabilityArtifact",
@@ -176,6 +180,9 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
   const layout = dependencies.resolveLayout(parsed, options);
+  const authoritativeModelInterpretationPath = parsed.analysisRoot === undefined || !layout.allowExistingRunRoot
+    ? parsed.modelInterpretationArtifact
+    : authoritativeWorkspaceModelInterpretationPath(layout);
   try {
     return normalizeF6Result(runF6Optimization({
       f2ArtifactRoot: parsed.f2ArtifactRoot,
@@ -191,9 +198,9 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       imageObservationsPath: parsed.imageObservationArtifact,
       analysisContextPath: parsed.analysisContextArtifact,
       optimizationTargetsPath: parsed.optimizationTargetsArtifact,
-      modelInterpretationPath: parsed.modelInterpretationArtifact,
-      expectedModelInterpretationContentHash: parsed.expectedModelInterpretationContentHash ?? (typeof parsed.modelInterpretationArtifact === "string"
-        ? createHash("sha256").update(readFileSync(parsed.modelInterpretationArtifact)).digest("hex")
+      modelInterpretationPath: authoritativeModelInterpretationPath,
+      expectedModelInterpretationContentHash: parsed.expectedModelInterpretationContentHash ?? (typeof authoritativeModelInterpretationPath === "string"
+        ? createHash("sha256").update(readFileSync(authoritativeModelInterpretationPath)).digest("hex")
         : undefined),
     }, {
       repositoryRoot: process.cwd(),
@@ -216,9 +223,10 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         imageObservationArtifact: request.imageObservationsPath,
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
-        modelInterpretationArtifact: request.modelInterpretationPath,
+        modelInterpretationArtifact: authoritativeModelInterpretationPath === undefined ? request.modelInterpretationPath : authoritativeModelInterpretationPath,
         expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
         requireMultimodalV3: true,
+        analysisRoot: parsed.analysisRoot,
         publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),

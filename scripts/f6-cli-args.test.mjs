@@ -85,6 +85,20 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
   });
 
+  it("allows workspace mode to omit model interpretation because the authoritative stage6 path is derived", () => {
+    expect(parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      "--analysis-root", "test/20260921 - Demo",
+      "--worksheet", "Analysis-A",
+      ...REQUEST_CONTEXT_ARGS,
+    ])).toMatchObject({
+      analysisRoot: "test/20260921 - Demo",
+      modelInterpretationArtifact: undefined,
+      selectedWorksheetNames: ["Analysis-A"],
+    });
+  });
+
   it("rejects a worksheet selection without governed request context", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--analysis-request-context/i);
   });

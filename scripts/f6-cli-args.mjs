@@ -84,7 +84,7 @@ export function parseF6CliArgs(args = []) {
   if (analysisRequestContext === undefined) {
     throw new Error("Feature 6 requires one governed --analysis-request-context value.");
   }
-  if (optionalPaths.modelInterpretationArtifact === undefined) {
+  if (optionalPaths.modelInterpretationArtifact === undefined && analysisRoot === undefined) {
     throw new Error("Feature 6 requires one governed --model-interpretation artifact.");
   }
 

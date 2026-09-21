@@ -142,6 +142,7 @@ it("materializes one current v3 artifact from a terminal drawing-governance-v3 r
   expect(existsSync(path.join(bundle.publishRoot, "f6-model-responses"))).toBe(false);
   const loaded = loadF6ArtifactBundle({
     ...bundle,
+    analysisRoot,
     analysisRequestContext: { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: 0, source: "cli" },
     publishRoot: analysisRoot,
     modelInterpretationArtifactRoot: path.dirname(output.artifactPath),
@@ -265,4 +266,76 @@ it("rejects a physical image hash mismatch before writing an artifact", () => {
     outputRoot: bundle.publishRoot,
   })).toThrow(/image.*(?:contentHash|hash)/i);
   expect(existsSync(path.join(bundle.publishRoot, "f6-model-interpretations"))).toBe(false);
+});
+
+it("fails closed when the validated stage6 destination is swapped before response read", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  const attackerStage = path.join(bundle.root, "attacker-stage");
+  const attackerResponsePath = path.join(attackerStage, "evidence", "model-response", "Feature6-Model-Response.json");
+  mkdirSync(path.dirname(attackerResponsePath), { recursive: true });
+  writeFileSync(attackerResponsePath, readFileSync(responsePath));
+
+  expect(() => materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+    analysisRoot: bundle.analysisRoot,
+  }, {
+    beforeReadResponse: () => {
+      rmSync(stagePaths.f6, { recursive: true, force: true });
+      mkdirSync(path.dirname(responsePath), { recursive: true });
+      writeFileSync(responsePath, readFileSync(attackerResponsePath));
+    },
+  })).toThrow(/workspace root changed|validated f6 stage path changed|identity/i);
+  expect(existsSync(path.join(attackerStage, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"))).toBe(false);
+});
+
+it("fails closed when the validated stage6 destination is swapped before output write", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  const attackerStage = path.join(bundle.root, "attacker-stage");
+
+  expect(() => materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+    analysisRoot: bundle.analysisRoot,
+  }, {
+    beforeOpenOwnedFile: () => {
+      rmSync(stagePaths.f6, { recursive: true, force: true });
+      mkdirSync(path.join(attackerStage, "evidence", "model-interpretation"), { recursive: true });
+      mkdirSync(path.join(stagePaths.f6, "evidence", "model-interpretation"), { recursive: true });
+    },
+  })).toThrow(/workspace root changed|validated f6 stage path changed|identity/i);
+  expect(existsSync(path.join(attackerStage, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"))).toBe(false);
+});
+
+it("fails closed when the validated stage6 destination is swapped at the rename boundary", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  const attackerStage = path.join(bundle.root, "attacker-stage");
+
+  expect(() => materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+    analysisRoot: bundle.analysisRoot,
+  }, {
+    beforeRenameOwnedFile: () => {
+      rmSync(stagePaths.f6, { recursive: true, force: true });
+      mkdirSync(path.join(attackerStage, "evidence", "model-interpretation"), { recursive: true });
+      mkdirSync(path.join(stagePaths.f6, "evidence", "model-interpretation"), { recursive: true });
+    },
+  })).toThrow(/workspace root changed|validated f6 stage path changed|identity/i);
+  expect(existsSync(path.join(attackerStage, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"))).toBe(false);
 });
