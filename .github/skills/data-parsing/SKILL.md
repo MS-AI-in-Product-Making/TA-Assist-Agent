@@ -23,4 +23,6 @@ Never infer worksheet scope, reuse a historical selection, fall back to legacy `
 
 - The parsing-stage root for current full-flow workbook writes is `01 - F1 Data Parsing`.
 - The cleaning-stage root for the same workspace is `02 - F2 Data Cleaning`.
+- The worksheet-selection prompt, selection registry/reference, and parsing-stage logs stay in `01 - F1 Data Parsing`.
+- Do not copy `Feature1-Selection.json` or other parsing evidence into `02 - F2 Data Cleaning`.
 - Current writes must not create a new `f2-runs`, timestamp, or UUID directory layer beneath the canonical analysis root.

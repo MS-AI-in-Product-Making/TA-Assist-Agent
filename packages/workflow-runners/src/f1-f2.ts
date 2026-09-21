@@ -165,6 +165,29 @@ function buildCompletedResult(
   };
 }
 
+function usesWorkspaceStageSeparation(layout: { f1Root: string; f2Root: string; validationRoot: string }): boolean {
+  return path.resolve(layout.validationRoot) === path.resolve(layout.f1Root)
+    && path.resolve(layout.f1Root) !== path.resolve(layout.f2Root);
+}
+
+function stageLogRoot(
+  layout: { f1Root: string; f2Root: string; validationRoot: string },
+  stage: string,
+): string {
+  if (usesWorkspaceStageSeparation(layout) && stage === "f2") {
+    return layout.f2Root;
+  }
+  return layout.validationRoot;
+}
+
+function feature2ValidationPath(
+  layout: { f1Root: string; f2Root: string; validationRoot: string },
+): string {
+  return usesWorkspaceStageSeparation(layout)
+    ? path.join(layout.f2Root, "Feature2-Validation.json")
+    : path.join(layout.validationRoot, "Feature2-Validation.json");
+}
+
 function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): ExecuteStageResult {
   const result = spawnSync(command, [...args], { cwd, env, encoding: "utf8" });
   if (result.error) throw result.error;
@@ -190,7 +213,7 @@ function createLayout(managedOutputRoot: string, workbookPath: string, now: () =
       runRoot: analysisWorkspace.analysisRoot,
       f1Root: analysisWorkspace.stagePaths.f1,
       f2Root: analysisWorkspace.stagePaths.f2,
-      validationRoot: analysisWorkspace.stagePaths.f2,
+      validationRoot: analysisWorkspace.stagePaths.f1,
       manifestPath: path.join(analysisWorkspace.analysisRoot, "manifest.json"),
     };
   }
@@ -489,7 +512,7 @@ function runStage(
   context: RunContext,
   manifest: WorkflowManifest,
   manifestPath: string,
-  validationRoot: string,
+  logRoot: string,
   stage: string,
   args: readonly string[],
   outputVariable: "AI_TVA_F1_OUTPUT_ROOT" | "AI_TVA_F2_OUTPUT_ROOT",
@@ -499,6 +522,7 @@ function runStage(
 ): void {
   const featureId = stage === "f1-selection" || stage === "f1" ? "F1" : "F2";
   throwIfAborted(context, stage);
+  mkdirSync(logRoot, { recursive: true });
   setExecutionStatus(manifest, EXECUTION_STATUS.running, now, { preserveError: true });
   manifest.stages[stage] = { status: "running", startedAt: now().toISOString() };
   persistManifest(manifest, manifestPath, now);
@@ -511,16 +535,16 @@ function runStage(
       cwd: context.repositoryRoot,
       env: { ...process.env, [outputVariable]: outputRoot },
     }) ?? {};
-    writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
-    writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "completed", completedAt: now().toISOString() };
     persistManifest(manifest, manifestPath, now);
     context.emit({ kind: "stage_completed", featureId, stage, timestamp: now().toISOString() });
   } catch (error) {
     const details = errorDetails(error);
     const normalized = normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: [stage] });
-    writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), (error as ExecuteStageResult | undefined)?.stdout ?? "", "utf8");
-    writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), (error as ExecuteStageResult | undefined)?.stderr ?? details.message, "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stdout.log`), (error as ExecuteStageResult | undefined)?.stdout ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stderr.log`), (error as ExecuteStageResult | undefined)?.stderr ?? details.message, "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "failed", failedAt: now().toISOString(), error: details };
     manifest.status = "failed";
     manifest.error = details;
@@ -555,7 +579,7 @@ export function runF1F2Selection(
       context,
       manifest,
       layout.manifestPath,
-      layout.validationRoot,
+      stageLogRoot(layout, "f1-selection"),
       "f1-selection",
       ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only"],
       "AI_TVA_F1_OUTPUT_ROOT",
@@ -693,7 +717,7 @@ export function runF1F2Confirmed(
         context,
         manifest,
         layout.manifestPath,
-        layout.validationRoot,
+        stageLogRoot(layout, "f1"),
         "f1",
         [
           "scripts/run-f1-full-validation.mjs",
@@ -720,7 +744,7 @@ export function runF1F2Confirmed(
         context,
         manifest,
         layout.manifestPath,
-        layout.validationRoot,
+        stageLogRoot(layout, "f2"),
         "f2",
         ["scripts/run-f2-full-validation.mjs", layout.f1Root],
         "AI_TVA_F2_OUTPUT_ROOT",
@@ -735,7 +759,7 @@ export function runF1F2Confirmed(
     const reportPath = ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report");
     const report = parseCompletedReport(reportPath);
     const validation = { status: "valid", validatedAt: now().toISOString(), reportPath, reportStatus: report.status };
-    writeFileSync(path.join(layout.validationRoot, "Feature2-Validation.json"), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
+    writeFileSync(feature2ValidationPath(layout), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
     manifest.stages.validation = { ...manifest.stages.validation, status: "completed", completedAt: now().toISOString() };
     manifest.status = "completed";
     delete manifest.error;

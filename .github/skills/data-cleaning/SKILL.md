@@ -21,4 +21,6 @@ Never bypass required-field gates, infer missing identifiers, create a new `f2-r
 
 - The inherited parsing-stage root is `01 - F1 Data Parsing`.
 - The cleaning-stage root is `02 - F2 Data Cleaning`.
+- Read the exact parsing handoff from `01 - F1 Data Parsing`; if an internal reference is needed, store the path/reference instead of duplicating parsing artifacts into stage 2.
+- Keep cleaning reports, cleaning-stage logs, and cleaning validation artifacts in `02 - F2 Data Cleaning`.
 - Current writes must not create a new `f2-runs`, timestamped, or UUID workspace layer beneath the canonical analysis root.

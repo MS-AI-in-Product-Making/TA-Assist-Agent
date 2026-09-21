@@ -111,16 +111,19 @@ describe("runF2ExcelWorkflow", () => {
     expect(result.runRoot).toBe(path.join(setupResult.repositoryRoot, "test", "20260805 - Demo"));
     expect(result.f1Root).toBe(path.join(result.runRoot, "01 - F1 Data Parsing"));
     expect(result.f2Root).toBe(path.join(result.runRoot, "02 - F2 Data Cleaning"));
-    expect(result.validationRoot).toBe(result.f2Root);
+    expect(result.validationRoot).toBe(result.f1Root);
     expect(result.runRoot).not.toContain(`${path.sep}f2-runs${path.sep}`);
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
-    expect(result.promptPath).toBe(path.join(result.validationRoot, "Feature1-Selection.json"));
+    expect(result.promptPath).toBe(path.join(result.f1Root, "Feature1-Selection.json"));
     expect(result.selectionReference).toMatchObject({ manifestPath: result.manifestPath, promptPath: result.promptPath });
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
       status: "selectionRequired",
       selection: { status: "selectionRequired", promptPath: result.promptPath, selectedWorksheetNames: [] },
       stages: { "f1-selection": { status: "completed" }, f1: { status: "pending" }, f2: { status: "pending" } },
     });
+    expect(readFileSync(path.join(result.f1Root, "f1-selection.stdout.log"), "utf8")).toContain("f1-selection complete");
+    expect(existsSync(path.join(result.f2Root, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(result.f2Root, "f1-selection.stdout.log"))).toBe(false);
     expect(existsSync(path.join(setupResult.repositoryRoot, "test", "demo-output", "f2-runs"))).toBe(false);
   });
 
@@ -180,13 +183,22 @@ describe("runF2ExcelWorkflow", () => {
       "Analysis-A",
       "--confirm",
     ]);
-    expect(result.validationRoot).toBe(result.f2Root);
+    expect(result.validationRoot).toBe(result.f1Root);
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
       status: "completed",
       selection: { status: "confirmed", selectedWorksheetNames: ["Analysis-A"] },
       stages: { f1: { status: "completed" }, f2: { status: "completed" }, validation: { status: "completed" } },
     });
-    expect(JSON.parse(readFileSync(path.join(result.validationRoot, "Feature2-Validation.json"), "utf8"))).toMatchObject({ status: "valid" });
+    expect(JSON.parse(readFileSync(path.join(result.f2Root, "Feature2-Validation.json"), "utf8"))).toMatchObject({ status: "valid" });
+    expect(readFileSync(path.join(result.f1Root, "Feature1-Selection.json"), "utf8")).toContain("\"selectionRequired\"");
+    expect(readFileSync(path.join(result.f1Root, "f1-selection.stdout.log"), "utf8")).toContain("f1-selection complete");
+    expect(readFileSync(path.join(result.f1Root, "f1.stdout.log"), "utf8")).toContain("f1 complete");
+    expect(existsSync(path.join(result.f2Root, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(result.f2Root, "f1-selection.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(result.f2Root, "f1.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(result.f1Root, "Feature2-Report.json"))).toBe(false);
+    expect(existsSync(path.join(result.f1Root, "Feature2-Validation.json"))).toBe(false);
+    expect(existsSync(path.join(result.f1Root, "f2.stdout.log"))).toBe(false);
     expect(existsSync(path.join(setupResult.repositoryRoot, "test", "demo-output", "f2-runs"))).toBe(false);
   });
 
@@ -400,7 +412,7 @@ const outputRoot = process.env.AI_TVA_F2_OUTPUT_ROOT;
 mkdirSync(outputRoot, { recursive: true });
 writeFileSync(path.join(outputRoot, "Feature2-Report.json"), ${JSON.stringify(JSON.stringify(validF2Report(path.join(selectionRoot, "01 - F1 Data Parsing"))))});
 `, "utf8");
-    writeFileSync(path.join(selectionRoot, "02 - F2 Data Cleaning", "Feature1-Selection.json"), JSON.stringify({
+    writeFileSync(path.join(selectionRoot, "01 - F1 Data Parsing", "Feature1-Selection.json"), JSON.stringify({
       contractVersion: "v1",
       inputClassification: "confidential",
       status: "selectionRequired",
@@ -425,11 +437,11 @@ writeFileSync(path.join(outputRoot, "Feature2-Report.json"), ${JSON.stringify(JS
       outputs: {
         f1Root: path.join(selectionRoot, "01 - F1 Data Parsing"),
         f2Root: path.join(selectionRoot, "02 - F2 Data Cleaning"),
-        validationRoot: path.join(selectionRoot, "02 - F2 Data Cleaning"),
+        validationRoot: path.join(selectionRoot, "01 - F1 Data Parsing"),
       },
       selection: {
         status: "selectionRequired",
-        promptPath: path.join(selectionRoot, "02 - F2 Data Cleaning", "Feature1-Selection.json"),
+        promptPath: path.join(selectionRoot, "01 - F1 Data Parsing", "Feature1-Selection.json"),
         workbookContentHash: HASH,
         selectedWorksheetNames: [],
       },
@@ -446,7 +458,7 @@ writeFileSync(path.join(outputRoot, "Feature2-Report.json"), ${JSON.stringify(JS
         runId: "20260805 - Demo",
         runRoot: selectionRoot,
         manifestPath: path.join(selectionRoot, "manifest.json"),
-        promptPath: path.join(selectionRoot, "02 - F2 Data Cleaning", "Feature1-Selection.json"),
+        promptPath: path.join(selectionRoot, "01 - F1 Data Parsing", "Feature1-Selection.json"),
         workbookPath: setupResult.workbookPath,
         workbookContentHash: HASH,
         status: "selectionRequired",

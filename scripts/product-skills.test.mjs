@@ -80,11 +80,16 @@ describe("product Agent Skills", () => {
     expect(parsingSkill).toContain("02 - F2 Data Cleaning");
     expect(parsingSkill).toContain("Preserve the canonical analysis root from this step");
     expect(parsingSkill).toContain("fall back to legacy `test/demo-output` write roots");
+    expect(parsingSkill).toContain("worksheet-selection prompt, selection registry/reference, and parsing-stage logs stay in `01 - F1 Data Parsing`");
+    expect(parsingSkill).toContain("Do not copy `Feature1-Selection.json` or other parsing evidence into `02 - F2 Data Cleaning`");
 
     expect(cleaningSkill).toContain("reuse the same canonical analysis root");
     expect(cleaningSkill).toContain("01 - F1 Data Parsing");
     expect(cleaningSkill).toContain("02 - F2 Data Cleaning");
     expect(cleaningSkill).toContain("create a new `f2-runs` or timestamped workspace layer");
+    expect(cleaningSkill).toContain("Read the exact parsing handoff from `01 - F1 Data Parsing`");
+    expect(cleaningSkill).toContain("store the path/reference instead of duplicating parsing artifacts into stage 2");
+    expect(cleaningSkill).toContain("Keep cleaning reports, cleaning-stage logs, and cleaning validation artifacts in `02 - F2 Data Cleaning`");
   });
 
   it("keeps measured-data routing and reviewed feedback routing mutually exclusive", () => {

@@ -222,8 +222,14 @@ describe("runF1F2Selection", () => {
     expect(result.runRoot).toBe(workspace.analysisRoot);
     expect(result.f1Root).toBe(workspace.stagePaths.f1);
     expect(result.f2Root).toBe(workspace.stagePaths.f2);
-    expect(result.validationRoot).toBe(workspace.stagePaths.f2);
+    expect(result.validationRoot).toBe(workspace.stagePaths.f1);
     expect(result.manifestPath).toBe(path.join(workspace.analysisRoot, "manifest.json"));
+    expect(result.promptPath).toBe(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"));
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"), "utf8")).toContain("\"selectionRequired\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1-selection.stdout.log"), "utf8")).toContain("ok");
+    expect(existsSync(path.join(workspace.stagePaths.f2, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stderr.log"))).toBe(false);
     expect(result.runRoot).not.toContain(`${path.sep}f2-runs${path.sep}`);
     expect(executeStage).toHaveBeenCalledWith(expect.objectContaining({
       env: expect.objectContaining({
@@ -1019,10 +1025,22 @@ describe("runF1F2Confirmed", () => {
     expect(result.runRoot).toBe(workspace.analysisRoot);
     expect(result.f1Root).toBe(workspace.stagePaths.f1);
     expect(result.f2Root).toBe(workspace.stagePaths.f2);
-    expect(result.validationRoot).toBe(workspace.stagePaths.f2);
+    expect(result.validationRoot).toBe(workspace.stagePaths.f1);
     expect(result.runRoot).not.toContain(`${path.sep}f2-runs${path.sep}`);
     expect(executeStage.mock.calls[1][0].env.AI_TVA_F1_OUTPUT_ROOT).toBe(workspace.stagePaths.f1);
     expect(executeStage.mock.calls[2][0].env.AI_TVA_F2_OUTPUT_ROOT).toBe(workspace.stagePaths.f2);
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"), "utf8")).toContain("\"selectionRequired\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1-selection.stdout.log"), "utf8")).toContain("selection complete");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1.stdout.log"), "utf8")).toContain("f1 complete");
+    expect(JSON.parse(readFileSync(path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "utf8"))).toMatchObject({ status: "completed" });
+    expect(readFileSync(path.join(workspace.stagePaths.f2, "Feature2-Validation.json"), "utf8")).toContain("\"status\": \"valid\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f2, "f2.stdout.log"), "utf8")).toContain("f2 complete");
+    expect(existsSync(path.join(workspace.stagePaths.f2, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "Feature2-Report.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "Feature2-Validation.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "f2.stdout.log"))).toBe(false);
     expect(existsSync(path.join(workspace.analysisRoot, "f2-runs"))).toBe(false);
   });
 });
