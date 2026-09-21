@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { runF3Analysis } from "./index.js";
 
@@ -107,5 +110,27 @@ describe("runF3Analysis", () => {
       code: "internal_error",
       summary: "Workflow runner failed unexpectedly.",
     }));
+  });
+
+  it("rejects a dirty workspace stage before loading bundles or writing reports", () => {
+    const outputRoot = mkdtempSync(path.join(tmpdir(), "f3-runner-dirty-"));
+    try {
+      writeFileSync(path.join(outputRoot, "Feature3-ADO-Reminder.md"), "stale reminder\n", "utf8");
+      const loadBundle = vi.fn();
+
+      expect(() => runF3Analysis({ artifactRoot: "C:/repo/f2", outputRoot }, context(), {
+        loadBundle,
+        resolveOutputLayout: vi.fn(() => ({
+          outRoot: outputRoot,
+          reportJsonName: "Feature3-Report.json",
+          reportMdName: "Feature3-Report.md",
+          workspaceMode: true,
+        })),
+      })).toThrow(expect.objectContaining({ code: "internal_error", summary: "Workflow runner failed unexpectedly." }));
+      expect(loadBundle).not.toHaveBeenCalled();
+      expect(path.join(outputRoot, "Feature3-ADO-Reminder.md")).toContain("Feature3-ADO-Reminder.md");
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
   });
 });

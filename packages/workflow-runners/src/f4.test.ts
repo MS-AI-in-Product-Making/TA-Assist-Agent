@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { runF4Calculation } from "./index.js";
 
@@ -160,5 +163,33 @@ describe("runF4Calculation", () => {
     expect(result.extraCalculations.map((item) => item.worksheetName)).toEqual(["B"]);
     expect(result.outputDirectory).toBe("C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine");
     expect(mkdir).toHaveBeenCalledWith("C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine", { recursive: true });
+  });
+
+  it("rejects a dirty workspace stage before loading F2 handoffs", () => {
+    const runRoot = mkdtempSync(path.join(tmpdir(), "f4-runner-dirty-"));
+    try {
+      writeFileSync(path.join(runRoot, "manifest.json"), '{"status":"completed"}\n', "utf8");
+      const loadHandoffs = vi.fn();
+
+      expect(() => runF4Calculation({ artifactRoot: "C:/repo/f2" }, context(), {
+        resolveOutputLayout: vi.fn(() => ({
+          runId: "2026-08-24T01-02-03-000Z",
+          f2ReportPath: "C:/repo/test/demo-output/f2/Feature2-Report.json",
+          workbookPath: undefined,
+          runRoot,
+          calculationJsonName: "Feature4-Calculation.json",
+          reportMdName: "Feature4-Report.md",
+          comparisonJsonName: "Feature4-Comparison.json",
+          manifestName: "manifest.json",
+          allowExistingRunRoot: true,
+        })),
+        loadHandoffs,
+        calculateWorkflow: vi.fn(),
+        renderReport: vi.fn(),
+      })).toThrow("Feature 4 output root already contains published artifacts.");
+      expect(loadHandoffs).not.toHaveBeenCalled();
+    } finally {
+      rmSync(runRoot, { recursive: true, force: true });
+    }
   });
 });

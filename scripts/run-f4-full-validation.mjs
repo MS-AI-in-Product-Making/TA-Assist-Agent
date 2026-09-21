@@ -97,6 +97,9 @@ export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
   } catch (error) {
     if (error?.code === "EEXIST") throw error;
     const layout = dependencies.resolveLayout(args);
+    if (layout.allowExistingRunRoot) {
+      return { status: "failed", reasonCode: "invalid_arguments_or_output_root", outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
+    }
     const paths = outputPaths(layout);
     const typed = error?.code === undefined ? createTypedError({
       code: "internal_error",

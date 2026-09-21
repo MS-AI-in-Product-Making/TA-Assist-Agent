@@ -18,14 +18,16 @@ function safeTypedError(error) {
 
 try {
   const cliArgs = process.argv.slice(2);
-  const { artifactRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
-  const outputLayout = resolveFeature3OutputLayout([artifactRoot], process.env.AI_TVA_F3_OUTPUT_ROOT);
+  const { artifactRoot, analysisRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
+  const outputLayout = resolveFeature3OutputLayout([artifactRoot], process.env.AI_TVA_F3_OUTPUT_ROOT, analysisRoot);
   const result = runF3Analysis({ artifactRoot, selectedWorksheetNames, outputRoot: outputLayout.outRoot }, {
     repositoryRoot: process.cwd(),
     managedOutputRoot: process.cwd(),
     attemptId: crypto.randomUUID(),
     signal: new AbortController().signal,
     emit: () => {},
+  }, {
+    resolveOutputLayout: () => outputLayout,
   });
 
   console.log(JSON.stringify({

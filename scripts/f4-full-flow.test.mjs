@@ -188,6 +188,45 @@ function setup({ workbook = false, comparisonStatus = "passed", calculationError
   return { root, runRoot, calculation, deps, renameCalls };
 }
 
+function createAnalysisWorkspaceRoot(root) {
+  const analysisRoot = path.join(root, "20260921 - Demo");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
@@ -235,11 +274,11 @@ describe("runF4FullValidation", () => {
 
   it("publishes the current workspace flow directly into the fixed F4 stage without a run-id child", () => {
     const context = setup();
-    context.runRoot = path.join(context.root, "20260921 - Demo", "04 - F4 Calculation Engine");
-    mkdirSync(context.runRoot, { recursive: true });
+    const workspace = createAnalysisWorkspaceRoot(context.root);
+    context.runRoot = workspace.stagePaths.f4;
     context.deps.resolveLayout = () => ({
       runId: context.calculation.runId,
-      f2ReportPath: path.join(context.root, "20260921 - Demo", "02 - F2 Data Cleaning", "Feature2-Report.json"),
+      f2ReportPath: path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
       workbookPath: undefined,
       runRoot: context.runRoot,
       calculationJsonName: "Feature4-Calculation.json",
@@ -256,6 +295,38 @@ describe("runF4FullValidation", () => {
     expect(result.outputDirectory).toBe(context.runRoot);
     expect(result.outputDirectory.endsWith(context.calculation.runId)).toBe(false);
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ status: "completed" });
+  });
+
+  it("leaves a dirty workspace stage unchanged instead of rewriting its manifest", () => {
+    const context = setup();
+    const workspace = createAnalysisWorkspaceRoot(context.root);
+    const staleManifestPath = path.join(workspace.stagePaths.f4, "manifest.json");
+    const staleCalculationPath = path.join(workspace.stagePaths.f4, "Feature4-Calculation.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(staleCalculationPath, '{"status":"completed"}\n', "utf8");
+    context.deps.resolveLayout = () => ({
+      runId: context.calculation.runId,
+      f2ReportPath: path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      workbookPath: undefined,
+      runRoot: workspace.stagePaths.f4,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+
+    const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
+
+    expect(result).toMatchObject({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+      outputDirectory: workspace.stagePaths.f4,
+      manifestPath: staleManifestPath,
+    });
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
+    expect(readFileSync(staleCalculationPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 
   it("writes every artifact atomically without leftover temporary files", () => {

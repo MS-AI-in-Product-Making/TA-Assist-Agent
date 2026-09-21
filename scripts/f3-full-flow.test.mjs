@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -104,18 +104,55 @@ function f2Report() {
   };
 }
 
+function createAnalysisWorkspaceRoot(root) {
+  const analysisRoot = path.join(root, "20260921 - Anonymous");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 describe("Feature 3 local artifact flow", () => {
   it("defaults the current workspace flow to the fixed F3 stage without a feature3-output child", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f3-flow-workspace-"));
     roots.push(root);
-    const analysisRoot = path.join(root, "20260921 - Anonymous");
-    const f2Root = path.join(analysisRoot, "02 - F2 Data Cleaning");
-    const f3Root = path.join(analysisRoot, "03 - F3 Drawing Governance");
-    mkdirSync(f2Root, { recursive: true });
-    mkdirSync(f3Root, { recursive: true });
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot(root);
+    const f2Root = stagePaths.f2;
+    const f3Root = stagePaths.f3;
     writeFileSync(path.join(f2Root, "Feature2-Report.json"), JSON.stringify(f2Report()));
 
-    const stdout = execFileSync(process.execPath, ["scripts/run-f3-full-validation.mjs", f2Root], {
+    const stdout = execFileSync(process.execPath, ["scripts/run-f3-full-validation.mjs", f2Root, "--analysis-root", analysisRoot], {
       cwd: process.cwd(),
       encoding: "utf8",
       env: process.env,
@@ -126,6 +163,63 @@ describe("Feature 3 local artifact flow", () => {
     expect(result.reportJsonPath).toBe(path.join(f3Root, "Feature3-Report.json"));
     expect(existsSync(path.join(analysisRoot, "feature3-output"))).toBe(false);
     expect(readFileSync(result.reportMdPath, "utf8")).toContain("Dimension Description");
+  });
+
+  it("writes only report artifacts for input_rejected in a clean workspace stage", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f3-flow-rejected-"));
+    roots.push(root);
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot(root);
+    const report = f2Report();
+    delete report.worksheets[0].toleranceLoopDescription;
+    writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), JSON.stringify(report));
+
+    const stdout = execFileSync(process.execPath, [
+      "scripts/run-f3-full-validation.mjs",
+      stagePaths.f2,
+      "--analysis-root", analysisRoot,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: process.env,
+    });
+    const result = JSON.parse(stdout);
+
+    expect(result.status).toBe("input_rejected");
+    expect(result.reportJsonPath).toBe(path.join(stagePaths.f3, "Feature3-Report.json"));
+    expect(result).not.toHaveProperty("reminderMdPath");
+    expect(result).not.toHaveProperty("historyHtmlPath");
+    expect(existsSync(path.join(stagePaths.f3, "Feature3-ADO-Reminder.md"))).toBe(false);
+    expect(existsSync(path.join(stagePaths.f3, "Feature3-ADO-History.html"))).toBe(false);
+  });
+
+  it("rejects a dirty workspace stage before input_rejected can leave stale reminder or history artifacts", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f3-flow-dirty-"));
+    roots.push(root);
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot(root);
+    const report = f2Report();
+    delete report.worksheets[0].toleranceLoopDescription;
+    writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), JSON.stringify(report));
+    const staleReportPath = path.join(stagePaths.f3, "Feature3-Report.json");
+    const staleReminderPath = path.join(stagePaths.f3, "Feature3-ADO-Reminder.md");
+    const staleHistoryPath = path.join(stagePaths.f3, "Feature3-ADO-History.html");
+    writeFileSync(staleReportPath, "stale report\n");
+    writeFileSync(staleReminderPath, "stale reminder\n");
+    writeFileSync(staleHistoryPath, "stale history\n");
+
+    const result = spawnSync(process.execPath, [
+      "scripts/run-f3-full-validation.mjs",
+      stagePaths.f2,
+      "--analysis-root", analysisRoot,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: process.env,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout.trim()).toBe("");
+    expect(readFileSync(staleReportPath, "utf8")).toBe("stale report\n");
+    expect(readFileSync(staleReminderPath, "utf8")).toBe("stale reminder\n");
+    expect(readFileSync(staleHistoryPath, "utf8")).toBe("stale history\n");
   });
 
   it("writes matching Feature 3 JSON and Markdown reports", () => {
