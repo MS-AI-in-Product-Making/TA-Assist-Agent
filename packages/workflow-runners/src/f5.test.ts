@@ -246,8 +246,11 @@ describe("runF5Interpretation", () => {
       mkdir: vi.fn(),
       randomUUID: vi.fn(() => "temp-id"),
       realpath: vi.fn((value) => path.resolve(String(value))),
-      stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
+      stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true, isFile: () => true })),
+      lstat: vi.fn(() => ({ dev: 1, ino: 1, isFile: () => true, isSymbolicLink: () => false })),
       open: vi.fn(() => 1),
+      fstat: vi.fn(() => ({ dev: 1, ino: 1, isFile: () => true })),
+      fsync: vi.fn(),
       readdir: vi.fn(() => []),
       writeFd: vi.fn(),
       close: vi.fn(),
@@ -314,6 +317,8 @@ describe("runF5Interpretation", () => {
       realpath: vi.fn((value) => path.resolve(String(value))),
       stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
       lstat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true, isSymbolicLink: () => false })),
+      fstat: vi.fn(() => ({ dev: 1, ino: 1, isFile: () => true })),
+      fsync: vi.fn(),
       readdir: vi.fn(() => []),
       open: vi.fn(() => 1),
       writeFd: vi.fn(),
@@ -470,6 +475,8 @@ describe("runF5Interpretation", () => {
       realpath,
       stat,
       lstat,
+      fstat: vi.fn(() => ({ dev: 1, ino: 1, isFile: () => true })),
+      fsync: vi.fn(),
       readdir: vi.fn(() => []),
       open: vi.fn(),
       writeFd: vi.fn(),
@@ -484,5 +491,224 @@ describe("runF5Interpretation", () => {
       status: "failed",
       reasonCode: "workflow_output_failed",
     });
+  });
+
+  it("fails closed when the workspace destination is swapped during check-to-open before any payload write", () => {
+    const loadBundle = vi.fn(() => ({
+      status: "accepted",
+      request: {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        worksheets: [],
+      },
+      rejectedWorksheets: [],
+      worksheetOrder: [],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+    }));
+    const runRoot = path.resolve("C:/repo/test/20260921 - Demo/05 - F5 Result Interpretation");
+    const publishRoot = path.resolve("C:/repo/test/20260921 - Demo");
+    const tempPath = path.join(runRoot, "Feature5-Report.json.temp-id.tmp");
+    const outsideTempPath = path.resolve("C:/repo/outside/Feature5-Report.json.temp-id.tmp");
+    let swapped = false;
+    const writeFd = vi.fn();
+    const rm = vi.fn();
+    const rename = vi.fn();
+    const realpath = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot) return swapped ? path.resolve("C:/repo/outside") : publishRoot;
+      if (target === runRoot) return swapped ? path.resolve("C:/repo/outside") : runRoot;
+      if (target === tempPath) return swapped ? outsideTempPath : tempPath;
+      return target;
+    });
+    const stat = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot || target === runRoot || target === tempPath) {
+        return {
+          dev: swapped ? 9 : 1,
+          ino: swapped ? 9 : 1,
+          isDirectory: () => target === publishRoot || target === runRoot,
+          isFile: () => target === tempPath,
+        };
+      }
+      if (target === path.resolve("C:/repo/outside") || target === outsideTempPath) {
+        return {
+          dev: 9,
+          ino: 9,
+          isDirectory: () => target === path.resolve("C:/repo/outside"),
+          isFile: () => target === outsideTempPath,
+        };
+      }
+      return { dev: 1, ino: 1, isDirectory: () => true, isFile: () => false };
+    });
+    const lstat = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot || target === runRoot) {
+        return { dev: swapped ? 9 : 1, ino: swapped ? 9 : 1, isDirectory: () => true, isSymbolicLink: () => false };
+      }
+      if (target === tempPath) {
+        return { dev: swapped ? 9 : 1, ino: swapped ? 9 : 1, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false };
+      }
+      return { dev: 9, ino: 9, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false };
+    });
+
+    const result = runF5Interpretation({
+      f1ArtifactRoot: "C:/repo/test/20260921 - Demo/01 - F1 Data Parsing",
+      f3ArtifactRoot: "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
+      f4ArtifactRoot: "C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine",
+      selectedWorksheetNames: ["Analysis-A"],
+      imageObservationsPath: undefined,
+    }, context(), {
+      resolveOutputLayout: vi.fn(() => ({
+        runId: "2026-08-24T01-02-03-000Z",
+        runRoot,
+        publishRoot,
+        reportJsonName: "Feature5-Report.json",
+        reportMdName: "Feature5-Report.md",
+        runSummaryJsonName: "Feature5-Run-Summary.json",
+        imageObservationsJsonName: "Feature5-Image-Observations.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+        workspaceBoundary: {
+          publishRootIdentity: pinnedDirectoryIdentity(publishRoot),
+          runRootIdentity: pinnedDirectoryIdentity(runRoot),
+        },
+      })),
+      loadBundle,
+      createInterpretation: vi.fn(() => createF5DataInterpretation(loadBundle.mock.results[0].value.request)),
+      renderReport: vi.fn(() => "# Feature 5\n"),
+      mkdir: vi.fn(),
+      randomUUID: vi.fn(() => "temp-id"),
+      realpath,
+      stat,
+      lstat,
+      fstat: vi.fn(() => ({ dev: 9, ino: 9, isFile: () => true })),
+      fsync: vi.fn(),
+      readdir: vi.fn(() => []),
+      open: vi.fn(() => {
+        swapped = true;
+        return 1;
+      }),
+      writeFd,
+      close: vi.fn(),
+      rename,
+      rmdir: vi.fn(),
+      rm,
+    });
+
+    expect(result).toMatchObject({ featureId: "F5", status: "failed", reasonCode: "workflow_output_failed" });
+    expect(writeFd).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the workspace destination is swapped after open and before payload write", () => {
+    const loadBundle = vi.fn(() => ({
+      status: "accepted",
+      request: {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        worksheets: [],
+      },
+      rejectedWorksheets: [],
+      worksheetOrder: [],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+    }));
+    const runRoot = path.resolve("C:/repo/test/20260921 - Demo/05 - F5 Result Interpretation");
+    const publishRoot = path.resolve("C:/repo/test/20260921 - Demo");
+    const tempPath = path.join(runRoot, "Feature5-Report.json.temp-id.tmp");
+    let swapped = false;
+    const writeFd = vi.fn();
+    const rm = vi.fn();
+    const rename = vi.fn();
+    const realpath = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot) return swapped ? path.resolve("C:/repo/retargeted-root") : publishRoot;
+      if (target === runRoot) return swapped ? path.resolve("C:/repo/retargeted-run-root") : runRoot;
+      return target;
+    });
+    const stat = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot || target === runRoot) {
+        return {
+          dev: swapped ? 9 : 1,
+          ino: swapped ? 9 : 1,
+          isDirectory: () => true,
+          isFile: () => false,
+        };
+      }
+      if (target === tempPath) {
+        return { dev: 1, ino: 2, isDirectory: () => false, isFile: () => true };
+      }
+      return { dev: 9, ino: 9, isDirectory: () => true, isFile: () => false };
+    });
+    const lstat = vi.fn((value) => {
+      const target = path.resolve(String(value));
+      if (target === publishRoot || target === runRoot) {
+        return { dev: swapped ? 9 : 1, ino: swapped ? 9 : 1, isDirectory: () => true, isSymbolicLink: () => false };
+      }
+      if (target === tempPath) {
+        return { dev: 1, ino: 2, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false };
+      }
+      return { dev: 9, ino: 9, isFile: () => false, isDirectory: () => true, isSymbolicLink: () => false };
+    });
+
+    const result = runF5Interpretation({
+      f1ArtifactRoot: "C:/repo/test/20260921 - Demo/01 - F1 Data Parsing",
+      f3ArtifactRoot: "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
+      f4ArtifactRoot: "C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine",
+      selectedWorksheetNames: ["Analysis-A"],
+      imageObservationsPath: undefined,
+    }, context(), {
+      resolveOutputLayout: vi.fn(() => ({
+        runId: "2026-08-24T01-02-03-000Z",
+        runRoot,
+        publishRoot,
+        reportJsonName: "Feature5-Report.json",
+        reportMdName: "Feature5-Report.md",
+        runSummaryJsonName: "Feature5-Run-Summary.json",
+        imageObservationsJsonName: "Feature5-Image-Observations.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+        workspaceBoundary: {
+          publishRootIdentity: pinnedDirectoryIdentity(publishRoot),
+          runRootIdentity: pinnedDirectoryIdentity(runRoot),
+        },
+      })),
+      loadBundle,
+      createInterpretation: vi.fn(() => createF5DataInterpretation(loadBundle.mock.results[0].value.request)),
+      renderReport: vi.fn(() => "# Feature 5\n"),
+      mkdir: vi.fn(),
+      randomUUID: vi.fn(() => "temp-id"),
+      realpath,
+      stat,
+      lstat,
+      fstat: vi.fn(() => ({ dev: 1, ino: 2, isFile: () => true })),
+      fsync: vi.fn(),
+      readdir: vi.fn(() => []),
+      open: vi.fn(() => {
+        swapped = true;
+        return 1;
+      }),
+      writeFd,
+      close: vi.fn(),
+      rename,
+      rmdir: vi.fn(),
+      rm,
+    });
+
+    expect(result).toMatchObject({ featureId: "F5", status: "failed", reasonCode: "workflow_output_failed" });
+    expect(writeFd).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
+  fsyncSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -57,6 +59,58 @@ interface F5Layout {
   };
 }
 
+function captureRegularFileIdentity(
+  targetPath: string,
+  descriptor: number,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "fstat" | "realpath" | "stat">>,
+) {
+  const requestedPath = path.resolve(targetPath);
+  const handleStats = dependencies.fstat(descriptor);
+  const requestedStats = dependencies.lstat(requestedPath);
+  if (!handleStats.isFile() || requestedStats.isSymbolicLink() || !requestedStats.isFile()) {
+    throw new Error("Feature 5 owned file identity is invalid.");
+  }
+  const canonicalPath = dependencies.realpath(requestedPath);
+  const canonicalStats = dependencies.stat(canonicalPath);
+  if (!canonicalStats.isFile()
+    || handleStats.dev !== requestedStats.dev
+    || handleStats.ino !== requestedStats.ino
+    || handleStats.dev !== canonicalStats.dev
+    || handleStats.ino !== canonicalStats.ino) {
+    throw new Error("Feature 5 owned file identity is invalid.");
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    dev: handleStats.dev,
+    ino: handleStats.ino,
+  };
+}
+
+function captureRegularFilePathIdentity(
+  targetPath: string,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat">>,
+) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = dependencies.lstat(requestedPath);
+  if (requestedStats.isSymbolicLink() || !requestedStats.isFile()) {
+    throw new Error("Feature 5 owned file identity is invalid.");
+  }
+  const canonicalPath = dependencies.realpath(requestedPath);
+  const canonicalStats = dependencies.stat(canonicalPath);
+  if (!canonicalStats.isFile()
+    || requestedStats.dev !== canonicalStats.dev
+    || requestedStats.ino !== canonicalStats.ino) {
+    throw new Error("Feature 5 owned file identity is invalid.");
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    dev: requestedStats.dev,
+    ino: requestedStats.ino,
+  };
+}
+
 export interface F5Dependencies {
   readonly resolveOutputLayout?: (request: F5InterpretationRequest, context: RunContext) => F5Layout;
   readonly loadBundle?: (request: F5InterpretationRequest) => any;
@@ -67,6 +121,8 @@ export interface F5Dependencies {
   readonly realpath?: typeof realpathSync;
   readonly stat?: typeof statSync;
   readonly lstat?: typeof lstatSync;
+  readonly fstat?: typeof fstatSync;
+  readonly fsync?: typeof fsyncSync;
   readonly open?: typeof openSync;
   readonly writeFd?: (fd: number, content: string) => void;
   readonly close?: typeof closeSync;
@@ -162,6 +218,13 @@ function assertPinnedDirectoryIdentity(
   }
 }
 
+function sameOwnedRegularFile(
+  expected: { readonly dev: unknown; readonly ino: unknown },
+  actual: { readonly dev: unknown; readonly ino: unknown },
+): boolean {
+  return expected.dev === actual.dev && expected.ino === actual.ino;
+}
+
 function captureCreatedRunBoundary(layout: F5Layout, dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "rmdir">>) {
   if (layout.workspaceBoundary) {
     assertPinnedDirectoryIdentity(layout.workspaceBoundary.publishRootIdentity, dependencies);
@@ -201,29 +264,107 @@ function assertRunRootContained(boundary: ReturnType<typeof captureCreatedRunBou
   }
 }
 
+function assertOwnedFileInRunRoot(
+  ownedFile: { readonly canonicalPath: string },
+  boundary: ReturnType<typeof captureCreatedRunBoundary>,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat">>,
+): void {
+  assertRunRootContained(boundary, dependencies);
+  const canonicalParent = path.dirname(ownedFile.canonicalPath);
+  if (canonicalParent !== boundary.realRunRoot || !isContained(boundary.realRunRoot, ownedFile.canonicalPath)) {
+    throw new Error("Feature 5 owned file escaped the pinned workspace stage.");
+  }
+}
+
+function cleanupOwnedRegularFile(
+  ownedFile: { readonly requestedPath: string; readonly canonicalPath: string; readonly dev: unknown; readonly ino: unknown },
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "rm">>,
+): Error | undefined {
+  const candidates = [ownedFile.requestedPath, ownedFile.canonicalPath]
+    .filter((value, index, values) => values.indexOf(value) === index);
+  let lastError: Error | undefined;
+  for (const candidatePath of candidates) {
+    try {
+      const current = captureRegularFilePathIdentity(candidatePath, dependencies);
+      if (!sameOwnedRegularFile(ownedFile, current)) continue;
+      dependencies.rm(candidatePath);
+      return undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  return lastError ?? new Error("Feature 5 owned file cleanup failed.");
+}
+
 function atomicWrite(
   filePath: string,
   content: string,
   boundary: ReturnType<typeof captureCreatedRunBoundary>,
-  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "fstat" | "fsync" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
 ): void {
-  assertRunRootContained(boundary, dependencies);
   const temporaryPath = `${filePath}.${dependencies.randomUUID()}.tmp`;
-  let owned = false;
+  let descriptor: number | undefined;
+  let ownedTemporaryFile:
+    | { readonly requestedPath: string; readonly canonicalPath: string; readonly dev: unknown; readonly ino: unknown }
+    | undefined;
+  let ownedFinalFile:
+    | { readonly requestedPath: string; readonly canonicalPath: string; readonly dev: unknown; readonly ino: unknown }
+    | undefined;
   let committed = false;
+  let writeError: unknown;
+  let cleanupError: Error | undefined;
+  let closeError: Error | undefined;
   try {
-    const fd = dependencies.open(temporaryPath, "wx");
-    owned = true;
-    try { dependencies.writeFd(fd, content); } finally { dependencies.close(fd); }
+    descriptor = dependencies.open(temporaryPath, "wx");
+    ownedTemporaryFile = captureRegularFileIdentity(temporaryPath, descriptor, dependencies);
+    assertOwnedFileInRunRoot(ownedTemporaryFile, boundary, dependencies);
+    dependencies.writeFd(descriptor, content);
+    dependencies.fsync(descriptor);
+    dependencies.close(descriptor);
+    descriptor = undefined;
     assertRunRootContained(boundary, dependencies);
     dependencies.rename(temporaryPath, filePath);
-    committed = true;
-  } finally {
-    if (owned && !committed) {
-      let reachable = true;
-      try { assertRunRootContained(boundary, dependencies); } catch { reachable = false; }
-      if (reachable) dependencies.rm(temporaryPath, { force: true });
+    ownedFinalFile = captureRegularFilePathIdentity(filePath, dependencies);
+    if (!sameOwnedRegularFile(ownedTemporaryFile, ownedFinalFile)) {
+      throw new Error("Feature 5 final artifact identity changed during rename.");
     }
+    assertOwnedFileInRunRoot(ownedFinalFile, boundary, dependencies);
+    committed = true;
+  } catch (error) {
+    writeError = error;
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        dependencies.close(descriptor);
+      } catch (error) {
+        closeError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    if (!committed) {
+      cleanupError = cleanupOwnedRegularFile(ownedFinalFile ?? ownedTemporaryFile ?? {
+        requestedPath: temporaryPath,
+        canonicalPath: temporaryPath,
+        dev: Number.NaN,
+        ino: Number.NaN,
+      }, dependencies);
+    }
+  }
+
+  if (writeError !== undefined) {
+    const normalizedWriteError = writeError instanceof Error ? writeError : new Error(String(writeError));
+    if (cleanupError !== undefined || closeError !== undefined) {
+      throw new AggregateError(
+        [normalizedWriteError, ...(closeError ? [closeError] : []), ...(cleanupError ? [cleanupError] : [])],
+        "Feature 5 atomic write failed during cleanup.",
+      );
+    }
+    throw normalizedWriteError;
+  }
+  if (closeError !== undefined) {
+    throw closeError;
+  }
+  if (cleanupError !== undefined) {
+    throw cleanupError;
   }
 }
 
@@ -335,7 +476,7 @@ function failedResult(
   artifacts: Record<string, string>,
   reasonCode: string,
   boundary: ReturnType<typeof captureCreatedRunBoundary>,
-  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "fstat" | "fsync" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
 ): F5InterpretationResult {
   try {
     atomicWrite(paths.manifestPath, json(manifest(layout, "failed", artifacts, reasonCode)), boundary, dependencies);
@@ -367,6 +508,8 @@ export function runF5Interpretation(
   const realpath = dependencies.realpath ?? realpathSync;
   const stat = dependencies.stat ?? statSync;
   const lstat = dependencies.lstat ?? lstatSync;
+  const fstat = dependencies.fstat ?? fstatSync;
+  const fsync = dependencies.fsync ?? fsyncSync;
   const open = dependencies.open ?? openSync;
   const writeFd = dependencies.writeFd ?? ((fd, content) => writeFileSync(fd, content, "utf8"));
   const close = dependencies.close ?? closeSync;
@@ -406,7 +549,7 @@ export function runF5Interpretation(
     loadStarted = true;
     const loaded = loadBundle(request);
     if (loaded?.status !== "accepted") {
-      return failedResult(layout, paths, committedArtifacts, "input_rejected", boundary, { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
+      return failedResult(layout, paths, committedArtifacts, "input_rejected", boundary, { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
     }
 
     failureStage = "interpretation";
@@ -441,7 +584,7 @@ export function runF5Interpretation(
       ...(observationArtifact === undefined ? {} : { observations: json(observationArtifact) }),
     };
     const summary = runSummary(result, summaryLoaded, contents);
-    const writeDependencies = { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm };
+    const writeDependencies = { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm };
 
     atomicWrite(paths.reportJsonPath, contents.reportJson, boundary, writeDependencies);
     committedArtifacts.reportJson = layout.reportJsonName;
@@ -486,7 +629,7 @@ export function runF5Interpretation(
       if (error && typeof error === "object" && "reasonCode" in error && error.reasonCode === "workspace_stage_not_empty") {
         throw error;
       }
-      return failedResult(layout, paths, committedArtifacts, reasonCode, boundary, { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
+      return failedResult(layout, paths, committedArtifacts, reasonCode, boundary, { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
     }
     throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f5"] });
   }
