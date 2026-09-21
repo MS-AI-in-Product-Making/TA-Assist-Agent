@@ -2,13 +2,14 @@
 test/
 !test/
 test/*
-!test/f8-e2e/
-test/f8-e2e/*
-!test/f8-e2e/ado-fixture-contract.mjs
-!test/f8-e2e/ado-fixture-contract.test.mjs
-!test/f8-e2e/chat-entry-server.mjs
-!test/f8-e2e/chat-entry.spec.ts
-!test/f8-e2e/engineering-workspace.spec.ts
+!test/e2e/
+test/e2e/*
+!test/e2e/fixtures/
+test/e2e/fixtures/*
+!test/e2e/f6-governed-pdf.spec.ts
+!test/e2e/f7-bulk-measurement-import.spec.ts
+!test/e2e/fixtures/anonymous-workbook-fixture.ts
+!test/e2e/fixtures/f7-bulk-measurement-import.ts
 # Only public fixtures are committable; the repository checker enforces this across path casing.
 fixtures/confidential/
 *.xlsx

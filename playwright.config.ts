@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "test/f8-e2e",
+  testDir: "test/e2e",
   testMatch: "**/*.spec.ts",
   timeout: 120_000,
   fullyParallel: false,
