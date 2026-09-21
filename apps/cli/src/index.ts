@@ -3,7 +3,7 @@ import { isFeature1Phrase, runFeature1WorkflowCommand } from "./commands/feature
 import { isFeature2Phrase, runFeature2WorkflowCommand, type Feature2WorksheetSelectionArgs } from "./commands/feature2.js";
 import { isFeature3Phrase, runFeature3WorkflowCommand } from "./commands/feature3.js";
 import { isFeature5Phrase, runFeature5WorkflowCommand, type Feature5CommandOptions } from "./commands/feature5.js";
-import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./commands/feature6.js";
+import { parseFeature6AnalysisRequestContext, runFeature6WorkflowCommand, type Feature6CommandOptions } from "./commands/feature6.js";
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
@@ -120,7 +120,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation" && flag !== "--analysis-root" && flag !== "--analysis-request-context") {
       throw new Error("validation_error: unknown option");
     }
     const value = rawFlags[index + 1];
@@ -202,6 +202,7 @@ function parseArguments(argv: readonly string[]):
       "--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet",
       "--supplier-capability", "--datum-strategy", "--cost", "--image-observations",
       "--analysis-context", "--optimization-targets", "--language", "--model-interpretation",
+      "--analysis-root", "--analysis-request-context",
     ]);
     const f2ArtifactRoot = requiredString(values, "--f2-artifacts", "Feature 6");
     const f3ArtifactRoot = requiredString(values, "--f3-artifacts", "Feature 6");
@@ -224,6 +225,10 @@ function parseArguments(argv: readonly string[]):
       selectedWorksheetNames,
       languageTag,
       modelInterpretationPath,
+      ...(values.has("--analysis-root") ? { analysisRoot: requiredString(values, "--analysis-root", "Feature 6") } : {}),
+      ...(values.has("--analysis-request-context") ? {
+        analysisRequestContext: parseFeature6AnalysisRequestContext(requiredString(values, "--analysis-request-context", "Feature 6")),
+      } : {}),
       ...(supplierCapabilityPath === undefined ? {} : { supplierCapabilityPath }),
       ...(datumStrategyPath === undefined ? {} : { datumStrategyPath }),
       ...(costPath === undefined ? {} : { costPath }),

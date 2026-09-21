@@ -6,9 +6,10 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { runFeature6WorkflowCommand } from "./feature6.js";
+import { createFeature6CliWorkspace } from "../../../../fixtures/feature6-cli.js";
 
 const trustedRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
-const publishRoot = join(trustedRoot, "test", "demo-output");
+const publishRoot = join(trustedRoot, "test");
 const trustedRunner = join(trustedRoot, "scripts", "run-f6-full-validation.mjs");
 const cleanup: string[] = [];
 
@@ -34,9 +35,8 @@ afterEach(async () => {
 async function fixture() {
   const base = await mkdtemp(join(publishRoot, ".feature6-command-"));
   cleanup.push(base);
-  const [f2Root, f3Root, f4Root, f5Root] = ["f2", "f3", "f4", "f5"]
-    .map((feature) => join(base, "inputs", feature)) as [string, string, string, string];
-  const outputDirectory = join(base, "f6-runs", "run-1");
+  const layout = createFeature6CliWorkspace(base);
+  const { f2: f2Root, f3: f3Root, f4: f4Root, f5: f5Root, f6: outputDirectory } = layout.stagePaths;
   await Promise.all([f2Root, f3Root, f4Root, f5Root, outputDirectory].map((value) => mkdir(value, { recursive: true })));
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
@@ -49,6 +49,7 @@ async function fixture() {
   ]);
   return {
     base,
+    layout,
     f2Root,
     f3Root,
     f4Root,
@@ -82,6 +83,94 @@ async function run(
 }
 
 describe("Feature 6 CLI trust boundary", () => {
+  it("rejects roots without an existing completed F5 workspace before starting the child", async () => {
+    const setup = await fixture();
+    await rm(setup.layout.summaryPath);
+    let executed = false;
+    await expect(run(setup, async () => {
+      executed = true;
+      return successfulExecutor(setup.outputRelative)();
+    })).rejects.toMatchObject({
+      code: "validation_error", summary: expect.stringContaining("completed F5 workspace"),
+    });
+    expect(executed).toBe(false);
+    await expect(readFile(setup.layout.summaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a foreign F2 stage even when its report exists", async () => {
+    const setup = await fixture();
+    const foreign = await fixture();
+    let executed = false;
+    await expect(run({ ...setup, f2Root: foreign.f2Root }, async () => {
+      executed = true;
+      return successfulExecutor(setup.outputRelative)();
+    })).rejects.toMatchObject({ code: "validation_error" });
+    expect(executed).toBe(false);
+  });
+
+  it("rejects an incomplete workspace without fabricating predecessor completion", async () => {
+    const setup = await fixture();
+    const summary = JSON.parse(await readFile(setup.layout.summaryPath, "utf8"));
+    summary.stages.f5 = { status: "pending", artifacts: {} };
+    await writeFile(setup.layout.summaryPath, JSON.stringify(summary));
+    const before = await readFile(setup.layout.summaryPath, "utf8");
+    let executed = false;
+    await expect(run(setup, async () => {
+      executed = true;
+      return successfulExecutor(setup.outputRelative)();
+    })).rejects.toMatchObject({ code: "validation_error" });
+    expect(executed).toBe(false);
+    expect(await readFile(setup.layout.summaryPath, "utf8")).toBe(before);
+  });
+
+  it("rejects a mismatched explicit workspace and the prohibited legacy root before execution", async () => {
+    const setup = await fixture();
+    const foreign = await fixture();
+    for (const analysisRoot of [foreign.layout.analysisRoot, join(trustedRoot, "test", "demo-output")]) {
+      let executed = false;
+      await expect(runFeature6WorkflowCommand(
+        trustedRoot, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+        { selectedWorksheetNames: ["Overview"], analysisRoot },
+        { executeFile: async () => {
+          executed = true;
+          return successfulExecutor(setup.outputRelative)();
+        } },
+      )).rejects.toMatchObject({ code: "validation_error" });
+      expect(executed).toBe(false);
+    }
+  });
+
+  it("rejects a malformed workspace summary instead of allocating a replacement", async () => {
+    const setup = await fixture();
+    await writeFile(setup.layout.summaryPath, "not-json");
+    await expect(run(setup, successfulExecutor(setup.outputRelative)))
+      .rejects.toMatchObject({ code: "validation_error", summary: expect.stringContaining("completed F5 workspace") });
+    expect(await readFile(setup.layout.summaryPath, "utf8")).toBe("not-json");
+  });
+
+  it("rejects another workspace's valid publication even under the same repository test root", async () => {
+    const setup = await fixture();
+    const foreign = await fixture();
+    await expect(run(setup, successfulExecutor(foreign.outputRelative)))
+      .rejects.toMatchObject({ code: "internal_error" });
+  });
+
+  it("passes validated canonical stage roots rather than caller-relative paths to the child", async () => {
+    const setup = await fixture();
+    let forwarded: readonly string[] = [];
+    const roots = [setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root]
+      .map((root) => relative(process.cwd(), root));
+    await runFeature6WorkflowCommand(
+      trustedRoot, roots[0], roots[1], roots[2], roots[3],
+      { selectedWorksheetNames: ["Overview"] },
+      { executeFile: async (_file, args) => {
+        forwarded = args;
+        return successfulExecutor(setup.outputRelative)();
+      } },
+    );
+    expect(forwarded.slice(1, 5)).toEqual([setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root]);
+  });
+
   it("rejects a successful runner result without the required PDF report", async () => {
     const setup = await fixture();
 
@@ -175,6 +264,7 @@ describe("Feature 6 CLI trust boundary", () => {
     expect(calls[0].file).toBe(process.execPath);
     expect(calls[0].args).toEqual([
       trustedRunner, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      "--analysis-root", setup.layout.analysisRoot,
       "--analysis-request-context", '{"requestedAt":"2026-09-16T15:30:12.000Z","utcOffsetMinutes":-420,"source":"cli"}',
       "--worksheet", "Overview", "--worksheet", "Details",
       "--language", "en-US", "--model-interpretation", "evidence/model.json",
@@ -269,7 +359,7 @@ describe("Feature 6 CLI trust boundary", () => {
     "accepts governed status %s and returns the canonical final report path",
     async (status) => {
       const setup = await fixture();
-      await expect(run(setup, successfulExecutor(setup.outputRelative, status)))
+      await expect(run(setup, successfulExecutor(setup.outputDirectory, status)))
         .resolves.toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nfullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}\nstatus: ${status}`);
     },
   );
@@ -284,7 +374,7 @@ describe("Feature 6 CLI trust boundary", () => {
       .rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
   });
 
-  it("rejects absolute, nonexistent, publish-root, and linked-out output directories", async () => {
+  it("rejects foreign absolute, nonexistent, publish-root, and linked-out output directories", async () => {
     const setup = await fixture();
     const outside = await mkdtemp(join(tmpdir(), "feature6-output-outside-"));
     cleanup.push(outside);
@@ -292,7 +382,7 @@ describe("Feature 6 CLI trust boundary", () => {
     await symlink(outside, linkedOutput, process.platform === "win32" ? "junction" : "dir");
 
     for (const outputDirectory of [
-      setup.outputDirectory,
+      outside,
       relative(trustedRoot, join(setup.base, "missing-output")).replaceAll(sep, "/"),
       "test/demo-output",
       relative(trustedRoot, linkedOutput).replaceAll(sep, "/"),

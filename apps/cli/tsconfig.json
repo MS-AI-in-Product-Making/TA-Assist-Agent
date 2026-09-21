@@ -11,7 +11,8 @@
     { "path": "../../packages/audit" },
     { "path": "../../packages/memory" },
     { "path": "../../packages/governance" },
-    { "path": "../../packages/orchestrator" }
+    { "path": "../../packages/orchestrator" },
+    { "path": "../../packages/workflow-runners" }
   ],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]

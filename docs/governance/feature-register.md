@@ -151,10 +151,21 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   堆叠方向或跨子系统结构风险，也不提供完整澄清流程；调用方应通过根 F5 合同取得完整受治理报告，
   不得把 F5.1 描述为唯一可用 F5 入口。
 - F6 的 `available` 仅覆盖当前本地 `f6-optimization-v2` workflow 和最终报告输出。应用入口为
-  `node apps/cli/dist/index.js feature6 --root "<repository-root>" --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "<worksheet-name>"`；
+  `node apps/cli/dist/index.js feature6 --root "<repository-root>" --analysis-root "<existing-analysis-root>" --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "<worksheet-name>" --language "en-US" --model-interpretation "<workspace-model-artifact>" --analysis-request-context '<candidate-request-context-json>'`；
   `--worksheet` 可重复且至少一次，worksheet 名称必须 trim 后非空且唯一。四个 artifact root 必须分别包含
   `Feature2-Report.json`、`Feature3-Report.json`、`Feature4-Calculation.json` 和 `Feature5-Report.json`，并通过
   artifact identity、内容 hash、schema、workbook 与 worksheet association 门禁；不得扫描目录猜测输入。
+  当前 CLI 只复用 repository `test` 下已完成 F5 的现有 analysis workspace；省略 `--analysis-root` 时只验证
+  F5 root 的直接父目录，不搜索、不分配新 root、不补造 F1-F5。四个 root 必须是该 summary 的精确 F2-F5
+  stage 目录；`test/demo-output` 及其子目录仍禁止写入。最终报告只接受该 workspace 的
+  `06 - F6 Design Optimization` 目录，不接受其他 workspace 的成功输出。历史只读命令不受此写入入口影响。
+  最终发布仍要求受验证的 F6 candidate 和 terminal ADO outcome；CLI 不自动创建 candidate、确认 ADO 或执行
+  上游阶段。`--analysis-request-context` 可复用 candidate 的受治理时间上下文，避免重建 timestamp 导致
+  candidate 不匹配；省略时仍生成当前 CLI 时间上下文。candidate 与 final 的 runner 参数必须完全匹配
+  （仅 candidate 多一个 `--candidate`），包括顺序：F2-F5 roots、`--analysis-root`、
+  `--analysis-request-context`、重复 `--worksheet`、`--language`、`--model-interpretation`，然后依次为可选
+  `--supplier-capability`、`--datum-strategy`、`--cost`、`--image-observations`、`--analysis-context`、
+  `--optimization-targets`。缺少 workspace 或任何发布前提时 fail closed，不退回 legacy 输出。
   可选 `f6-analysis-context-v1` 与 `f6-optimization-targets-v1` 分别经过 `Confirm analysis context` 和
   `Confirm optimization targets` 独立确认后，才可追加 `--analysis-context` 与 `--optimization-targets`。两次确认不得互相合并或与 F3 ADO 确认合并；caller-target scenario 仍要求 confirmed targets。唯一自动例外为 `f6-top3-tolerance-policy-v1`：仅当 CpkL 或 CpkU 低于 worksheet Target Cpk 时，按固定 OP1（25%/10%/10%）、OP2（20%/15%/15%）、OP3（40%/5%/5%）收紧 baseline Top 3 tolerance bands，并通过 F4 完整重算；不得生成其他自动百分比 scenario。supplier capability 与 datum strategy 缺少绑定证据时不得输出已验证可行性；cost 证据缺失、
   身份不一致或未覆盖候选方案时，ROI 必须保持 `not_computed`，不得据此排序或推荐。所有输入、日志、错误、manifest

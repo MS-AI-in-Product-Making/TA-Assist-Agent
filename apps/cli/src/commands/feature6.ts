@@ -3,12 +3,16 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createF6ReportFileNames, createTypedError } from "@ai-assist/contracts";
+import { analysisRequestContextSchema, createF6ReportFileNames, createTypedError, type AnalysisRequestContext } from "@ai-assist/contracts";
+import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME, recordAnalysisStageStarted,
+  resolveAnalysisWorkspaceStagePaths, validateAnalysisWorkspaceSummary,
+  type AnalysisWorkspaceSummary,
+} from "@ai-assist/workflow-runners";
 
 const execFileAsync = promisify(execFile);
 const trustedRepositoryRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
 const trustedRunnerPath = join(trustedRepositoryRoot, "scripts", "run-f6-full-validation.mjs");
-const trustedPublishRoot = join(trustedRepositoryRoot, "test", "demo-output");
 
 interface Feature6ExecutionOptions {
   readonly cwd: string;
@@ -37,6 +41,8 @@ const defaultDependencies: Feature6CommandDependencies = {
 };
 
 export interface Feature6CommandOptions {
+  readonly analysisRoot?: string;
+  readonly analysisRequestContext?: AnalysisRequestContext;
   readonly selectedWorksheetNames: readonly string[];
   readonly languageTag?: string;
   readonly modelInterpretationPath?: string;
@@ -55,7 +61,7 @@ function feature6Error(
   return createTypedError({
     code,
     summary,
-    suggestedAction: "Verify the Feature 2 through Feature 5 artifact directories and repository Feature 6 runner before rerunning.",
+    suggestedAction: "Provide a completed F5 workspace with --analysis-root and its exact F2-F5 artifact directories. Final publication also requires the matching validated F6 candidate and terminal ADO outcome.",
     affectedInputReferences: ["feature6-workflow"],
   });
 }
@@ -90,6 +96,14 @@ function optionalPath(value: string | undefined, label: string): string | undefi
     throw feature6Error("validation_error", `Feature 6 ${label} path must not be blank.`);
   }
   return normalized;
+}
+
+export function parseFeature6AnalysisRequestContext(value: string): AnalysisRequestContext {
+  try {
+    return analysisRequestContextSchema.parse(JSON.parse(value));
+  } catch {
+    throw feature6Error("validation_error", "Feature 6 --analysis-request-context must be valid governed request-context JSON.");
+  }
 }
 
 function containsControlCharacter(value: string): boolean {
@@ -149,6 +163,37 @@ function validateTrustedExecutionRoot(rootDir: string): void {
   }
 }
 
+function validatedWorkspace(roots: readonly [string, string, string, string], requestedRoot: string | undefined) {
+  try {
+    const analysisRoot = resolve(optionalPath(requestedRoot, "analysis root") ?? dirname(resolve(roots[3])));
+    const testRoot = join(trustedRepositoryRoot, "test");
+    const legacyRoot = join(testRoot, "demo-output");
+    if (!isContained(testRoot, analysisRoot) || analysisRoot === legacyRoot || isContained(legacyRoot, analysisRoot)
+      || hasLinkedPathComponent(analysisRoot) || !lstatSync(analysisRoot).isDirectory()) {
+      throw new Error("invalid workspace root");
+    }
+    const summaryPath = join(analysisRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+    if (hasLinkedPathComponent(summaryPath) || !lstatSync(summaryPath).isFile()) throw new Error("invalid summary");
+    const summary: AnalysisWorkspaceSummary = JSON.parse(readFileSync(summaryPath, "utf8"));
+    validateAnalysisWorkspaceSummary(summary);
+    if (summary.analysisRoot !== analysisRoot || summary.summaryPath !== summaryPath) throw new Error("foreign summary");
+    recordAnalysisStageStarted(summary, "f6");
+    const stagePaths = resolveAnalysisWorkspaceStagePaths(analysisRoot);
+    for (const stagePath of Object.values(stagePaths)) {
+      if (hasLinkedPathComponent(stagePath) || !lstatSync(stagePath).isDirectory()) throw new Error("invalid stage");
+    }
+    for (const [index, stage] of (["f2", "f3", "f4", "f5"] as const).entries()) {
+      const root = roots[index];
+      const reportName = stage === "f4" ? "Feature4-Calculation.json" : `Feature${stage[1]}-Report.json`;
+      if (root === undefined || resolve(root) !== stagePaths[stage] || hasLinkedPathComponent(root)
+        || hasLinkedPathComponent(join(root, reportName))) throw new Error("foreign stage");
+    }
+    return { analysisRoot, stagePaths };
+  } catch {
+    throw feature6Error("validation_error", "Feature 6 requires an existing completed F5 workspace with exact F2-F5 artifact roots.");
+  }
+}
+
 function expectedReportNames(outputDirectory: string): { finalReportMdName: string; finalReportPdfName: string } {
   const manifestPath = join(outputDirectory, "manifest.json");
   if (!existsSync(manifestPath) || !lstatSync(manifestPath).isFile()) throw new Error("invalid runner output");
@@ -163,13 +208,14 @@ function expectedReportNames(outputDirectory: string): { finalReportMdName: stri
   return createF6ReportFileNames(optimization.workbook?.fileName as string);
 }
 
-function formatFeature6Output(value: unknown): string {
+function formatFeature6Output(value: unknown, analysisRoot: string, stage6Root: string): string {
   if (typeof value !== "object" || value === null) throw new Error("invalid runner output");
   const output = value as Record<string, unknown>;
   const statuses = new Set(["completed", "partially_completed", "calculation_failed"]);
   if (typeof output.outputDirectory !== "string" || output.outputDirectory.length === 0
     || output.outputDirectory.trim() !== output.outputDirectory || containsControlCharacter(output.outputDirectory)
-    || containsBidiCharacter(output.outputDirectory) || hasUnsafePathForm(output.outputDirectory)
+    || containsBidiCharacter(output.outputDirectory)
+    || (output.outputDirectory !== stage6Root && hasUnsafePathForm(output.outputDirectory))
     || typeof output.status !== "string" || !statuses.has(output.status)) {
     throw new Error("invalid runner output");
   }
@@ -179,9 +225,9 @@ function formatFeature6Output(value: unknown): string {
   if (!outputStats.isDirectory() || outputStats.isSymbolicLink() || hasLinkedPathComponent(resolvedOutput)) {
     throw new Error("invalid runner output");
   }
-  const realPublishRoot = realpathSync(trustedPublishRoot);
+  const realPublishRoot = realpathSync(analysisRoot);
   const realOutput = realpathSync(resolvedOutput);
-  if (!isContained(realPublishRoot, realOutput)) throw new Error("invalid runner output");
+  if (realOutput !== stage6Root || !isContained(realPublishRoot, realOutput)) throw new Error("invalid runner output");
   const reportNames = expectedReportNames(realOutput);
   if (typeof output.finalReportMdPath !== "string" || output.finalReportMdPath.length === 0
     || output.finalReportMdPath.trim() !== output.finalReportMdPath
@@ -286,14 +332,17 @@ export async function runFeature6WorkflowCommand(
   validateArtifactRoot(f3Root, "Feature3-Report.json", "Feature 3");
   validateArtifactRoot(f4Root, "Feature4-Calculation.json", "Feature 4");
   validateArtifactRoot(f5Root, "Feature5-Report.json", "Feature 5");
+  const workspace = validatedWorkspace([f2Root, f3Root, f4Root, f5Root], options.analysisRoot);
 
-  const args = [trustedRunnerPath, f2Root, f3Root, f4Root, f5Root];
+  const { f2, f3, f4, f5 } = workspace.stagePaths;
+  const args = [trustedRunnerPath, f2, f3, f4, f5, "--analysis-root", workspace.analysisRoot];
   const requestedAt = (dependencies.now ?? (() => new Date()))();
-  args.push("--analysis-request-context", JSON.stringify({
+  const requestContext = options.analysisRequestContext === undefined ? {
     requestedAt: requestedAt.toISOString(),
     utcOffsetMinutes: (dependencies.utcOffsetMinutes ?? ((value: Date) => -value.getTimezoneOffset()))(requestedAt),
-    source: "cli",
-  }));
+    source: "cli" as const,
+  } : parseFeature6AnalysisRequestContext(JSON.stringify(options.analysisRequestContext));
+  args.push("--analysis-request-context", JSON.stringify(requestContext));
   for (const worksheetName of normalizedWorksheets(options.selectedWorksheetNames)) {
     args.push("--worksheet", worksheetName);
   }
@@ -321,7 +370,7 @@ export async function runFeature6WorkflowCommand(
       timeout: 240_000,
       killSignal: "SIGTERM",
     });
-    return formatFeature6Output(JSON.parse(stdout));
+    return formatFeature6Output(JSON.parse(stdout), workspace.analysisRoot, workspace.stagePaths.f6);
   } catch (error: unknown) {
     if (timeoutFailure(error)) {
       throw feature6Error("transient_error", "Feature 6 workflow execution timed out.");

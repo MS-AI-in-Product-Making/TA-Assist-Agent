@@ -551,7 +551,7 @@ npx vitest run packages/workflow-runners/src/analysis-workspace.test.ts packages
 - [ ] **Step 2: Run skill and report publication tests**
 
 ```powershell
-npx vitest run scripts/ta-assist-agent-skill.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs packages/product-export/src/f6-pdf-export.test.ts --reporter=verbose
+npx vitest run scripts/product-skills.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs packages/product-export/src/f6-pdf-export.test.ts --reporter=verbose
 ```
 
 - [ ] **Step 3: Run build, repository, and F7 validation**

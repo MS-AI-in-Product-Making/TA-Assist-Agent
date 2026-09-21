@@ -179,7 +179,7 @@ it("preserves validated unavailable feature details while normalizing its foreig
     manifest: {
       skillId: "unavailable-f5-skill",
       version: "v1",
-      featureId: "F8",
+      featureId: "F8.public-smoke",
       inputClassification: ["public"],
       permissions: [],
       adapterCapabilities: [],
@@ -605,7 +605,7 @@ function createTestSkill(
     manifest: {
       skillId,
       version: "v1",
-      featureId: "F8",
+      featureId: "F8.public-smoke",
       inputClassification: ["public"],
       permissions: [],
       adapterCapabilities: [],

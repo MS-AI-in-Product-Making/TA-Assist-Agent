@@ -164,7 +164,7 @@ export function fixtureFileSha256(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], actualFieldOverrides = {}, systemSpecificationOverrides = {} } = {}) {
+export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], actualFieldOverrides = {}, systemSpecificationOverrides = {}, workbookContentHash = F6_FIXTURE_WORKBOOK_HASH } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "f6-artifact-fixture-"));
   const publishRoot = path.join(root, "publish");
   const inputRoot = path.join(publishRoot, "inputs");
@@ -181,7 +181,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     tolerancePathImageStatus: "unavailable",
   }));
   const handoffs = worksheets.map((worksheet) => createF4Handoff({
-    workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
+    workbookContentHash,
     worksheet,
   }));
   const f4 = calculateF4Workflow({
@@ -189,7 +189,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     reportPath: "Feature2-Report.json",
     workbook: {
       fileName: "Anonymous.xlsx",
-      contentHash: F6_FIXTURE_WORKBOOK_HASH,
+      contentHash: workbookContentHash,
       f1GeneratedAt: "2026-08-17T00:00:00.000Z",
     },
     handoffs,
@@ -206,7 +206,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     status: blockedWorksheets.length === 0 ? "completed" : "partiallyBlocked",
     workbook: {
       fileName: "Anonymous.xlsx",
-      contentHash: F6_FIXTURE_WORKBOOK_HASH,
+      contentHash: workbookContentHash,
       f1GeneratedAt: "2026-08-17T00:00:00.000Z",
     },
     knowledgeBaseVersions: ["v1", "internal-v1"],
@@ -247,7 +247,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
     featureId: "F3",
     status: "completed",
     artifactRoot: f2ArtifactRoot,
-    workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
+    workbook: { fileName: "Anonymous.xlsx", contentHash: workbookContentHash },
     worksheets: f3Worksheets,
     ado: { status: "not_requested" },
     summary: {
@@ -261,7 +261,7 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
   const f5Request = {
     contractVersion: "v1",
     inputClassification: "confidential",
-    workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
+    workbook: { fileName: "Anonymous.xlsx", contentHash: workbookContentHash },
     knowledgeBaseVersion: "interpretation-rules-v2",
     worksheets: calculations.map((calculation, index) => ({
       worksheetName: calculation.worksheetSelection.worksheetName,

@@ -65,6 +65,36 @@ it("runs registered classification checks without granting external permissions"
   });
 });
 
+it.each([
+  ["public", "allowed"],
+  ["internal", "allowed"],
+  ["confidential", "explicit_opt_in"],
+] as const)("keeps public-smoke classification behavior for %s after F8 retirement", async (classification, retention) => {
+  await expect(runRegisteredSkill({
+    skillId: "classification-check",
+    input: { classification },
+    inputClassification: classification,
+  }, createAnonymousSkillRegistry())).resolves.toMatchObject({
+    output: { classification, retention },
+  });
+});
+
+it("keeps retired F8 unavailable without disabling the public echo smoke skill", async () => {
+  const registry = createAnonymousSkillRegistry();
+  registry.register({
+    ...publicEchoSkill,
+    manifest: { ...publicEchoSkill.manifest, skillId: "retired-f8", featureId: "F8" },
+  });
+  await expect(runRegisteredSkill({
+    skillId: "retired-f8", input: { message: "hello" },
+  }, registry)).rejects.toMatchObject({
+    code: "feature_not_available", summary: "Feature 'F8' is not available.",
+  });
+  await expect(runRegisteredSkill({
+    skillId: "public-echo", input: { message: "hello" },
+  }, registry)).resolves.toMatchObject({ output: { message: "hello" } });
+});
+
 it("fails closed for secret inputs and malformed requests", async () => {
   const registry = new SkillRegistry();
   registry.register(publicEchoSkill);
