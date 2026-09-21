@@ -15,13 +15,9 @@ Historical `f5-image-observation-v1` artifacts remain read-only compatible; new 
 
 Purely visual, confidence-gated evidence may produce an image `FACT`. Image-plus-text assessment produces only an `image_text_context_review` `SIGNAL` with `requiresEngineeringReview: true`; direction-to-row mapping requires structured `linkedVisualLabels` and never free-text inference. V2 validation is all-or-nothing across the selected worksheet set, five scopes, image hashes, snapshot rows, and provenance. An observation-only failure discards the whole v2 artifact and continues deterministic F5 with clarification; baseline F1/F3/F4 identity or required-image errors fail closed.
 
-## F6 Governed Optimization Contract
+F6 continues directly after F5. The product path may collect optional Analysis Context and Optimization Targets in order. Valid inputs require separate confirmations; neither may be combined with the F3 ADO confirmation. The skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate current-run F3, then continue through F4, F5, and F6; `governance_required` remains a visible non-blocking F3 result and does not trigger an early ADO interaction. Declined or rejected context continues with explicit gaps.
 
-After F5, the product path may collect optional Analysis Context and Optimization Targets in order. Valid inputs require separate confirmations; neither may be combined with the F3 ADO confirmation. The skill preserves **two worksheet confirmations**: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate **current-run F3**, then continue through F4, F5, and F6; `governance_required` remains a visible non-blocking F3 result and does not trigger an early ADO interaction. Declined or rejected context continues with explicit gaps. F6 then evaluates adjusted mean to specification-center shift, ranks every contributor, and produces F4-verified specification-change proposals.
-
-F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under the governed run root. Both support controlled `--analysis-context` and `--optimization-targets` inputs after their independent confirmations.
-
-F6 owns adjusted-mean assessment, contributor priorities, F4-verified specification proposals, and the final `Feature6-Report.md` plus `Feature6-Report.pdf`; F5 owns baseline interpretation and evidence. Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support remains explicitly unavailable. After the F6 report passes validation, every validated F3 result enters an **optional ADO publishing gate** that reuses the full F3 confirmation protocol; publication is **never automatic or implicit**. New image mode creates only immutable `f5-image-observation-v2` evidence. F6 atomically publishes the validated report set and fail-closed manifests.
+F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under the governed run root. Both support controlled `--analysis-context` and `--optimization-targets` inputs after their independent confirmations. F6 owns adjusted-mean assessment, contributor priorities, F4-verified specification proposals, and the final `Feature6-Report.md` plus `Feature6-Report.pdf`; F5 owns baseline interpretation and evidence. Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support remains explicitly unavailable. After the F6 report passes validation, every validated F3 result enters an optional ADO publishing gate that reuses the full F3 confirmation protocol; publication is never automatic or implicit. New image mode creates only immutable `f5-image-observation-v2` evidence. F6 atomically publishes the validated report set and fail-closed manifests.
 
 ## Flow Diagram
 
@@ -60,7 +56,7 @@ flowchart TB
     F7 --> KB["Feed measured evidence back to F0 knowledge"]
 ```
 
-## Skill and Direct Workflow Confirmation Order
+## F8 Workbench Confirmation Order
 
 The governed order is unchanged after F8 retirement:
 
@@ -88,4 +84,15 @@ No skill reply, direct command, or optional follow-up may merge or bypass these 
 - Before a new F3 run, the user must select at least one worksheet from the F2 `ready` set; F3 analyzes only that selected subset.
 - The local F3 Markdown links `Device Level Dim`, `Dimension Description`, and `Factor Description` to the corresponding F1 worksheet image. F1 remains the only image owner; `Source Evidence` shows worksheet, table, row, and field-to-cell mappings.
 - Publishing keeps the two explicit confirmations: choose publishing mode first, then confirm the final write separately.
-- If the user declines, capability is missing, or verification fails, write the local fallback artifact with the governed reason code instead of attempting an uncontrolled retry.
+- Question call 1 - publishing mode:
+  - Create a new ADO work item
+  - Use an existing ADO work item
+  - Do not publish to ADO
+- Surface MCP entity calls may start only after Question call 1 returns.
+- Existing-target validation is Surface MCP-only on `organization/project/type or ID` and may offer candidate correction; never persist the source URL.
+- Future roadmap items such as scheduler, milestone timer, or date-triggered reminder behavior remain outside current F3 scope.
+- The governed path must build a complete preview before Question call 2 - final write confirmation.
+- If the user declines, capability is missing, or verification fails, write the local fallback artifact with the governed reason code to `Feature3-ADO-Reminder.md` instead of attempting an uncontrolled retry.
+- Bodyless direct comment schemas may use the schema-qualified Surface MCP `System.History` channel. Direct comments use `confirmedMarkdownBody`; System.History uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`.
+- Governed publishing requires one write that produces exactly one new comment with comment format `html`, one 12-header payload, counted rows marked `data-f3-factor-row=true`, excluded rows marked `data-f3-group-row=true`, matching the ADO-safe canonical HTML body/hash and unchanged `top: 200` readback scope. This write is verified by governed readback before completion.
+- Never use Azure DevOps MCP/REST/browser/shell HTTP. This boundary also means no scheduler, no milestone timer, no date-triggered reminder execution, and no F4 calculation/handoff mutation.

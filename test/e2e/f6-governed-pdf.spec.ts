@@ -269,9 +269,9 @@ test("publishes one overview page plus one page per worksheet without overflow",
     }
     const summaryWorksheetLink = overview.locator(".workbook-summary tbody tr:first-child td:nth-child(2) a");
     expect(await summaryWorksheetLink.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(0, 120, 212)");
-    const cpkFail = overview.getByText("CPK FAIL", { exact: true }).first();
-    await expect(cpkFail).toBeVisible();
-    expect(await cpkFail.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(167, 41, 41)");
+    const blockedSummary = overview.getByText("BLOCK", { exact: true }).first();
+    await expect(blockedSummary).toBeVisible();
+    expect(await blockedSummary.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(167, 41, 41)");
     const stackImage = ready.locator(".stack-image img");
     await expect(stackImage).toHaveJSProperty("complete", true);
     expect(await stackImage.evaluate((image: HTMLImageElement) => {
