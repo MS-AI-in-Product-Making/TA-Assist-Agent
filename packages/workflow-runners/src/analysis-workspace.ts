@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { workbookCatalogFileNameSchema } from "@ai-assist/contracts";
 
@@ -235,7 +236,7 @@ export function validateAnalysisWorkspaceSummary(summary: AnalysisWorkspaceSumma
 		validateStageArtifacts(analysisRoot, stage, stageSummary);
 	}
 
-	validateStageOrdering(summary.stages);
+	validateStageOrdering(summary);
 
 	if (!OVERALL_STATUS_SET.has(summary.overallStatus)) {
 		throw new Error("Analysis workspace overall status is invalid.");
@@ -257,6 +258,138 @@ export function validateAnalysisWorkspaceSummary(summary: AnalysisWorkspaceSumma
 		}
 	} else if (summary.failedStage !== undefined || summary.failureCategory !== undefined) {
 		throw new Error("Analysis workspace failure details are only allowed for failed summaries.");
+	}
+}
+
+export function createInitialAnalysisWorkspaceSummary(layout: AnalysisWorkspaceLayout): AnalysisWorkspaceSummary {
+	validateAnalysisWorkspaceLayout(layout);
+	const summary: AnalysisWorkspaceSummary = {
+		contractVersion: ANALYSIS_WORKSPACE_VERSION,
+		analysisRoot: layout.analysisRoot,
+		summaryPath: layout.summaryPath,
+		workbook: {
+			fileName: layout.workbookFileName,
+			contentHash: layout.workbookContentHash,
+		},
+		allocationDate: layout.allocationDate,
+		currentStage: "f1",
+		stageDirectories: { ...ANALYSIS_STAGE_DIRS },
+		stages: createPendingStageSummaries(),
+		overallStatus: "in_progress",
+	};
+	validateAnalysisWorkspaceSummary(summary);
+	return summary;
+}
+
+export function recordAnalysisStageStarted(summary: AnalysisWorkspaceSummary, stage: AnalysisStage): AnalysisWorkspaceSummary {
+	validateAnalysisWorkspaceSummary(summary);
+	assertSummaryCanTransition(summary);
+	assertStageCanStart(summary, stage);
+
+	return createUpdatedSummary(summary, {
+		currentStage: stage,
+		stages: updateStageSummary(summary.stages, stage, {
+			status: "running",
+			artifacts: cloneArtifacts(summary.stages[stage].artifacts),
+		}),
+	});
+}
+
+export function recordAnalysisStageCompleted(
+	summary: AnalysisWorkspaceSummary,
+	stage: AnalysisStage,
+	artifacts: Readonly<Record<string, string>>,
+): AnalysisWorkspaceSummary {
+	validateAnalysisWorkspaceSummary(summary);
+	assertSummaryCanTransition(summary);
+	assertStageIsRunning(summary, stage);
+	const normalizedArtifacts = normalizeStageArtifactsForPersistence(summary.analysisRoot, stage, artifacts);
+
+	return createUpdatedSummary(summary, {
+		currentStage: stage,
+		stages: updateStageSummary(summary.stages, stage, {
+			status: "completed",
+			artifacts: normalizedArtifacts,
+		}),
+	});
+}
+
+export function recordAnalysisStageFailed(
+	summary: AnalysisWorkspaceSummary,
+	stage: AnalysisStage,
+	failureCategory: string,
+): AnalysisWorkspaceSummary {
+	validateAnalysisWorkspaceSummary(summary);
+	assertSummaryCanTransition(summary);
+	assertStageIsRunning(summary, stage);
+	const trimmedFailureCategory = failureCategory.trim();
+	if (trimmedFailureCategory === "") {
+		throw new Error("Analysis workspace failure category is invalid.");
+	}
+
+	const failedStageIndex = ANALYSIS_STAGES.indexOf(stage);
+	const stages = createStageRecord((candidateStage) => {
+		const candidateStageIndex = ANALYSIS_STAGES.indexOf(candidateStage);
+		if (candidateStageIndex < failedStageIndex) return cloneStageSummary(summary.stages[candidateStage]);
+		if (candidateStage === stage) return { status: "failed", artifacts: cloneArtifacts(summary.stages[candidateStage].artifacts) };
+		return { status: "blocked", artifacts: {} };
+	});
+
+	return createUpdatedSummary(summary, {
+		currentStage: stage,
+		stages,
+		overallStatus: "failed",
+		failedStage: stage,
+		failureCategory: trimmedFailureCategory,
+	});
+}
+
+export function writeAnalysisWorkspaceSummary(layout: AnalysisWorkspaceLayout, summary: AnalysisWorkspaceSummary): void {
+	validateAnalysisWorkspaceLayout(layout);
+	validateAnalysisWorkspaceSummary(summary);
+	assertSummaryMatchesLayout(layout, summary);
+
+	const content = `${JSON.stringify(summary, null, 2)}\n`;
+	const temporaryPath = path.join(
+		path.dirname(layout.summaryPath),
+		`${ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME}.${process.pid}.${randomUUID()}.tmp`,
+	);
+	let fileDescriptor: number | undefined;
+	let ownsTemporaryPath = false;
+	let committed = false;
+	let writeError: unknown;
+
+	try {
+		fileDescriptor = fs.openSync(temporaryPath, "wx");
+		ownsTemporaryPath = true;
+		try {
+			fs.writeFileSync(fileDescriptor, content, "utf8");
+			fs.fsyncSync(fileDescriptor);
+		} finally {
+			if (fileDescriptor !== undefined) {
+				fs.closeSync(fileDescriptor);
+				fileDescriptor = undefined;
+			}
+		}
+		fs.renameSync(temporaryPath, layout.summaryPath);
+		committed = true;
+	} catch (error) {
+		writeError = error;
+		throw error;
+	} finally {
+		if (ownsTemporaryPath && !committed) {
+			const cleanupError = cleanupExactTemporarySummaryFile(temporaryPath);
+			if (cleanupError !== undefined) {
+				if (writeError === undefined) throw cleanupError;
+				throw new AggregateError(
+					[
+						writeError instanceof Error ? writeError : new Error(String(writeError)),
+						cleanupError,
+					],
+					"Analysis workspace summary write failed during cleanup.",
+				);
+			}
+		}
 	}
 }
 
@@ -388,29 +521,45 @@ function validateStageArtifacts(
 		if (artifactName.trim() === "") {
 			throw new Error(`Analysis workspace stage ${stage} artifact name is invalid.`);
 		}
-		if (!isSafeStageRelativePath(analysisRoot, stage, artifactPath)) {
+		if (artifactPath !== normalizeStageArtifactPath(analysisRoot, stage, artifactPath)) {
 			throw new Error(`Analysis workspace stage ${stage} artifact path is invalid.`);
 		}
 	}
 }
 
-function validateStageOrdering(stages: AnalysisWorkspaceSummary["stages"]): void {
+function validateStageOrdering(summary: Pick<AnalysisWorkspaceSummary, "stages" | "overallStatus" | "failedStage">): void {
+	if (summary.overallStatus === "failed") {
+		const failedStage = summary.failedStage;
+		if (!failedStage) {
+			throw new Error("Analysis workspace failed stage is invalid.");
+		}
+		const failedStageIndex = ANALYSIS_STAGES.indexOf(failedStage);
+		for (const [index, stage] of ANALYSIS_STAGES.entries()) {
+			const stageStatus = summary.stages[stage].status;
+			if (index < failedStageIndex && stageStatus !== "completed") {
+				throw new Error(`Analysis workspace stage ${stage} must remain completed before the failed stage.`);
+			}
+			if (index === failedStageIndex && stageStatus !== "failed") {
+				throw new Error(`Analysis workspace stage ${stage} must match the recorded failed stage.`);
+			}
+			if (index > failedStageIndex && stageStatus !== "blocked") {
+				throw new Error(`Analysis workspace stage ${stage} must be blocked after a failed predecessor.`);
+			}
+		}
+		return;
+	}
+
 	let predecessorIncomplete = false;
 	for (const stage of ANALYSIS_STAGES) {
-		const stageStatus = stages[stage].status;
+		const stageStatus = summary.stages[stage].status;
+		if (stageStatus === "failed" || stageStatus === "blocked") {
+			throw new Error(`Analysis workspace stage ${stage} can only be failed or blocked in failed summaries.`);
+		}
 		if (stageStatus !== "completed") predecessorIncomplete = true;
 		else if (predecessorIncomplete) {
 			throw new Error(`Analysis workspace stage ${stage} cannot be completed before its completed predecessor chain.`);
 		}
 	}
-}
-
-function isSafeStageRelativePath(analysisRoot: string, stage: AnalysisStage, artifactPath: string): boolean {
-	if (artifactPath.trim() === "" || isAbsoluteAny(artifactPath)) return false;
-
-	const stageRoot = path.join(analysisRoot, ANALYSIS_STAGE_DIRS[stage]);
-	const resolvedArtifactPath = path.resolve(analysisRoot, artifactPath);
-	return isWithinOrEqual(stageRoot, resolvedArtifactPath);
 }
 
 function isAbsoluteAny(candidatePath: string): boolean {
@@ -526,4 +675,137 @@ function attachCreatedDirectories(error: unknown, createdDirectories: readonly D
 
 function formatErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function createPendingStageSummaries(): AnalysisWorkspaceSummary["stages"] {
+	return createStageRecord(() => ({ status: "pending", artifacts: {} }));
+}
+
+function createStageRecord<T>(factory: (stage: AnalysisStage) => T): Record<AnalysisStage, T> {
+	return Object.fromEntries(ANALYSIS_STAGES.map((stage) => [stage, factory(stage)])) as Record<AnalysisStage, T>;
+}
+
+function createUpdatedSummary(
+	summary: AnalysisWorkspaceSummary,
+	overrides: Partial<AnalysisWorkspaceSummary>,
+): AnalysisWorkspaceSummary {
+	const updatedSummary: AnalysisWorkspaceSummary = {
+		...summary,
+		...overrides,
+		workbook: overrides.workbook ?? { ...summary.workbook },
+		stageDirectories: overrides.stageDirectories ?? { ...summary.stageDirectories },
+		stages: overrides.stages ?? cloneStages(summary.stages),
+	};
+	validateAnalysisWorkspaceSummary(updatedSummary);
+	return updatedSummary;
+}
+
+function cloneStages(stages: AnalysisWorkspaceSummary["stages"]): AnalysisWorkspaceSummary["stages"] {
+	return createStageRecord((stage) => cloneStageSummary(stages[stage]));
+}
+
+function cloneStageSummary(stageSummary: AnalysisWorkspaceStageSummary): AnalysisWorkspaceStageSummary {
+	return {
+		status: stageSummary.status,
+		artifacts: cloneArtifacts(stageSummary.artifacts),
+	};
+}
+
+function cloneArtifacts(artifacts: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+	return { ...artifacts };
+}
+
+function updateStageSummary(
+	stages: AnalysisWorkspaceSummary["stages"],
+	stage: AnalysisStage,
+	stageSummary: AnalysisWorkspaceStageSummary,
+): AnalysisWorkspaceSummary["stages"] {
+	return createStageRecord((candidateStage) => candidateStage === stage ? stageSummary : cloneStageSummary(stages[candidateStage]));
+}
+
+function assertSummaryCanTransition(summary: AnalysisWorkspaceSummary): void {
+	if (summary.overallStatus !== "in_progress") {
+		throw new Error("Analysis workspace lifecycle transitions require an in-progress summary.");
+	}
+}
+
+function assertStageCanStart(summary: AnalysisWorkspaceSummary, stage: AnalysisStage): void {
+	const stageStatus = summary.stages[stage].status;
+	if (stageStatus !== "pending") {
+		throw new Error(`Analysis workspace stage ${stage} must be pending before it can start.`);
+	}
+	const stageIndex = ANALYSIS_STAGES.indexOf(stage);
+	for (const predecessor of ANALYSIS_STAGES.slice(0, stageIndex)) {
+		if (summary.stages[predecessor].status !== "completed") {
+			throw new Error(`Analysis workspace stage ${stage} cannot start before its predecessor chain is completed.`);
+		}
+	}
+}
+
+function assertStageIsRunning(summary: AnalysisWorkspaceSummary, stage: AnalysisStage): void {
+	if (summary.currentStage !== stage || summary.stages[stage].status !== "running") {
+		throw new Error(`Analysis workspace stage ${stage} must be the current running stage.`);
+	}
+}
+
+function normalizeStageArtifactsForPersistence(
+	analysisRoot: string,
+	stage: AnalysisStage,
+	artifacts: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+	return Object.fromEntries(
+		Object.entries(artifacts).map(([artifactName, artifactPath]) => {
+			if (artifactName.trim() === "") {
+				throw new Error(`Analysis workspace stage ${stage} artifact name is invalid.`);
+			}
+			return [artifactName, normalizeStageArtifactPath(analysisRoot, stage, artifactPath)];
+		}),
+	);
+}
+
+function normalizeStageArtifactPath(analysisRoot: string, stage: AnalysisStage, artifactPath: string): string {
+	if (artifactPath.trim() === "" || isAbsoluteAny(artifactPath)) {
+		throw new Error(`Analysis workspace stage ${stage} artifact path is invalid.`);
+	}
+	if (artifactPath.split(/[\\/]+/).includes("..")) {
+		throw new Error(`Analysis workspace stage ${stage} artifact path is invalid.`);
+	}
+
+	const normalizedArtifactPath = path.normalize(artifactPath);
+	const stageRoot = path.join(path.resolve(analysisRoot), ANALYSIS_STAGE_DIRS[stage]);
+	const resolvedArtifactPath = path.resolve(analysisRoot, normalizedArtifactPath);
+	if (!isWithinOrEqual(stageRoot, resolvedArtifactPath)) {
+		throw new Error(`Analysis workspace stage ${stage} artifact path is invalid.`);
+	}
+
+	const rootRelativeArtifactPath = path.relative(path.resolve(analysisRoot), resolvedArtifactPath);
+	if (rootRelativeArtifactPath === "" || isAbsoluteAny(rootRelativeArtifactPath)) {
+		throw new Error(`Analysis workspace stage ${stage} artifact path is invalid.`);
+	}
+	return rootRelativeArtifactPath;
+}
+
+function assertSummaryMatchesLayout(layout: AnalysisWorkspaceLayout, summary: AnalysisWorkspaceSummary): void {
+	if (path.resolve(summary.analysisRoot) !== path.resolve(layout.analysisRoot)) {
+		throw new Error("Analysis workspace summary root does not match the allocated layout.");
+	}
+	if (path.resolve(summary.summaryPath) !== path.resolve(layout.summaryPath)) {
+		throw new Error("Analysis workspace summary path does not match the allocated layout.");
+	}
+	if (summary.workbook.fileName !== layout.workbookFileName || summary.workbook.contentHash !== layout.workbookContentHash) {
+		throw new Error("Analysis workspace summary workbook does not match the allocated layout.");
+	}
+	if (summary.allocationDate !== layout.allocationDate) {
+		throw new Error("Analysis workspace summary allocation date does not match the allocated layout.");
+	}
+}
+
+function cleanupExactTemporarySummaryFile(temporaryPath: string): Error | undefined {
+	if (!fs.existsSync(temporaryPath)) return undefined;
+	try {
+		fs.rmSync(temporaryPath);
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error : new Error(String(error));
+	}
 }

@@ -23,10 +23,15 @@ export {
 	ANALYSIS_WORKSPACE_VERSION,
 	allocateAnalysisWorkspace,
 	assertAnalysisWorkspaceWorkbookIdentity,
+	createInitialAnalysisWorkspaceSummary,
 	formatLocalDateYYYYMMDD,
+	recordAnalysisStageCompleted,
+	recordAnalysisStageFailed,
+	recordAnalysisStageStarted,
 	resolveAnalysisWorkspaceStagePaths,
 	validateAnalysisWorkspaceLayout,
 	validateAnalysisWorkspaceSummary,
+	writeAnalysisWorkspaceSummary,
 } from "./analysis-workspace.js";
 export type {
 	AnalysisStage,

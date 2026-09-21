@@ -7,10 +7,15 @@ import {
 	ANALYSIS_STAGE_DIRS,
 	allocateAnalysisWorkspace,
 	assertAnalysisWorkspaceWorkbookIdentity,
+	createInitialAnalysisWorkspaceSummary,
 	formatLocalDateYYYYMMDD,
+	recordAnalysisStageCompleted,
+	recordAnalysisStageFailed,
+	recordAnalysisStageStarted,
 	resolveAnalysisWorkspaceStagePaths,
 	validateAnalysisWorkspaceLayout,
 	validateAnalysisWorkspaceSummary,
+	writeAnalysisWorkspaceSummary,
 	type AnalysisStage,
 	type AnalysisWorkspaceLayout,
 	type AnalysisWorkspaceResolvedStagePaths,
@@ -112,6 +117,202 @@ afterEach(() => {
 	for (const root of cleanupRoots.splice(0)) {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+describe("analysis workspace lifecycle", () => {
+	it("creates an initial pending summary without mutating the layout", () => {
+		const layout = layoutFixture();
+		const layoutBefore = JSON.parse(JSON.stringify(layout));
+
+		const summary = createInitialAnalysisWorkspaceSummary(layout);
+
+		expect(summary).toEqual({
+			contractVersion: "analysis-workspace-v1",
+			analysisRoot: layout.analysisRoot,
+			summaryPath: layout.summaryPath,
+			workbook: {
+				fileName: layout.workbookFileName,
+				contentHash: layout.workbookContentHash,
+			},
+			allocationDate: layout.allocationDate,
+			currentStage: "f1",
+			stageDirectories: { ...ANALYSIS_STAGE_DIRS },
+			stages: stageStatuses({}),
+			overallStatus: "in_progress",
+		});
+		expect(layout).toEqual(layoutBefore);
+		expect(() => validateAnalysisWorkspaceSummary(summary)).not.toThrow();
+	});
+
+	it("records legal ordered transitions immutably", () => {
+		const initial = createInitialAnalysisWorkspaceSummary(layoutFixture());
+		const initialBefore = JSON.parse(JSON.stringify(initial));
+		const f1Artifacts = Object.freeze({
+			report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json"),
+		});
+
+		const started = recordAnalysisStageStarted(initial, "f1");
+		const completed = recordAnalysisStageCompleted(started, "f1", f1Artifacts);
+
+		expect(initial).toEqual(initialBefore);
+		expect(started).not.toBe(initial);
+		expect(started.stages.f1).toEqual({ status: "running", artifacts: {} });
+		expect(completed).not.toBe(started);
+		expect(completed.stages.f1).toEqual({ status: "completed", artifacts: f1Artifacts });
+		expect(completed.currentStage).toBe("f1");
+		expect(started.stages.f1).toEqual({ status: "running", artifacts: {} });
+		expect(() => validateAnalysisWorkspaceSummary(completed)).not.toThrow();
+	});
+
+	it("blocks downstream stages after a recorded failure", () => {
+		const initial = createInitialAnalysisWorkspaceSummary(layoutFixture());
+		const f1Complete = recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(initial, "f1"),
+			"f1",
+			{ report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") },
+		);
+		const startedF2 = recordAnalysisStageStarted(f1Complete, "f2");
+		const startedBefore = JSON.parse(JSON.stringify(startedF2));
+
+		const failed = recordAnalysisStageFailed(startedF2, "f2", "validation_error");
+
+		expect(startedF2).toEqual(startedBefore);
+		expect(failed.overallStatus).toBe("failed");
+		expect(failed.failedStage).toBe("f2");
+		expect(failed.failureCategory).toBe("validation_error");
+		expect(failed.stages.f2).toEqual({ status: "failed", artifacts: {} });
+		expect(failed.stages.f3.status).toBe("blocked");
+		expect(failed.stages.f4.status).toBe("blocked");
+		expect(failed.stages.f5.status).toBe("blocked");
+		expect(failed.stages.f6.status).toBe("blocked");
+		expect(() => validateAnalysisWorkspaceSummary(failed)).not.toThrow();
+	});
+
+	it("rejects illegal lifecycle transitions and unsafe completion artifacts", () => {
+		const initial = createInitialAnalysisWorkspaceSummary(layoutFixture());
+		const startedF1 = recordAnalysisStageStarted(initial, "f1");
+		const completedF1 = recordAnalysisStageCompleted(
+			startedF1,
+			"f1",
+			{ report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") },
+		);
+
+		expect(() => recordAnalysisStageStarted(initial, "f2")).toThrow(/predecessor|order/i);
+		expect(() => recordAnalysisStageCompleted(initial, "f1", {
+			report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json"),
+		})).toThrow(/running/i);
+		expect(() => recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(completedF1, "f2"),
+			"f2",
+			{ report: path.win32.join("C:\\escape", "Feature2-Report.json") },
+		)).toThrow(/artifact path/i);
+		expect(() => recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(completedF1, "f2"),
+			"f2",
+			{ report: path.join("..", "escape.json") },
+		)).toThrow(/artifact path/i);
+		expect(() => recordAnalysisStageFailed(completedF1, "f2", "validation_error")).toThrow(/running/i);
+	});
+});
+
+describe("analysis workspace summary persistence", () => {
+	it("validates before touching disk", () => {
+		const layout = allocateAnalysisWorkspace(allocationInput(testRootFor("summary-validate-before-write")));
+		const invalidSummary = summaryFixture({
+			analysisRoot: layout.analysisRoot,
+			summaryPath: layout.summaryPath,
+			stages: {
+				...stageStatuses({ f1: "completed" }),
+				f1: {
+					status: "completed",
+					artifacts: { report: path.win32.join("C:\\escape", "Feature1-Workbook.json") },
+				},
+			},
+		});
+		expect(() => writeAnalysisWorkspaceSummary(layout, invalidSummary)).toThrow(/artifact path/i);
+		expect(fs.existsSync(layout.summaryPath)).toBe(false);
+	});
+
+	it("publishes with same-directory temporary files and leaves no temp files behind", async () => {
+		const layout = allocateAnalysisWorkspace(allocationInput(testRootFor("summary-concurrent-write")));
+		const first = recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(createInitialAnalysisWorkspaceSummary(layout), "f1"),
+			"f1",
+			{ report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") },
+		);
+		const second = recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(first, "f2"),
+			"f2",
+			{ report: path.join(ANALYSIS_STAGE_DIRS.f2, "Feature2-Report.json") },
+		);
+		const tempOpens: string[] = [];
+		vi.doMock("node:crypto", async () => {
+			const actual = await vi.importActual<typeof import("node:crypto")>("node:crypto");
+			return {
+				...actual,
+				randomUUID: vi.fn()
+					.mockReturnValueOnce("first-write")
+					.mockReturnValueOnce("second-write"),
+			};
+		});
+		vi.doMock("node:fs", async () => {
+			const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+			return {
+				...actual,
+				openSync: vi.fn((targetPath: fs.PathLike, flags: string | number, mode?: fs.Mode) => {
+					tempOpens.push(String(targetPath));
+					return actual.openSync(targetPath, flags as "wx", mode);
+				}),
+			};
+		});
+		const { writeAnalysisWorkspaceSummary: mockedWriteAnalysisWorkspaceSummary } = await import("./analysis-workspace.js");
+
+		await Promise.all([
+			Promise.resolve().then(() => mockedWriteAnalysisWorkspaceSummary(layout, first)),
+			Promise.resolve().then(() => mockedWriteAnalysisWorkspaceSummary(layout, second)),
+		]);
+
+		expect(tempOpens).toHaveLength(2);
+		expect(new Set(tempOpens).size).toBe(2);
+		for (const temporaryPath of tempOpens) {
+			expect(path.dirname(temporaryPath)).toBe(path.dirname(layout.summaryPath));
+			expect(path.basename(temporaryPath)).toMatch(/^analysis-run-summary\.json\.\d+\.[^.]+\.tmp$/i);
+		}
+		const persisted = JSON.parse(fs.readFileSync(layout.summaryPath, "utf8")) as AnalysisWorkspaceSummary;
+		expect([first, second]).toContainEqual(persisted);
+		expect(fs.readdirSync(layout.analysisRoot).filter((entry) => entry.includes("analysis-run-summary.json.") && entry.endsWith(".tmp"))).toEqual([]);
+	});
+
+	it("removes only its owned temp file when rename fails", () => {
+		const layout = allocateAnalysisWorkspace(allocationInput(testRootFor("summary-rename-failure")));
+		const summary = recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(createInitialAnalysisWorkspaceSummary(layout), "f1"),
+			"f1",
+			{ report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") },
+		);
+		const unrelatedTemp = `${layout.summaryPath}.unrelated.tmp`;
+		fs.writeFileSync(unrelatedTemp, "leave me", "utf8");
+		vi.doMock("node:crypto", async () => {
+			const actual = await vi.importActual<typeof import("node:crypto")>("node:crypto");
+			return { ...actual, randomUUID: vi.fn(() => "rename-failure") };
+		});
+		vi.doMock("node:fs", async () => {
+			const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+			return {
+				...actual,
+				renameSync: vi.fn(() => {
+					throw new Error("rename exploded");
+				}),
+			};
+		});
+
+		return import("./analysis-workspace.js").then(({ writeAnalysisWorkspaceSummary: mockedWriteAnalysisWorkspaceSummary }) => {
+			expect(() => mockedWriteAnalysisWorkspaceSummary(layout, summary)).toThrow(/rename exploded/i);
+			expect(fs.existsSync(`${layout.summaryPath}.${process.pid}.rename-failure.tmp`)).toBe(false);
+			expect(fs.readFileSync(unrelatedTemp, "utf8")).toBe("leave me");
+			expect(fs.existsSync(layout.summaryPath)).toBe(false);
+		});
+	});
 });
 
 describe("analysis workspace contract", () => {
