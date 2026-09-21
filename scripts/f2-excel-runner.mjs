@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { typedErrorSchema } from "../packages/contracts/dist/errors.js";
-import { normalizeRunnerError, runF1F2Confirmed, runF1F2Selection } from "../packages/workflow-runners/dist/index.js";
+import { allocateAnalysisWorkspace, normalizeRunnerError, runF1F2Confirmed, runF1F2Selection } from "../packages/workflow-runners/dist/index.js";
 
 function safeTypedError(error) {
   const parsed = typedErrorSchema.safeParse(error);
@@ -20,31 +21,69 @@ function safeTypedError(error) {
 function createContext(repositoryRoot) {
   return {
     repositoryRoot: path.resolve(repositoryRoot),
-    managedOutputRoot: path.join(path.resolve(repositoryRoot), "test", "demo-output"),
+    managedOutputRoot: path.join(path.resolve(repositoryRoot), "test"),
     attemptId: crypto.randomUUID(),
     signal: new AbortController().signal,
     emit: () => {},
   };
 }
 
+function workbookContentHash(workbookPath) {
+  return createHash("sha256").update(readFileSync(workbookPath)).digest("hex");
+}
+
+function createAnalysisWorkspaceForWorkbook(repositoryRoot, workbookPath, now) {
+  return allocateAnalysisWorkspace({
+    testRoot: path.join(path.resolve(repositoryRoot), "test"),
+    workbookFileName: path.basename(workbookPath),
+    workbookContentHash: workbookContentHash(workbookPath),
+    now: now(),
+  });
+}
+
+function validateWorkbookPathForWorkspace(workbookPath) {
+  if (path.extname(workbookPath).toLowerCase() !== ".xlsx") {
+    throw new Error("Feature 2 Excel workflow requires exactly one .xlsx workbook.");
+  }
+  if (!existsSync(workbookPath)) {
+    throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  }
+  const stats = lstatSync(workbookPath);
+  if (!stats.isFile() || stats.isSymbolicLink()) {
+    throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  }
+}
+
+function selectionReferenceFor(worksheetSelection) {
+  return worksheetSelection.selectionReference ?? (
+    worksheetSelection.runId && worksheetSelection.runRoot && worksheetSelection.manifestPath && worksheetSelection.promptPath
+      ? {
+          runId: worksheetSelection.runId,
+          runRoot: worksheetSelection.runRoot,
+          manifestPath: worksheetSelection.manifestPath,
+          promptPath: worksheetSelection.promptPath,
+        }
+      : undefined
+  );
+}
+
 export function runF2ExcelWorkflow({ workbookPath, worksheetSelection, repositoryRoot = process.cwd(), now = () => new Date(), executeStage }) {
   const context = createContext(repositoryRoot);
   return worksheetSelection === undefined
-    ? runF1F2Selection({ workbookPath, now }, context, { executeStage })
+    ? runF1F2Selection({
+        workbookPath,
+        analysisWorkspace: (() => {
+          const resolvedWorkbookPath = path.resolve(repositoryRoot, workbookPath);
+          validateWorkbookPathForWorkspace(resolvedWorkbookPath);
+          return createAnalysisWorkspaceForWorkbook(repositoryRoot, resolvedWorkbookPath, now);
+        })(),
+        now,
+      }, context, { executeStage })
     : runF1F2Confirmed({
         workbookPath,
         workbookContentHash: worksheetSelection.workbookContentHash,
         selectedWorksheetNames: worksheetSelection.selectedWorksheetNames,
-        selectionReference: worksheetSelection.selectionReference ?? (
-          worksheetSelection.runId && worksheetSelection.runRoot && worksheetSelection.manifestPath && worksheetSelection.promptPath
-            ? {
-                runId: worksheetSelection.runId,
-                runRoot: worksheetSelection.runRoot,
-                manifestPath: worksheetSelection.manifestPath,
-                promptPath: worksheetSelection.promptPath,
-              }
-            : undefined
-        ),
+        selectionReference: selectionReferenceFor(worksheetSelection),
         now,
       }, context, { executeStage });
 }

@@ -71,6 +71,22 @@ describe("product Agent Skills", () => {
     expect(packageJson.scripts[productAlias]).toBe(packageJson.scripts[internalAlias]);
   });
 
+  it("routes workbook parsing and cleaning skills through the canonical analysis workspace", () => {
+    const parsingSkill = readFileSync(join(root, ".github", "skills", "data-parsing", "SKILL.md"), "utf8");
+    const cleaningSkill = readFileSync(join(root, ".github", "skills", "data-cleaning", "SKILL.md"), "utf8");
+
+    expect(parsingSkill).toContain("canonical analysis root");
+    expect(parsingSkill).toContain("01 - F1 Data Parsing");
+    expect(parsingSkill).toContain("02 - F2 Data Cleaning");
+    expect(parsingSkill).toContain("Preserve the canonical analysis root from this step");
+    expect(parsingSkill).toContain("fall back to legacy `test/demo-output` write roots");
+
+    expect(cleaningSkill).toContain("reuse the same canonical analysis root");
+    expect(cleaningSkill).toContain("01 - F1 Data Parsing");
+    expect(cleaningSkill).toContain("02 - F2 Data Cleaning");
+    expect(cleaningSkill).toContain("create a new `f2-runs` or timestamped workspace layer");
+  });
+
   it("keeps measured-data routing and reviewed feedback routing mutually exclusive", () => {
     const measuredSkill = readFileSync(join(root, ".github", "skills", "ta-real-measurement-analysis", "SKILL.md"), "utf8");
     const feedbackSkill = readFileSync(join(root, ".github", "skills", "feedback-application", "SKILL.md"), "utf8");

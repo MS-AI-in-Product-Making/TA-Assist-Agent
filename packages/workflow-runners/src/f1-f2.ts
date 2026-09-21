@@ -9,6 +9,7 @@ import {
   type F2UserReport,
 } from "@ai-assist/contracts";
 
+import { assertAnalysisWorkspaceWorkbookIdentity, validateAnalysisWorkspaceLayout } from "./analysis-workspace.js";
 import { normalizeRunnerError } from "./error-normalizer.js";
 import { isWithinOrEqual } from "./path-containment.js";
 import type {
@@ -177,7 +178,22 @@ function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): 
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date) {
+function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date, analysisWorkspace?: F1F2SelectionRequest["analysisWorkspace"]) {
+  if (analysisWorkspace) {
+    validateAnalysisWorkspaceLayout(analysisWorkspace);
+    if (analysisWorkspace.workbookFileName !== path.basename(workbookPath)) {
+      throw new Error("Feature 2 analysis workspace workbook identity mismatch.");
+    }
+    return {
+      startedAt: now().toISOString(),
+      runId: path.basename(analysisWorkspace.analysisRoot),
+      runRoot: analysisWorkspace.analysisRoot,
+      f1Root: analysisWorkspace.stagePaths.f1,
+      f2Root: analysisWorkspace.stagePaths.f2,
+      validationRoot: analysisWorkspace.stagePaths.f2,
+      manifestPath: path.join(analysisWorkspace.analysisRoot, "manifest.json"),
+    };
+  }
   ensureCreationPathIsPhysical(managedOutputRoot, "Feature 2 managed output root");
   const workbookName = safeName(path.basename(workbookPath, path.extname(workbookPath)));
   if (!workbookName) throw new Error("Feature 2 workbook output name is empty.");
@@ -530,7 +546,7 @@ export function runF1F2Selection(
   const now = request.now ?? (() => new Date());
   try {
     const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
-    const layout = createLayout(context.managedOutputRoot, workbook, now);
+    const layout = createLayout(context.managedOutputRoot, workbook, now, request.analysisWorkspace);
     mkdirSync(layout.validationRoot, { recursive: true });
     ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
     const manifest = initialManifest(context.repositoryRoot, workbook, layout, undefined);
@@ -549,6 +565,9 @@ export function runF1F2Selection(
     );
     const generatedPromptPath = path.join(layout.f1Root, "Feature1-Selection.json");
     const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(generatedPromptPath, "utf8")));
+    if (request.analysisWorkspace) {
+      assertAnalysisWorkspaceWorkbookIdentity(request.analysisWorkspace, path.basename(workbook), prompt.workbook.contentHash);
+    }
     const promptPath = path.join(layout.validationRoot, "Feature1-Selection.json");
     writeFileSync(promptPath, `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
     manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };

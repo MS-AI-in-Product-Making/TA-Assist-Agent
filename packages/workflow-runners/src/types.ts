@@ -19,6 +19,7 @@ import type {
   TypedError,
   WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
+import type { AnalysisWorkspaceLayout } from "./analysis-workspace.js";
 
 export type WorkflowFeatureId = "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
 
@@ -48,6 +49,7 @@ export interface F0ValidationResult {
 
 export interface F1F2SelectionRequest {
   readonly workbookPath: string;
+  readonly analysisWorkspace?: AnalysisWorkspaceLayout;
   readonly now?: () => Date;
 }
 
@@ -79,6 +81,7 @@ export interface F1F2ConfirmedRequest {
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
   readonly selectionReference?: F1F2SelectionReference;
+  readonly analysisWorkspace?: AnalysisWorkspaceLayout;
   readonly refreshF2?: boolean;
   readonly now?: () => Date;
 }

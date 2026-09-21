@@ -13,8 +13,14 @@ Determine the interaction language from the user request that starts the current
 
 1. Require exactly one canonical `.xlsx` workbook path and preserve the source read-only.
 2. Run `npm run workflow:f2:excel -- <ta-workbook-path>` to create the governed worksheet selection prompt.
-3. Validate the returned workbook hash, controlled run root, manifest, and unique worksheet options.
+3. Validate the returned workbook hash, canonical analysis root, fixed parsing-stage root, fixed cleaning-stage root, manifest, and unique worksheet options.
 4. Ask the user to select at least one validated worksheet. Stop on cancellation or an empty selection.
-5. Pass the exact selected names and workbook hash to the confirmed command documented by the repository runner.
+5. Preserve the canonical analysis root from this step as the current workbook workspace and pass the exact selected names and workbook hash to the confirmed command documented by the repository runner.
 
-Never infer worksheet scope, reuse a historical selection, or expose internal feature identifiers in user-facing text.
+Never infer worksheet scope, reuse a historical selection, fall back to legacy `test/demo-output` write roots, or expose internal feature identifiers in user-facing text.
+
+## Internal executor contract
+
+- The parsing-stage root for current full-flow workbook writes is `01 - F1 Data Parsing`.
+- The cleaning-stage root for the same workspace is `02 - F2 Data Cleaning`.
+- Current writes must not create a new `f2-runs`, timestamp, or UUID directory layer beneath the canonical analysis root.

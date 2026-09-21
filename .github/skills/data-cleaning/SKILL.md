@@ -11,8 +11,14 @@ Determine the interaction language from the user request that starts the current
 
 ## Workflow
 
-Use the confirmed Data Parsing output for the current workbook revision. Run the existing `workflow:f2:excel` confirmed path; required-field, capability, distribution, identifier, and exception checks remain inside the deterministic runner.
+Use the confirmed Data Parsing output for the current workbook revision and reuse the same canonical analysis root. Run the existing `workflow:f2:excel` confirmed path; required-field, capability, distribution, identifier, and exception checks remain inside the deterministic runner.
 
-Preserve ready and blocked worksheet results exactly. Report validation findings with worksheet and source-row provenance, and never repair source workbook data automatically.
+Preserve ready and blocked worksheet results exactly. Keep new full-flow parsing assets in the parsing-stage root and cleaning artifacts in the cleaning-stage root. Report validation findings with worksheet and source-row provenance, and never repair source workbook data automatically.
 
-Never bypass required-field gates, infer missing identifiers, or expose internal feature identifiers in user-facing text.
+Never bypass required-field gates, infer missing identifiers, create a new `f2-runs` or timestamped workspace layer for current writes, or expose internal feature identifiers in user-facing text.
+
+## Internal executor contract
+
+- The inherited parsing-stage root is `01 - F1 Data Parsing`.
+- The cleaning-stage root is `02 - F2 Data Cleaning`.
+- Current writes must not create a new `f2-runs`, timestamped, or UUID workspace layer beneath the canonical analysis root.
