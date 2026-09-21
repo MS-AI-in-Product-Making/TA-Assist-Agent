@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { createF6ReportFileNames, f6ReadableOptimizationResultSchema } from "@ai-assist/contracts";
+import { createF6ReportFileNames, f6ReadableOptimizationResultSchema, modelResponseMatchesInterpretation } from "@ai-assist/contracts";
 import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
@@ -183,21 +183,22 @@ function validateExactFiles(runRoot: string, expectedFiles: readonly string[], w
   });
 }
 
-function validateWorkspaceEvidence(runRoot: string, modelPath: string, optimization: any): boolean {
+export function validateF6WorkspaceEvidence(runRoot: string, modelPath: string, optimization: any, allowCandidate = false): boolean {
   const evidenceRoot = path.join(runRoot, "evidence");
   const modelRoot = path.join(evidenceRoot, "model-interpretation");
   const expectedPath = path.join(modelRoot, "Feature6-Model-Interpretation.json");
   if (modelPath !== expectedPath || !inspectPhysicalPath(runRoot, expectedPath)) return false;
   const evidenceEntries = readdirSync(evidenceRoot).sort();
   const hasResponse = evidenceEntries.includes("model-response");
-  if (!sameStrings(evidenceEntries, hasResponse ? ["model-interpretation", "model-response"] : ["model-interpretation"])) return false;
+  const expectedEntries = ["model-interpretation", ...(hasResponse ? ["model-response"] : []), ...(allowCandidate ? ["candidate"] : [])].sort();
+  if (!sameStrings(evidenceEntries, expectedEntries)) return false;
   if (!validateExactFiles(modelRoot, ["Feature6-Model-Interpretation.json"])) return false;
   if (hasResponse) {
     const responseRoot = path.join(evidenceRoot, "model-response");
     const responsePath = path.join(responseRoot, "Feature6-Model-Response.json");
     if (!inspectPhysicalPath(runRoot, responsePath)
       || !validateExactFiles(responseRoot, ["Feature6-Model-Response.json"])
-      || jsonFile(responsePath)?.contractVersion !== "f6-model-interpretation-response-v1") return false;
+      || !modelResponseMatchesInterpretation(jsonFile(responsePath), jsonFile(expectedPath), optimization.workbook)) return false;
   }
   const stats = lstatSync(expectedPath);
   return stats.isFile() && !stats.isSymbolicLink()
@@ -435,7 +436,7 @@ export function validateExistingF6(entryPath: string, request: ExistingF6Validat
     const contract = artifactContract(manifest, optimization);
     const workspaceEvidence = request.workspaceModelInterpretationPath !== undefined;
     if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence)) return rejected("artifact_file_set_invalid");
-    if (workspaceEvidence && !validateWorkspaceEvidence(runRoot, request.workspaceModelInterpretationPath!, optimization)) return rejected("artifact_workspace_evidence_invalid");
+    if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, request.workspaceModelInterpretationPath!, optimization)) return rejected("artifact_workspace_evidence_invalid");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");

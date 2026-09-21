@@ -182,6 +182,8 @@ describe("runF2ExcelWorkflow", () => {
       "--worksheets",
       "Analysis-A",
       "--confirm",
+      "--analysis-root",
+      selection.runRoot,
     ]);
     expect(result.validationRoot).toBe(result.f1Root);
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({

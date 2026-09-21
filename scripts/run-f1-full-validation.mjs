@@ -478,7 +478,8 @@ if (jobs.length === 0) {
 const generatedAt = new Date().toISOString();
 const runId = generatedAt.replace(/[:.]/g, "-");
 if (workspace && process.env.AI_TVA_F1_OUTPUT_ROOT !== undefined) throw new Error("Workspace output cannot be overridden.");
-if (workspace && readdirSync(workspace.stagePaths.f1).some((name) => name !== "Feature1-Selection.json")) {
+if (workspace && readdirSync(workspace.stagePaths.f1).some((name) =>
+  !["Feature1-Selection.json", "f1-selection.stdout.log", "f1-selection.stderr.log"].includes(name))) {
   throw new Error("Workspace parsing stage is not empty.");
 }
 const outputLayout = resolveFeature1OutputLayout(selectionArgs.workbookArgs, runId, workspace?.stagePaths.f1 ?? process.env.AI_TVA_F1_OUTPUT_ROOT);

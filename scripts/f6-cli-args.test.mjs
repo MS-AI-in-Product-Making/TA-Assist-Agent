@@ -19,6 +19,12 @@ const INTERACTION_LANGUAGE = {
 };
 
 describe("parseF6CliArgs", () => {
+  it("accepts an explicit candidate flag only once and only for a workspace", () => {
+    const args = [...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"];
+    expect(parseF6CliArgs([...args, "--analysis-root", "canonical-root", "--candidate"]).candidate).toBe(true);
+    expect(() => parseF6CliArgs([...args, ...MODEL_ARGS, "--candidate"])).toThrow(/requires --analysis-root/);
+    expect(() => parseF6CliArgs([...args, "--analysis-root", "canonical-root", "--candidate", "--candidate"])).toThrow(/duplicated/);
+  });
   it("parses four roots, worksheet selection, and governed evidence options", () => {
     expect(parseF6CliArgs([
       ...ROOTS,

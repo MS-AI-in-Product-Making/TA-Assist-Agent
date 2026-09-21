@@ -52,7 +52,7 @@ export function validateAnalysisStageArtifacts(layout, stage) {
     artifact("reportMarkdown", "Feature1-Report.md");
   } else if (stage === "f2") {
     const report = json("reportJson", "Feature2-Report.json", f2UserReportSchema);
-    if (report.status === "inputRejected") invalid();
+    if (!["completed", "partiallyBlocked"].includes(report.status)) invalid();
     identity(report.workbook);
     artifact("reportMarkdown", "Feature2-Report.md");
   } else if (stage === "f3") {

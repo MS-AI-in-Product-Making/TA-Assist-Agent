@@ -141,8 +141,30 @@ describe("validateExistingF6", () => {
     expect(validateExistingF6(runRoot, request).status).toBe("accepted");
     const responseRoot = path.join(runRoot, "evidence", "model-response");
     mkdirSync(responseRoot);
-    writeJson(path.join(responseRoot, "Feature6-Model-Response.json"), { contractVersion: "f6-model-interpretation-response-v1" });
+    const responsePath = path.join(responseRoot, "Feature6-Model-Response.json");
+    writeJson(responsePath, { contractVersion: "f6-model-interpretation-response-v1" });
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    const interpretation = readJson(model);
+    const response = {
+      contractVersion: "f6-model-interpretation-response-v1",
+      model: interpretation.worksheets[0].result.model,
+      worksheets: interpretation.worksheets.map(({ result }: { result: { worksheetName: string; imageTableInterpretation: string; rowMappings: Array<{ sourceRow: number; visibleStatus: string; interpretation: string }> } }) => ({
+        worksheetName: result.worksheetName,
+        imageTableInterpretation: result.imageTableInterpretation,
+        rows: result.rowMappings.map(({ sourceRow, visibleStatus, interpretation }) => ({ sourceRow, visibleStatus, interpretation })),
+      })),
+    };
+    writeJson(responsePath, response);
     expect(validateExistingF6(runRoot, request).status).toBe("accepted");
+    for (const mismatch of [
+      { ...response, model: { ...response.model, modelId: "different-model" } },
+      { ...response, worksheets: [{ ...response.worksheets[0], worksheetName: "wrong-sheet" }] },
+      { ...response, worksheets: [{ ...response.worksheets[0], imageTableInterpretation: "different interpretation" }] },
+    ]) {
+      writeJson(responsePath, mismatch);
+      expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    }
+    writeJson(responsePath, response);
     expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot }).status).toBe("rejected");
     writeFileSync(path.join(runRoot, "evidence", "unrelated.txt"), "debris");
     expect(validateExistingF6(runRoot, request).status).toBe("rejected");

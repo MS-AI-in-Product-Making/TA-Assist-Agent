@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { f6ModelInterpretationResponseSchema as responseSchema } from "../packages/contracts/dist/index.js";
 
 import {
   drawingGovernanceResultV2Schema,
@@ -53,23 +54,6 @@ const readableDrawingGovernanceResultSchema = z.union([
   drawingGovernanceResultV2Schema,
   drawingGovernanceResultV3Schema,
 ]);
-
-const responseSchema = z.object({
-  contractVersion: z.literal("f6-model-interpretation-response-v1"),
-  model: z.object({
-    modelId: z.string().trim().min(1),
-    supportsImage: z.literal(true),
-  }).strict(),
-  worksheets: z.array(z.object({
-    worksheetName: z.string().trim().min(1),
-    imageTableInterpretation: z.string().trim().min(1),
-    rows: z.array(z.object({
-      sourceRow: z.number().int().positive(),
-      visibleStatus: z.literal("visible"),
-      interpretation: z.string().trim().min(1),
-    }).strict()).min(1),
-  }).strict()).min(1),
-}).strict();
 
 function requiredValue(args, index, option) {
   const value = args[index + 1];

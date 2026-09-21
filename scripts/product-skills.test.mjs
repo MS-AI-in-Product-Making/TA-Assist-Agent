@@ -50,8 +50,11 @@ describe("product Agent Skills", () => {
     expect(skill).toContain("failed or completed root is immutable");
     expect(skill).toContain("F1 -> F2 -> F3 -> F4 -> F5 -> F6");
     expect(skill).toContain("two confirmations");
-    expect(skill).toContain("after F5 and before the single F6 publication");
+    expect(skill).toContain("F5 -> validated F6 candidate -> ADO choice/write -> final F6 publish");
+    expect(skill).toContain("--candidate");
     expect(skill).toContain("mode-choice and separate final-write confirmations");
+    const optimization = readFileSync(join(root, ".github", "skills", "design-optimization", "SKILL.md"), "utf8");
+    expect(optimization).toContain("workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root>");
   });
 
   it.each(skills)("provides the standard %s skill", (name, title) => {

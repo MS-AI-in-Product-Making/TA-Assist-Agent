@@ -233,6 +233,10 @@ function workspaceSetup() {
   writeFileSync(path.join(layout.stagePaths.f1, "Feature1-Report.json"), JSON.stringify({
     workbooks: [{ workbookPath, workbook: summary.workbook }],
   }));
+  for (const stage of ["f2", "f3", "f4", "f5"]) {
+    writeFileSync(path.join(layout.stagePaths[stage], stage === "f4" ? "Feature4-Calculation.json" : `Feature${stage[1]}-Report.json`),
+      JSON.stringify(stage === "f3" ? { ado: { status: "confirmation_required" } } : {}));
+  }
   const modelPath = path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
   mkdirSync(path.dirname(modelPath), { recursive: true });
   writeFileSync(modelPath, '{"contractVersion":"controlled-loader-fixture"}');
@@ -366,8 +370,65 @@ function assertWorksheetLineageMatchesProvenance(optimization) {
 }
 
 describe("runF6FullValidation", () => {
+  it("validates an internal candidate before ADO, then publishes final paths exactly once after the terminal outcome", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const adoChoice = vi.fn(() => {
+      expect(readJson(layout.summaryPath).overallStatus).toBe("in_progress");
+      writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    });
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    expect(candidate.status).toBe("candidate_validated");
+    expect(candidate).not.toHaveProperty("finalReportMarkdownPath");
+    expect(candidate).not.toHaveProperty("finalReportPdfPath");
+    expect(candidate.candidate.reportPdfPath).toContain(path.join("evidence", "candidate"));
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "in_progress", stages: { f6: { status: "pending", artifacts: {} } } });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+    expect(adoChoice).not.toHaveBeenCalled();
+    adoChoice(candidate.candidate.reportSummary);
+    const result = runF6FullValidation({ args }, deps);
+    expect(result.status).toBe("completed");
+    expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+    expect(existsSync(path.join(layout.stagePaths.f6, "evidence", "candidate"))).toBe(false);
+    expect(adoChoice).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not permit ADO or final publication after a candidate PDF validation failure", () => {
+    const { layout, deps, args } = workspaceSetup();
+    deps.renderFinalReportPdf = () => Buffer.from("invalid PDF");
+    const adoChoice = vi.fn();
+    const result = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    if (result.status === "candidate_validated") adoChoice();
+    expect(result.status).toBe("failed");
+    expect(adoChoice).not.toHaveBeenCalled();
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "failed", failedStage: "f6" });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+  });
+
+  it("rejects final workspace publication without a validated candidate", () => {
+    const { layout, deps, args } = workspaceSetup();
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readJson(layout.summaryPath).overallStatus).toBe("failed");
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+  });
+
+  it.each(["candidate_pdf", "upstream_f4", "f3_engineering", "missing_ado"])("rejects final publication when %s no longer matches the report-informed candidate", (change) => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    expect(candidate.status).toBe("candidate_validated");
+    if (change !== "missing_ado") writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    if (change === "candidate_pdf") writeFileSync(candidate.candidate.reportPdfPath, "%PDF-1.7\nchanged");
+    if (change === "upstream_f4") writeFileSync(path.join(layout.stagePaths.f4, "Feature4-Calculation.json"), '{"changed":true}');
+    if (change === "f3_engineering") writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"},"worksheets":["changed"]}');
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "failed", failedStage: "f6" });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+  });
+
   it("completes the root only after governed PDF, manifest, and model evidence validation", () => {
     const { layout, deps, args } = workspaceSetup();
+    expect(runF6FullValidation({ args: [...args, "--candidate"] }, deps).status).toBe("candidate_validated");
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
     const result = runF6FullValidation({ args }, deps);
     expect(result.status).toBe("completed");
     expect(validateExistingF6(layout.stagePaths.f6, {
@@ -385,6 +446,8 @@ describe("runF6FullValidation", () => {
 
   it("fails the root instead of advertising paths if the published PDF was corrupted", () => {
     const { layout, deps, args } = workspaceSetup();
+    expect(runF6FullValidation({ args: [...args, "--candidate"] }, deps).status).toBe("candidate_validated");
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
     deps.afterRename = () => {
       const pdfPath = path.join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf");
       if (existsSync(pdfPath)) writeFileSync(pdfPath, "%PDF-1.7\ncorrupted bytes");

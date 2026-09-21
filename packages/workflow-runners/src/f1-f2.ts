@@ -9,7 +9,7 @@ import {
   type F2UserReport,
 } from "@ai-assist/contracts";
 
-import { assertAnalysisWorkspaceWorkbookIdentity, validateAnalysisWorkspaceLayout } from "./analysis-workspace.js";
+import { assertAnalysisWorkspaceWorkbookIdentity, recordAnalysisStageStarted, validateAnalysisWorkspaceLayout, validateAnalysisWorkspaceSummary, type AnalysisWorkspaceSummary } from "./analysis-workspace.js";
 import { normalizeRunnerError } from "./error-normalizer.js";
 import { isWithinOrEqual } from "./path-containment.js";
 import type {
@@ -189,7 +189,12 @@ function feature2ValidationPath(
 }
 
 function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): ExecuteStageResult {
-  const result = spawnSync(command, [...args], { cwd, env, encoding: "utf8" });
+  const childEnv = { ...env };
+  if (args.includes("--analysis-root")) {
+    delete childEnv.AI_TVA_F1_OUTPUT_ROOT;
+    delete childEnv.AI_TVA_F2_OUTPUT_ROOT;
+  }
+  const result = spawnSync(command, [...args], { cwd, env: childEnv, encoding: "utf8" });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const error = Object.assign(
@@ -581,7 +586,8 @@ export function runF1F2Selection(
       layout.manifestPath,
       stageLogRoot(layout, "f1-selection"),
       "f1-selection",
-      ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only"],
+      ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only",
+        ...(request.analysisWorkspace ? ["--analysis-root", request.analysisWorkspace.analysisRoot] : [])],
       "AI_TVA_F1_OUTPUT_ROOT",
       layout.f1Root,
       executeStage,
@@ -652,6 +658,26 @@ export function runF1F2Confirmed(
       validationRoot: manifest.outputs.validationRoot,
       manifestPath: path.resolve(manifest.runRoot, "manifest.json"),
     };
+    if (request.analysisWorkspace && (layout.runRoot !== request.analysisWorkspace.analysisRoot
+      || layout.f1Root !== request.analysisWorkspace.stagePaths.f1
+      || layout.f2Root !== request.analysisWorkspace.stagePaths.f2 || request.refreshF2)) {
+      throw new Error("Feature 2 selection workspace identity mismatch.");
+    }
+    const workspaceArgs = usesWorkspaceStageSeparation(layout)
+      && (request.analysisWorkspace !== undefined || existsSync(path.join(layout.runRoot, "analysis-run-summary.json")))
+      ? ["--analysis-root", layout.runRoot] : [];
+    const summaryPath = path.join(layout.runRoot, "analysis-run-summary.json");
+    if (workspaceArgs.length > 0 && existsSync(summaryPath)) {
+      ensureContainedPhysicalPath(layout.runRoot, summaryPath, "Analysis workspace summary", "file");
+      const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as AnalysisWorkspaceSummary;
+      validateAnalysisWorkspaceSummary(summary);
+      if (summary.analysisRoot !== layout.runRoot || !["f1", "f2"].includes(summary.currentStage)
+        || summary.workbook.fileName !== path.basename(workbook)
+        || summary.workbook.contentHash !== confirmation.workbookContentHash) {
+        throw new Error("Feature 2 workspace cannot resume.");
+      }
+      recordAnalysisStageStarted(summary, summary.currentStage);
+    }
     if (request.refreshF2 === true && (executionStatus(manifest) === EXECUTION_STATUS.completed || manifest.status === "completed")) {
       const startedAt = now().toISOString();
       const runId = `${startedAt.replace(/[:.]/g, "-")}-f2-refresh`;
@@ -727,6 +753,7 @@ export function runF1F2Confirmed(
           "--worksheets",
           confirmation.selectedWorksheetNames.join(","),
           "--confirm",
+          ...workspaceArgs,
         ],
         "AI_TVA_F1_OUTPUT_ROOT",
         layout.f1Root,
@@ -746,7 +773,7 @@ export function runF1F2Confirmed(
         layout.manifestPath,
         stageLogRoot(layout, "f2"),
         "f2",
-        ["scripts/run-f2-full-validation.mjs", layout.f1Root],
+        ["scripts/run-f2-full-validation.mjs", layout.f1Root, ...workspaceArgs],
         "AI_TVA_F2_OUTPUT_ROOT",
         layout.f2Root,
         executeStage,

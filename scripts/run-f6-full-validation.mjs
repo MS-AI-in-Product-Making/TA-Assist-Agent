@@ -23,6 +23,7 @@ import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
 import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
+import { beginF6Candidate, consumeF6Candidate, sealF6Candidate } from "./f6-candidate.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -178,17 +179,29 @@ function reasonCodeForWorkspacePreflight(error) {
 }
 
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
-  return runAnalysisStage({ stage: "f6", args: options.args ?? [] },
-    () => executeF6(options, dependencyOverrides));
+  const args = options.args ?? [];
+  const candidate = args.includes("--candidate");
+  if (candidate && !args.includes("--analysis-root")) throw new Error("Feature 6 candidate requires an analysis workspace.");
+  return runAnalysisStage({ stage: "f6", args, candidate }, (workspace) => {
+    if (!workspace) return executeF6(options, dependencyOverrides);
+    if (candidate) {
+      const candidateRoot = beginF6Candidate(workspace, args);
+      const result = executeF6(options, dependencyOverrides, candidateRoot);
+      return result.status === "failed" ? result : sealF6Candidate(workspace, args);
+    }
+    consumeF6Candidate(workspace, args);
+    return executeF6(options, dependencyOverrides);
+  });
 }
 
-function executeF6(options, dependencyOverrides) {
+function executeF6(options, dependencyOverrides, candidateRoot) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
-  const layout = dependencies.resolveLayout(parsed, options);
-  const authoritativeModelInterpretationPath = parsed.analysisRoot === undefined || !layout.allowExistingRunRoot
+  const finalLayout = dependencies.resolveLayout(parsed, options);
+  const layout = candidateRoot === undefined ? finalLayout : { ...finalLayout, runRoot: candidateRoot, allowExistingRunRoot: false };
+  const authoritativeModelInterpretationPath = parsed.analysisRoot === undefined || !finalLayout.allowExistingRunRoot
     ? parsed.modelInterpretationArtifact
-    : authoritativeWorkspaceModelInterpretationPath(layout);
+    : authoritativeWorkspaceModelInterpretationPath(finalLayout);
   try {
     return normalizeF6Result(runF6Optimization({
       f2ArtifactRoot: parsed.f2ArtifactRoot,

@@ -53,5 +53,5 @@ export {
 	resolveFactor,
 	resolveWorksheet,
 } from "./f6-input-materializer.js";
-export { validateExistingF6 } from "./existing-f6.js";
+export { validateExistingF6, validateF6WorkspaceEvidence } from "./existing-f6.js";
 export { getF7PlaceholderStatus } from "./f7-placeholder.js";

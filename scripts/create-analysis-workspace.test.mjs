@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import XLSX from "xlsx";
+import { strToU8, strFromU8, unzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   allocateAnalysisWorkspace, createInitialAnalysisWorkspaceSummary,
@@ -11,12 +12,14 @@ import {
 import { runF4FullValidation } from "./run-f4-full-validation.mjs";
 import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 import { createWorkbookCatalog, createWorksheetSelectionPrompt } from "../packages/workbook-catalog/dist/index.js";
+import { runF6FullValidation } from "./run-f6-full-validation.mjs";
+import { materializeF6ModelInterpretation } from "./f6-model-interpretation-materializer.mjs";
 
 const scratch = path.resolve("test", ".task8-lifecycle");
 let counter = 0;
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
-function fixture() {
+function fixture({ ready = true } = {}) {
   const root = path.join(scratch, String(counter++));
   mkdirSync(root, { recursive: true });
   const workbook = path.join(root, "Anonymous.xlsx");
@@ -26,12 +29,23 @@ function fixture() {
   XLSX.utils.sheet_add_aoa(summarySheet, [["Device Level Dim", "", "Tolerance Loop Description"], ["Analysis-A", "", "Anonymous loop"]], { origin: "A9" });
   XLSX.utils.book_append_sheet(book, summarySheet, "Auto Summary");
   const sheet = XLSX.utils.aoa_to_sheet([
-    ["Factor Description", "Part Name", "Part Category", "Design Nominal", "+ Tolerence", "- Tolerence", "Long Term/Safety Factor", "Sigma Level", "Distribution", "Drawing Number", "DIM/Characteristic ID"],
-    ["A", "Component", "CNC", 0, 0.1, -0.1, 1, 4, "normal", "DRAW-A", "DIM-A"],
+    ["", "Factor Description", "Part Name", "Part Category", "Design Nominal", "+ Tolerence", "- Tolerence", "Long Term/Safety Factor", "Sigma Level", "Distribution", "Drawing Number", "DIM/Characteristic ID"],
+    ["A", "Offset", "Component", "Display", 0, 0.1, -0.1, 1, 4, "normal", "DRAW-A", "DIM-A"],
   ]);
+  if (ready) XLSX.utils.sheet_add_aoa(sheet, [["Response Summary"]], { origin: "O50" });
   XLSX.utils.sheet_add_aoa(sheet, [["Design Nominal", 0], ["Lower Spec Limit", -1], ["Upper Spec Limit", 1], ["Target Sigma Level", 4]], { origin: "O53" });
+  XLSX.utils.sheet_add_aoa(sheet, [["Include the tolerance path (screen shot) below:"]], { origin: "M59" });
   XLSX.utils.book_append_sheet(book, sheet, "Analysis-A");
   XLSX.writeFile(book, workbook);
+  const archive = unzipSync(readFileSync(workbook));
+  const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const pkg = "http://schemas.openxmlformats.org/package/2006/relationships";
+  archive["xl/worksheets/sheet3.xml"] = strToU8(strFromU8(archive["xl/worksheets/sheet3.xml"]).replace("</worksheet>", `<drawing xmlns:r="${rel}" r:id="rIdDrawing"/></worksheet>`));
+  archive["xl/worksheets/_rels/sheet3.xml.rels"] = strToU8(`<Relationships xmlns="${pkg}"><Relationship Id="rIdDrawing" Type="${rel}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`);
+  archive["xl/drawings/drawing1.xml"] = strToU8(`<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${rel}"><xdr:twoCellAnchor><xdr:from><xdr:col>12</xdr:col><xdr:row>59</xdr:row></xdr:from><xdr:to><xdr:col>15</xdr:col><xdr:row>75</xdr:row></xdr:to><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`);
+  archive["xl/drawings/_rels/drawing1.xml.rels"] = strToU8(`<Relationships xmlns="${pkg}"><Relationship Id="rIdImage" Type="${rel}/image" Target="../media/image1.png"/></Relationships>`);
+  archive["xl/media/image1.png"] = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  writeFileSync(workbook, zipSync(archive));
   const layout = allocateAnalysisWorkspace({
     testRoot: path.join(root, "runs"), workbookFileName: path.basename(workbook),
     workbookContentHash: createHash("sha256").update(readFileSync(workbook)).digest("hex"), now: new Date(),
@@ -75,6 +89,86 @@ function argsFor(stage, layout, workbook) {
 }
 
 describe("one canonical analysis workspace lifecycle", () => {
+  it("runs one-root F1-F6 orchestration with a validated candidate before the ADO decision and one final publication", () => {
+    const { layout, workbook } = fixture();
+    const invokeExcel = (extra) => spawnSync(process.execPath, [
+      "scripts/f2-excel-runner.mjs", workbook, "--analysis-root", layout.analysisRoot, ...extra,
+    ], { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, F1_COMPOSED_MODE: "never" } });
+    expect(invokeExcel([]).status).toBe(0);
+    const confirmed = invokeExcel(["--confirm", "--workbook-hash", layout.workbookContentHash, "--worksheets", "Analysis-A",
+      "--selection-manifest", path.join(layout.analysisRoot, "manifest.json")]);
+    expect(confirmed.status, confirmed.stderr).toBe(0);
+    for (const stage of ["f3", "f4", "f5"]) {
+      const args = stage === "f4"
+        ? ["--f2-report", path.join(layout.stagePaths.f2, "Feature2-Report.json"), "--analysis-root", layout.analysisRoot]
+        : argsFor(stage, layout, workbook);
+      const result = cli(stage, args);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    }
+    const responsePath = path.join(layout.stagePaths.f6, "evidence", "model-response", "Feature6-Model-Response.json");
+    mkdirSync(path.dirname(responsePath), { recursive: true });
+    writeFileSync(responsePath, JSON.stringify({
+      contractVersion: "f6-model-interpretation-response-v1",
+      model: { modelId: "controlled-test-model", supportsImage: true },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        imageTableInterpretation: "The image and Factor table were reviewed independently. Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
+        rows: [{ sourceRow: 2, visibleStatus: "visible", interpretation: "Factor A is the controlled offset in the fixture." }],
+      }],
+    }));
+    materializeF6ModelInterpretation({
+      analysisRoot: layout.analysisRoot, outputRoot: layout.analysisRoot,
+      f2ArtifactRoot: layout.stagePaths.f2, f3ArtifactRoot: layout.stagePaths.f3,
+      f4ArtifactRoot: layout.stagePaths.f4, f5ArtifactRoot: layout.stagePaths.f5,
+      selectedWorksheetNames: ["Analysis-A"], responsePath,
+    });
+    const args = [...argsFor("f6", layout, workbook), "--worksheet", "Analysis-A", "--language", "en-US",
+      "--analysis-request-context", JSON.stringify({ requestedAt: "2026-09-21T08:00:00Z", utcOffsetMinutes: 0, source: "cli" })];
+    const dependencies = { renderFinalReportPdf: () => Buffer.from("%PDF-1.7\ncontrolled PDF renderer\n") };
+    let adoDecisions = 0;
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, dependencies);
+    expect(candidate.status).toBe("candidate_validated");
+    expect(adoDecisions).toBe(0);
+    expect(readSummary(layout).overallStatus).toBe("in_progress");
+    expect(candidate).not.toHaveProperty("finalReportPdfPath");
+    const f3Path = path.join(layout.stagePaths.f3, "Feature3-Report.json");
+    const f3 = JSON.parse(readFileSync(f3Path, "utf8"));
+    adoDecisions += 1;
+    writeFileSync(f3Path, JSON.stringify({ ...f3, modelVersion: "drawing-governance-v3", ado: { status: "not_requested" } }));
+    const final = runF6FullValidation({ args }, dependencies);
+    expect(final.status).toBe("completed");
+    expect(readSummary(layout).overallStatus).toBe("completed");
+    expect(JSON.parse(readFileSync(final.manifestPath, "utf8")).adoTraceability).toEqual({ status: "not_requested" });
+    expect(final.finalReportPdfPath).toBe(path.join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf"));
+    expect(adoDecisions).toBe(1);
+    expect(readdirSync(path.dirname(layout.analysisRoot)).filter((name) => !name.endsWith(".json"))).toHaveLength(1);
+    expect(existsSync(path.join(layout.stagePaths.f6, "evidence", "candidate"))).toBe(false);
+  }, 30000);
+  it("threads the preallocated root through the real Excel selection/confirmation coordinator without allocating twice", () => {
+    const { layout, workbook } = fixture();
+    const invoke = (extra) => spawnSync(process.execPath, [
+      "scripts/f2-excel-runner.mjs", workbook, "--analysis-root", layout.analysisRoot, ...extra,
+    ], { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, F1_COMPOSED_MODE: "never" } });
+    const selection = invoke([]);
+    expect(selection.status, selection.stderr).toBe(0);
+    const selected = JSON.parse(selection.stdout);
+    expect(selected.runRoot).toBe(layout.analysisRoot);
+    const confirmed = invoke(["--confirm", "--workbook-hash", layout.workbookContentHash, "--worksheets", "Analysis-A", "--selection-manifest", selected.manifestPath]);
+    expect(confirmed.status, `${confirmed.stderr}\n${readFileSync(path.join(layout.stagePaths.f2, "Feature2-Report.json"), "utf8")}`).toBe(0);
+    expect(readSummary(layout)).toMatchObject({ currentStage: "f3", stages: { f1: { status: "completed" }, f2: { status: "completed" } } });
+    expect(readdirSync(path.dirname(layout.analysisRoot)).filter((name) => !name.endsWith(".json"))).toHaveLength(1);
+  });
+
+  it("records failed F2 before the Excel coordinator returns a no-ready-worksheet failure", () => {
+    const { layout, workbook } = fixture({ ready: false });
+    const invoke = (extra) => spawnSync(process.execPath, [
+      "scripts/f2-excel-runner.mjs", workbook, "--analysis-root", layout.analysisRoot, ...extra,
+    ], { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, F1_COMPOSED_MODE: "never" } });
+    expect(invoke([]).status).toBe(0);
+    expect(invoke(["--confirm", "--workbook-hash", layout.workbookContentHash, "--worksheets", "Analysis-A",
+      "--selection-manifest", path.join(layout.analysisRoot, "manifest.json")]).status).toBe(1);
+    expect(readSummary(layout)).toMatchObject({ overallStatus: "failed", failedStage: "f2", stages: { f3: { status: "blocked" } } });
+  });
   it("allocates once, creates all six folders and an initial summary", () => {
     const { workbook, root } = fixture();
     const result = spawnSync(process.execPath, ["scripts/create-analysis-workspace.mjs", "--workbook", workbook, "--test-root", path.join(root, "allocated")], { encoding: "utf8" });

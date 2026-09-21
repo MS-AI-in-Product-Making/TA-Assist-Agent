@@ -9,14 +9,16 @@ const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].j
 const allowedCommands = [
   "npm run prepare:ta-runtime",
   "npm run workflow:ta-entry-validation -- <ta-workbook-path>",
-  "npm run workflow:f2:excel -- <ta-workbook-path>",
-  "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
-  "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
-  "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
-  "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
-  "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
+  "node scripts/create-analysis-workspace.mjs --workbook <absolute.xlsx>",
+  "npm run workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root>",
+  "npm run workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --selection-manifest <selection-manifest> --confirm",
+  "npm run workflow:f3 -- <f2-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
+  "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json --analysis-root <analysis-root>",
+  "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
+  "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
   "npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact> --analysis-root <analysis-root>",
   "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> --analysis-root <analysis-root> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> --analysis-root <analysis-root> --candidate [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -47,7 +49,7 @@ function commandLines(markdown) {
   const section = markdown.match(/## Allowed commands\r?\n([\s\S]*?)(?=\r?\n## |$)/)?.[1] ?? "";
   return section.split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("- `npm run "))
+    .filter((line) => line.startsWith("- `npm run ") || line.startsWith("- `node scripts/create-analysis-workspace.mjs "))
     .map((line) => line.replace(/^- `|`$/g, ""));
 }
 
@@ -150,7 +152,7 @@ describe("Design Optimization skill contract", () => {
       "### Phase W8 - Generate governed model interpretation",
       "### Phase W9 - Run and validate F6",
       "### Phase W9A - Govern optional F3 ADO publishing",
-      "### Phase W9B - Republish after ADO outcome",
+      "### Phase W9B - Publish final after ADO outcome",
       "### Phase W10 - Present every Feature output",
     ]);
     expect(internal).toContain("F1/F2 scope call");
@@ -260,17 +262,19 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("F3 governance status does not bypass W9A");
   });
 
-  it("republishes a fresh governed report set after the terminal ADO outcome", () => {
+  it("validates a candidate before ADO and publishes the final set only once after the terminal outcome", () => {
     const { internal } = splitSkillSections(readSkill());
     expectOrdered(internal, [
       "### Phase W9 - Run and validate F6",
       "### Phase W9A - Govern optional F3 ADO publishing",
-      "### Phase W9B - Republish after ADO outcome",
+      "### Phase W9B - Publish final after ADO outcome",
       "### Phase W10 - Present every Feature output",
     ]);
-    expect(internal).toContain("Never modify or replace the already validated W9 artifact set");
-    expect(internal).toContain("materialize a new model interpretation against the terminal F3 artifact");
-    expect(internal).toContain("publish a new five-file F6 artifact set");
+    expect(internal).toContain("--candidate");
+    expect(internal).toContain("Candidate failure blocks every ADO side effect");
+    expect(internal).toContain("reuse the unchanged accepted W8 interpretation");
+    expect(internal).toContain("publish the final five-file F6 artifact set exactly once");
+    expect(internal).toContain('overallStatus === "completed"');
     expect(internal).toContain("Present only the validator-confirmed W9B Markdown and PDF reports");
     expect(internal).toContain("ADO traceability check reflects the terminal F3 publishing outcome");
   });

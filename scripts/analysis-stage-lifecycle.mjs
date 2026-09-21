@@ -8,6 +8,7 @@ import {
   validateAnalysisWorkspaceSummary, writeAnalysisWorkspaceSummary,
 } from "../packages/workflow-runners/dist/index.js";
 import { validateAnalysisStageArtifacts } from "./analysis-stage-validation.mjs";
+import { validateF6Candidate } from "./f6-candidate.mjs";
 
 function failure() { return new Error("Analysis workspace validation failed; this run cannot continue."); }
 function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
@@ -37,7 +38,7 @@ function assertCanonical(target, directory) {
   if (realpathSync(resolved) !== resolved) throw failure();
 }
 
-function loadWorkspace(analysisRoot) {
+export function loadWorkspace(analysisRoot) {
   assertCanonical(analysisRoot, true);
   const summaryPath = path.join(analysisRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
   assertCanonical(summaryPath, false);
@@ -76,7 +77,8 @@ function validateWorkbook(layout, stage, args) {
 
 // The lock serializes the read/start/write transaction across processes. A crash
 // deliberately leaves a lock/running summary, never a resumable success state.
-export function runAnalysisStage({ stage, args = [], selectionOnly = false }, execute) {
+export function runAnalysisStage({ stage, args = [], selectionOnly = false, candidate = false }, execute) {
+  if (candidate && stage !== "f6") throw failure();
   const analysisRoot = analysisRootArgument(args);
   if (analysisRoot === undefined) return execute();
   const initial = loadWorkspace(analysisRoot);
@@ -107,8 +109,13 @@ export function runAnalysisStage({ stage, args = [], selectionOnly = false }, ex
         return { status: "failed", reasonCode: result.reasonCode ?? "stage_execution_failed" };
       }
       validateWorkbook(layout, stage, args);
-      const artifacts = validateAnalysisStageArtifacts(layout, stage);
-      writeAnalysisWorkspaceSummary(layout, recordAnalysisStageCompleted(running, stage, artifacts));
+      if (candidate) {
+        validateF6Candidate(layout, args);
+        writeAnalysisWorkspaceSummary(layout, initial.summary);
+      } else {
+        const artifacts = validateAnalysisStageArtifacts(layout, stage);
+        writeAnalysisWorkspaceSummary(layout, recordAnalysisStageCompleted(running, stage, artifacts));
+      }
     }
     release();
     return result;

@@ -71,7 +71,7 @@ Run `npm run workflow:ta-entry-validation -- <ta-workbook-path>` exactly once. R
 
 ### Phase W1 - Generate F1 worksheet selection
 
-Run the selection-only F2 Excel command. Require `selectionRequired`, then validate `Feature1-Selection.json`, the controlled run root and manifest, workbook identity, workbook content hash, and unique worksheet options.
+Allocate the canonical workspace once with `node scripts/create-analysis-workspace.mjs --workbook <absolute.xlsx>` unless the primary skill already supplied it. Run the selection-only F2 Excel command with `--analysis-root <analysis-root>`. Require `selectionRequired`, then validate `Feature1-Selection.json`, the same controlled run root and manifest, workbook identity, workbook content hash, and unique worksheet options. Never allocate a second root.
 
 Make an **F1/F2 scope call** with `vscode_askQuestions` (`multiSelect: true`) listing only validated worksheet options. Require at least one worksheet and preserve the result as an exact, unique set. Cancellation or an empty response stops the run.
 
@@ -79,7 +79,7 @@ No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selec
 
 ### Phase W2 - Confirm and run F1 plus F2
 
-Run the confirmed F2 Excel command with exactly the first selection and the W1 workbook hash. Validate the completed manifest, controlled F1 and F2 roots, `Feature1-Report.json`, `Feature2-Report.json`, workbook identity, selected worksheet scope, source paths, and hashes. Never continue from the selection-only root.
+Run the confirmed F2 Excel command with exactly the first selection, the W1 workbook hash, the W1 `--selection-manifest`, and the same `--analysis-root <analysis-root>`. Validate the completed manifest, controlled F1 and F2 roots, `Feature1-Report.json`, `Feature2-Report.json`, workbook identity, selected worksheet scope, source paths, and hashes. Never treat selection-only output as completed F1/F2 evidence.
 
 The `F1` output is the validated F1 root and report. The `F2` output is the validated F2 root and report, including ready and blocked worksheet handoffs.
 
@@ -169,6 +169,10 @@ Preserve each optional input decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJEC
 
 ### Phase W9 - Run and validate F6
 
+This is candidate/preflight execution, not final publication. Append `--candidate` to the documented F6 command using the existing analysis root. Run the full governed F6 calculation, English report, PDF, manifest, and hash validation into the owned `06 - F6 Design Optimization/evidence/candidate/publication` area. Require `candidate_validated`; use only its validator-confirmed internal candidate summary/paths for the following report-informed ADO decision. No final report paths are exposed and neither F6 nor the root is completed. Candidate failure blocks every ADO side effect and records F6 failed; a crash remains running and cannot resume. The successful candidate receipt returns F6 to pending solely to await W9A/W9B. Do not publish a preliminary final set.
+
+The validation contract below applies to both the internal candidate and W9B final output. In W9, its publication/output root is the candidate directory; direct stage6 final publication and final user-path presentation apply only to W9B after ADO.
+
 Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Pass the workflow-locked language tag with `--language <locked-language-tag>` to preserve the interaction language as audit metadata without using it to select report prose. Pass the serialized strict JSON with `--analysis-request-context <strict-json>`, using the unchanged workflow-start analysis request context. Always pass the accepted W8 artifact with `--model-interpretation <artifact-path>`. On the current/default workspace path, also pass the explicit validated `--analysis-root <analysis-root>` and require exact canonical F2-F5 stage roots from that summary before any write. On the standard workbook path, omit `--analysis-context` and `--optimization-targets` and keep both decisions fixed at `NOT_PROVIDED`. Existing-artifact entry mode may still validate or reuse already-supplied caller-authorized inputs. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
 Validate current-run `Feature6-Optimization.json` as `f6-optimization-v4` with `f6OptimizationResultSchema` and validate the hash-bound `<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.md` and `<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.pdf` only through their recorded SHA-256 values before presentation. Validate the PDF signature, run summary, manifest, five-file `f6-artifact-set-v4` output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, interaction language, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, built-in policy IDs/ratios/side-Cpk trigger/F4 scenario references, required multimodal reference, and `reportSummary`. On the current/default workspace path, publish the exact five-file `f6-artifact-set-v4` at `<analysis-root>/06 - F6 Design Optimization` and keep supporting model-response/model-interpretation evidence only beneath the semantic `evidence` folder in that stage; never create new `f6-runs`, `f6-model-responses`, `f6-model-interpretations`, workbook-hash, or run-id publication layers. Current writes use `f6-artifact-set-v4`; `f6-artifact-set-v3` with fixed `Feature6-Report.md` and `Feature6-Report.pdf` remains historical read-only compatibility. PDF rendering or validation failure fails closed and must not publish or present a Markdown-only successful run. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject unsupported optimization artifacts rather than converting or presenting them. Never parse Markdown to derive disposition.
@@ -177,7 +181,7 @@ The `F6` output is the validated F6 root, optimization JSON, final report Markdo
 
 ### Phase W9A - Govern optional F3 ADO publishing
 
-This phase is an optional external side effect after the current F6 report has passed validation. Never publish automatically or implicitly. Every validated F3 result enters W9A after F6 validation; F3 governance status does not bypass W9A.
+This phase is an optional external side effect after the current F6 candidate report and PDF have passed full validation. Never publish automatically or implicitly. Every validated F3 result enters W9A after F6 validation; F3 governance status does not bypass W9A. Require the W9 `candidate_validated` receipt before any ADO question or side effect; candidate paths are internal decision evidence, never final user reports.
 
 REQUIRED SUB-SKILL: Use drawing-governance.
 
@@ -193,15 +197,15 @@ Surface MCP entity calls may start only after Question call 1 selects a publishi
 
 After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W9A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue to W9B. An invalid or unverifiable local fallback artifact stops the run.
 
-### Phase W9B - Republish after ADO outcome
+### Phase W9B - Publish final after ADO outcome
 
-The terminal W9A publishing outcome changes the current F3 artifact content and therefore must be reflected in the final engineering report provenance. Never modify or replace the already validated W9 artifact set. Do not perform a second ADO interaction, write, or readback.
+The terminal W9A publishing outcome changes the current F3 artifact content and must be reflected in final engineering report provenance. The W9 candidate is internal evidence, not a preliminary final publication. Do not perform a second ADO interaction, write, or readback.
 
-After the terminal F3 publishing outcome passes readback validation, reuse the accepted W8 model response as deterministic response input and run the documented model-interpretation materializer again with the terminal F3 root, unchanged current F2/F4/F5 roots, and exact downstream worksheet order. The materializer must materialize a new model interpretation against the terminal F3 artifact beneath a new immutable governed path. It must revalidate every Factor, image, row mapping, request hash, and source hash; failure stops final publication. Do not call the image-capable model again and do not edit or reuse the W8 interpretation output target.
+After the terminal F3 publishing outcome passes readback validation, reuse the unchanged accepted W8 interpretation. Do not rematerialize, overwrite its target, or call the model again. The final command revalidates candidate ownership, report/PDF hashes, unchanged workbook/F2/F4/F5/model evidence, and unchanged F3 engineering content (only the governed ADO outcome and its version representation may change). It also revalidates present model-response evidence against the strict response schema and accepted interpretation.
 
-Run the documented F6 command again with the terminal F3 root, the newly materialized model interpretation, the unchanged workflow-start analysis request context, locked interaction language, exact downstream worksheet order, and unchanged standard-path input decisions. The executor must publish a new five-file F6 artifact set beneath a new immutable run root and validate it through the complete W9 validation contract. Require its F3 source hash to match the terminal F3 artifact. The ADO traceability check reflects the terminal F3 publishing outcome, including the validated organization, project, and work item ID only when present in the terminal governed F3 artifact.
+Run the same F6 command without `--candidate`, preserving the root, request context, language, worksheet order, and input decisions. The executor consumes only its owned validated candidate directory and must publish the final five-file F6 artifact set exactly once at `06 - F6 Design Optimization`, validating it through the complete W9 contract. Never allocate a new root or resume a failed/completed root. Require its F3 source hash to match the terminal F3 artifact. The ADO traceability check reflects the terminal F3 publishing outcome, including validated organization, project, and work item ID only when present in the terminal governed F3 artifact.
 
-Present only the validator-confirmed W9B Markdown and PDF reports. If W9B rendering, identity validation, hashing, PDF publication, or final validation fails, fail closed and do not present the stale W9 reports as the successful final result.
+Present only the validator-confirmed W9B Markdown and PDF reports after reading the root summary and requiring `overallStatus === "completed"`. If final rendering, identity validation, hashing, PDF publication, or validation fails, fail closed and do not present the internal W9 candidate as a successful final result. Failed candidates/final attempts remain internal evidence in the failed immutable root; successful final publication removes its owned candidate directory.
 
 ### Phase W10 - Present every Feature output
 
@@ -231,14 +235,16 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 
 - `npm run prepare:ta-runtime`
 - `npm run workflow:ta-entry-validation -- <ta-workbook-path>`
-- `npm run workflow:f2:excel -- <ta-workbook-path>`
-- `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm`
-- `npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
-- `npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json`
-- `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
-- `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>`
+- `node scripts/create-analysis-workspace.mjs --workbook <absolute.xlsx>`
+- `npm run workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root>`
+- `npm run workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --selection-manifest <selection-manifest> --confirm`
+- `npm run workflow:f3 -- <f2-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
+- `npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json --analysis-root <analysis-root>`
+- `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
+- `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --analysis-root <analysis-root> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>`
 - `npm run workflow:f6:model-interpretation -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --response <model-response-artifact> --analysis-root <analysis-root>`
 - `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> --analysis-root <analysis-root> [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
+- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --language <locked-language-tag> --analysis-request-context <strict-json> --model-interpretation <artifact-path> --analysis-root <analysis-root> --candidate [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
 
 The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the captured analysis request context and accepted W8 model artifact to the final allowed command on the standard workbook path. Existing-artifact entry mode may still validate the documented V2 caller input pairs without changing the standard workbook prompt policy.
 
