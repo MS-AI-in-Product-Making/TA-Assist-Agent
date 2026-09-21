@@ -99,6 +99,11 @@ function testRootFor(name: string): string {
 	return root;
 }
 
+function isContained(rootPath: string, candidatePath: string): boolean {
+	const relative = path.relative(rootPath, candidatePath);
+	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 afterEach(() => {
 	vi.restoreAllMocks();
 	vi.doUnmock("node:fs");
@@ -155,6 +160,29 @@ describe("analysis workspace contract", () => {
 		}
 	});
 
+	it("returns a canonical analysis root beneath the physical test root when the supplied path is a link", ({ skip }) => {
+		const physicalRoot = testRootFor("allocate-physical-root");
+		const linkParent = testRootFor("allocate-linked-parent");
+		const linkedRoot = path.join(linkParent, "linked-root");
+		fs.mkdirSync(physicalRoot, { recursive: true });
+		fs.mkdirSync(linkParent, { recursive: true });
+
+		try {
+			fs.symlinkSync(physicalRoot, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+		} catch (error) {
+			const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+			if (code === "EPERM" || code === "EACCES" || code === "UNKNOWN") skip("directory links are unavailable in this environment");
+			throw error;
+		}
+
+		const layout = allocateAnalysisWorkspace(allocationInput(linkedRoot));
+		const canonicalRoot = fs.realpathSync.native(physicalRoot);
+
+		expect(layout.analysisRoot).toBe(path.join(canonicalRoot, "20260921 - Demo"));
+		expect(isContained(canonicalRoot, layout.analysisRoot)).toBe(true);
+		expect(isContained(linkedRoot, layout.analysisRoot)).toBe(false);
+	});
+
 	it("never collides across concurrent allocations", async () => {
 		const testRoot = testRootFor("allocate-concurrently");
 		const [first, second] = await Promise.all([
@@ -196,7 +224,44 @@ describe("analysis workspace contract", () => {
 		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(escapedRootParent))).toThrow(/test root/i);
 	});
 
-	it("cleans up partially created stage directories without deleting an existing root", async () => {
+	it("rejects a test root whose canonical identity changes during allocation", async () => {
+		const testRoot = testRootFor("identity-change");
+		const rootRealPath = path.resolve(testRoot);
+		const changedRealPath = path.join(path.dirname(rootRealPath), "identity-change-moved");
+
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			let realpathCallCount = 0;
+			const realpathSync: typeof actual.realpathSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === rootRealPath) {
+					realpathCallCount += 1;
+					const selected = realpathCallCount === 1 ? rootRealPath : changedRealPath;
+					return typeof options === "string" || options?.encoding !== "buffer"
+						? selected
+						: Buffer.from(selected);
+				}
+				return actual.realpathSync(target as Parameters<typeof actual.realpathSync>[0], options as Parameters<typeof actual.realpathSync>[1]);
+			}) as typeof actual.realpathSync;
+			const statSync: typeof actual.statSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === changedRealPath) {
+					return actual.statSync(rootRealPath, options as Parameters<typeof actual.statSync>[1]);
+				}
+				return actual.statSync(target as Parameters<typeof actual.statSync>[0], options as Parameters<typeof actual.statSync>[1]);
+			}) as typeof actual.statSync;
+			return {
+				...actual,
+				realpathSync,
+				statSync,
+			};
+		});
+
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/changed during allocation/i);
+	});
+
+	it("cleans up only directories created by this invocation when stage creation fails", async () => {
 		const testRoot = testRootFor("cleanup-partial-stages");
 		const existingRoot = path.join(testRoot, "20260921 - Demo");
 		const existingMarker = path.join(existingRoot, "keep.txt");
@@ -205,10 +270,14 @@ describe("analysis workspace contract", () => {
 
 		const allocatedRoot = `${existingRoot} -1`;
 		const failingStagePath = path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f2);
+		const concurrentStagePath = path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f3);
+		const concurrentMarker = path.join(concurrentStagePath, "preserve.txt");
 		vi.doMock("node:fs", async (importOriginal) => {
 			const actual = await importOriginal<typeof import("node:fs")>();
 			const mkdirSync: typeof actual.mkdirSync = ((target, options) => {
 				if (typeof target === "string" && path.resolve(target) === failingStagePath) {
+					actual.mkdirSync(concurrentStagePath, { recursive: true });
+					actual.writeFileSync(concurrentMarker, "concurrent");
 					throw new Error("simulated stage creation failure");
 				}
 				return actual.mkdirSync(target, options);
@@ -224,7 +293,33 @@ describe("analysis workspace contract", () => {
 		expect(fs.existsSync(existingRoot)).toBe(true);
 		expect(fs.readFileSync(existingMarker, "utf8")).toBe("keep");
 		expect(fs.existsSync(path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f1))).toBe(false);
-		expect(fs.existsSync(allocatedRoot)).toBe(false);
+		expect(fs.existsSync(concurrentStagePath)).toBe(true);
+		expect(fs.readFileSync(concurrentMarker, "utf8")).toBe("concurrent");
+		expect(fs.existsSync(allocatedRoot)).toBe(true);
+	});
+
+	it("fails with an explicit error after bounded suffix exhaustion", async () => {
+		const testRoot = testRootFor("suffix-exhaustion");
+		const rootRealPath = path.resolve(testRoot);
+
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			const mkdirSync: typeof actual.mkdirSync = ((target, options) => {
+				if (typeof target === "string" && path.resolve(target) !== rootRealPath) {
+					const error = new Error("already exists") as NodeJS.ErrnoException;
+					error.code = "EEXIST";
+					throw error;
+				}
+				return actual.mkdirSync(target, options);
+			}) as typeof actual.mkdirSync;
+			return {
+				...actual,
+				mkdirSync,
+			};
+		});
+
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/exceeded 1000 attempts/i);
 	});
 
 	it("resolves canonical stage paths beneath the analysis root", () => {
