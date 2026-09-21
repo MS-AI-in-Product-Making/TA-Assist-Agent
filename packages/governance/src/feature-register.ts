@@ -364,21 +364,6 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
     ),
   ],
   [
-    "F8",
-    {
-      featureId: "F8",
-      title: "TA Assist Agent Workbench",
-      status: "available",
-      dependsOn: ["f8-session-command-v1", "f8-session-snapshot-v1", "ta-conversation-turn-v1", "surface-mcp-adapter-v1"],
-      inputContractId: "f8-session-command-v1",
-      outputContractId: "f8-session-snapshot-v1",
-      maximumClassification: "confidential",
-      acceptanceChecks: ["f8-browser-integration", "f8-security-e2e", "f8-f7-placeholder-e2e", "f8-what-if-no-writeback"],
-      externalPrerequisites: ["approved-ooxml-parser", "approved-surface-mcp-access"],
-      disableBehavior: "return feature_not_available",
-    },
-  ],
-  [
     "F8.public-smoke",
     {
       featureId: "F8.public-smoke",
