@@ -10,6 +10,7 @@ import {
 import { safeName } from "./f1-output-layout.mjs";
 
 const DEFAULT_PUBLISH_ROOT = path.posix.join("test", "demo-output");
+const LEGACY_DEMO_OUTPUT_ROOT = path.resolve("test", "demo-output");
 const WINDOWS_RESERVED_NAME_PATTERN = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i;
 const WINDOWS_DRIVE_RELATIVE_PATTERN = /^[A-Za-z]:(?![\\/])/;
 const WINDOWS_DRIVE_ABSOLUTE_PATTERN = /^[A-Za-z]:[\\/]/;
@@ -77,6 +78,23 @@ function resolveThroughNearestExistingAncestor(value) {
 function isContained(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function resolvedCanonicalCandidate(value, dependencies) {
+  const requested = path.resolve(value);
+  if (dependencies.existsSync(requested)) return dependencies.realpathSync(requested);
+  return resolveThroughNearestExistingAncestor(value);
+}
+
+function assertNotLegacyDemoOutputDestination(candidate, label, dependencies) {
+  const requested = path.resolve(candidate);
+  const canonicalLegacyRoot = dependencies.existsSync(LEGACY_DEMO_OUTPUT_ROOT)
+    ? dependencies.realpathSync(LEGACY_DEMO_OUTPUT_ROOT)
+    : LEGACY_DEMO_OUTPUT_ROOT;
+  const canonicalCandidate = resolvedCanonicalCandidate(candidate, dependencies);
+  if (isContained(LEGACY_DEMO_OUTPUT_ROOT, requested) || isContained(canonicalLegacyRoot, canonicalCandidate)) {
+    throw new Error(`Feature 6 ${label} must not target legacy test/demo-output.`);
+  }
 }
 
 function assertSameRoot(root, candidate) {
@@ -260,6 +278,8 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
 
   if (parsed?.analysisRoot !== undefined) {
     const workspace = resolveAnalysisWorkspace(parsed.analysisRoot, dependencies);
+    assertNotLegacyDemoOutputDestination(workspace.layout.analysisRoot, "analysis workspace root", dependencies);
+    assertNotLegacyDemoOutputDestination(workspace.layout.stagePaths.f6, "stage6 write root", dependencies);
     assertExactWorkspaceStage(parsed.f2ArtifactRoot, workspace.stageIdentities.f2, "Feature2-Report.json", "Feature 6 validated F2 stage path", workspace.analysisRootIdentity, dependencies);
     assertExactWorkspaceStage(parsed.f3ArtifactRoot, workspace.stageIdentities.f3, "Feature3-Report.json", "Feature 6 validated F3 stage path", workspace.analysisRootIdentity, dependencies);
     assertExactWorkspaceStage(parsed.f4ArtifactRoot, workspace.stageIdentities.f4, "Feature4-Calculation.json", "Feature 6 validated F4 stage path", workspace.analysisRootIdentity, dependencies);
@@ -297,6 +317,8 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   if (dependencies.lstatSync(path.resolve(controlledPublishRoot)).isSymbolicLink()) {
     throw new Error("Feature 6 publish root must not be a link.");
   }
+  assertNotLegacyDemoOutputDestination(controlledPublishRoot, "publish root", dependencies);
+  assertNotLegacyDemoOutputDestination(outputBase, "output root", dependencies);
   for (const candidate of [...roots, outputBase]) assertSameRoot(controlledPublishRoot, candidate);
   const realPublishRoot = dependencies.realpathSync(path.resolve(controlledPublishRoot));
   const candidates = [...roots, outputBase].map(resolveThroughNearestExistingAncestor);

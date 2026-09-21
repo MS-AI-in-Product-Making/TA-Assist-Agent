@@ -13,6 +13,12 @@ import { createF6ReportFileNames, F6_CANDIDATE_RECEIPT_FILE_NAME, f6ReadableOpti
 import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
+import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+  ANALYSIS_WORKSPACE_VERSION,
+  resolveAnalysisWorkspaceStagePaths,
+  validateAnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
 import { hasF6CandidateMarker, validateF6CandidateReceipt } from "./f6-candidate-receipt.js";
 
 const LEGACY_FILES = Object.freeze([
@@ -172,6 +178,41 @@ function validateBoundary(runRoot: string, publishRoot: string): boolean {
   const realPublishRoot = realpathSync(requestedPublishRoot);
   const realRunRoot = realpathSync(runRoot);
   return isContained(realPublishRoot, realRunRoot);
+}
+
+function validateWorkspaceFinalSet(
+  publishRoot: string,
+  runRoot: string,
+  contract: NonNullable<ReturnType<typeof artifactContract>>,
+): boolean {
+  try {
+    const summaryPath = path.join(path.resolve(publishRoot), ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+    if (!existsSync(summaryPath)) return true;
+    const summary = jsonFile(summaryPath);
+    validateAnalysisWorkspaceSummary(summary);
+    if (summary.contractVersion !== ANALYSIS_WORKSPACE_VERSION
+      || summary.analysisRoot !== path.resolve(publishRoot)
+      || summary.overallStatus !== "completed"
+      || summary.currentStage !== "f6"
+      || summary.stages?.f6?.status !== "completed") {
+      return false;
+    }
+    const stagePaths = resolveAnalysisWorkspaceStagePaths(summary.analysisRoot);
+    if (runRoot !== stagePaths.f6) return false;
+    const expectedArtifacts = {
+      optimizationJsonPath: path.relative(summary.analysisRoot, path.join(runRoot, "Feature6-Optimization.json")),
+      finalReportMarkdownPath: path.relative(summary.analysisRoot, path.join(runRoot, contract.finalReportMdName)),
+      ...(contract.pdf ? { finalReportPdfPath: path.relative(summary.analysisRoot, path.join(runRoot, contract.finalReportPdfName!)) } : {}),
+      runSummaryPath: path.relative(summary.analysisRoot, path.join(runRoot, "Feature6-Run-Summary.json")),
+      manifestPath: path.relative(summary.analysisRoot, path.join(runRoot, "manifest.json")),
+    };
+    const actualArtifacts = summary.stages.f6.artifacts;
+    const expectedKeys = Object.keys(expectedArtifacts).sort();
+    return sameStrings(Object.keys(actualArtifacts).sort(), expectedKeys)
+      && expectedKeys.every((key) => actualArtifacts[key] === (expectedArtifacts as Record<string, string>)[key]);
+  } catch {
+    return false;
+  }
 }
 
 function validateExactFiles(runRoot: string, expectedFiles: readonly string[], workspaceEvidence = false, candidateReceipt = false): boolean {
@@ -459,6 +500,7 @@ function inspectF6Publication(entryPath: string, request: ExistingF6ValidationRe
     if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence, candidateReceipt)) return rejected("artifact_file_set_invalid");
     if (candidateReceipt && !validateF6CandidateReceipt(runRoot)) return rejected("candidate_receipt_invalid");
     if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, request.workspaceModelInterpretationPath!, optimization)) return rejected("artifact_workspace_evidence_invalid");
+    if (!validateWorkspaceFinalSet(request.publishRoot, runRoot, contract)) return rejected("artifact_validation_failed");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");

@@ -6,6 +6,15 @@ import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
 import { validateExistingF6 } from "./index.js";
 import {
+  ANALYSIS_STAGE_DIRS,
+  ANALYSIS_WORKSPACE_VERSION,
+  createInitialAnalysisWorkspaceSummary,
+  recordAnalysisStageCompleted,
+  recordAnalysisStageStarted,
+  resolveAnalysisWorkspaceStagePaths,
+  writeAnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
+import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
   installRequiredMultimodalV3,
@@ -38,6 +47,37 @@ function syncSummaryCounts(runRoot: string, optimization: { readonly summary: un
   const summary = readJson(summaryPath);
   summary.counts = optimization.summary;
   writeJson(summaryPath, summary);
+}
+
+function writeWorkspaceSummary(analysisRoot: string, runRoot: string, workbook: { fileName: string; contentHash: string }): void {
+  for (const [stage, directoryName] of Object.entries(ANALYSIS_STAGE_DIRS)) {
+    const stagePath = path.join(analysisRoot, directoryName);
+    mkdirSync(stagePath, { recursive: true });
+    if (stage !== "f6") writeFileSync(path.join(stagePath, `${stage}-evidence.json`), "{}\n", "utf8");
+  }
+  const layout = {
+    contractVersion: ANALYSIS_WORKSPACE_VERSION,
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbookFileName: workbook.fileName,
+    workbookContentHash: workbook.contentHash,
+    allocationDate: "20260921",
+    stagePaths: resolveAnalysisWorkspaceStagePaths(analysisRoot),
+  } as const;
+  let summary = createInitialAnalysisWorkspaceSummary(layout);
+  for (const stage of ["f1", "f2", "f3", "f4", "f5"] as const) {
+    summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, stage), stage, {
+      evidence: path.relative(analysisRoot, path.join(analysisRoot, ANALYSIS_STAGE_DIRS[stage], `${stage}-evidence.json`)).split(path.sep).join("/"),
+    });
+  }
+  summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, "f6"), "f6", {
+    optimizationJsonPath: path.relative(analysisRoot, path.join(runRoot, "Feature6-Optimization.json")).split(path.sep).join("/"),
+    finalReportMarkdownPath: path.relative(analysisRoot, path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md")).split(path.sep).join("/"),
+    finalReportPdfPath: path.relative(analysisRoot, path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf")).split(path.sep).join("/"),
+    runSummaryPath: path.relative(analysisRoot, path.join(runRoot, "Feature6-Run-Summary.json")).split(path.sep).join("/"),
+    manifestPath: path.relative(analysisRoot, path.join(runRoot, "manifest.json")).split(path.sep).join("/"),
+  });
+  writeAnalysisWorkspaceSummary(layout, summary);
 }
 
 function createV4FinalReportStub() {
@@ -194,6 +234,90 @@ describe("validateExistingF6", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v4");
     expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("uses the workspace summary's exact stage6 final set instead of inferring workspace publications by shape", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const analysisRoot = path.join(bundle.root, "workspace-v1");
+    const runRoot = path.join(analysisRoot, ANALYSIS_STAGE_DIRS.f6);
+    const model = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    const sourceRunRoot = path.join(bundle.publishRoot, "f6-runs", "workspace-v1-source");
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: model }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId: "workspace-v1-final", runRoot: sourceRunRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+    mkdirSync(runRoot, { recursive: true });
+    for (const fileName of [
+      "Feature6-Optimization.json",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]) copyFileSync(path.join(sourceRunRoot, fileName), path.join(runRoot, fileName));
+    const workspaceModelInterpretationPath = path.join(runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+    mkdirSync(path.dirname(workspaceModelInterpretationPath), { recursive: true });
+    copyFileSync(model, workspaceModelInterpretationPath);
+    writeWorkspaceSummary(analysisRoot, runRoot, {
+      fileName: "Demo.xlsx",
+      contentHash: readJson(path.join(runRoot, "Feature6-Optimization.json")).workbook.contentHash,
+    });
+
+    expect(validateExistingF6(runRoot, {
+      publishRoot: analysisRoot,
+      workspaceModelInterpretationPath,
+    })).toMatchObject({ status: "accepted", outputDirectory: runRoot });
+
+    const lookalikeRoot = path.join(analysisRoot, "lookalike-final");
+    mkdirSync(lookalikeRoot, { recursive: true });
+    for (const fileName of [
+      "Feature6-Optimization.json",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]) copyFileSync(path.join(runRoot, fileName), path.join(lookalikeRoot, fileName));
+    const lookalikeModelPath = path.join(lookalikeRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+    mkdirSync(path.dirname(lookalikeModelPath), { recursive: true });
+    copyFileSync(model, lookalikeModelPath);
+
+    expect(validateExistingF6(lookalikeRoot, {
+      publishRoot: analysisRoot,
+      workspaceModelInterpretationPath: lookalikeModelPath,
+    })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects internal-only workspace candidates from the public reader", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-21T15-10-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.internalOnly = true;
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "internal_candidate_not_final",
+    });
   });
 
   it("rejects v4 selected-result tampering even when optimization hash is recomputed", () => {

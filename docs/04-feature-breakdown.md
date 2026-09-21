@@ -105,6 +105,8 @@ F1 owns the only physical worksheet image artifact. F2 carries a hash-bound `ima
 ### F6 - Design Optimization
 
 - Accept exact F2/F3/F4/F5 artifact roots, worksheet selections, and optional governed context or optimization targets.
+- In unified-workspace mode, bind publication to one `analysis-workspace-v1` root containing exactly `analysis-run-summary.json` plus `01 - F1 Data Parsing` through `06 - F6 Design Optimization`; read validation uses that root summary and the exact Stage 6 final artifact paths it records.
+- Keep historical `test/demo-output` artifact sets read-only for compatibility; current writes must resolve elsewhere and never rewrite legacy evidence paths.
 - Keep ownership explicit: F5 owns baseline facts/rules/signals; F6 owns comparable optimization outputs and the final engineering report.
 - Reverse-solve target Cpk, apply governed RSS allocation policies, and verify every option through the F4 kernel.
 - Treat supplier capability, datum strategy, and cost as evidence-limited inputs.

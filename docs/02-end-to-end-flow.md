@@ -19,6 +19,21 @@ F6 continues directly after F5. The product path may collect optional Analysis C
 
 F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under the governed run root. Both support controlled `--analysis-context` and `--optimization-targets` inputs after their independent confirmations. F6 owns adjusted-mean assessment, contributor priorities, F4-verified specification proposals, and the final `Feature6-Report.md` plus `Feature6-Report.pdf`; F5 owns baseline interpretation and evidence. Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support remains explicitly unavailable. After the F6 report passes validation, every validated F3 result enters an optional ADO publishing gate that reuses the full F3 confirmation protocol; publication is never automatic or implicit. New image mode creates only immutable `f5-image-observation-v2` evidence. F6 atomically publishes the validated report set and fail-closed manifests.
 
+For the active unified workspace flow, the analysis root is explicit `analysis-workspace-v1` state, not an inferred folder shape. The root contains exactly one summary plus six fixed stage folders:
+
+```text
+<analysis-root>\
+  analysis-run-summary.json
+  01 - F1 Data Parsing\
+  02 - F2 Data Cleaning\
+  03 - F3 Drawing Governance\
+  04 - F4 Calculation Engine\
+  05 - F5 Result Interpretation\
+  06 - F6 Design Optimization\
+```
+
+The public F6 reader accepts the current workspace publication only from the validated root summary and the exact Stage 6 final artifact set it records. Historical `test/demo-output` F6 runs remain read-only compatibility inputs; current workspace publication never writes back into those legacy roots.
+
 ## Flow Diagram
 
 ```mermaid

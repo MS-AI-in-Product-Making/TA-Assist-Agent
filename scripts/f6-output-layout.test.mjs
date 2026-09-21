@@ -65,8 +65,10 @@ function createAnalysisWorkspaceRoot() {
 }
 
 describe("resolveFeature6OutputLayout", () => {
-  it("builds the workbook-derived current artifact layout", () => {
-    const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow, undefined, "Anonymous.xlsx");
+  it("builds the workbook-derived current artifact layout outside the legacy demo-output root", () => {
+    const publishRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f6-layout-current-"));
+    cleanup.push(publishRoot);
+    const layout = resolveFeature6OutputLayout(roots(publishRoot), path.join(publishRoot, "f6", "current"), fixedNow, publishRoot, "Anonymous.xlsx");
     expect(layout).toMatchObject({
       artifactSetVersion: "f6-artifact-set-v4",
       optimizationJsonName: "Feature6-Optimization.json",
@@ -78,6 +80,11 @@ describe("resolveFeature6OutputLayout", () => {
     expect(layout).not.toHaveProperty("optimizationMdName");
     expect(layout).not.toHaveProperty("composedReportJsonName");
     expect(layout).not.toHaveProperty("composedReportMdName");
+  });
+
+  it("rejects the legacy demo-output root for current writes even when no override is provided", () => {
+    expect(() => resolveFeature6OutputLayout(roots(), undefined, fixedNow, undefined, "Anonymous.xlsx"))
+      .toThrow(/legacy|demo-output/i);
   });
 
   it("routes current workspace writes directly into the validated stage6 root", () => {
@@ -149,6 +156,16 @@ describe("resolveFeature6OutputLayout", () => {
     expect(layout.runRoot).toBe(path.join(publishRoot, "f6", "custom", layout.runId));
   });
 
+  it("rejects explicit current destinations inside the legacy demo-output root", () => {
+    expect(() => resolveFeature6OutputLayout(
+      roots(),
+      path.join("test", "demo-output", "f6-runs", "current"),
+      fixedNow,
+      path.join("test", "demo-output"),
+      "Anonymous.xlsx",
+    )).toThrow(/legacy|demo-output/i);
+  });
+
   it.each(["../outside", "runs/../outside", "runs/./child", "runs/CON", "runs/bad\u0001name"])(
     "rejects unsafe output root %j",
     (outputRoot) => expect(() => resolveFeature6OutputLayout(roots(), outputRoot, fixedNow, "test/demo-output", "Anonymous.xlsx"))
@@ -204,6 +221,26 @@ describe("resolveFeature6OutputLayout", () => {
       linkedPublishRoot,
       "Anonymous.xlsx",
     )).toThrow(/publish root|link/i);
+  });
+
+  it("rejects a linked alias into the legacy demo-output root", ({ skip }) => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "f6-legacy-link-layout-"));
+    cleanup.push(sandbox);
+    const linkedPublishRoot = path.join(sandbox, "linked-demo-output");
+    const legacyRoot = path.resolve("test", "demo-output");
+    try {
+      fs.symlinkSync(legacyRoot, linkedPublishRoot, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES"].includes(error?.code)) return skip();
+      throw error;
+    }
+    expect(() => resolveFeature6OutputLayout(
+      roots(linkedPublishRoot),
+      path.join(linkedPublishRoot, "f6", "run"),
+      fixedNow,
+      linkedPublishRoot,
+      "Anonymous.xlsx",
+    )).toThrow(/legacy|demo-output|link/i);
   });
 
   it("does not create output directories while resolving", () => {
