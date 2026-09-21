@@ -9,10 +9,12 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./calculation-kernel": {
       "types": "./dist/calculation-kernel.d.ts",
+      "source": "./src/calculation-kernel.ts",
       "import": "./dist/calculation-kernel.js"
     }
   },

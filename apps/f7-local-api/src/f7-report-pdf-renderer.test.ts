@@ -344,8 +344,8 @@ describe("F7 report PDF renderer", () => {
       simulation: {
         ...report.simulation,
         factorContributions: [
-          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH, family: "normal", sourceMode: "MEASURED", coefficient: 1, standardDeviation: 0.06, weightedVariance: 0.0036, contribution: 0.6923076923076923 },
-          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH_B, family: "uniform", sourceMode: "BASELINE_ASSUMPTION", coefficient: -1, standardDeviation: 0.04, weightedVariance: 0.0016, contribution: 0.3076923076923077 },
+          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH, family: "normal", sourceMode: "MEASURED", coefficient: 1, standardDeviation: 0.04, weightedVariance: 0.0016, contribution: 0.3076923076923077 },
+          { methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1", factorId: HASH_B, family: "uniform", sourceMode: "BASELINE_ASSUMPTION", coefficient: -1, standardDeviation: 0.06, weightedVariance: 0.0036, contribution: 0.6923076923076923 },
         ],
       },
     });
@@ -466,7 +466,19 @@ describe("F7 report PDF renderer", () => {
     const contributors = html.match(/<ol class="contributor-list"[\s\S]*?<\/ol>/)?.[0];
     expect(contributors).toContain("Factor &lt;A&gt;");
     expect(contributors).toContain("62.5%");
-    expect(contributors?.indexOf("Factor &lt;A&gt;")).toBeLessThan(contributors?.indexOf("Factor &amp; B") ?? -1);
+    expect(contributors).toContain('data-contributor-series="measured"');
+    expect(contributors).toContain('data-contributor-series="setup"');
+    expect(contributors).toContain('<span class="contributor-index">1.</span>');
+    expect(contributors).toContain('<span class="contributor-index">2.</span>');
+    expect(contributors).toContain("69.23%");
+    expect(contributors).toContain('class="contributor-track contributor-track-measured"><span style="width:69.23076923076923%"');
+    expect(contributors).toContain('class="contributor-track contributor-track-setup"><span style="width:37.5%"');
+    expect(html).toContain(".contributor-track > span { display: block; height: 100%; background: #d65f14; }");
+    expect(html).toContain(".contributor-track-setup > span { background: #0b7a75; }");
+    expect(html).toContain(".contributor-series { display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(36px, max-content);");
+    expect(html).toContain("margin-left: 16px;");
+    expect(html).toContain(".contributor-series-value { color: #102a43; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }");
+    expect(contributors?.indexOf("Factor &amp; B")).toBeLessThan(contributors?.indexOf("Factor &lt;A&gt;") ?? -1);
     expect(html).toContain("Specification escapes remain possible.");
     expect(html).toContain("Recommended Actions");
     expect(html).toContain("Current σ");
@@ -778,9 +790,11 @@ describe("F7 report PDF renderer", () => {
 
     expect(html).toContain('viewBox="0 0 800 350"');
     expect(html).toMatch(/data-reference-row="top"[^>]*>[\s\S]*?transform="translate\([^)]* 4\)"/);
-    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="106" y2="300"\/><g class="monte-carlo-reference-badge setup-mean-badge" transform="translate\([^)]* 38\)"><rect [^>]*height="22"[^>]*\/><text class="monte-carlo-reference-label"[^>]*>Setup Mean -0\.05<\/text><\/g><\/g>/);
+    expect(html).toMatch(/<g data-factor-setup-mean data-reference-row="middle" class="factor-setup-mean"><line x1="416\.19" x2="416\.19" y1="106" y2="300"\/><g class="monte-carlo-reference-badge setup-mean-badge" transform="translate\([^)]* 38\)"><rect [^>]*height="22"[^>]*\/><foreignObject [^>]*height="22"[^>]*><div class="setup-mean-label" style="transform:scaleX\(1\.00\)">Setup Mean -0\.05<\/div><\/foreignObject><\/g><\/g>/);
+    expect(html).not.toMatch(/<text[^>]*>Setup Mean -0\.05<\/text>/);
     expect(html).toMatch(/data-reference-row="bottom"[^>]*>[\s\S]*?transform="translate\([^)]* 72\)"/);
     expect(html).toMatch(/\.monte-carlo-reference-label\s*\{[^}]*font:\s*700 13px/);
+    expect(html).toMatch(/\.setup-mean-label\s*\{[^}]*font:\s*700 13px/);
   });
 
   it("keeps every governed reference and finite geometry for extreme finite report values", () => {
@@ -889,6 +903,24 @@ describe("F7 report PDF renderer", () => {
       .map((match) => match[1] ?? "");
     expect(tickLabels.length).toBeGreaterThan(0);
     expect(Math.max(...tickLabels.map((label) => label.length))).toBeLessThanOrEqual(16);
+    const longSetupMean = 999_999_999_999_999;
+    const longSetupHtml = renderF7ReportPdfHtml({
+      ...extremeReport,
+      analysis: {
+        ...extremeReport.analysis,
+        comparison: {
+          ...extremeReport.analysis.comparison,
+          setup: {
+            ...extremeReport.analysis.comparison.setup,
+            mean: longSetupMean,
+          },
+        },
+      },
+    });
+    const setupMeanLabel = longSetupHtml.match(/<div class="setup-mean-label" style="transform:scaleX\(([^)]+)\)">(Setup Mean [^<]+)<\/div>/);
+    expect(setupMeanLabel?.[2]).toBe(`Setup Mean ${longSetupMean}`);
+    expect(Number(setupMeanLabel?.[1])).toBeGreaterThan(0);
+    expect(Number(setupMeanLabel?.[1])).toBeLessThan(1);
   });
 
   it("preserves very small non-zero report values with scientific notation", () => {

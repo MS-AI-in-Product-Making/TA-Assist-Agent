@@ -9,30 +9,37 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./capability": {
       "types": "./dist/capability.d.ts",
+      "source": "./src/capability.ts",
       "import": "./dist/capability.js"
     },
     "./factor-measured-comparison": {
       "types": "./dist/factor-measured-comparison.d.ts",
+      "source": "./src/factor-measured-comparison.ts",
       "import": "./dist/factor-measured-comparison.js"
     },
     "./measurement-diagnostics": {
       "types": "./dist/measurement-diagnostics.d.ts",
+      "source": "./src/measurement-diagnostics.ts",
       "import": "./dist/measurement-diagnostics.js"
     },
     "./measurement-observation": {
       "types": "./dist/measurement-observation.d.ts",
+      "source": "./src/measurement-observation.ts",
       "import": "./dist/measurement-observation.js"
     },
     "./measurement-structure": {
       "types": "./dist/measurement-structure.d.ts",
+      "source": "./src/measurement-structure.ts",
       "import": "./dist/measurement-structure.js"
     },
     "./measurement-warnings": {
       "types": "./dist/measurement-warnings.d.ts",
+      "source": "./src/measurement-warnings.ts",
       "import": "./dist/measurement-warnings.js"
     }
   },

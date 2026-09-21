@@ -641,7 +641,11 @@ function renderDistributionChart(report: F7ReportProjection): string {
     const text = referenceText(label, value);
     const width = referenceLabelWidth(text);
     const textLength = text.length * 8.2 + 16 > 190 ? ` textLength="174" lengthAdjust="spacingAndGlyphs"` : "";
-    return `<g class="monte-carlo-reference-badge${extraClass}" transform="translate(${coordinate(labelPositions.get(id) ?? referenceX)} ${rowY})"><rect x="${coordinate(-width / 2)}" y="0" width="${coordinate(width)}" height="22" rx="2"/><text class="monte-carlo-reference-label" x="0" y="16" text-anchor="middle"${textLength}>${text}</text></g>`;
+    const setupMeanTextScale = Math.max(0.01, Math.min(1, (width - 16) / (text.length * 8.2)));
+    const textNode = id === "setup-mean"
+      ? `<foreignObject x="${coordinate(-width / 2)}" y="0" width="${coordinate(width)}" height="22"><div class="setup-mean-label" style="transform:scaleX(${coordinate(setupMeanTextScale)})">${text}</div></foreignObject>`
+      : `<text class="monte-carlo-reference-label" x="0" y="16" text-anchor="middle"${textLength}>${text}</text>`;
+    return `<g class="monte-carlo-reference-badge${extraClass}" transform="translate(${coordinate(labelPositions.get(id) ?? referenceX)} ${rowY})"><rect x="${coordinate(-width / 2)}" y="0" width="${coordinate(width)}" height="22" rx="2"/>${textNode}</g>`;
   };
   const yTicks = Array.from({ length: 5 }, (_, index) => maximumCount * index / 4);
   const xTicks = Array.from({ length: 5 }, (_, index) => {
@@ -858,11 +862,21 @@ function renderWebReport(report: F7ReportProjection): string {
     return `<section class="web-report page-break"><p class="eyebrow">Governed engineering report</p><h2>Engineering Analysis</h2>${reportContext}<section class="assessment-banner assessment-not_evaluable" data-report-analysis-unavailable><div><p class="assessment-label">F0 analysis unavailable</p><h3>Complete governed evidence</h3><p>${reason}</p>${analysis?.optimizationDirections.length ? unorderedList(analysis.optimizationDirections, "") : ""}</div></section>${renderAssessment(report)}</section>`;
   }
 
-  const contributors = [...report.factors].sort((left, right) => right.percentContributionToSigma - left.percentContributionToSigma).slice(0, 5);
+  const measuredContributionByFactorId = new Map(
+    report.simulation.factorContributions?.map((contribution) => [contribution.factorId, contribution.contribution]) ?? [],
+  );
+  const contributors = report.factors
+    .map((factor) => ({ factor, measuredContribution: measuredContributionByFactorId.get(factor.factorId) }))
+    .sort((left, right) => (
+      right.measuredContribution ?? right.factor.percentContributionToSigma
+    ) - (
+      left.measuredContribution ?? left.factor.percentContributionToSigma
+    ))
+    .slice(0, 5);
   return `<section class="web-report page-break"><p class="eyebrow">Governed engineering report</p><h2>Engineering Analysis</h2>${reportContext}
     <section class="executive-summary"><div class="report-decision report-decision-${analysis.narrative.resultJudgment.status}"><p class="eyebrow">Executive Summary</p><h3>${escapeHtml(analysis.narrative.resultJudgment.headline)}</h3><p>${escapeHtml(analysis.narrative.resultJudgment.judgment)}</p></div><p>${escapeHtml(analysis.narrative.engineeringSummary)}</p></section>
     <section class="report-section"><div class="section-heading"><div><p class="eyebrow">Assumption vs measured evidence</p><h3>Factor Setup vs Monte Carlo TA</h3></div><p>${escapeHtml(analysis.targetAssessment)}</p></div>${renderComparisonTable(report)}</section>
-    <section class="report-insight-grid"><article class="report-section"><div class="section-heading"><div><p class="eyebrow">Variation ownership</p><h3>Top Contributors</h3></div></div><ol class="contributor-list">${contributors.map((factor) => `<li><div><strong>${escapeHtml(factor.factorName)}</strong><span>${formatPercent(factor.percentContributionToSigma)}</span></div><span class="contributor-track"><span style="width:${factor.percentContributionToSigma * 100}%"></span></span></li>`).join("")}</ol></article>
+    <section class="report-insight-grid"><article class="report-section"><div class="section-heading"><div><p class="eyebrow">Variation ownership</p><h3>Top Contributors</h3></div></div><ol class="contributor-list">${contributors.map(({ factor, measuredContribution }, index) => `<li><div class="contributor-heading"><span class="contributor-index">${index + 1}.</span><strong class="contributor-name">${escapeHtml(factor.factorName)}</strong></div><div class="contributor-series" data-contributor-series="measured"><span>Measured</span><span class="contributor-track contributor-track-measured"><span style="width:${(measuredContribution ?? 0) * 100}%"></span></span><span class="contributor-series-value">${measuredContribution === undefined ? "—" : formatPercent(measuredContribution)}</span></div><div class="contributor-series" data-contributor-series="setup"><span>Factor Setup</span><span class="contributor-track contributor-track-setup"><span style="width:${factor.percentContributionToSigma * 100}%"></span></span><span class="contributor-series-value">${formatPercent(factor.percentContributionToSigma)}</span></div></li>`).join("")}</ol></article>
     <article class="report-section"><div class="section-heading"><div><p class="eyebrow">Decision context · F0 ${escapeHtml(analysis.provenance.knowledgeBaseVersion)} / ${escapeHtml(analysis.provenance.ruleId)}</p><h3>Engineering Risks &amp; Recommended Actions</h3></div><span class="status-chip ${report.assessment === "MEETS_TARGET" ? "chip-success" : "chip-blocked"}">${assessmentContent(report).title}</span></div><p class="risk-lead">${escapeHtml(analysis.narrative.engineeringRisk)}</p>${unorderedList(analysis.interpretations, "No governed interpretations were identified.")}${renderRecommendedActions(report)}</article></section>
     ${renderAssessment(report)}
   </section>`;
@@ -981,11 +995,16 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     .actual-value-severity-normal { color: #182b3a; }
     .actual-value-severity-attention { color: #986000; }
     .actual-value-severity-critical { color: #a33a32; }
-    .contributor-list, .action-list { margin: 5px 0 0; padding-left: 18px; }
+    .contributor-list, .action-list { margin: 5px 0 0; padding-left: 0; list-style: none; }
     .contributor-list li { margin-bottom: 6px; }
-    .contributor-list li > div { display: flex; justify-content: space-between; gap: 8px; }
-    .contributor-track { display: block; height: 5px; margin-top: 3px; overflow: hidden; background: #dce3e7; }
-    .contributor-track > span { display: block; height: 100%; background: #0b7a75; }
+    .contributor-heading { display: flex; gap: 4px; align-items: baseline; margin-bottom: 3px; }
+    .contributor-index { min-width: 12px; color: #536675; font-weight: 700; }
+    .contributor-series + .contributor-series { margin-top: 2px; }
+    .contributor-series { display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(36px, max-content); margin-left: 16px; gap: 5px; align-items: center; color: #536675; font-size: 7.5px; font-weight: 700; }
+    .contributor-series-value { color: #102a43; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .contributor-track { display: block; height: 4px; overflow: hidden; background: #dce3e7; }
+    .contributor-track > span { display: block; height: 100%; background: #d65f14; }
+    .contributor-track-setup > span { background: #0b7a75; }
     .risk-lead { padding: 7px 9px; border-left: 4px solid #c47720; background: #fff7e8; font-weight: 600; }
     .embedded-actions h4 { margin: 7px 0 3px; color: #183b56; }
     .action-list > li { margin-bottom: 7px; }
@@ -1029,6 +1048,7 @@ export function renderF7ReportPdfHtml(report: F7ReportProjection, dimensionChain
     [data-monte-carlo-chart] .monte-carlo-reference-badge rect { fill: #f7f9fb; stroke: var(--monte-carlo-reference-color); stroke-width: 1; }
     [data-monte-carlo-chart] .factor-setup-mean .setup-mean-badge rect { fill: #fff7ef; stroke: #e1a678; }
     [data-monte-carlo-chart] .monte-carlo-reference-label { fill: var(--monte-carlo-reference-color); font: 700 13px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+    [data-monte-carlo-chart] .setup-mean-label { display: flex; align-items: center; justify-content: center; width: 100%; height: 22px; overflow: hidden; color: #c65d1e; font: 700 13px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; transform-origin: center; white-space: nowrap; }
     .monte-carlo-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 6px; color: #4e606c; font-size: 7.5pt; }
     .monte-carlo-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
     .monte-carlo-legend i { display: inline-block; width: 15px; height: 3px; background: #182b3a; }

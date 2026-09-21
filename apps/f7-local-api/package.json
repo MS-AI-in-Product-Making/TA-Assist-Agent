@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "dev": "tsx watch src/main.ts"
+    "dev": "node --conditions=source --import tsx --watch src/main.ts"
   },
   "dependencies": {
     "@ai-assist/contracts": "0.1.0",
