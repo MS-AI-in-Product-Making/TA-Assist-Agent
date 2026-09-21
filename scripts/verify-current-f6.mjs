@@ -13,6 +13,7 @@ import { analysisRequestContextSchema } from "../packages/contracts/dist/analysi
 import { f6ReadableOptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createF6ReportFileNames } from "../packages/contracts/dist/f6-artifact-names.js";
 import { worstDisposition } from "./f6-final-report.mjs";
+import { hasF6CandidateMarker } from "../packages/workflow-runners/dist/index.js";
 
 const LEGACY_FILES = Object.freeze([
   "Feature6-Optimization.json",
@@ -485,8 +486,10 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
   try {
     const runRoot = resolveRunRoot(entryPath);
     if (runRoot === undefined) return rejected("invalid_artifact_entry");
+    if (hasF6CandidateMarker(runRoot)) return rejected("internal_candidate_not_final");
     if (!validateBoundary(runRoot, options.publishRoot)) return rejected("artifact_outside_publish_root");
     const manifest = jsonFile(path.join(runRoot, "manifest.json"));
+    if (Object.hasOwn(manifest, "internalOnly")) return rejected("internal_candidate_not_final");
     const optimizationRaw = jsonFile(path.join(runRoot, "Feature6-Optimization.json"));
     const optimization = f6ReadableOptimizationResultSchema.parse(optimizationRaw);
     const contract = artifactContract(manifest, optimization);

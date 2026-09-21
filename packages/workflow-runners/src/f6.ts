@@ -34,6 +34,7 @@ interface F6Layout {
   readonly runSummaryJsonName: string;
   readonly manifestName: string;
   readonly allowExistingRunRoot?: boolean;
+  readonly internalOnly?: true;
   readonly workspaceBoundary?: {
     readonly publishRootIdentity: {
       readonly requestedPath: string;
@@ -368,6 +369,7 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     artifactSetVersion: layout.artifactSetVersion,
     featureId: "F6",
     status,
+    ...(layout.internalOnly === true ? { internalOnly: true } : {}),
     runId: layout.runId,
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(inputDecisions === undefined ? {} : { inputDecisions }),

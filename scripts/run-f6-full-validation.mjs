@@ -23,7 +23,7 @@ import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
 import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
-import { beginF6Candidate, consumeF6Candidate, sealF6Candidate } from "./f6-candidate.mjs";
+import { beginF6Candidate, cleanupF6Candidate, prepareF6Final, sealF6Candidate } from "./f6-candidate.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -182,14 +182,30 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   const args = options.args ?? [];
   const candidate = args.includes("--candidate");
   if (candidate && !args.includes("--analysis-root")) throw new Error("Feature 6 candidate requires an analysis workspace.");
-  return runAnalysisStage({ stage: "f6", args, candidate }, (workspace) => {
+  let cleanupPlan;
+  return runAnalysisStage({
+    stage: "f6", args, candidate,
+    afterCompleted: (workspace) => {
+      try {
+        (dependencyOverrides.cleanupCandidate ?? cleanupF6Candidate)(workspace, cleanupPlan);
+        try {
+          lstatSync(cleanupPlan.paths.root);
+          throw new Error("Candidate cleanup left evidence behind.");
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      } catch {
+        throw Object.assign(new Error("Final publication completed but candidate cleanup failed."), { reasonCode: "candidate_cleanup_failed" });
+      }
+    },
+  }, (workspace) => {
     if (!workspace) return executeF6(options, dependencyOverrides);
     if (candidate) {
       const candidateRoot = beginF6Candidate(workspace, args);
       const result = executeF6(options, dependencyOverrides, candidateRoot);
       return result.status === "failed" ? result : sealF6Candidate(workspace, args);
     }
-    consumeF6Candidate(workspace, args);
+    cleanupPlan = prepareF6Final(workspace, args);
     return executeF6(options, dependencyOverrides);
   });
 }
@@ -198,7 +214,7 @@ function executeF6(options, dependencyOverrides, candidateRoot) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
   const finalLayout = dependencies.resolveLayout(parsed, options);
-  const layout = candidateRoot === undefined ? finalLayout : { ...finalLayout, runRoot: candidateRoot, allowExistingRunRoot: false };
+  const layout = candidateRoot === undefined ? finalLayout : { ...finalLayout, runRoot: candidateRoot, allowExistingRunRoot: false, internalOnly: true };
   const authoritativeModelInterpretationPath = parsed.analysisRoot === undefined || !finalLayout.allowExistingRunRoot
     ? parsed.modelInterpretationArtifact
     : authoritativeWorkspaceModelInterpretationPath(finalLayout);
@@ -300,7 +316,9 @@ export function runF6Cli(options = {}, dependencyOverrides = {}, io = {}) {
   } catch (error) {
     result = {
       status: "failed",
-      reasonCode: error?.reasonCode === "workflow_output_failed"
+      reasonCode: error?.reasonCode === "candidate_cleanup_failed"
+        ? "candidate_cleanup_failed"
+        : error?.reasonCode === "workflow_output_failed"
         ? "workflow_output_failed"
         : error?.reasonCode === "optimization_failed"
           ? "optimization_failed"

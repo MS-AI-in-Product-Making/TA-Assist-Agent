@@ -77,7 +77,7 @@ function validateWorkbook(layout, stage, args) {
 
 // The lock serializes the read/start/write transaction across processes. A crash
 // deliberately leaves a lock/running summary, never a resumable success state.
-export function runAnalysisStage({ stage, args = [], selectionOnly = false, candidate = false }, execute) {
+export function runAnalysisStage({ stage, args = [], selectionOnly = false, candidate = false, afterCompleted }, execute) {
   if (candidate && stage !== "f6") throw failure();
   const analysisRoot = analysisRootArgument(args);
   if (analysisRoot === undefined) return execute();
@@ -87,13 +87,17 @@ export function runAnalysisStage({ stage, args = [], selectionOnly = false, cand
   const lock = openSync(lockPath, "wx");
   let running;
   let layout;
+  let completionWritten = false;
+  let released = false;
   function release() {
+    if (released) return;
+    released = true;
     closeSync(lock);
     rmSync(lockPath);
   }
   function fail(error) {
     try {
-      if (running) {
+      if (running && !completionWritten) {
         loadWorkspace(analysisRoot);
         writeAnalysisWorkspaceSummary(layout, recordAnalysisStageFailed(running, stage, "stage_execution_failed"));
       }
@@ -114,7 +118,11 @@ export function runAnalysisStage({ stage, args = [], selectionOnly = false, cand
         writeAnalysisWorkspaceSummary(layout, initial.summary);
       } else {
         const artifacts = validateAnalysisStageArtifacts(layout, stage);
-        writeAnalysisWorkspaceSummary(layout, recordAnalysisStageCompleted(running, stage, artifacts));
+        const completed = recordAnalysisStageCompleted(running, stage, artifacts);
+        writeAnalysisWorkspaceSummary(layout, completed);
+        completionWritten = true;
+        if (JSON.stringify(loadWorkspace(analysisRoot).summary) !== JSON.stringify(completed)) throw failure();
+        afterCompleted?.(layout, result);
       }
     }
     release();

@@ -9,10 +9,11 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { createF6ReportFileNames, f6ReadableOptimizationResultSchema, modelResponseMatchesInterpretation } from "@ai-assist/contracts";
+import { createF6ReportFileNames, F6_CANDIDATE_RECEIPT_FILE_NAME, f6ReadableOptimizationResultSchema, modelResponseMatchesInterpretation } from "@ai-assist/contracts";
 import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
+import { hasF6CandidateMarker, validateF6CandidateReceipt } from "./f6-candidate-receipt.js";
 
 const LEGACY_FILES = Object.freeze([
   "Feature6-Optimization.json",
@@ -173,9 +174,9 @@ function validateBoundary(runRoot: string, publishRoot: string): boolean {
   return isContained(realPublishRoot, realRunRoot);
 }
 
-function validateExactFiles(runRoot: string, expectedFiles: readonly string[], workspaceEvidence = false): boolean {
+function validateExactFiles(runRoot: string, expectedFiles: readonly string[], workspaceEvidence = false, candidateReceipt = false): boolean {
   const entries = readdirSync(runRoot, { withFileTypes: true });
-  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...expectedFiles, ...(workspaceEvidence ? ["evidence"] : [])].sort())) return false;
+  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...expectedFiles, ...(workspaceEvidence ? ["evidence"] : []), ...(candidateReceipt ? [F6_CANDIDATE_RECEIPT_FILE_NAME] : [])].sort())) return false;
   return expectedFiles.every((fileName) => {
     const filePath = path.join(runRoot, fileName);
     const stats = lstatSync(filePath);
@@ -190,8 +191,14 @@ export function validateF6WorkspaceEvidence(runRoot: string, modelPath: string, 
   if (modelPath !== expectedPath || !inspectPhysicalPath(runRoot, expectedPath)) return false;
   const evidenceEntries = readdirSync(evidenceRoot).sort();
   const hasResponse = evidenceEntries.includes("model-response");
-  const expectedEntries = ["model-interpretation", ...(hasResponse ? ["model-response"] : []), ...(allowCandidate ? ["candidate"] : [])].sort();
+  const hasCandidate = evidenceEntries.includes("candidate");
+  const expectedEntries = ["model-interpretation", ...(hasResponse ? ["model-response"] : []), ...(allowCandidate || hasCandidate ? ["candidate"] : [])].sort();
   if (!sameStrings(evidenceEntries, expectedEntries)) return false;
+  if (hasCandidate && !allowCandidate && !validateF6CandidateReceipt(path.join(evidenceRoot, "candidate", "publication"), {
+    analysisRoot: path.dirname(runRoot),
+    workbookFileName: optimization.workbook.fileName,
+    workbookContentHash: optimization.workbook.contentHash,
+  })) return false;
   if (!validateExactFiles(modelRoot, ["Feature6-Model-Interpretation.json"])) return false;
   if (hasResponse) {
     const responseRoot = path.join(evidenceRoot, "model-response");
@@ -425,17 +432,32 @@ function validateV4SourcesAndLineage(optimization: any, summary: any): boolean {
 }
 
 export function validateExistingF6(entryPath: string, request: ExistingF6ValidationRequest): ExistingF6ValidationResult {
+  return inspectF6Publication(entryPath, request, false);
+}
+
+// Internal inspection is not exported through the package's public entrypoint.
+// It supports sealing the marker last; public readers always reject markers.
+export function inspectInternalF6Candidate(entryPath: string, request: ExistingF6ValidationRequest): ExistingF6ValidationResult & { internalOnly: true } {
+  return { ...inspectF6Publication(entryPath, request, true), internalOnly: true };
+}
+
+function inspectF6Publication(entryPath: string, request: ExistingF6ValidationRequest, internalCandidate: boolean): ExistingF6ValidationResult {
   if (request.publishRoot === undefined) return rejected("artifact_publish_root_required");
   try {
     const runRoot = resolveRunRoot(entryPath);
     if (runRoot === undefined) return rejected("invalid_artifact_entry");
+    if (!internalCandidate && hasF6CandidateMarker(runRoot)) return rejected("internal_candidate_not_final");
     if (!validateBoundary(runRoot, request.publishRoot)) return rejected("artifact_outside_publish_root");
     const manifest = jsonFile(path.join(runRoot, "manifest.json"));
+    if (!internalCandidate && Object.hasOwn(manifest, "internalOnly")) return rejected("internal_candidate_not_final");
+    if (internalCandidate && manifest.internalOnly !== true) return rejected("candidate_receipt_invalid");
     const optimizationRaw = jsonFile(path.join(runRoot, "Feature6-Optimization.json"));
     const optimization = f6ReadableOptimizationResultSchema.parse(optimizationRaw);
     const contract = artifactContract(manifest, optimization);
     const workspaceEvidence = request.workspaceModelInterpretationPath !== undefined;
-    if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence)) return rejected("artifact_file_set_invalid");
+    const candidateReceipt = internalCandidate && readdirSync(runRoot).includes(F6_CANDIDATE_RECEIPT_FILE_NAME);
+    if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence, candidateReceipt)) return rejected("artifact_file_set_invalid");
+    if (candidateReceipt && !validateF6CandidateReceipt(runRoot)) return rejected("candidate_receipt_invalid");
     if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, request.workspaceModelInterpretationPath!, optimization)) return rejected("artifact_workspace_evidence_invalid");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);

@@ -275,6 +275,9 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("reuse the unchanged accepted W8 interpretation");
     expect(internal).toContain("publish the final five-file F6 artifact set exactly once");
     expect(internal).toContain('overallStatus === "completed"');
+    expect(internal).toContain("Feature6-Candidate-Receipt.json");
+    expect(internal).toContain("candidate_cleanup_failed");
+    expect(internal).toContain("only after final validation and completed-summary readback");
     expect(internal).toContain("Present only the validator-confirmed W9B Markdown and PDF reports");
     expect(internal).toContain("ADO traceability check reflects the terminal F3 publishing outcome");
   });

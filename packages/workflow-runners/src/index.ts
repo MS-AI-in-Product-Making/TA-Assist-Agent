@@ -54,4 +54,5 @@ export {
 	resolveWorksheet,
 } from "./f6-input-materializer.js";
 export { validateExistingF6, validateF6WorkspaceEvidence } from "./existing-f6.js";
+export { hasF6CandidateMarker, validateF6CandidateReceipt } from "./f6-candidate-receipt.js";
 export { getF7PlaceholderStatus } from "./f7-placeholder.js";

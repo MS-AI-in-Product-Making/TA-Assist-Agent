@@ -52,6 +52,8 @@ describe("product Agent Skills", () => {
     expect(skill).toContain("two confirmations");
     expect(skill).toContain("F5 -> validated F6 candidate -> ADO choice/write -> final F6 publish");
     expect(skill).toContain("--candidate");
+    expect(skill).toContain("candidate_cleanup_failed");
+    expect(skill).toContain("Keep candidate evidence through final validation and root completion");
     expect(skill).toContain("mode-choice and separate final-write confirmations");
     const optimization = readFileSync(join(root, ".github", "skills", "design-optimization", "SKILL.md"), "utf8");
     expect(optimization).toContain("workflow:f2:excel -- <ta-workbook-path> --analysis-root <analysis-root>");
