@@ -339,3 +339,49 @@ it("fails closed when the validated stage6 destination is swapped at the rename 
   })).toThrow(/workspace root changed|validated f6 stage path changed|identity/i);
   expect(existsSync(path.join(attackerStage, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"))).toBe(false);
 });
+
+it("fails closed when the final published interpretation is swapped after rename and before reread", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  const artifactPath = path.join(stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  const attackerBytes = Buffer.from('{"attacker":true}\n', "utf8");
+
+  expect(() => materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+    analysisRoot: bundle.analysisRoot,
+  }, {
+    beforeReadPublishedArtifact: () => {
+      rmSync(artifactPath, { force: true });
+      writeFileSync(artifactPath, attackerBytes);
+    },
+  })).toThrow(/identity|invalid|changed/i);
+  expect(readFileSync(artifactPath)).toEqual(attackerBytes);
+});
+
+it("fails closed when the final published interpretation is swapped during descriptor-based reread", () => {
+  const worksheetNames = ["Analysis-A"];
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, worksheetNames);
+  const artifactPath = path.join(stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  const attackerBytes = Buffer.from('{"attacker":"replacement"}\n', "utf8");
+
+  expect(() => materializeF6ModelInterpretation({
+    ...bundle,
+    responsePath,
+    outputRoot: bundle.publishRoot,
+    analysisRoot: bundle.analysisRoot,
+  }, {
+    beforeReadPublishedArtifactDescriptor: () => {
+      rmSync(artifactPath, { force: true });
+      writeFileSync(artifactPath, attackerBytes);
+    },
+  })).toThrow(/identity|invalid|changed/i);
+  expect(readFileSync(artifactPath)).toEqual(attackerBytes);
+});

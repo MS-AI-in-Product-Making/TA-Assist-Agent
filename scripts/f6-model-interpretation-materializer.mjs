@@ -570,6 +570,7 @@ function atomicWriteWorkspaceArtifact(artifactPath, content, workspace, director
     assertOwnedFileInDirectory(ownedFinalFile, directoryState.interpretationRootIdentity, "Feature 6 model interpretation artifact");
     assertWorkspaceBoundaryUnchanged(workspace);
     committed = true;
+    return ownedFinalFile;
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
     if (!committed) removeOwnedRegularFile(ownedFinalFile ?? ownedTemporaryFile ?? {
@@ -578,6 +579,48 @@ function atomicWriteWorkspaceArtifact(artifactPath, content, workspace, director
       dev: Number.NaN,
       ino: Number.NaN,
     });
+  }
+}
+
+function readPublishedWorkspaceArtifact(artifactPath, ownedFinalFile, workspace, directoryState, hooks = {}) {
+  hooks.beforeReadPublishedArtifact?.();
+  assertWorkspaceBoundaryUnchanged(workspace);
+  assertEvidenceDirectoryUnchanged(directoryState.evidenceRootIdentity, "Feature 6 stage6 evidence root");
+  assertEvidenceDirectoryUnchanged(directoryState.interpretationRootIdentity, "Feature 6 stage6 model interpretation root");
+
+  const currentPathIdentity = captureRegularFilePathIdentity(artifactPath, "Feature 6 model interpretation artifact");
+  if (!sameOwnedRegularFile(ownedFinalFile, currentPathIdentity)) {
+    throw new Error("Feature 6 model interpretation artifact identity changed after rename.");
+  }
+  assertOwnedFileInDirectory(currentPathIdentity, directoryState.interpretationRootIdentity, "Feature 6 model interpretation artifact");
+
+  const descriptor = openSync(artifactPath, "r");
+  try {
+    const ownedReadFile = captureRegularFileIdentity(artifactPath, descriptor, "Feature 6 model interpretation artifact");
+    if (!sameOwnedRegularFile(ownedFinalFile, ownedReadFile)) {
+      throw new Error("Feature 6 model interpretation artifact identity changed before reread.");
+    }
+    assertOwnedFileInDirectory(ownedReadFile, directoryState.interpretationRootIdentity, "Feature 6 model interpretation artifact");
+    hooks.beforeReadPublishedArtifactDescriptor?.();
+    const bytes = readDescriptorBytes(descriptor);
+    const postReadStats = fstatSync(descriptor);
+    const postReadPathStats = lstatSync(artifactPath);
+    if (postReadPathStats.isSymbolicLink()
+      || postReadStats.dev !== postReadPathStats.dev
+      || postReadStats.ino !== postReadPathStats.ino) {
+      throw new Error("Feature 6 model interpretation artifact is invalid after reread.");
+    }
+    const postReadIdentity = captureRegularFilePathIdentity(artifactPath, "Feature 6 model interpretation artifact");
+    if (!sameOwnedRegularFile(ownedFinalFile, postReadIdentity)) {
+      throw new Error("Feature 6 model interpretation artifact identity changed during reread.");
+    }
+    assertOwnedFileInDirectory(postReadIdentity, directoryState.interpretationRootIdentity, "Feature 6 model interpretation artifact");
+    assertWorkspaceBoundaryUnchanged(workspace);
+    assertEvidenceDirectoryUnchanged(directoryState.evidenceRootIdentity, "Feature 6 stage6 evidence root");
+    assertEvidenceDirectoryUnchanged(directoryState.interpretationRootIdentity, "Feature 6 stage6 model interpretation root");
+    return bytes;
+  } finally {
+    closeSync(descriptor);
   }
 }
 
@@ -718,8 +761,15 @@ export function materializeF6ModelInterpretation(options, hooks = {}) {
   const targetDirectory = ensureOutputDirectory(options.outputRoot, workbookHash, randomUUID(), workspace, hooks);
   const artifactPath = path.join(targetDirectory.directoryPath, "Feature6-Model-Interpretation.json");
   const artifactContent = Buffer.from(`${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  let bytes;
   if (workspace) {
-    atomicWriteWorkspaceArtifact(artifactPath, artifactContent, workspace, targetDirectory, hooks);
+    const ownedFinalFile = atomicWriteWorkspaceArtifact(artifactPath, artifactContent, workspace, targetDirectory, hooks);
+    try {
+      bytes = readPublishedWorkspaceArtifact(artifactPath, ownedFinalFile, workspace, targetDirectory, hooks);
+    } catch (error) {
+      removeOwnedRegularFile(ownedFinalFile);
+      throw error;
+    }
   } else {
     const descriptor = openSync(artifactPath, "wx");
     try {
@@ -727,8 +777,8 @@ export function materializeF6ModelInterpretation(options, hooks = {}) {
     } finally {
       closeSync(descriptor);
     }
+    bytes = readFileSync(artifactPath);
   }
-  const bytes = readFileSync(artifactPath);
   const readback = f5MultimodalArtifactV3Schema.parse(JSON.parse(bytes.toString("utf8")));
   if (!validateF5MultimodalArtifactV3(readback, authority).success) throw new Error("Model interpretation readback failed authority validation.");
   if (workspace) {
