@@ -261,6 +261,92 @@ describe("analysis workspace contract", () => {
 		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/changed during allocation/i);
 	});
 
+	it("rejects a test root whose identity changes immediately before exclusive root creation", async () => {
+		const testRoot = testRootFor("pre-mkdir-identity-change");
+		const rootRealPath = path.resolve(testRoot);
+		const changedRealPath = path.join(path.dirname(rootRealPath), "pre-mkdir-retargeted");
+		const attemptedRoot = path.join(rootRealPath, "20260921 - Demo");
+
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			let realpathCallCount = 0;
+			const realpathSync: typeof actual.realpathSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === rootRealPath) {
+					realpathCallCount += 1;
+					const selected = realpathCallCount === 1 ? rootRealPath : changedRealPath;
+					return typeof options === "string" || options?.encoding !== "buffer"
+						? selected
+						: Buffer.from(selected);
+				}
+				return actual.realpathSync(target as Parameters<typeof actual.realpathSync>[0], options as Parameters<typeof actual.realpathSync>[1]);
+			}) as typeof actual.realpathSync;
+			const statSync: typeof actual.statSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === changedRealPath) {
+					return actual.statSync(rootRealPath, options as Parameters<typeof actual.statSync>[1]);
+				}
+				return actual.statSync(target as Parameters<typeof actual.statSync>[0], options as Parameters<typeof actual.statSync>[1]);
+			}) as typeof actual.statSync;
+			const mkdirSync: typeof actual.mkdirSync = ((target, options) => {
+				if (typeof target === "string" && path.resolve(target) === attemptedRoot) {
+					throw new Error("exclusive root mkdir must not run after pre-mkdir identity change");
+				}
+				return actual.mkdirSync(target, options);
+			}) as typeof actual.mkdirSync;
+			return {
+				...actual,
+				realpathSync,
+				statSync,
+				mkdirSync,
+			};
+		});
+
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/changed during allocation/i);
+		expect(fs.existsSync(attemptedRoot)).toBe(false);
+	});
+
+	it("fails closed and removes only the exact empty owned root when identity changes after exclusive root creation", async () => {
+		const testRoot = testRootFor("post-mkdir-identity-change");
+		const rootRealPath = path.resolve(testRoot);
+		const changedRealPath = path.join(path.dirname(rootRealPath), "post-mkdir-retargeted");
+		const allocatedRoot = path.join(rootRealPath, "20260921 - Demo");
+
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			let realpathCallCount = 0;
+			const realpathSync: typeof actual.realpathSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === rootRealPath) {
+					realpathCallCount += 1;
+					const selected = realpathCallCount <= 2 ? rootRealPath : changedRealPath;
+					return typeof options === "string" || options?.encoding !== "buffer"
+						? selected
+						: Buffer.from(selected);
+				}
+				return actual.realpathSync(target as Parameters<typeof actual.realpathSync>[0], options as Parameters<typeof actual.realpathSync>[1]);
+			}) as typeof actual.realpathSync;
+			const statSync: typeof actual.statSync = ((target, options) => {
+				const targetPath = String(target);
+				if (path.resolve(targetPath) === changedRealPath) {
+					return actual.statSync(rootRealPath, options as Parameters<typeof actual.statSync>[1]);
+				}
+				return actual.statSync(target as Parameters<typeof actual.statSync>[0], options as Parameters<typeof actual.statSync>[1]);
+			}) as typeof actual.statSync;
+			return {
+				...actual,
+				realpathSync,
+				statSync,
+			};
+		});
+
+		const { allocateAnalysisWorkspace: mockedAllocateAnalysisWorkspace } = await import("./analysis-workspace.js");
+		expect(() => mockedAllocateAnalysisWorkspace(allocationInput(testRoot))).toThrow(/cleanup\/identity|changed during allocation/i);
+		expect(fs.existsSync(allocatedRoot)).toBe(false);
+		expect(fs.existsSync(path.join(allocatedRoot, ANALYSIS_STAGE_DIRS.f1))).toBe(false);
+	});
+
 	it("cleans up only directories created by this invocation when stage creation fails", async () => {
 		const testRoot = testRootFor("cleanup-partial-stages");
 		const existingRoot = path.join(testRoot, "20260921 - Demo");

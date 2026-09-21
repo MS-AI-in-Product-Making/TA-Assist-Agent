@@ -81,8 +81,10 @@ export interface AnalysisWorkspaceSummary {
 interface DirectoryIdentity {
 	readonly requestedPath: string;
 	readonly canonicalPath: string;
-	readonly dev: number;
-	readonly ino: number;
+	readonly requestedDev: number;
+	readonly requestedIno: number;
+	readonly canonicalDev: number;
+	readonly canonicalIno: number;
 }
 
 const ANALYSIS_STAGES = Object.keys(ANALYSIS_STAGE_DIRS) as AnalysisStage[];
@@ -123,6 +125,7 @@ export function allocateAnalysisWorkspace(input: AllocateAnalysisWorkspaceInput)
 	const allocationRootBaseName = `${allocationDate} - ${workbookBaseName}`;
 
 	for (let suffixIndex = 0; suffixIndex < MAX_ALLOCATION_ATTEMPTS; suffixIndex += 1) {
+		assertDirectoryIdentityUnchanged(trustedTestRoot, "Analysis workspace test root");
 		const allocationRootName = suffixIndex === 0 ? allocationRootBaseName : `${allocationRootBaseName} -${suffixIndex}`;
 		const analysisRoot = path.resolve(path.join(trustedTestRoot.canonicalPath, allocationRootName));
 		assertPathWithinRoot(trustedTestRoot.canonicalPath, analysisRoot, "Analysis workspace root");
@@ -137,9 +140,14 @@ export function allocateAnalysisWorkspace(input: AllocateAnalysisWorkspaceInput)
 		}
 
 		const allocatedRootIdentity = captureDirectoryIdentity(analysisRoot, "Analysis workspace root");
+		try {
+			validateAllocatedRootAfterCreation(trustedTestRoot, allocatedRootIdentity);
+		} catch (error) {
+			throw failClosedAfterPostCreateValidation(error, allocatedRootIdentity);
+		}
+
 		let createdStageDirectories: readonly DirectoryIdentity[] = [];
 		try {
-			assertDirectoryIdentityUnchanged(trustedTestRoot, "Analysis workspace test root");
 			const stagePaths = resolveAnalysisWorkspaceStagePaths(analysisRoot);
 			createdStageDirectories = createStageDirectories(analysisRoot, stagePaths);
 			const layout = createAllocatedLayout(analysisRoot, workbookFileName, input.workbookContentHash, allocationDate, stagePaths);
@@ -149,7 +157,7 @@ export function allocateAnalysisWorkspace(input: AllocateAnalysisWorkspaceInput)
 			if (hasCreatedDirectoryIdentities(error)) {
 				createdStageDirectories = error.createdDirectories;
 			}
-			cleanupPartialAllocation(allocatedRootIdentity, trustedTestRoot.canonicalPath, createdStageDirectories);
+			cleanupPartialAllocation(allocatedRootIdentity, createdStageDirectories);
 			throw error;
 		}
 	}
@@ -296,23 +304,44 @@ function captureDirectoryIdentity(targetPath: string, label: string): DirectoryI
 	if (!fs.existsSync(requestedPath)) {
 		throw new Error(`${label} is missing.`);
 	}
+	const requestedStats = fs.lstatSync(requestedPath);
+	if (!requestedStats.isDirectory() && !requestedStats.isSymbolicLink()) {
+		throw new Error(`${label} is invalid.`);
+	}
 	const canonicalPath = fs.realpathSync(requestedPath);
-	const stats = fs.statSync(canonicalPath);
-	if (!stats.isDirectory()) {
+	const canonicalStats = fs.statSync(canonicalPath);
+	if (!canonicalStats.isDirectory()) {
 		throw new Error(`${label} is invalid.`);
 	}
 	return {
 		requestedPath,
 		canonicalPath,
-		dev: stats.dev,
-		ino: stats.ino,
+		requestedDev: requestedStats.dev,
+		requestedIno: requestedStats.ino,
+		canonicalDev: canonicalStats.dev,
+		canonicalIno: canonicalStats.ino,
 	};
 }
 
 function assertDirectoryIdentityUnchanged(expected: DirectoryIdentity, label: string): void {
 	const current = captureDirectoryIdentity(expected.requestedPath, label);
-	if (current.canonicalPath !== expected.canonicalPath || current.dev !== expected.dev || current.ino !== expected.ino) {
+	if (
+		current.canonicalPath !== expected.canonicalPath
+		|| current.requestedDev !== expected.requestedDev
+		|| current.requestedIno !== expected.requestedIno
+		|| current.canonicalDev !== expected.canonicalDev
+		|| current.canonicalIno !== expected.canonicalIno
+	) {
 		throw new Error(`${label} changed during allocation.`);
+	}
+}
+
+function validateAllocatedRootAfterCreation(trustedTestRoot: DirectoryIdentity, allocationRoot: DirectoryIdentity): void {
+	assertDirectoryIdentityUnchanged(trustedTestRoot, "Analysis workspace test root");
+	assertPathWithinRoot(trustedTestRoot.canonicalPath, allocationRoot.canonicalPath, "Analysis workspace root");
+	const canonicalParent = path.dirname(allocationRoot.canonicalPath);
+	if (canonicalParent !== trustedTestRoot.canonicalPath && !isWithinOrEqual(trustedTestRoot.canonicalPath, canonicalParent)) {
+		throw new Error("Analysis workspace root changed during allocation.");
 	}
 }
 
@@ -426,10 +455,8 @@ function createStageDirectories(
 
 function cleanupPartialAllocation(
 	allocationRoot: DirectoryIdentity,
-	testRootCanonicalPath: string,
 	createdDirectories: readonly DirectoryIdentity[],
 ): void {
-	assertPathWithinRoot(testRootCanonicalPath, allocationRoot.canonicalPath, "Analysis workspace cleanup root");
 	removeCreatedDirectoriesInReverse(createdDirectories);
 	removeEmptyAllocationRoot(allocationRoot);
 }
@@ -445,7 +472,13 @@ function removeEmptyDirectoryIfUnchanged(directory: DirectoryIdentity): void {
 		return;
 	}
 	const current = captureDirectoryIdentity(directory.requestedPath, "Analysis workspace cleanup directory");
-	if (current.canonicalPath !== directory.canonicalPath || current.dev !== directory.dev || current.ino !== directory.ino) {
+	if (
+		current.canonicalPath !== directory.canonicalPath
+		|| current.requestedDev !== directory.requestedDev
+		|| current.requestedIno !== directory.requestedIno
+		|| current.canonicalDev !== directory.canonicalDev
+		|| current.canonicalIno !== directory.canonicalIno
+	) {
 		return;
 	}
 	if (fs.readdirSync(directory.requestedPath).length === 0) {
@@ -455,6 +488,14 @@ function removeEmptyDirectoryIfUnchanged(directory: DirectoryIdentity): void {
 
 function removeEmptyAllocationRoot(allocationRoot: DirectoryIdentity): void {
 	removeEmptyDirectoryIfUnchanged(allocationRoot);
+}
+
+function failClosedAfterPostCreateValidation(error: unknown, allocationRoot: DirectoryIdentity): Error {
+	removeEmptyAllocationRoot(allocationRoot);
+	if (fs.existsSync(allocationRoot.requestedPath)) {
+		return new Error(`Analysis workspace cleanup/identity error: ${formatErrorMessage(error)}`);
+	}
+	return error instanceof Error ? error : new Error(String(error));
 }
 
 function assertPathWithinRoot(rootPath: string, candidatePath: string, label: string): void {
@@ -481,4 +522,8 @@ function hasCreatedDirectoryIdentities(error: unknown): error is Error & { reado
 function attachCreatedDirectories(error: unknown, createdDirectories: readonly DirectoryIdentity[]): Error & { readonly createdDirectories: readonly DirectoryIdentity[] } {
 	const wrapped = error instanceof Error ? error : new Error(String(error));
 	return Object.assign(wrapped, { createdDirectories });
+}
+
+function formatErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
