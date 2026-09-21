@@ -16,6 +16,11 @@ const retainedPaths = [
   "apps/f7-web",
 ];
 
+const retiredParticipantPaths = [
+  "apps/vscode-extension",
+  "apps/cli/src/commands/agent-launcher.ts",
+];
+
 const workflowScripts = [
   "workflow:f1",
   "workflow:f2",
@@ -36,6 +41,10 @@ function readJson(relativePath) {
 describe("F8 retirement retained surfaces", () => {
   it.each(retainedPaths)("keeps %s present", (retainedPath) => {
     expect(fs.existsSync(path.join(rootDir, retainedPath))).toBe(true);
+  });
+
+  it.each(retiredParticipantPaths)("removes retired participant surface %s", (retiredPath) => {
+    expect(fs.existsSync(path.join(rootDir, retiredPath))).toBe(false);
   });
 
   it("keeps the direct F1-F6 workflows and F7 scripts defined in package.json", () => {

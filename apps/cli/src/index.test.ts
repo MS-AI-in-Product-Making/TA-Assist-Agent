@@ -11,90 +11,19 @@ import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
 
 const execFileAsync = promisify(execFile);
-const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
-
-it("parses the internal interaction language for a new Agent session", async () => {
-  const runAgent = vi.fn(async () => "started");
-  const result = await executeCli(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)], {
-    cwd: () => "ignored",
-    now: () => new Date("2026-09-16T00:00:00.000Z"),
-    runFeature2: async () => "unused",
-    runAgent,
-    utcOffsetMinutes: () => 480,
-  });
-
-  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(runAgent).toHaveBeenCalledWith({
-    action: "analyze",
-    rootDir: "repo",
-    interactionLanguage: ENGLISH_LOCK,
-    analysisRequestContext: {
-      requestedAt: "2026-09-16T00:00:00.000Z",
-      utcOffsetMinutes: 480,
-      source: "cli",
-    },
-  });
-});
-
-it("parses explicit analysis request context only for a new Agent analysis", async () => {
-  const runAgent = vi.fn(async () => "started");
-
-  const analyzeResult = await executeCli([
-    "agent",
-    "analyze",
-    "--root",
-    "repo",
-    "--interaction-language",
-    JSON.stringify(ENGLISH_LOCK),
-    "--analysis-request-context",
-    '{"requestedAt":"2026-09-16T15:30:12.000Z","utcOffsetMinutes":-420,"source":"cli"}',
-  ], {
+it.each([
+  ["analyze", "--interaction-language", '{"languageTag":"en-US"}'],
+  ["resume", "--session", "session-a"],
+  ["status", "--session", "session-a"],
+  ["workbench", "--interaction-language", '{"languageTag":"en-US"}'],
+])("rejects retired agent %s entrypoints", async (action, flag, value) => {
+  const result = await executeCli(["agent", action, "--root", "repo", flag, value], {
     cwd: () => "ignored",
     runFeature2: async () => "unused",
-    runAgent,
   });
 
-  expect(analyzeResult).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(runAgent).toHaveBeenCalledWith({
-    action: "analyze",
-    rootDir: "repo",
-    interactionLanguage: ENGLISH_LOCK,
-    analysisRequestContext: {
-      requestedAt: "2026-09-16T15:30:12.000Z",
-      utcOffsetMinutes: -420,
-      source: "cli",
-    },
-  });
-
-  const resumeResult = await executeCli([
-    "agent",
-    "resume",
-    "--root",
-    "repo",
-    "--session",
-    "session-a",
-    "--analysis-request-context",
-    "{}",
-  ], {
-    cwd: () => "ignored",
-    runFeature2: async () => "unused",
-    runAgent,
-  });
-
-  expect(resumeResult).toMatchObject({ exitCode: 2, stdout: "" });
-  expect(resumeResult.stderr).toContain("analysis-request-context");
-});
-
-it("routes the CLI Agent to the same workbench session", async () => {
-  const resume = vi.fn(async () => "resumed");
-  const result = await executeCli(["agent", "resume", "--root", "repo", "--session", "session-a"], {
-    cwd: () => "ignored",
-    runFeature2: async () => "unused",
-    runAgent: async (request) => { await resume(request.sessionId); return "session: session-a\nurl: http://127.0.0.1:4317/?session=session-a\n"; },
-  });
-
-  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(resume).toHaveBeenCalledWith("session-a");
+  expect(result).toMatchObject({ exitCode: 2, stdout: "" });
+  expect(result.stderr).toContain("command is invalid");
 });
 
 async function createTemporaryRoot(): Promise<string> {

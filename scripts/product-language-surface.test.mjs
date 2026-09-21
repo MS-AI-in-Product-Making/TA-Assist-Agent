@@ -27,8 +27,6 @@ const PRODUCT_SURFACE_FILES = [
   "apps/workbench-web/src/workbench-session.ts",
   "packages/agent-runtime/src/runtime.ts",
   "packages/agent-runtime/src/context-builder.ts",
-  "apps/vscode-extension/package.json",
-  "apps/vscode-extension/src/participant.ts",
   "docs/governance/evidence/f3-f5-f6-report-readability-f4-baseline.json",
 ];
 

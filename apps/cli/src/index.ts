@@ -1,4 +1,3 @@
-import { analysisRequestContextSchema, type AnalysisRequestContext } from "@ai-assist/contracts";
 import { runExportCommand } from "./commands/export.js";
 import { isFeature1Phrase, runFeature1WorkflowCommand } from "./commands/feature1.js";
 import { isFeature2Phrase, runFeature2WorkflowCommand, type Feature2WorksheetSelectionArgs } from "./commands/feature2.js";
@@ -8,9 +7,6 @@ import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./comma
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
-import type { InteractionLanguage } from "@ai-assist/product-language";
-import type { AgentCliRequest } from "./commands/agent.js";
-import { runDefaultAgentCommand } from "./commands/agent-launcher.js";
 
 export interface CliResult {
   exitCode: number;
@@ -18,30 +14,16 @@ export interface CliResult {
   stderr: string;
 }
 
-type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5" | "feature6" | "agent";
+type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5" | "feature6";
 
 export interface CliDependencies {
   readonly cwd: () => string;
-  readonly now?: () => Date;
   readonly runFeature1?: typeof runFeature1WorkflowCommand;
   readonly runFeature2: typeof runFeature2WorkflowCommand;
   readonly runFeature3?: typeof runFeature3WorkflowCommand;
   readonly runFeature5?: typeof runFeature5WorkflowCommand;
   readonly runFeature6?: typeof runFeature6WorkflowCommand;
-  readonly runAgent?: (request: AgentCliRequest) => Promise<string>;
-  readonly utcOffsetMinutes?: () => number;
 }
-
-type ParsedAnalyzeAgentRequest = {
-  readonly action: "analyze";
-  readonly rootDir: string;
-  readonly interactionLanguage: InteractionLanguage;
-  readonly analysisRequestContext?: AnalysisRequestContext;
-  readonly requestSource?: AnalysisRequestContext["source"];
-  readonly utcOffsetMinutes?: number;
-};
-
-type ParsedAgentRequest = Exclude<AgentCliRequest, { readonly action: "analyze" }> | ParsedAnalyzeAgentRequest;
 
 export async function executeCli(argv: readonly string[], dependencies: CliDependencies = { cwd: () => process.cwd(), runFeature2: runFeature2WorkflowCommand }): Promise<CliResult> {
   try {
@@ -112,8 +94,6 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
         parsed.f5ArtifactRoot,
         parsed.options,
       );
-    case "agent":
-      return (dependencies.runAgent ?? runDefaultAgentCommand)(resolveAgentRequest(parsed.request, dependencies));
   }
 }
 
@@ -127,26 +107,23 @@ function parseArguments(argv: readonly string[]):
   | { command: "feature2"; rootDir: string; workbookPath: string; worksheetSelection: Feature2WorksheetSelectionArgs }
   | { command: "feature3"; rootDir: string; f2ArtifactRoot: string }
   | { command: "feature5"; rootDir: string; f1ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; options: Feature5CommandOptions }
-  | { command: "feature6"; rootDir: string; f2ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; f5ArtifactRoot: string; options: Feature6CommandOptions }
-  | { command: "agent"; request: ParsedAgentRequest } {
+  | { command: "feature6"; rootDir: string; f2ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; f5ArtifactRoot: string; options: Feature6CommandOptions } {
   const [command, ...rawFlags] = argv;
   if (!isCommand(command)) {
     throw new Error("validation_error: command is invalid");
   }
-  const agentAction = command === "agent" ? rawFlags[0] : undefined;
-  const flags = command === "agent" ? rawFlags.slice(1) : rawFlags;
   const values = new Map<string, string | boolean>();
   const worksheetValues: string[] = [];
-  for (let index = 0; index < flags.length; index += 1) {
-    const flag = flags[index];
+  for (let index = 0; index < rawFlags.length; index += 1) {
+    const flag = rawFlags[index];
     if (flag === "--confirm-confidential" || flag === "--confirm") {
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--session" && flag !== "--interaction-language" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation" && flag !== "--analysis-request-context" && flag !== "--request-source" && flag !== "--utc-offset-minutes") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets" && flag !== "--language" && flag !== "--model-interpretation") {
       throw new Error("validation_error: unknown option");
     }
-    const value = flags[index + 1];
+    const value = rawFlags[index + 1];
     if (typeof value !== "string" || value.startsWith("--")) {
       throw new Error("validation_error: option value is missing");
     }
@@ -164,60 +141,6 @@ function parseArguments(argv: readonly string[]):
     throw new Error("validation_error: --root is required");
   }
   const rootDir = rootValue.trim();
-  if (command === "agent") {
-    const action = agentAction;
-    if (action !== "analyze" && action !== "resume" && action !== "status" && action !== "workbench") throw new Error("validation_error: agent action is invalid");
-    const sessionId = values.get("--session");
-    const serializedInteractionLanguage = values.get("--interaction-language");
-    const serializedAnalysisRequestContext = values.get("--analysis-request-context");
-    const requestSource = values.get("--request-source");
-    const utcOffsetMinutes = values.get("--utc-offset-minutes");
-    if (action === "resume" || action === "status") {
-      if (typeof sessionId !== "string" || sessionId.trim().length === 0) throw new Error("validation_error: --session is required");
-      if (serializedInteractionLanguage !== undefined) throw new Error("validation_error: --interaction-language is not allowed for this agent action");
-      if (serializedAnalysisRequestContext !== undefined) throw new Error("validation_error: --analysis-request-context is not allowed for this agent action");
-      if (requestSource !== undefined || utcOffsetMinutes !== undefined) throw new Error("validation_error: --request-source and --utc-offset-minutes are not allowed for this agent action");
-      return { command, request: { action, rootDir, sessionId: sessionId.trim() } };
-    }
-    if (sessionId !== undefined) throw new Error("validation_error: --session is not allowed for this agent action");
-    if (action === "analyze" || action === "workbench") {
-      if (typeof serializedInteractionLanguage !== "string") throw new Error("validation_error: --interaction-language is required");
-      if (action === "workbench") {
-        if (serializedAnalysisRequestContext !== undefined) throw new Error("validation_error: --analysis-request-context is not allowed for this agent action");
-        if (requestSource !== undefined || utcOffsetMinutes !== undefined) throw new Error("validation_error: --request-source and --utc-offset-minutes are not allowed for this agent action");
-        return { command, request: { action, rootDir, interactionLanguage: parseInteractionLanguage(serializedInteractionLanguage) } };
-      }
-      if (typeof serializedAnalysisRequestContext === "string" && (requestSource !== undefined || utcOffsetMinutes !== undefined)) {
-        throw new Error("validation_error: --analysis-request-context cannot be combined with --request-source or --utc-offset-minutes");
-      }
-      const parsedInteractionLanguage = parseInteractionLanguage(serializedInteractionLanguage);
-      if (typeof serializedAnalysisRequestContext === "string") {
-        return {
-          command,
-          request: {
-            action,
-            rootDir,
-            interactionLanguage: parsedInteractionLanguage,
-            analysisRequestContext: parseAnalysisRequestContext(serializedAnalysisRequestContext),
-          },
-        };
-      }
-      if (requestSource !== undefined || utcOffsetMinutes !== undefined) {
-        return {
-          command,
-          request: {
-            action,
-            rootDir,
-            interactionLanguage: parsedInteractionLanguage,
-            requestSource: parseRequestSource(requestSource),
-            utcOffsetMinutes: parseUtcOffsetMinutes(utcOffsetMinutes),
-          },
-        };
-      }
-      return { command, request: { action, rootDir, interactionLanguage: parsedInteractionLanguage } };
-    }
-    throw new Error("validation_error: agent action is invalid");
-  }
   if (command === "smoke") {
     rejectUnexpected(values, ["--root"]);
     return { command, rootDir };
@@ -339,7 +262,6 @@ function isCommand(value: string | undefined): value is Command {
     || value === "feature1"
     || value === "feature2"
     || value === "feature3"
-    || value === "agent"
     || value === "feature5"
     || value === "feature6";
 }
@@ -402,73 +324,10 @@ function typedErrorSummary(error: unknown): string | undefined {
     : undefined;
 }
 
-function resolveAgentRequest(request: ParsedAgentRequest, dependencies: CliDependencies): AgentCliRequest {
-  if (request.action !== "analyze") return request;
-  if (request.analysisRequestContext !== undefined) {
-    return {
-      action: request.action,
-      rootDir: request.rootDir,
-      interactionLanguage: request.interactionLanguage,
-      analysisRequestContext: request.analysisRequestContext,
-    };
-  }
-  const requestedAt = (dependencies.now ?? (() => new Date()))().toISOString();
-  return {
-    action: request.action,
-    rootDir: request.rootDir,
-    interactionLanguage: request.interactionLanguage,
-    analysisRequestContext: analysisRequestContextSchema.parse({
-      requestedAt,
-      utcOffsetMinutes: request.utcOffsetMinutes ?? (dependencies.utcOffsetMinutes ?? (() => -new Date().getTimezoneOffset()))(),
-      source: request.requestSource ?? "cli",
-    }),
-  };
-}
-
-function parseAnalysisRequestContext(serialized: string): AnalysisRequestContext {
-  try {
-    return analysisRequestContextSchema.parse(JSON.parse(serialized));
-  } catch {
-    throw new Error("validation_error: --analysis-request-context is invalid");
-  }
-}
-
-function parseRequestSource(value: string | boolean | undefined): AnalysisRequestContext["source"] {
-  if (typeof value !== "string") throw new Error("validation_error: --request-source is required with --utc-offset-minutes");
-  if (value !== "vscode") throw new Error("validation_error: --request-source is invalid");
-  return value;
-}
-
-function parseUtcOffsetMinutes(value: string | boolean | undefined): number {
-  if (typeof value !== "string") throw new Error("validation_error: --utc-offset-minutes is required with --request-source");
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) throw new Error("validation_error: --utc-offset-minutes is invalid");
-  return parsed;
-}
-
 const invokedPath = process.argv[1]?.replaceAll("\\", "/");
 if (invokedPath !== undefined && import.meta.url === new URL(`file://${invokedPath}`).href) {
   const result = await executeCli(process.argv.slice(2));
   process.stdout.write(result.stdout);
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;
-}
-
-function parseInteractionLanguage(serialized: string): InteractionLanguage {
-  let value: unknown;
-  try {
-    value = JSON.parse(serialized);
-  } catch {
-    throw new Error("validation_error: --interaction-language is invalid");
-  }
-  if (typeof value !== "object" || value === null) throw new Error("validation_error: --interaction-language is invalid");
-  const candidate = value as Record<string, unknown>;
-  if (typeof candidate.languageTag !== "string"
-    || (candidate.uiCatalogLanguage !== "en" && candidate.uiCatalogLanguage !== "zh")
-    || typeof candidate.lockedAtTurnId !== "string"
-    || (candidate.source !== "workflow_start" && candidate.source !== "explicit_user_change" && candidate.source !== "legacy_fallback")
-    || typeof candidate.fallbackUsed !== "boolean") {
-    throw new Error("validation_error: --interaction-language is invalid");
-  }
-  return candidate as unknown as InteractionLanguage;
 }

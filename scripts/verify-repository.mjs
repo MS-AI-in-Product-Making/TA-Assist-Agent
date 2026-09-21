@@ -19,7 +19,6 @@ const englishEngineeringPaths = new Set([
   "README.md",
   "docs/README.md",
   "package.json",
-  "apps/vscode-extension/package.json",
   ".github/skills/ta-assist-agent/SKILL.md",
   "docs/00-overview.md",
   "docs/01-architecture.md",

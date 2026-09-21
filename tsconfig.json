@@ -4,7 +4,6 @@
     { "path": "./apps/cli" },
     { "path": "./apps/f7-local-api" },
     { "path": "./apps/workbench-server" },
-    { "path": "./apps/vscode-extension" },
     { "path": "./packages/f7-statistics" },
     { "path": "./packages/f7-simulation" },
     { "path": "./packages/product-language" },
