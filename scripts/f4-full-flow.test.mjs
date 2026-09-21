@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { f4ExcelComparisonResultSchema, f4WorkflowCalculationResultSchema } from "../packages/contracts/dist/contracts.js";
-import { runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
+import { createTypedError } from "../packages/contracts/dist/index.js";
+import { runF4CliMain, runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
 
 const cleanup = [];
+const runnerPath = fileURLToPath(new URL("./run-f4-full-validation.mjs", import.meta.url));
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -496,5 +500,113 @@ describe("runF4FullValidation", () => {
     for (const { to } of context.renameCalls) {
       expect(path.relative(context.runRoot, to)).not.toMatch(/^\.\./u);
     }
+  });
+});
+
+describe("runF4CliMain", () => {
+  it("returns invalid_arguments_or_output_root only for argument/layout validation failures", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report"],
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+    expect(stderr.join("")).toBe("");
+  });
+
+  it("preserves the explicit dirty-stage reason code at the CLI boundary", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report", "Feature2-Report.json"],
+      runFullValidation: () => { throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: ["Feature4-Calculation.json"],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      }); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(stderr.join("")).toBe("");
+  });
+
+  it("serializes unexpected failures as safe typed internal_error payloads without leaking details", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report", "Feature2-Report.json"],
+      runFullValidation: () => { throw new Error("disk failure at C:/secret/path"); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toBe("");
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      status: "failed",
+      error: { code: "internal_error", summary: "Workflow runner failed unexpectedly." },
+    });
+    expect(stderr.join("")).not.toContain("disk failure");
+    expect(stderr.join("")).not.toContain("C:/secret/path");
+  });
+});
+
+describe("run-f4-full-validation CLI", () => {
+  it("prints invalid_arguments_or_output_root and exits nonzero for invalid arguments", () => {
+    const result = spawnSync(process.execPath, [runnerPath, "--f2-report"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+    expect(result.stderr.trim()).toBe("");
+  });
+
+  it("prints workspace_stage_not_empty and leaves a dirty workspace stage unchanged", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-cli-dirty-"));
+    cleanup.push(root);
+    const workspace = createAnalysisWorkspaceRoot(root);
+    const staleManifestPath = path.join(workspace.stagePaths.f4, "manifest.json");
+    const staleCalculationPath = path.join(workspace.stagePaths.f4, "Feature4-Calculation.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(staleCalculationPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "{}\n", "utf8");
+
+    const result = spawnSync(process.execPath, [
+      runnerPath,
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      "--analysis-root", workspace.analysisRoot,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(result.stderr.trim()).toBe("");
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
+    expect(readFileSync(staleCalculationPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 });

@@ -1,7 +1,7 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runF4Calculation } from "../packages/workflow-runners/dist/index.js";
+import { normalizeRunnerError, runF4Calculation } from "../packages/workflow-runners/dist/index.js";
 import {
   createTypedError,
   typedErrorSchema,
@@ -81,6 +81,32 @@ function reasonCodeForWorkspacePreflight(error) {
   return undefined;
 }
 
+function safeTypedError(error) {
+  const typed = typedErrorSchema.safeParse(error);
+  if (typed.success) return typed.data;
+  const normalized = normalizeRunnerError(error);
+  return {
+    code: normalized.code,
+    runId: normalized.runId,
+    summary: normalized.summary,
+    retryable: normalized.retryable,
+    suggestedAction: normalized.suggestedAction,
+    affectedInputReferences: [...normalized.affectedInputReferences],
+  };
+}
+
+function classifyCliFailure(error) {
+  const reasonCode = reasonCodeForWorkspacePreflight(error);
+  if (reasonCode !== undefined) {
+    return { stream: "stdout", payload: { status: "failed", reasonCode } };
+  }
+  const normalized = safeTypedError(error);
+  if (normalized.code === "validation_error") {
+    return { stream: "stdout", payload: { status: "failed", reasonCode: "invalid_arguments_or_output_root" } };
+  }
+  return { stream: "stderr", payload: { status: "failed", error: normalized } };
+}
+
 export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const args = options.args ?? [];
@@ -142,18 +168,37 @@ export function summarizeF4CliResult(result) {
   };
 }
 
+function serializeCliResult(result) {
+  if (result.status === "failed"
+    && (result.reasonCode === "invalid_arguments_or_output_root" || result.reasonCode === "workspace_stage_not_empty")) {
+    return { status: "failed", reasonCode: result.reasonCode };
+  }
+  return summarizeF4CliResult(result);
+}
+
+export function runF4CliMain({
+  args = process.argv.slice(2),
+  runFullValidation = runF4FullValidation,
+  writeStdout = (value) => process.stdout.write(value),
+  writeStderr = (value) => process.stderr.write(value),
+} = {}) {
+  try {
+    const result = runFullValidation({ args });
+    writeStdout(json(serializeCliResult(result)));
+    return result.status === "completed" ? 0 : 1;
+  } catch (error) {
+    const failure = classifyCliFailure(error);
+    if (failure.stream === "stdout") writeStdout(json(failure.payload));
+    else writeStderr(json(failure.payload));
+    return 1;
+  }
+}
+
 function isDirectExecution() {
   return process.argv[1] !== undefined
     && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 }
 
 if (isDirectExecution()) {
-  try {
-    const result = runF4FullValidation({ args: process.argv.slice(2) });
-    console.log(json(summarizeF4CliResult(result)).trimEnd());
-    if (result.status !== "completed") process.exitCode = 1;
-  } catch {
-    console.log(json({ status: "failed", reasonCode: "invalid_arguments_or_output_root" }).trimEnd());
-    process.exitCode = 1;
-  }
+  process.exitCode = runF4CliMain();
 }
