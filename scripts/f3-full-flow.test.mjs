@@ -216,7 +216,10 @@ describe("Feature 3 local artifact flow", () => {
       env: process.env,
     });
     expect(result.status).toBe(1);
-    expect(result.stdout.trim()).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
     expect(readFileSync(staleReportPath, "utf8")).toBe("stale report\n");
     expect(readFileSync(staleReminderPath, "utf8")).toBe("stale reminder\n");
     expect(readFileSync(staleHistoryPath, "utf8")).toBe("stale history\n");

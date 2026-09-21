@@ -186,7 +186,10 @@ describe("runF4Calculation", () => {
         loadHandoffs,
         calculateWorkflow: vi.fn(),
         renderReport: vi.fn(),
-      })).toThrow("Feature 4 output root already contains published artifacts.");
+      })).toThrow(expect.objectContaining({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+      }));
       expect(loadHandoffs).not.toHaveBeenCalled();
     } finally {
       rmSync(runRoot, { recursive: true, force: true });

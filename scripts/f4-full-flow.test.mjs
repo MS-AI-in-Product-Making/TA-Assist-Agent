@@ -321,7 +321,7 @@ describe("runF4FullValidation", () => {
 
     expect(result).toMatchObject({
       status: "failed",
-      reasonCode: "invalid_arguments_or_output_root",
+      reasonCode: "workspace_stage_not_empty",
       outputDirectory: workspace.stagePaths.f4,
       manifestPath: staleManifestPath,
     });

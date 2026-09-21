@@ -16,6 +16,10 @@ function safeTypedError(error) {
   };
 }
 
+function isWorkspaceStageNotEmpty(error) {
+  return error?.code === "prerequisite_not_ready" && error?.reasonCode === "workspace_stage_not_empty";
+}
+
 try {
   const cliArgs = process.argv.slice(2);
   const { artifactRoot, analysisRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
@@ -39,6 +43,11 @@ try {
     ...(result.report.status === "input_rejected" ? { artifactIssues: result.report.artifactIssues } : { summary: result.report.summary }),
   }, null, 2));
 } catch (error) {
-  console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
-  process.exitCode = 1;
+  if (isWorkspaceStageNotEmpty(error)) {
+    console.log(JSON.stringify({ status: "failed", reasonCode: "workspace_stage_not_empty" }, null, 2));
+    process.exitCode = 1;
+  } else {
+    console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
+    process.exitCode = 1;
+  }
 }

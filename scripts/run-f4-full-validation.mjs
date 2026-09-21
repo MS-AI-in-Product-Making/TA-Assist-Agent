@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runF4Calculation } from "../packages/workflow-runners/dist/index.js";
 import {
   createTypedError,
+  typedErrorSchema,
 } from "../packages/contracts/dist/index.js";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
@@ -68,6 +69,18 @@ function normalizeDependencies(overrides = {}) {
   };
 }
 
+function reasonCodeForWorkspacePreflight(error) {
+  if (error?.code === "prerequisite_not_ready" && error?.reasonCode === "workspace_stage_not_empty") {
+    return "workspace_stage_not_empty";
+  }
+  const typed = typedErrorSchema.safeParse(error);
+  if (typed.success && typed.data.code === "validation_error") {
+    return "invalid_arguments_or_output_root";
+  }
+  if (typed.success) return typed.data.code;
+  return undefined;
+}
+
 export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const args = options.args ?? [];
@@ -98,7 +111,11 @@ export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
     if (error?.code === "EEXIST") throw error;
     const layout = dependencies.resolveLayout(args);
     if (layout.allowExistingRunRoot) {
-      return { status: "failed", reasonCode: "invalid_arguments_or_output_root", outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
+      const reasonCode = reasonCodeForWorkspacePreflight(error);
+      if (reasonCode !== undefined) {
+        return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
+      }
+      throw error;
     }
     const paths = outputPaths(layout);
     const typed = error?.code === undefined ? createTypedError({

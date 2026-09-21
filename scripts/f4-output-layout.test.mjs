@@ -121,6 +121,15 @@ describe("resolveFeature4OutputLayout", () => {
     expect(layout.allowExistingRunRoot).toBe(false);
   });
 
+  it.each([
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root"]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", ""]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", "--workbook"]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", "root-a", "--analysis-root", "root-b"]],
+  ])("rejects invalid --analysis-root forms: %j", (args) => {
+    expect(() => resolveFeature4OutputLayout(args, undefined, fixedNow)).toThrow(/analysis workspace root|duplicated|missing/i);
+  });
+
   it("derives deterministic run stem from f2 report parent for absolute paths", () => {
     const layout = resolveFeature4OutputLayout([
       "--f2-report",

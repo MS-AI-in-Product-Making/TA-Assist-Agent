@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import path from "node:path";
 
 import {
+  createTypedError,
   drawingGovernanceRequestV2Schema,
   drawingGovernanceResultV2Schema,
   f2UserReportSchema,
@@ -183,7 +184,13 @@ function defaultWriteOutputs(
 function assertGovernedArtifactsAbsent(outputRoot: string, fileNames: readonly string[]): void {
   for (const fileName of fileNames) {
     if (existsSync(path.join(outputRoot, fileName))) {
-      throw new Error("Feature 3 output root already contains published artifacts.");
+      throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: [outputRoot],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      });
     }
   }
 }

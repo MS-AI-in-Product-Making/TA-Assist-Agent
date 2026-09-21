@@ -126,7 +126,10 @@ describe("runF3Analysis", () => {
           reportMdName: "Feature3-Report.md",
           workspaceMode: true,
         })),
-      })).toThrow(expect.objectContaining({ code: "internal_error", summary: "Workflow runner failed unexpectedly." }));
+      })).toThrow(expect.objectContaining({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+      }));
       expect(loadBundle).not.toHaveBeenCalled();
       expect(path.join(outputRoot, "Feature3-ADO-Reminder.md")).toContain("Feature3-ADO-Reminder.md");
     } finally {
