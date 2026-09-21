@@ -378,6 +378,62 @@ describe("ReportPanel", () => {
     expect(wrapper.text()).not.toContain("Methodology and run provenance");
   });
 
+  it("sorts top contributors by measured contribution and compares measured with setup", () => {
+    const report = createReport();
+    const secondFactorId = "c".repeat(64);
+    report.factors[0]!.percentContributionToSigma = 0.8;
+    report.factors.push({
+      ...report.factors[0]!,
+      factorId: secondFactorId,
+      factorName: "Measured leader",
+      percentContributionToSigma: 0.2,
+    });
+    report.simulation.factorContributions = [
+      {
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: WORKBOOK_HASH,
+        family: "normal",
+        sourceMode: "MEASURED",
+        coefficient: 1,
+        standardDeviation: 0.1,
+        weightedVariance: 0.01,
+        contribution: 0.25,
+      },
+      {
+        methodId: "F7_INDEPENDENT_VARIANCE_CONTRIBUTION_V1",
+        factorId: secondFactorId,
+        family: "normal",
+        sourceMode: "MEASURED",
+        coefficient: 1,
+        standardDeviation: 0.2,
+        weightedVariance: 0.04,
+        contribution: 0.75,
+      },
+    ];
+
+    const contributors = mountReport(report).get("[data-report-top-contributors]");
+    const rows = contributors.findAll("li");
+
+    expect(rows[0]!.text()).toContain("Measured leader");
+    expect(rows.map((row) => row.find(".contributor-index").text())).toEqual(["1.", "2."]);
+    expect(rows[0]!.find("[data-contributor-series='measured']").text()).toContain("75%");
+    expect(rows[0]!.find("[data-contributor-series='setup']").text()).toContain("20%");
+    expect(rows[0]!.findAll(".contributor-track")).toHaveLength(2);
+    expect(rows[0]!.find(".contributor-track-measured > span").attributes("style")).toContain("width: 75%");
+    expect(rows[0]!.find(".contributor-track-setup > span").attributes("style")).toContain("width: 20%");
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.contributor-track > span\s*\{[^}]*background:\s*#d65f14/s);
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.contributor-track-setup > span\s*\{[^}]*background:\s*#0b7a75/s);
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.contributor-series\s*\{[^}]*grid-template-columns:\s*80px minmax\(0, 1fr\) minmax\(48px, max-content\)/s);
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.contributor-series\s*\{[^}]*margin-left:\s*calc\(1\.25rem \+ 5px\)/s);
+    expect(REPORT_PANEL_SOURCE).toMatch(/\.contributor-series-value\s*\{[^}]*white-space:\s*nowrap/s);
+    expect(contributors.text()).toContain("Measured");
+    expect(contributors.text()).toContain("Factor Setup");
+
+    report.simulation.factorContributions[1]!.contribution = 0.999999999;
+    expect(mountReport(report).get("[data-contributor-series='measured'] .contributor-series-value").text())
+      .toBe("100% - 1e-7%");
+  });
+
   it("renders DPM values as whole-part counts", () => {
     const report = createReport();
     if (report.analysis?.status !== "available") throw new Error("expected available analysis");

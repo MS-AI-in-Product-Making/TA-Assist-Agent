@@ -87,9 +87,22 @@ const comparisonRows = computed(() => {
     })?.severity ?? "normal",
   }));
 });
-const contributors = computed(() => [...props.report.factors]
-  .sort((left, right) => right.percentContributionToSigma - left.percentContributionToSigma)
-  .slice(0, 5));
+const contributors = computed(() => {
+  const measuredContributionByFactorId = new Map(
+    props.report.simulation.factorContributions?.map((contribution) => [contribution.factorId, contribution.contribution]) ?? [],
+  );
+  return props.report.factors
+    .map((factor) => ({
+      factor,
+      measuredContribution: measuredContributionByFactorId.get(factor.factorId),
+    }))
+    .sort((left, right) => (
+      right.measuredContribution ?? right.factor.percentContributionToSigma
+    ) - (
+      left.measuredContribution ?? left.factor.percentContributionToSigma
+    ))
+    .slice(0, 5);
+});
 const recommendedActions = computed(() => {
   if (analysis.value?.status !== "available") return [];
   const { mean, standardDeviation, lowerSpecLimit, upperSpecLimit, targetCpk } = props.report.summary;
@@ -301,9 +314,21 @@ function downloadMarkdown(): void {
           </div>
         </div>
         <ol class="contributor-list">
-          <li v-for="factor in contributors" :key="factor.factorId">
-            <div><strong>{{ factor.factorName }}</strong><span>{{ formatPercent(factor.percentContributionToSigma) }}</span></div>
-            <span class="contributor-track"><span :style="{ width: `${factor.percentContributionToSigma * 100}%` }"></span></span>
+          <li v-for="(contributor, index) in contributors" :key="contributor.factor.factorId">
+            <div class="contributor-heading">
+              <span class="contributor-index">{{ index + 1 }}.</span>
+              <strong class="contributor-name">{{ contributor.factor.factorName }}</strong>
+            </div>
+            <div class="contributor-series" data-contributor-series="measured">
+              <span class="contributor-series-label">Measured</span>
+              <span class="contributor-track contributor-track-measured"><span :style="{ width: `${(contributor.measuredContribution ?? 0) * 100}%` }"></span></span>
+              <span class="contributor-series-value">{{ contributor.measuredContribution === undefined ? "—" : formatPercent(contributor.measuredContribution) }}</span>
+            </div>
+            <div class="contributor-series" data-contributor-series="setup">
+              <span class="contributor-series-label">Factor Setup</span>
+              <span class="contributor-track contributor-track-setup"><span :style="{ width: `${contributor.factor.percentContributionToSigma * 100}%` }"></span></span>
+              <span class="contributor-series-value">{{ formatPercent(contributor.factor.percentContributionToSigma) }}</span>
+            </div>
           </li>
         </ol>
       </article>
@@ -463,15 +488,43 @@ function downloadMarkdown(): void {
 }
 
 .contributor-list li + li {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
-.contributor-list li > div {
+.contributor-heading {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 5px;
+  align-items: baseline;
   margin-bottom: 5px;
   font-size: 0.86rem;
+}
+
+.contributor-index {
+  min-width: 1.25rem;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.contributor-series + .contributor-series {
+  margin-top: 4px;
+}
+
+.contributor-series {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) minmax(48px, max-content);
+  margin-left: calc(1.25rem + 5px);
+  gap: 8px;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.contributor-series-value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .contributor-track {
@@ -484,7 +537,11 @@ function downloadMarkdown(): void {
 .contributor-track > span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: #d65f14;
+}
+
+.contributor-track-setup > span {
+  background: #0b7a75;
 }
 
 .report-insight-grid ul {

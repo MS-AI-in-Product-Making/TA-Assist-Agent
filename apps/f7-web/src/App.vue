@@ -854,6 +854,16 @@ async function openReport(): Promise<void> {
                 {{ store.session.value?.monteCarloResult ? 'View results' : 'Run Monte Carlo' }}
               </button>
             </div>
+            <span
+              v-if="step.id < workflowSteps.length"
+              class="workflow-step-connector"
+              data-workflow-step-connector
+              aria-hidden="true"
+            >
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
           </li>
         </ol>
         <div v-if="store.session.value && !workbookReplacementBusy" class="workflow-metadata">

@@ -127,10 +127,14 @@ body {
   grid-template-columns: 296px 344px 296px;
   grid-auto-rows: 1fr;
   justify-content: center;
-  gap: 32px;
+  gap: 40px;
 }
 
 .workflow-steps li {
+  --workflow-connector-color-1: #8bb3e3;
+  --workflow-connector-color-2: #5f91cf;
+  --workflow-connector-color-3: #356bb0;
+
   position: relative;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -150,28 +154,33 @@ body {
   box-shadow: 0 9px 22px rgb(27 50 78 / 10%);
 }
 
-.workflow-steps li:not(:last-child)::before,
-.workflow-steps li:not(:last-child)::after {
-  content: "";
+.workflow-step-connector {
   position: absolute;
   top: 50%;
+  right: -33px;
+  z-index: 1;
+  display: flex;
+  gap: 1px;
   pointer-events: none;
-}
-
-.workflow-steps li:not(:last-child)::before {
-  right: -21px;
-  width: 18px;
-  height: 3px;
-  background: #596273;
   transform: translateY(-50%);
 }
 
-.workflow-steps li:not(:last-child)::after {
-  right: -28px;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 10px solid #596273;
-  transform: translateY(-50%);
+.workflow-step-connector > span {
+  width: 8px;
+  height: 18px;
+  clip-path: polygon(0 0, 42% 0, 100% 50%, 42% 100%, 0 100%, 58% 50%);
+}
+
+.workflow-step-connector > span:nth-child(1) {
+  background: var(--workflow-connector-color-1);
+}
+
+.workflow-step-connector > span:nth-child(2) {
+  background: var(--workflow-connector-color-2);
+}
+
+.workflow-step-connector > span:nth-child(3) {
+  background: var(--workflow-connector-color-3);
 }
 
 .step-index {
@@ -280,16 +289,12 @@ body {
 }
 
 .workflow-steps li.step-complete {
+  --workflow-connector-color-1: #6db5a4;
+  --workflow-connector-color-2: #3e927e;
+  --workflow-connector-color-3: var(--success);
+
   border-color: var(--success);
   background: linear-gradient(160deg, #e6f5ef, #d5ebe3);
-}
-
-.workflow-steps li.step-complete:not(:last-child)::before {
-  background: var(--success);
-}
-
-.workflow-steps li.step-complete:not(:last-child)::after {
-  border-left-color: var(--success);
 }
 
 .workflow-steps li.step-complete .step-index {
@@ -1359,36 +1364,18 @@ textarea {
   }
 }
 
-@media (max-width: 1039.98px) {
+@media (max-width: 1053.98px) {
   .workflow-steps {
     grid-template-columns: min(344px, 100%);
     justify-content: center;
-    gap: 32px;
+    gap: 40px;
   }
 
-  .workflow-steps li:not(:last-child)::before {
+  .workflow-step-connector {
     top: auto;
     right: 50%;
-    bottom: -21px;
-    width: 3px;
-    height: 18px;
-    transform: translateX(50%);
-  }
-
-  .workflow-steps li:not(:last-child)::after {
-    top: auto;
-    right: 50%;
-    bottom: -28px;
-    border-top: 10px solid #596273;
-    border-right: 7px solid transparent;
-    border-bottom: 0;
-    border-left: 7px solid transparent;
-    transform: translateX(50%);
-  }
-
-  .workflow-steps li.step-complete:not(:last-child)::after {
-    border-top-color: var(--success);
-    border-left-color: transparent;
+    bottom: -33px;
+    transform: translateX(50%) rotate(90deg);
   }
 }
 
