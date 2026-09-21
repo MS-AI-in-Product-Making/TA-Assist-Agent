@@ -22,6 +22,7 @@ import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -177,6 +178,11 @@ function reasonCodeForWorkspacePreflight(error) {
 }
 
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
+  return runAnalysisStage({ stage: "f6", args: options.args ?? [] },
+    () => executeF6(options, dependencyOverrides));
+}
+
+function executeF6(options, dependencyOverrides) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
   const layout = dependencies.resolveLayout(parsed, options);

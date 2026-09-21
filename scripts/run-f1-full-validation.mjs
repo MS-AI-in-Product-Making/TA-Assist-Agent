@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import XLSX from "xlsx";
@@ -34,6 +34,7 @@ import { projectFactorActualFields, projectFactorOrdinalEvidence } from "./f1-fa
 import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
 import { withSystemSpecificationDisplayValues } from "./f1-system-specification-display.mjs";
 import { configuredFeature1Jobs, resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
+import { runAnalysisStage, withoutAnalysisRoot } from "./analysis-stage-lifecycle.mjs";
 
 const composedMode = (process.env.F1_COMPOSED_MODE ?? "auto").toLowerCase();
 
@@ -466,7 +467,7 @@ function summarizePages(pages) {
   }));
 }
 
-const cliArgs = process.argv.slice(2);
+async function executeF1(cliArgs, workspace) {
 const selectionArgs = parseSelectionArgs(cliArgs);
 const jobs = resolveFeature1Jobs(selectionArgs.workbookArgs, configuredFeature1Jobs)
   .filter((job) => existsSync(job.workbookPath));
@@ -476,13 +477,17 @@ if (jobs.length === 0) {
 
 const generatedAt = new Date().toISOString();
 const runId = generatedAt.replace(/[:.]/g, "-");
-const outputLayout = resolveFeature1OutputLayout(selectionArgs.workbookArgs, runId, process.env.AI_TVA_F1_OUTPUT_ROOT);
+if (workspace && process.env.AI_TVA_F1_OUTPUT_ROOT !== undefined) throw new Error("Workspace output cannot be overridden.");
+if (workspace && readdirSync(workspace.stagePaths.f1).some((name) => name !== "Feature1-Selection.json")) {
+  throw new Error("Workspace parsing stage is not empty.");
+}
+const outputLayout = resolveFeature1OutputLayout(selectionArgs.workbookArgs, runId, workspace?.stagePaths.f1 ?? process.env.AI_TVA_F1_OUTPUT_ROOT);
 const outRoot = outputLayout.outRoot;
 const outSheetsRoot = path.join(outRoot, "sheets");
-if (outputLayout.resetOutputRoot) {
+if (outputLayout.resetOutputRoot && !workspace) {
   rmSync(outRoot, { recursive: true, force: true });
 }
-mkdirSync(outSheetsRoot, { recursive: true });
+mkdirSync(outRoot, { recursive: true });
 
 if (selectionArgs.selectionOnly) {
   if (jobs.length !== 1) throw new Error("Feature 1 selection-only mode requires exactly one workbook.");
@@ -496,8 +501,9 @@ if (selectionArgs.selectionOnly) {
   });
   const prompt = createWorksheetSelectionPrompt({ contractVersion: "v1", inputClassification: "confidential", workbookCatalog });
   writeFileSync(path.join(outRoot, "Feature1-Selection.json"), `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
-  process.exit(0);
+  return { status: "selectionRequired", selectionPath: path.join(outRoot, "Feature1-Selection.json") };
 }
+mkdirSync(outSheetsRoot, { recursive: true });
 const report = {
   contractVersion: "v1",
   artifactContractVersion: "f1-semantic-v3",
@@ -888,16 +894,21 @@ const mdPath = path.join(outRoot, outputLayout.reportMdName);
 writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 writeFileSync(mdPath, finalMd.join("\n"));
 
-console.log("Feature 1 strict workflow report generated:");
-console.log(toPosix(mdPath));
-console.log(toPosix(jsonPath));
-
 if (outputLayout.mode === "batch") {
   const latestJsonPath = path.join(outRoot, outputLayout.latestJsonName);
   const latestMdPath = path.join(outRoot, outputLayout.latestMdName);
   writeFileSync(latestJsonPath, JSON.stringify(report, null, 2));
   writeFileSync(latestMdPath, finalMd.join("\n"));
-  console.log("Latest:");
-  console.log(toPosix(latestMdPath));
-  console.log(toPosix(latestJsonPath));
+}
+return { status: "completed", outputDirectory: outRoot, reportMdPath: mdPath, reportJsonPath: jsonPath };
+}
+
+try {
+  const args = process.argv.slice(2);
+  const result = await runAnalysisStage({ stage: "f1", args, selectionOnly: args.includes("--selection-only") },
+    (workspace) => executeF1(withoutAnalysisRoot(args), workspace));
+  console.log(JSON.stringify(result, null, 2));
+} catch {
+  console.error(JSON.stringify({ status: "failed", reasonCode: "parsing_failed" }));
+  process.exitCode = 1;
 }

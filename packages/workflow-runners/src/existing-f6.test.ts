@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
@@ -121,6 +121,36 @@ afterEach(() => {
 });
 
 describe("validateExistingF6", () => {
+  it("validates only the exact hash-bound model evidence tree in a workspace publication", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runRoot = path.join(bundle.publishRoot, "workspace-f6");
+    const model = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: model }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId: "workspace-test", runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+    const workspaceModelInterpretationPath = path.join(runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+    mkdirSync(path.dirname(workspaceModelInterpretationPath), { recursive: true });
+    copyFileSync(model, workspaceModelInterpretationPath);
+    const request = { publishRoot: bundle.publishRoot, workspaceModelInterpretationPath };
+    expect(validateExistingF6(runRoot, request).status).toBe("accepted");
+    const responseRoot = path.join(runRoot, "evidence", "model-response");
+    mkdirSync(responseRoot);
+    writeJson(path.join(responseRoot, "Feature6-Model-Response.json"), { contractVersion: "f6-model-interpretation-response-v1" });
+    expect(validateExistingF6(runRoot, request).status).toBe("accepted");
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot }).status).toBe("rejected");
+    writeFileSync(path.join(runRoot, "evidence", "unrelated.txt"), "debris");
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    rmSync(path.join(runRoot, "evidence", "unrelated.txt"));
+    writeFileSync(workspaceModelInterpretationPath, "{}");
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+  });
+
   it("accepts a valid current v4 bundle with unchanged five-file publication", () => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);

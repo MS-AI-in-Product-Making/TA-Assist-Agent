@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { prepareWorkspaceStage } from "./analysis-workspace-test-support.mjs";
 
 const roots = [];
 
@@ -151,6 +152,7 @@ describe("Feature 3 local artifact flow", () => {
     const f2Root = stagePaths.f2;
     const f3Root = stagePaths.f3;
     writeFileSync(path.join(f2Root, "Feature2-Report.json"), JSON.stringify(f2Report()));
+    prepareWorkspaceStage({ analysisRoot, stagePaths }, "f3");
 
     const stdout = execFileSync(process.execPath, ["scripts/run-f3-full-validation.mjs", f2Root, "--analysis-root", analysisRoot], {
       cwd: process.cwd(),
@@ -172,8 +174,9 @@ describe("Feature 3 local artifact flow", () => {
     const report = f2Report();
     delete report.worksheets[0].toleranceLoopDescription;
     writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), JSON.stringify(report));
+    prepareWorkspaceStage({ analysisRoot, stagePaths }, "f3");
 
-    const stdout = execFileSync(process.execPath, [
+    const child = spawnSync(process.execPath, [
       "scripts/run-f3-full-validation.mjs",
       stagePaths.f2,
       "--analysis-root", analysisRoot,
@@ -182,10 +185,13 @@ describe("Feature 3 local artifact flow", () => {
       encoding: "utf8",
       env: process.env,
     });
-    const result = JSON.parse(stdout);
+    expect(child.status).toBe(1);
+    const result = JSON.parse(child.stdout || child.stderr);
 
-    expect(result.status).toBe("input_rejected");
-    expect(result.reportJsonPath).toBe(path.join(stagePaths.f3, "Feature3-Report.json"));
+    expect(result.status).toBe("failed");
+    expect(JSON.parse(readFileSync(path.join(analysisRoot, "analysis-run-summary.json"), "utf8"))).toMatchObject({
+      overallStatus: "failed", failedStage: "f3", stages: { f4: { status: "blocked" } },
+    });
     expect(result).not.toHaveProperty("reminderMdPath");
     expect(result).not.toHaveProperty("historyHtmlPath");
     expect(existsSync(path.join(stagePaths.f3, "Feature3-ADO-Reminder.md"))).toBe(false);
@@ -199,6 +205,7 @@ describe("Feature 3 local artifact flow", () => {
     const report = f2Report();
     delete report.worksheets[0].toleranceLoopDescription;
     writeFileSync(path.join(stagePaths.f2, "Feature2-Report.json"), JSON.stringify(report));
+    prepareWorkspaceStage({ analysisRoot, stagePaths }, "f3");
     const staleReportPath = path.join(stagePaths.f3, "Feature3-Report.json");
     const staleReminderPath = path.join(stagePaths.f3, "Feature3-ADO-Reminder.md");
     const staleHistoryPath = path.join(stagePaths.f3, "Feature3-ADO-History.html");

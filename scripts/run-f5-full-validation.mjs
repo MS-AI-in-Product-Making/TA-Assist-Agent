@@ -23,6 +23,7 @@ import { loadF5ArtifactBundle } from "./f5-artifact-loader.mjs";
 import { parseF5CliArgs } from "./f5-cli-args.mjs";
 import { resolveFeature5OutputLayout } from "./f5-output-layout.mjs";
 import { renderF5Report } from "./f5-report.mjs";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 
 function normalizeDependencies(overrides = {}) {
   return {
@@ -142,6 +143,11 @@ function normalizeFailedResult(result) {
 }
 
 export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
+  return runAnalysisStage({ stage: "f5", args: options.args ?? [] },
+    () => executeF5(options, dependencyOverrides));
+}
+
+function executeF5(options, dependencyOverrides) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
   try {

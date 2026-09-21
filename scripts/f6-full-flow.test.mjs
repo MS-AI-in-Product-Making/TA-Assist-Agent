@@ -32,6 +32,10 @@ import {
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
+import {
+  allocateAnalysisWorkspace, createInitialAnalysisWorkspaceSummary, recordAnalysisStageCompleted,
+  recordAnalysisStageStarted, validateExistingF6, writeAnalysisWorkspaceSummary,
+} from "../packages/workflow-runners/dist/index.js";
 
 const execFileAsync = promisify(execFile);
 const cleanup = [];
@@ -209,6 +213,57 @@ function setup({ status = "completed" } = {}) {
   return { root, publishRoot, runRoot, optimization, finalReport, reportSummary, renameCalls, deps };
 }
 
+function workspaceSetup() {
+  const context = setup();
+  const workbookPath = path.join(context.root, "Anonymous.xlsx");
+  writeFileSync(workbookPath, "controlled source workbook");
+  const contentHash = sha256(readFileSync(workbookPath));
+  const layout = allocateAnalysisWorkspace({
+    testRoot: path.join(context.root, "analyses"), workbookFileName: "Anonymous.xlsx",
+    workbookContentHash: contentHash, now: new Date(),
+  });
+  let summary = createInitialAnalysisWorkspaceSummary(layout);
+  for (const stage of ["f1", "f2", "f3", "f4", "f5"]) {
+    const file = path.join(layout.stagePaths[stage], "fixture.json");
+    writeFileSync(file, "{}");
+    summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, stage), stage,
+      { fixture: path.relative(layout.analysisRoot, file).split(path.sep).join("/") });
+  }
+  writeAnalysisWorkspaceSummary(layout, summary);
+  writeFileSync(path.join(layout.stagePaths.f1, "Feature1-Report.json"), JSON.stringify({
+    workbooks: [{ workbookPath, workbook: summary.workbook }],
+  }));
+  const modelPath = path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  mkdirSync(path.dirname(modelPath), { recursive: true });
+  writeFileSync(modelPath, '{"contractVersion":"controlled-loader-fixture"}');
+  const modelHash = sha256(readFileSync(modelPath));
+  const optimization = JSON.parse(JSON.stringify(context.optimization).replaceAll(HASH, contentHash));
+  optimization.provenance.multimodalReference = { artifact: "Feature6-Model-Interpretation.json", contentHash: modelHash };
+  const loaded = context.deps.loadBundle();
+  loaded.inputDecisions.modelInterpretation.artifactReference = optimization.provenance.multimodalReference;
+  loaded.sourceReferences = Object.fromEntries(["f2", "f3", "f4", "f5"].map((stage) => [stage, optimization.provenance[`${stage}Reference`]]));
+  loaded.sourceReferences.modelInterpretation = optimization.provenance.multimodalReference;
+  const parsed = {
+    ...context.deps.parseArgs(), analysisRoot: layout.analysisRoot,
+    f2ArtifactRoot: layout.stagePaths.f2, f3ArtifactRoot: layout.stagePaths.f3,
+    f4ArtifactRoot: layout.stagePaths.f4, f5ArtifactRoot: layout.stagePaths.f5,
+    modelInterpretationArtifact: modelPath, expectedModelInterpretationContentHash: modelHash,
+  };
+  const deps = {
+    ...context.deps,
+    parseArgs: () => parsed,
+    resolveLayout: () => ({
+      ...context.deps.resolveLayout(), runRoot: layout.stagePaths.f6, publishRoot: layout.analysisRoot,
+      artifactSetVersion: "f6-artifact-set-v4", allowExistingRunRoot: true,
+      finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+    }),
+    loadBundle: () => loaded,
+    createOptimization: () => optimization,
+  };
+  return { layout, deps, args: [layout.stagePaths.f2, layout.stagePaths.f3, layout.stagePaths.f4, layout.stagePaths.f5, "--analysis-root", layout.analysisRoot] };
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
@@ -311,6 +366,37 @@ function assertWorksheetLineageMatchesProvenance(optimization) {
 }
 
 describe("runF6FullValidation", () => {
+  it("completes the root only after governed PDF, manifest, and model evidence validation", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const result = runF6FullValidation({ args }, deps);
+    expect(result.status).toBe("completed");
+    expect(validateExistingF6(layout.stagePaths.f6, {
+      publishRoot: layout.analysisRoot,
+      workspaceModelInterpretationPath: path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+    }).status).toBe("accepted");
+    const summary = readJson(layout.summaryPath);
+    expect(summary.overallStatus).toBe("completed");
+    expect(summary.stages.f6.status).toBe("completed");
+    expect(summary.stages.f6.artifacts.finalReportPdfPath).toBe(path.join("06 - F6 Design Optimization", "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf"));
+    const before = readFileSync(layout.summaryPath, "utf8");
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readFileSync(layout.summaryPath, "utf8")).toBe(before);
+  });
+
+  it("fails the root instead of advertising paths if the published PDF was corrupted", () => {
+    const { layout, deps, args } = workspaceSetup();
+    deps.afterRename = () => {
+      const pdfPath = path.join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf");
+      if (existsSync(pdfPath)) writeFileSync(pdfPath, "%PDF-1.7\ncorrupted bytes");
+    };
+    const stdout = [];
+    expect(runF6Cli({ args }, deps, { log: (value) => stdout.push(value) })).toBe(1);
+    expect(stdout.join("")).not.toMatch(/finalReport|outputDirectory/);
+    expect(readJson(layout.summaryPath)).toMatchObject({
+      overallStatus: "failed", failedStage: "f6", stages: { f6: { status: "failed", artifacts: {} } },
+    });
+  });
+
   it("rejects four roots from the direct CLI without creating artifacts", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-direct-cli-"));
     cleanup.push(root);

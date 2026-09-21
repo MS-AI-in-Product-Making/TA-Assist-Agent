@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { f4ExcelComparisonResultSchema, f4WorkflowCalculationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createTypedError } from "../packages/contracts/dist/index.js";
 import { runF4CliMain, runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
+import { prepareWorkspaceStage } from "./analysis-workspace-test-support.mjs";
 
 const cleanup = [];
 const runnerPath = fileURLToPath(new URL("./run-f4-full-validation.mjs", import.meta.url));
@@ -329,9 +330,18 @@ describe("runF4FullValidation", () => {
       allowExistingRunRoot: true,
     });
 
-    const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
+    prepareWorkspaceStage(workspace, "f4");
+    const summaryPath = path.join(workspace.analysisRoot, "analysis-run-summary.json");
+    const sourceHash = readJson(summaryPath).workbook.contentHash;
+    const loaded = context.deps.loadHandoffs();
+    context.deps.loadHandoffs = () => ({ ...loaded, workbook: { ...loaded.workbook, contentHash: sourceHash } });
+    context.deps.calculateWorkflow = () => JSON.parse(JSON.stringify(context.calculation).replaceAll("a".repeat(64), sourceHash));
+    const result = runF4FullValidation({ args: [
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "--analysis-root", workspace.analysisRoot,
+    ] }, context.deps);
 
     expect(result.status).toBe("completed");
+    expect(readJson(summaryPath)).toMatchObject({ currentStage: "f5", overallStatus: "in_progress", stages: { f4: { status: "completed" } } });
     expect(result.outputDirectory).toBe(context.runRoot);
     expect(result.outputDirectory.endsWith(context.calculation.runId)).toBe(false);
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ status: "completed" });
@@ -662,6 +672,7 @@ describe("run-f4-full-validation CLI", () => {
     cleanup.push(root);
     const workspace = createAnalysisWorkspaceRoot(root);
     const preloadPath = path.join(root, "preflight-failure.mjs");
+    prepareWorkspaceStage(workspace, "f4");
     // Patch only this subprocess's stage mkdir; execute the real CLI and full-validation wrapper.
     writeFileSync(preloadPath, `
       import fs from "node:fs";
@@ -712,6 +723,7 @@ describe("run-f4-full-validation CLI", () => {
     writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
     writeFileSync(staleCalculationPath, '{"status":"completed"}\n', "utf8");
     writeFileSync(path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "{}\n", "utf8");
+    prepareWorkspaceStage(workspace, "f4");
 
     const result = spawnSync(process.execPath, [
       runnerPath,

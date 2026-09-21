@@ -224,6 +224,7 @@ export interface F6OptimizationResult {
 
 export interface ExistingF6ValidationRequest {
   readonly publishRoot: string;
+  readonly workspaceModelInterpretationPath?: string;
 }
 
 export interface ExistingF6ValidationResult {

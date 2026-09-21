@@ -27,6 +27,8 @@ import {
 } from "../packages/contracts/dist/contracts.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/index.js";
 import { runF5Cli, runF5FullValidation } from "./run-f5-full-validation.mjs";
+import { prepareWorkspaceStage } from "./analysis-workspace-test-support.mjs";
+import { validateAnalysisStageArtifacts } from "./analysis-stage-validation.mjs";
 
 const cleanup = [];
 const WORKBOOK_HASH = "a".repeat(64);
@@ -972,6 +974,10 @@ describe("runF5FullValidation", () => {
     const report = readJson(result.reportJsonPath);
 
     expect(result.status).toBe("partially_completed");
+    expect(validateAnalysisStageArtifacts({
+      analysisRoot: context.publishRoot, stagePaths: { f5: context.runRoot },
+      workbookFileName: report.workbook.fileName, workbookContentHash: report.workbook.contentHash,
+    }, "f5")).toHaveProperty("manifest");
     expect(report).toMatchObject({
       status: "partially_completed",
       summary: { worksheetCount: 2, completedWorksheetCount: 1, inputRejectedWorksheetCount: 1 },
@@ -1518,6 +1524,7 @@ describe("runF5FullValidation", () => {
     renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
     renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
 
+    prepareWorkspaceStage(workspace, "f5");
     const child = runWorkspaceDirectProcess(workspace);
 
     expect(child.status).toBe(0);
@@ -1543,6 +1550,7 @@ describe("runF5FullValidation", () => {
     const staleManifestPath = path.join(workspace.stagePaths.f5, "manifest.json");
     writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
 
+    prepareWorkspaceStage(workspace, "f5");
     const child = runWorkspaceDirectProcess(workspace);
 
     expect(child.status).toBe(1);
@@ -1570,6 +1578,7 @@ describe("runF5FullValidation", () => {
     const beforeEntries = readdirSync(workspace.stagePaths.f5).sort();
     const beforeBytes = readFileSync(debrisFilePath, "utf8");
 
+    prepareWorkspaceStage(workspace, "f5");
     const child = runWorkspaceDirectProcess(workspace);
 
     expect(child.status).toBe(1);

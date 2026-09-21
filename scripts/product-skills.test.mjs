@@ -40,6 +40,20 @@ describe("product Agent Skills", () => {
     expect(skill).toMatch(/reviewed feedback/i);
   });
 
+  it("allocates one workspace and gates final presentation on its completed summary", () => {
+    const skill = readFileSync(join(root, ".github", "skills", "ta-assist-agent", "SKILL.md"), "utf8");
+    expect(skill).toContain("create-analysis-workspace.mjs --workbook");
+    expect(skill).toContain("--analysis-root");
+    expect(skill).toContain("Never allocate a second root");
+    expect(skill).toContain("analysis-run-summary.json");
+    expect(skill).toContain('overallStatus === "completed"');
+    expect(skill).toContain("failed or completed root is immutable");
+    expect(skill).toContain("F1 -> F2 -> F3 -> F4 -> F5 -> F6");
+    expect(skill).toContain("two confirmations");
+    expect(skill).toContain("after F5 and before the single F6 publication");
+    expect(skill).toContain("mode-choice and separate final-write confirmations");
+  });
+
   it.each(skills)("provides the standard %s skill", (name, title) => {
     const skill = readFileSync(join(root, ".github", "skills", name, "SKILL.md"), "utf8");
     const userFacingSkill = skill.split("## Internal executor contract")[0];

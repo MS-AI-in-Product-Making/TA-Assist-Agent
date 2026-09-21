@@ -9,6 +9,7 @@ import { compareF4WithExcel } from "./f4-excel-comparison.mjs";
 import { buildF4ExcelMapping } from "./f4-excel-mapping.mjs";
 import { resolveFeature4OutputLayout } from "./f4-output-layout.mjs";
 import { renderF4Report } from "./f4-report.mjs";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 
 function atomicWrite(filePath, content, dependencies) {
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
@@ -104,6 +105,11 @@ function classifyCliFailure(error) {
 }
 
 export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
+  return runAnalysisStage({ stage: "f4", args: options.args ?? [] },
+    () => executeF4(options, dependencyOverrides));
+}
+
+function executeF4(options, dependencyOverrides) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const args = options.args ?? [];
   try {
