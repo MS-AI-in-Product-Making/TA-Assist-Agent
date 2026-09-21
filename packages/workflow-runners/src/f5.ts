@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
+  existsSync,
   mkdirSync,
   openSync,
   realpathSync,
@@ -17,6 +18,7 @@ import {
   createF5DataInterpretation,
 } from "@ai-assist/workbook-catalog";
 import {
+  createTypedError,
   f5DataInterpretationResultSchema,
   f5ImageObservationArtifactSchema,
 } from "@ai-assist/contracts";
@@ -33,6 +35,7 @@ interface F5Layout {
   readonly runSummaryJsonName: string;
   readonly imageObservationsJsonName: string;
   readonly manifestName: string;
+  readonly allowExistingRunRoot?: boolean;
 }
 
 export interface F5Dependencies {
@@ -142,6 +145,20 @@ function outputPaths(layout: F5Layout) {
     imageObservationsPath: path.join(layout.runRoot, layout.imageObservationsJsonName),
     manifestPath: path.join(layout.runRoot, layout.manifestName),
   };
+}
+
+function assertOutputArtifactsAbsent(paths: ReturnType<typeof outputPaths>): void {
+  for (const filePath of Object.values(paths)) {
+    if (existsSync(filePath)) {
+      throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: [filePath],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      });
+    }
+  }
 }
 
 function safeSources(sourceReferences: Record<string, string>) {
@@ -284,7 +301,12 @@ export function runF5Interpretation(
     layout = resolveOutputLayout(request, context);
     paths = outputPaths(layout);
     mkdir(path.dirname(layout.runRoot), { recursive: true });
-    mkdir(layout.runRoot);
+    if (layout.allowExistingRunRoot) {
+      mkdir(layout.runRoot, { recursive: true });
+      assertOutputArtifactsAbsent(paths);
+    } else {
+      mkdir(layout.runRoot);
+    }
     boundary = captureCreatedRunBoundary(layout, { realpath, stat, rmdir });
     loadStarted = true;
     const loaded = loadBundle(request);

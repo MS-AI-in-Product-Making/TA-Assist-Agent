@@ -491,9 +491,9 @@ describe("result-interpretation skill contract", () => {
     expect(skill.replaceAll("`", "")).toContain("confirmedBy and confirmedAt are required only when reviewStatus is confirmed");
     expect(skill).toContain("not_evaluated");
     expect(skill).toContain("current agent image capability");
-    expect(skill).toContain("test/demo-output/f5-observations/<workbook-content-hash>/<system-generated-uuid>/Feature5-Image-Observations.json");
+    expect(skill).toContain("<validated-analysis-root>/05 - F5 Result Interpretation/Feature5-Image-Observations.json");
     for (const phrase of [
-      "The UUID must be system-generated and must not be user-derived.",
+      "Current/default workspace publication requires one explicit validated analysisRoot plus the exact validated F1, F3, and F4 stage paths; do not infer workspace identity or stage selection from names alone.",
       "Create the observation artifact with create_file only.",
       "Never edit, overwrite, append to, or reuse an observation artifact or target.",
       "Before creation, check every existing ancestor for a reparse point, symlink, or junction.",
@@ -518,13 +518,15 @@ describe("result-interpretation skill contract", () => {
     for (const phrase of [
       "f5-image-observation-v1 is historical read-only compatibility; new workbook image mode never creates v1.",
       "New image mode creates only f5-image-observation-v2.",
-      "The UUID must be system-generated and must not be user-derived.",
+      "Current/default workspace publication requires one explicit validated analysisRoot plus the exact validated F1, F3, and F4 stage paths; do not infer workspace identity or stage selection from names alone.",
       "Create the observation artifact with create_file only.",
       "Never edit, overwrite, append to, or reuse an observation artifact or target.",
       "Before creation, check every existing ancestor for a reparse point, symlink, or junction.",
       "After creation, read back and validate the artifact with f5ImageObservationArtifactSchema.",
       "The F5 loader is the authoritative runtime revalidation gate for physical image SHA and content identity when consuming v2.",
       "The post-run summary records the observation artifact hash.",
+      "Current/default workspace publication keeps Feature5-Report.json, Feature5-Report.md, Feature5-Run-Summary.json, Feature5-Image-Observations.json, and manifest.json directly under the fixed F5 stage. Do not publish under f5-runs, f5-observations, workbook-hash, run-id, or UUID subdirectories.",
+      "Legacy explicit-root layouts remain low-level read compatibility only; do not switch the governed workspace flow back to them.",
       "No additional shell or hash command is permitted or invented.",
     ]) {
       expect(normalizedSkill).toContain(phrase);

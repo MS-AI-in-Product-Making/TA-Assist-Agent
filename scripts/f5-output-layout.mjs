@@ -1,5 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+  resolveAnalysisWorkspaceStagePaths,
+  validateAnalysisWorkspaceLayout,
+  validateAnalysisWorkspaceSummary,
+} from "../packages/workflow-runners/dist/index.js";
 import { safeName } from "./f1-output-layout.mjs";
 
 const DEFAULT_PUBLISH_ROOT = path.posix.join("test", "demo-output");
@@ -113,20 +119,78 @@ function appendRunId(outputBase, runId) {
     : path.posix.join(normalizedResultPath(outputBase), runId);
 }
 
+function outputRootOverride(value) {
+  if (value === undefined) return undefined;
+  return validatePathValue(value, "output root override");
+}
+
+function resolveAnalysisWorkspace(analysisRoot) {
+  const resolvedRoot = path.resolve(analysisRoot);
+  const summaryPath = path.join(resolvedRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+  const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+  validateAnalysisWorkspaceSummary(summary);
+  const layout = {
+    contractVersion: summary.contractVersion,
+    analysisRoot: summary.analysisRoot,
+    summaryPath: summary.summaryPath,
+    workbookFileName: summary.workbook.fileName,
+    workbookContentHash: summary.workbook.contentHash,
+    allocationDate: summary.allocationDate,
+    stagePaths: resolveAnalysisWorkspaceStagePaths(summary.analysisRoot),
+  };
+  validateAnalysisWorkspaceLayout(layout);
+  if (path.resolve(layout.analysisRoot) !== resolvedRoot) {
+    throw new Error("Feature 5 analysis workspace root does not match the validated summary.");
+  }
+  return layout;
+}
+
 export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot) {
-  const stem = runStem(parsed?.f4ArtifactRoot);
+  const override = outputRootOverride(outputRoot);
   validatePathValue(parsed?.f1ArtifactRoot, "F1 artifact root");
+  validatePathValue(parsed?.f3ArtifactRoot, "F3 artifact root");
+  validatePathValue(parsed?.f4ArtifactRoot, "F4 artifact root");
+
+  if (parsed?.analysisRoot !== undefined && override !== undefined) {
+    throw new Error("Feature 5 analysis workspace root cannot be combined with an explicit output root.");
+  }
+
+  if (parsed?.analysisRoot !== undefined) {
+    const layout = resolveAnalysisWorkspace(parsed.analysisRoot);
+    if (path.resolve(parsed.f1ArtifactRoot) !== path.resolve(layout.stagePaths.f1)) {
+      throw new Error("Feature 5 current workspace flow requires the exact validated F1 stage path.");
+    }
+    if (path.resolve(parsed.f3ArtifactRoot) !== path.resolve(layout.stagePaths.f3)) {
+      throw new Error("Feature 5 current workspace flow requires the exact validated F3 stage path.");
+    }
+    if (path.resolve(parsed.f4ArtifactRoot) !== path.resolve(layout.stagePaths.f4)) {
+      throw new Error("Feature 5 current workspace flow requires the exact validated F4 stage path.");
+    }
+    return {
+      runId: now().toISOString().replace(/[:.]/g, "-"),
+      runRoot: layout.stagePaths.f5,
+      publishRoot: layout.analysisRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+    };
+  }
+
+  const stem = runStem(parsed?.f4ArtifactRoot);
 
   let controlledPublishRoot;
   let outputBase;
-  if (outputRoot === undefined) {
+  if (override === undefined) {
     controlledPublishRoot = DEFAULT_PUBLISH_ROOT;
     outputBase = path.posix.join(DEFAULT_OUTPUT_BASE, stem);
   } else {
-    outputBase = validatePathValue(outputRoot, "output root override");
     if (publishRoot === undefined) {
       throw new Error("Feature 5 output root override requires an explicit publish root.");
     }
+    outputBase = override;
     controlledPublishRoot = validatePathValue(publishRoot, "publish root");
   }
 
@@ -155,5 +219,6 @@ export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new 
     runSummaryJsonName: "Feature5-Run-Summary.json",
     imageObservationsJsonName: "Feature5-Image-Observations.json",
     manifestName: "manifest.json",
+    allowExistingRunRoot: false,
   };
 }

@@ -18,6 +18,7 @@ export function parseF5CliArgs(args) {
 
   const selectedWorksheetNames = [];
   let imageObservationsPath;
+  let analysisRoot;
   for (let index = 3; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith("--")) throw new Error(`Unexpected argument: ${option}`);
@@ -41,6 +42,15 @@ export function parseF5CliArgs(args) {
       continue;
     }
 
+    if (option === "--analysis-root") {
+      if (analysisRoot !== undefined) {
+        throw new Error("Feature 5 --analysis-root option is duplicated.");
+      }
+      analysisRoot = requiredValue(args, index, option);
+      index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown option: ${option}`);
   }
 
@@ -50,5 +60,6 @@ export function parseF5CliArgs(args) {
     f4ArtifactRoot,
     selectedWorksheetNames: selectedWorksheetNames.length > 0 ? selectedWorksheetNames : undefined,
     imageObservationsPath,
+    analysisRoot,
   };
 }

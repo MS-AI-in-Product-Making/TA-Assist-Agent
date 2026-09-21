@@ -481,6 +481,45 @@ function createRealArtifactBundle() {
   return { root, publishRoot, outputRoot, f1ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot };
 }
 
+function createAnalysisWorkspaceRoot(root) {
+  const analysisRoot = path.join(root, "20260921 - Anonymous");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 function runDirectProcess(bundle, imageObservationsPath) {
   return spawnSync(process.execPath, [
     "scripts/run-f5-full-validation.mjs",
@@ -496,6 +535,22 @@ function runDirectProcess(bundle, imageObservationsPath) {
       AI_TVA_F5_OUTPUT_ROOT: bundle.outputRoot,
       AI_TVA_F5_PUBLISH_ROOT: bundle.publishRoot,
     },
+  });
+}
+
+function runWorkspaceDirectProcess(workspace, imageObservationsPath) {
+  return spawnSync(process.execPath, [
+    "scripts/run-f5-full-validation.mjs",
+    workspace.stagePaths.f1,
+    workspace.stagePaths.f3,
+    workspace.stagePaths.f4,
+    ...(imageObservationsPath === undefined ? [] : ["--image-observations", imageObservationsPath]),
+    "--analysis-root",
+    workspace.analysisRoot,
+  ], {
+    cwd: path.resolve("."),
+    encoding: "utf8",
+    env: process.env,
   });
 }
 
@@ -1343,6 +1398,52 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it("routes workspace F5 publication directly into the fixed stage without f5-runs or hash directories", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(0);
+    expect(child.stderr).toBe("");
+    const result = JSON.parse(child.stdout);
+    expect(result.outputDirectory).toBe(workspace.stagePaths.f5);
+    expect(result.reportJsonPath).toBe(path.join(workspace.stagePaths.f5, "Feature5-Report.json"));
+    expect(result.runSummaryPath).toBe(path.join(workspace.stagePaths.f5, "Feature5-Run-Summary.json"));
+    expect(result.manifestPath).toBe(path.join(workspace.stagePaths.f5, "manifest.json"));
+    expect(existsSync(path.join(workspace.analysisRoot, "f5-runs"))).toBe(false);
+    expect(existsSync(path.join(workspace.analysisRoot, "f5-observations"))).toBe(false);
+  });
+
+  it("fails closed on a dirty workspace stage before loading or rewriting any F5 artifacts", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+    const staleManifestPath = path.join(workspace.stagePaths.f5, "manifest.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(1);
+    expect(JSON.parse(child.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(child.stderr).toBe("");
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 
   it.each([
