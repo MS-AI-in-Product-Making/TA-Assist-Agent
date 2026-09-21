@@ -96,8 +96,8 @@ git commit -m "feat(contracts): add F2 findings decision evidence"
 - Modify: `packages/workbook-catalog/src/index.ts`
 - Modify: `packages/workbench/src/projections.ts`
 - Modify: `packages/workbench/src/projections.test.ts`
-- Modify: `the retired F8 web app/src/workbook-health.ts`
-- Modify: `the retired F8 web app/src/workbook-health.test.ts`
+- Modify: `apps/workbench-web/src/workbook-health.ts`
+- Modify: `apps/workbench-web/src/workbook-health.test.ts`
 
 **Interfaces:**
 - Produces: `projectF2FindingsDecision(report, evidence): F2FindingsDecisionProjection`.
@@ -109,7 +109,7 @@ Cover identifier-only, missing image, multiple missing fields, mixed ready/block
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run packages/workbook-catalog/src/f2-user-report.test.ts packages/workbench/src/projections.test.ts the retired F8 web app/src/workbook-health.test.ts`
+Run: `npx vitest run packages/workbook-catalog/src/f2-user-report.test.ts packages/workbench/src/projections.test.ts apps/workbench-web/src/workbook-health.test.ts`
 
 Expected: FAIL because per-worksheet findings and digest are not projected.
 
@@ -126,7 +126,7 @@ Expected: PASS with identifier-only worksheets still downstream-ready.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add packages/workbook-catalog/src/f2-user-report* packages/workbook-catalog/src/index.ts packages/workbench/src/projections* the retired F8 web app/src/workbook-health*
+git add packages/workbook-catalog/src/f2-user-report* packages/workbook-catalog/src/index.ts packages/workbench/src/projections* apps/workbench-web/src/workbook-health*
 git commit -m "feat(f2): project governed worksheet findings"
 ```
 
@@ -137,8 +137,8 @@ git commit -m "feat(f2): project governed worksheet findings"
 - Modify: `packages/workbench/src/state-machine.test.ts`
 - Modify: `packages/workbench/src/session-store.ts`
 - Modify: `packages/workbench/src/session-store.test.ts`
-- Modify: `the retired F8 server app/src/routes/commands.ts`
-- Modify: `the retired F8 server app/src/server.test.ts`
+- Modify: `apps/workbench-server/src/routes/commands.ts`
+- Modify: `apps/workbench-server/src/server.test.ts`
 
 **Interfaces:**
 - Consumes: `F2FindingsDecisionProjection` from Task 2.
@@ -161,7 +161,7 @@ Also test wrong revision, report hash mismatch, digest mismatch, altered artifac
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts the retired F8 server app/src/server.test.ts -t "downstream"`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts apps/workbench-server/src/server.test.ts -t "downstream"`
 
 Expected: FAIL because current validation only proves selected rows are ready.
 
@@ -182,18 +182,18 @@ Expected: PASS for continue, replace, cancel, stale revision, and tampered artif
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add packages/workbench/src/state-machine* packages/workbench/src/session-store* the retired F8 server app/src/routes/commands.ts the retired F8 server app/src/server.test.ts
+git add packages/workbench/src/state-machine* packages/workbench/src/session-store* apps/workbench-server/src/routes/commands.ts apps/workbench-server/src/server.test.ts
 git commit -m "feat(workbench): govern F2 findings decisions"
 ```
 
 ### Task 4: Build the Newcomer-Friendly Findings Dialog
 
 **Files:**
-- Create: `the retired F8 web app/src/components/F2FindingsDecisionDialog.tsx`
-- Create: `the retired F8 web app/src/components/F2FindingsDecisionDialog.test.tsx`
-- Modify: `the retired F8 web app/src/app.tsx`
-- Modify: `the retired F8 web app/src/app.test.tsx`
-- Modify: `the retired F8 web app/src/components/WorksheetSelection.tsx`
+- Create: `apps/workbench-web/src/components/F2FindingsDecisionDialog.tsx`
+- Create: `apps/workbench-web/src/components/F2FindingsDecisionDialog.test.tsx`
+- Modify: `apps/workbench-web/src/app.tsx`
+- Modify: `apps/workbench-web/src/app.test.tsx`
+- Modify: `apps/workbench-web/src/components/WorksheetSelection.tsx`
 
 **Interfaces:**
 - Consumes: server-projected findings and input metadata from the first Issue #106 plan.
@@ -205,7 +205,7 @@ Test mixed ready/blocked, identifier-only, all blocked, replace, continue, and c
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run the retired F8 web app/src/components/F2FindingsDecisionDialog.test.tsx the retired F8 web app/src/app.test.tsx`
+Run: `npx vitest run apps/workbench-web/src/components/F2FindingsDecisionDialog.test.tsx apps/workbench-web/src/app.test.tsx`
 
 Expected: FAIL because downstream selection is currently a generic section.
 
@@ -222,7 +222,7 @@ Expected: PASS in English and Chinese fixtures.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add the retired F8 web app/src/components/F2FindingsDecisionDialog* the retired F8 web app/src/components/WorksheetSelection.tsx the retired F8 web app/src/app*
+git add apps/workbench-web/src/components/F2FindingsDecisionDialog* apps/workbench-web/src/components/WorksheetSelection.tsx apps/workbench-web/src/app*
 git commit -m "feat(ux): add worksheet findings decision dialog"
 ```
 
@@ -233,8 +233,8 @@ git commit -m "feat(ux): add worksheet findings decision dialog"
 - Modify: `packages/workflow-runners/src/f3-ado-markdown.test.ts`
 - Modify: `packages/workflow-runners/src/f3-ado-html.ts`
 - Modify: `packages/workflow-runners/src/f3-ado-html.test.ts`
-- Modify: `the retired F8 web app/src/components/F3Governance.tsx`
-- Modify: `the retired F8 web app/src/components/F3Governance.test.tsx`
+- Modify: `apps/workbench-web/src/components/F3Governance.tsx`
+- Modify: `apps/workbench-web/src/components/F3Governance.test.tsx`
 - Modify: `scripts/f3-ado-reminder.mjs`
 - Modify: `scripts/f3-ado-reminder.test.mjs`
 
@@ -248,7 +248,7 @@ Use two worksheets sharing one subsystem. Assert 12 headers, each row's own work
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run packages/workflow-runners/src/f3-ado-markdown.test.ts packages/workflow-runners/src/f3-ado-html.test.ts the retired F8 web app/src/components/F3Governance.test.tsx scripts/f3-ado-reminder.test.mjs`
+Run: `npx vitest run packages/workflow-runners/src/f3-ado-markdown.test.ts packages/workflow-runners/src/f3-ado-html.test.ts apps/workbench-web/src/components/F3Governance.test.tsx scripts/f3-ado-reminder.test.mjs`
 
 Expected: FAIL with current 11-column output.
 
@@ -265,7 +265,7 @@ Expected: PASS with deterministic 12-column bodies.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add packages/workflow-runners/src/f3-ado-* the retired F8 web app/src/components/F3Governance* scripts/f3-ado-reminder*
+git add packages/workflow-runners/src/f3-ado-* apps/workbench-web/src/components/F3Governance* scripts/f3-ado-reminder*
 git commit -m "feat(ado): include worksheet source in governance tables"
 ```
 
@@ -320,7 +320,7 @@ git commit -m "docs(governance): require ADO worksheet source"
 - [ ] **Step 1: Run all focused suites**
 
 ```powershell
-npx vitest run packages/contracts/src/contracts.test.ts packages/contracts/src/f8-contracts.test.ts packages/workbook-catalog/src/f2-user-report.test.ts packages/workbench/src/projections.test.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts the retired F8 server app/src/server.test.ts the retired F8 web app/src/workbook-health.test.ts the retired F8 web app/src/components/F2FindingsDecisionDialog.test.tsx packages/workflow-runners/src/f3-ado-markdown.test.ts packages/workflow-runners/src/f3-ado-html.test.ts the retired F8 web app/src/components/F3Governance.test.tsx scripts/f3-ado-reminder.test.mjs scripts/f3-skill.test.mjs scripts/f3-full-flow.test.mjs scripts/write-f3-ado-reminder.test.mjs
+npx vitest run packages/contracts/src/contracts.test.ts packages/contracts/src/f8-contracts.test.ts packages/workbook-catalog/src/f2-user-report.test.ts packages/workbench/src/projections.test.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts apps/workbench-server/src/server.test.ts apps/workbench-web/src/workbook-health.test.ts apps/workbench-web/src/components/F2FindingsDecisionDialog.test.tsx packages/workflow-runners/src/f3-ado-markdown.test.ts packages/workflow-runners/src/f3-ado-html.test.ts apps/workbench-web/src/components/F3Governance.test.tsx scripts/f3-ado-reminder.test.mjs scripts/f3-skill.test.mjs scripts/f3-full-flow.test.mjs scripts/write-f3-ado-reminder.test.mjs
 npm run build -- --force
 ```
 

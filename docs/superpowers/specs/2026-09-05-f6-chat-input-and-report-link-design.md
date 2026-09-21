@@ -211,9 +211,9 @@ Workbench server 保存 draft ID、input revision、review context ID、artifact
 - `.github/skills/design-optimization/SKILL.md`：自然语言问题、内部 materialization、预览确认和最终链接要求。
 - `packages/contracts`：proposal/draft/materialization contracts，以及必要的 session draft reference。
 - `packages/workflow-runners` / `scripts`：共享 materializer、本地入口、F5 observation 自动继承、CLI 最终报告路径。
-- `the retired F8 server app`：proposal materialization API、managed draft persistence、confirmation binding。
+- `apps/workbench-server`：proposal materialization API、managed draft persistence、confirmation binding。
 - `packages/workbench`：pending draft identity 和两个独立 gate 的最小状态扩展。
-- `the retired F8 web app`：聊天输入、clarification、预览和两个独立确认 surface。
+- `apps/workbench-web`：聊天输入、clarification、预览和两个独立确认 surface。
 - `packages/agent-runtime` / `apps/vscode-extension`：自然语言 gate actions 与最终 canonical report link。
 
 不修改 F4 calculation kernel，不改 F1-F5/F7 的业务顺序，不移动现有目录。

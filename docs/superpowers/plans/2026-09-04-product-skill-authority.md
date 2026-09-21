@@ -207,7 +207,7 @@ Expected: PASS and `.github/skills` contains only the eight product analysis Ski
 - Modify: `packages/product-language/src/ta-workbook-language.ts`
 - Modify: `packages/product-language/src/index.ts`
 - Modify: `packages/product-language/src/ta-workbook-language.test.ts`
-- Modify: `the retired F8 server app/src/model-prompt.ts`
+- Modify: `apps/workbench-server/src/model-prompt.ts`
 - Modify: `apps/vscode-extension/src/model-host-prompt.ts`
 
 **Interfaces:**
@@ -220,7 +220,7 @@ Add cases proving historical stage input resolves to the matching product capabi
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
-Run: `npx vitest run packages/product-language/src/ta-workbook-language.test.ts the retired F8 server app/src/model-prompt.test.ts apps/vscode-extension/src/model-host-prompt.test.ts`
+Run: `npx vitest run packages/product-language/src/ta-workbook-language.test.ts apps/workbench-server/src/model-prompt.test.ts apps/vscode-extension/src/model-host-prompt.test.ts`
 
 Expected: FAIL because the resolver is not exported or raw user text is still passed through.
 
@@ -237,14 +237,14 @@ Run the same focused command. Expected: PASS in Chinese and English cases.
 ### Task 6: Close remaining user-visible leakage paths
 
 **Files:**
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
-- Modify: `the retired F8 web app/src/components/ActionQueue.tsx`
-- Create or modify: `the retired F8 web app/src/components/ActionQueue.test.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.test.tsx`
-- Modify: `the retired F8 web app/src/web-projection.ts`
-- Modify: `the retired F8 web app/src/web-projection.test.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
+- Modify: `apps/workbench-web/src/components/ActionQueue.tsx`
+- Create or modify: `apps/workbench-web/src/components/ActionQueue.test.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.test.tsx`
+- Modify: `apps/workbench-web/src/web-projection.ts`
+- Modify: `apps/workbench-web/src/web-projection.test.ts`
 
 **Interfaces:**
 - Consumes: internal assistant response, action, decision, command, feature, and artifact references.
@@ -256,7 +256,7 @@ Cover an assistant response containing a historical stage label, action queue it
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
-Run: `npx vitest run the retired F8 server app/src/routes/conversation.test.ts the retired F8 web app/src/components/ActionQueue.test.tsx the retired F8 web app/src/components/ConversationPane.test.tsx the retired F8 web app/src/web-projection.test.ts`
+Run: `npx vitest run apps/workbench-server/src/routes/conversation.test.ts apps/workbench-web/src/components/ActionQueue.test.tsx apps/workbench-web/src/components/ConversationPane.test.tsx apps/workbench-web/src/web-projection.test.ts`
 
 Expected: FAIL at direct response persistence or raw UI rendering.
 
@@ -344,4 +344,3 @@ Expected: `status: accepted` for the existing artifact, proving schema, file set
 - [ ] **Step 6: Inspect the final diff**
 
 Confirm no runner, calculation, schema, artifact identity, manifest, hash, ADO write, or confirmation behavior changed. Confirm unrelated user modifications remain intact.
-

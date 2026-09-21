@@ -183,15 +183,15 @@ git commit -m "feat(contracts): add governed multimodal interpretation"
 ### Task 4: Assemble Worksheet-Isolated Requests and Secure Image Reads
 
 **Files:**
-- Create: `the retired F8 server app/src/worksheet-interpretation-context.ts`
-- Create: `the retired F8 server app/src/worksheet-interpretation-context.test.ts`
-- Modify: `the retired F8 server app/src/conversation-context.ts`
-- Modify: `the retired F8 server app/src/conversation-context.test.ts`
-- Modify: `the retired F8 server app/src/routes/artifacts.ts`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Modify: `the retired F8 server app/src/auth.ts`
-- Modify: `the retired F8 server app/src/server.ts`
-- Modify: `the retired F8 server app/src/server.test.ts`
+- Create: `apps/workbench-server/src/worksheet-interpretation-context.ts`
+- Create: `apps/workbench-server/src/worksheet-interpretation-context.test.ts`
+- Modify: `apps/workbench-server/src/conversation-context.ts`
+- Modify: `apps/workbench-server/src/conversation-context.test.ts`
+- Modify: `apps/workbench-server/src/routes/artifacts.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/auth.ts`
+- Modify: `apps/workbench-server/src/server.ts`
+- Modify: `apps/workbench-server/src/server.test.ts`
 
 **Interfaces:**
 - Produces: `buildWorksheetInterpretationContext(snapshot, worksheetName, artifacts)` and a restricted action-bound image read endpoint.
@@ -203,7 +203,7 @@ Use selected order `B, A`, distinct bytes/hashes/ordinals, and a deliberately sw
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run the retired F8 server app/src/worksheet-interpretation-context.test.ts the retired F8 server app/src/conversation-context.test.ts the retired F8 server app/src/server.test.ts`
+Run: `npx vitest run apps/workbench-server/src/worksheet-interpretation-context.test.ts apps/workbench-server/src/conversation-context.test.ts apps/workbench-server/src/server.test.ts`
 
 Expected: FAIL because the current context chooses a generic first image and cannot serve action-bound bytes.
 
@@ -220,7 +220,7 @@ Expected: PASS, including same-content-hash/different-worksheet identity coverag
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add the retired F8 server app/src/worksheet-interpretation-context* the retired F8 server app/src/conversation-context* the retired F8 server app/src/routes the retired F8 server app/src/auth.ts the retired F8 server app/src/server*
+git add apps/workbench-server/src/worksheet-interpretation-context* apps/workbench-server/src/conversation-context* apps/workbench-server/src/routes apps/workbench-server/src/auth.ts apps/workbench-server/src/server*
 git commit -m "feat(workbench): assemble isolated multimodal requests"
 ```
 
@@ -279,8 +279,8 @@ git commit -m "feat(vscode): execute worksheet multimodal models"
 - Modify: `packages/workbench/src/state-machine.test.ts`
 - Modify: `packages/workbench/src/ta-workbook-orchestrator.ts`
 - Modify: `packages/workbench/src/ta-workbook-orchestrator.test.ts`
-- Modify: `the retired F8 server app/src/production-stage-runner.ts`
-- Modify: `the retired F8 server app/src/production-stage-runner.test.ts`
+- Modify: `apps/workbench-server/src/production-stage-runner.ts`
+- Modify: `apps/workbench-server/src/production-stage-runner.test.ts`
 - Modify: `packages/workflow-runners/src/types.ts`
 
 **Interfaces:**
@@ -293,7 +293,7 @@ Test all worksheets success, one of two failed, stale revision result, result af
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts the retired F8 server app/src/production-stage-runner.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts apps/workbench-server/src/production-stage-runner.test.ts`
 
 Expected: FAIL because model interpretation is optional and not a state transition gate.
 
@@ -310,7 +310,7 @@ Expected: PASS with no Design Optimization attempt after partial failure.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add packages/workbench/src packages/workflow-runners/src/types.ts the retired F8 server app/src/production-stage-runner*
+git add packages/workbench/src packages/workflow-runners/src/types.ts apps/workbench-server/src/production-stage-runner*
 git commit -m "feat(workbench): require complete model interpretation"
 ```
 

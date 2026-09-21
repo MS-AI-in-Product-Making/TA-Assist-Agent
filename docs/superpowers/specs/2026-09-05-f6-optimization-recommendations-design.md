@@ -207,9 +207,9 @@ Production runner 应注册五个当前 revision artifact reference。最终 Age
 - `packages/workbook-catalog`：新增 target 到 calculation scenario 的确定性转换和排序。
 - `packages/workflow-runners` 与 `scripts`：版本化加载、决策记录、五件套输出校验。
 - `packages/workbench`：scenario promotion、state projection 和 review projection。
-- `the retired F8 server app`：确认输入传递、artifact 注册和安全下载。
+- `apps/workbench-server`：确认输入传递、artifact 注册和安全下载。
 - `packages/agent-runtime`：不可被模型移除的最终报告引用与 action。
-- `the retired F8 web app`：conversation 与主界面的报告链接。
+- `apps/workbench-web`：conversation 与主界面的报告链接。
 - `apps/vscode-extension`：Chat 窗口中的受控报告入口。
 - `.github/skills/design-optimization`：更新产品流程与最终 output ledger 规则。
 

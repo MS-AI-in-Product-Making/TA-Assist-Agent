@@ -235,11 +235,11 @@ git commit -m "feat(agent): route explicit product workflows"
 - Modify: `apps/cli/src/commands/agent.test.ts`
 - Modify: `packages/agent-runtime/src/runtime.ts`
 - Modify: `packages/agent-runtime/src/runtime.test.ts`
-- Modify: `the retired F8 server app/src/model-prompt.ts`
-- Modify: `the retired F8 server app/src/model-prompt.test.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/model-prompt.ts`
+- Modify: `apps/workbench-server/src/model-prompt.test.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
 
 **Interfaces:**
 - Consumes: persisted `InteractionLanguage` from Task 2.
@@ -251,7 +251,7 @@ Test an English initial request followed by a Chinese worksheet name, and a Chin
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run apps/vscode-extension/src/workbench-launcher.test.ts apps/cli/src/commands/agent.test.ts packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/model-prompt.test.ts the retired F8 server app/src/routes/conversation.test.ts`
+Run: `npx vitest run apps/vscode-extension/src/workbench-launcher.test.ts apps/cli/src/commands/agent.test.ts packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/model-prompt.test.ts apps/workbench-server/src/routes/conversation.test.ts`
 
 Expected: FAIL where components re-detect the current text or model response.
 
@@ -268,7 +268,7 @@ Expected: PASS for cross-turn, resume, and replacement scenarios.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add apps/vscode-extension apps/cli packages/agent-runtime the retired F8 server app
+git add apps/vscode-extension apps/cli packages/agent-runtime apps/workbench-server
 git commit -m "feat(agent): enforce session language across hosts"
 ```
 
@@ -277,18 +277,18 @@ git commit -m "feat(agent): enforce session language across hosts"
 **Files:**
 - Modify: `apps/vscode-extension/src/extension.ts`
 - Modify: `apps/vscode-extension/src/extension.test.ts`
-- Modify: `the retired F8 web app/src/web-projection.ts`
-- Modify: `the retired F8 web app/src/web-projection.test.ts`
-- Modify: `the retired F8 web app/src/app.tsx`
-- Modify: `the retired F8 web app/src/app.test.tsx`
-- Modify: `the retired F8 web app/src/components/UploadPanel.tsx`
-- Create: `the retired F8 web app/src/components/UploadPanel.test.tsx`
-- Modify: `the retired F8 web app/src/components/WorksheetSelection.tsx`
-- Create: `the retired F8 web app/src/components/WorksheetSelection.test.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.tsx`
-- Modify: `the retired F8 web app/src/components/F6InputGate.tsx`
-- Modify: `the retired F8 web app/src/components/F6InputGate.test.tsx`
-- Modify: `the retired F8 web app/src/components/AdoWorkspaceDecision.tsx`
+- Modify: `apps/workbench-web/src/web-projection.ts`
+- Modify: `apps/workbench-web/src/web-projection.test.ts`
+- Modify: `apps/workbench-web/src/app.tsx`
+- Modify: `apps/workbench-web/src/app.test.tsx`
+- Modify: `apps/workbench-web/src/components/UploadPanel.tsx`
+- Create: `apps/workbench-web/src/components/UploadPanel.test.tsx`
+- Modify: `apps/workbench-web/src/components/WorksheetSelection.tsx`
+- Create: `apps/workbench-web/src/components/WorksheetSelection.test.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.tsx`
+- Modify: `apps/workbench-web/src/components/F6InputGate.tsx`
+- Modify: `apps/workbench-web/src/components/F6InputGate.test.tsx`
+- Modify: `apps/workbench-web/src/components/AdoWorkspaceDecision.tsx`
 - Modify: `scripts/product-language-surface.test.mjs`
 
 **Interfaces:**
@@ -309,7 +309,7 @@ Add a test that compares mounted `data-user-input-id` values with the applicable
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npx vitest run apps/vscode-extension/src/extension.test.ts the retired F8 web app/src/app.test.tsx the retired F8 web app/src/components/UploadPanel.test.tsx the retired F8 web app/src/components/WorksheetSelection.test.tsx the retired F8 web app/src/components/F6InputGate.test.tsx scripts/product-language-surface.test.mjs`
+Run: `npx vitest run apps/vscode-extension/src/extension.test.ts apps/workbench-web/src/app.test.tsx apps/workbench-web/src/components/UploadPanel.test.tsx apps/workbench-web/src/components/WorksheetSelection.test.tsx apps/workbench-web/src/components/F6InputGate.test.tsx scripts/product-language-surface.test.mjs`
 
 Expected: FAIL because existing controls use ad hoc labels and placeholders.
 
@@ -328,7 +328,7 @@ Expected: PASS in both English and Chinese fixtures.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add apps/vscode-extension/src the retired F8 web app/src scripts/product-language-surface.test.mjs
+git add apps/vscode-extension/src apps/workbench-web/src scripts/product-language-surface.test.mjs
 git commit -m "feat(ux): localize and explain user inputs"
 ```
 
@@ -343,7 +343,7 @@ git commit -m "feat(ux): localize and explain user inputs"
 - [ ] **Step 1: Run all phase tests**
 
 ```powershell
-npx vitest run packages/product-language/src packages/contracts/src/f8-contracts.test.ts packages/workbench/src/session-store.test.ts packages/workbench/src/state-machine.test.ts packages/agent-runtime/src/runtime.test.ts apps/vscode-extension/src/analyze-intent.test.ts apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts the retired F8 server app/src/model-prompt.test.ts the retired F8 server app/src/routes/conversation.test.ts scripts/agent-triggering-surface.test.mjs scripts/product-language-surface.test.mjs scripts/product-skills.test.mjs
+npx vitest run packages/product-language/src packages/contracts/src/f8-contracts.test.ts packages/workbench/src/session-store.test.ts packages/workbench/src/state-machine.test.ts packages/agent-runtime/src/runtime.test.ts apps/vscode-extension/src/analyze-intent.test.ts apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts apps/workbench-server/src/model-prompt.test.ts apps/workbench-server/src/routes/conversation.test.ts scripts/agent-triggering-surface.test.mjs scripts/product-language-surface.test.mjs scripts/product-skills.test.mjs
 npm test --workspace @ai-assist/workbench-web
 npm run build -- --force
 ```

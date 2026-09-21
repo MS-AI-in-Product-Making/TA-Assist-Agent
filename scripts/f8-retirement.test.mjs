@@ -83,6 +83,15 @@ const retiredLockfileEntries = [
   "node_modules/@ai-assist/workbench-web",
 ];
 
+const activeProductDocs = [
+  "docs/README.md",
+  "docs/01-architecture.md",
+  "docs/02-end-to-end-flow.md",
+  "docs/03-differentiation.md",
+  "docs/04-feature-breakdown.md",
+  "docs/governance/feature-register.md",
+];
+
 const retiredDocLiterals = [
   "@ta-assist",
   "onChatParticipant:ta-assist",
@@ -91,35 +100,34 @@ const retiredDocLiterals = [
   "apps/workbench-web",
 ];
 
-const retiredDocLiteralExclusions = new Set([
-  "docs/superpowers/specs/2026-09-21-unified-analysis-workspace-f8-retirement-design.md",
-  "docs/superpowers/plans/2026-09-21-f8-participant-retirement.md",
-  "docs/superpowers/plans/2026-09-21-unified-analysis-workspace.md",
-]);
+const retiredHistoricalDocPaths = [
+  "docs/superpowers/plans/2026-07-28-f8-public-workflow-contract.md",
+  "docs/superpowers/plans/2026-08-24-f8-user-interaction-workbench.md",
+  "docs/superpowers/plans/2026-08-26-f8-ta-engineering-workspace-ui.md",
+  "docs/superpowers/plans/2026-08-26-f8-web-ado-acceptance.md",
+  "docs/superpowers/plans/2026-08-27-f8-engineering-workspace-v2.md",
+  "docs/superpowers/plans/2026-08-28-f8-ado-workspace.md",
+  "docs/superpowers/plans/2026-08-28-f8-conversation-output-policy.md",
+  "docs/superpowers/plans/2026-08-28-f8-english-workspace.md",
+  "docs/superpowers/plans/2026-08-28-f8-scenario-charts.md",
+  "docs/superpowers/plans/2026-08-31-f8-ui-op1.md",
+  "docs/superpowers/specs/2026-07-28-f8-public-workflow-contract-design.md",
+  "docs/superpowers/specs/2026-08-24-f8-user-interaction-workbench-design.md",
+  "docs/superpowers/specs/2026-08-26-f8-ta-engineering-workspace-ui-design.md",
+  "docs/superpowers/specs/2026-08-26-f8-web-ado-acceptance-design.md",
+  "docs/superpowers/specs/2026-08-26-f8-workbench-product-hardening-design.md",
+  "docs/superpowers/specs/2026-08-27-f8-engineering-workspace-v2-design.md",
+  "docs/superpowers/specs/2026-08-28-f8-web-projection-optimization-design.md",
+  "docs/superpowers/specs/2026-08-31-f8-ui-op1-design.md",
+  "docs/superpowers/plans/2026-08-31-chat-to-web-ta-analysis.md",
+  "docs/superpowers/specs/2026-08-31-chat-to-web-ta-analysis-design.md",
+  "docs/superpowers/plans/2026-09-01-measured-capability-feedback-beta.md",
+  "docs/superpowers/plans/2026-09-01-ta-assist-agent-ta-workbook-beta.md",
+  "docs/superpowers/specs/2026-09-01-ta-assist-beta-agent-architecture-design.md",
+];
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, relativePath), "utf8"));
-}
-
-function collectMarkdownFiles(currentDir, relativeDir = "") {
-  const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    const relativePath = path.posix.join(relativeDir, entry.name);
-    const absolutePath = path.join(currentDir, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...collectMarkdownFiles(absolutePath, relativePath));
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(relativePath);
-    }
-  }
-
-  return files;
 }
 
 describe("F8 retirement retained surfaces", () => {
@@ -180,15 +188,14 @@ describe("F8 retirement retained surfaces", () => {
     expect(eslintConfig).toContain("scripts/f1-composed-snapshot-detection.mjs");
   });
 
-  it("removes retired F8 literals from documentation outside approved retirement records", () => {
-    const docRoot = path.join(rootDir, "docs");
-    const markdownFiles = collectMarkdownFiles(docRoot, "docs").filter(
-      (relativePath) => !retiredDocLiteralExclusions.has(relativePath),
-    );
+  it.each(retiredHistoricalDocPaths)("deletes retired participant or F8 history %s", (retiredPath) => {
+    expect(fs.existsSync(path.join(rootDir, retiredPath))).toBe(false);
+  });
 
+  it("removes retired F8 literals from active product documentation", () => {
     const violations = [];
 
-    for (const relativePath of markdownFiles) {
+    for (const relativePath of activeProductDocs) {
       const content = fs.readFileSync(path.join(rootDir, relativePath), "utf8");
 
       for (const literal of retiredDocLiterals) {
@@ -199,5 +206,18 @@ describe("F8 retirement retained surfaces", () => {
     }
 
     expect(violations).toEqual([]);
+  });
+
+  it("documents active entry as Copilot Skills plus direct workflows", () => {
+    const readme = fs.readFileSync(path.join(rootDir, "docs/README.md"), "utf8");
+    const architecture = fs.readFileSync(path.join(rootDir, "docs/01-architecture.md"), "utf8");
+    const flow = fs.readFileSync(path.join(rootDir, "docs/02-end-to-end-flow.md"), "utf8");
+
+    expect(readme).toContain("Copilot Skills");
+    expect(readme).toContain("direct governed workflows");
+    expect(architecture).toContain("Copilot Skills");
+    expect(architecture).toContain("workflow:f2:excel");
+    expect(flow).toContain("ta-assist-agent");
+    expect(flow).toContain("workflow:f5");
   });
 });

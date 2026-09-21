@@ -284,10 +284,10 @@ git commit -m "feat(f6): report governed optimization recommendations"
 - Modify: `packages/workbench/src/state-machine.test.ts`
 - Modify: `packages/workbench/src/scenario-draft.ts`
 - Modify: `packages/workbench/src/scenario-draft.test.ts`
-- Modify: `the retired F8 server app/src/server.ts`
-- Modify: `the retired F8 server app/src/server.test.ts`
-- Modify: `the retired F8 server app/src/production-stage-runner.ts`
-- Modify: `the retired F8 server app/src/production-stage-runner.test.ts`
+- Modify: `apps/workbench-server/src/server.ts`
+- Modify: `apps/workbench-server/src/server.test.ts`
+- Modify: `apps/workbench-server/src/production-stage-runner.ts`
+- Modify: `apps/workbench-server/src/production-stage-runner.test.ts`
 
 **Interfaces:**
 - Consumes: v2 context/targets 与现有 F6 runner result paths。
@@ -299,7 +299,7 @@ git commit -m "feat(f6): report governed optimization recommendations"
 
 - [ ] **Step 2: 运行 state/server tests 并确认 RED**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts the retired F8 server app/src/server.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts apps/workbench-server/src/server.test.ts`
 
 Expected: FAIL，因为 server 当前自动跳过两个门控且不持久化输入引用。
 
@@ -313,20 +313,20 @@ Expected: FAIL，因为 server 当前自动跳过两个门控且不持久化输�
 
 - [ ] **Step 5: 运行 production runner test 并确认 RED**
 
-Run: `npx vitest run the retired F8 server app/src/production-stage-runner.test.ts`
+Run: `npx vitest run apps/workbench-server/src/production-stage-runner.test.ts`
 
 Expected: FAIL，因为当前只注册三个 artifact。
 
 - [ ] **Step 6: 实现五件套注册并确认 GREEN**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/scenario-draft.test.ts the retired F8 server app/src/server.test.ts the retired F8 server app/src/production-stage-runner.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/scenario-draft.test.ts apps/workbench-server/src/server.test.ts apps/workbench-server/src/production-stage-runner.test.ts`
 
 Expected: PASS。
 
 - [ ] **Step 7: 提交 Task 5**
 
 ```powershell
-git add packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/scenario-draft.ts packages/workbench/src/scenario-draft.test.ts the retired F8 server app/src/server.ts the retired F8 server app/src/server.test.ts the retired F8 server app/src/production-stage-runner.ts the retired F8 server app/src/production-stage-runner.test.ts
+git add packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/scenario-draft.ts packages/workbench/src/scenario-draft.test.ts apps/workbench-server/src/server.ts apps/workbench-server/src/server.test.ts apps/workbench-server/src/production-stage-runner.ts apps/workbench-server/src/production-stage-runner.test.ts
 git commit -m "feat(f6): govern workbench optimization inputs"
 ```
 
@@ -335,8 +335,8 @@ git commit -m "feat(f6): govern workbench optimization inputs"
 **Files:**
 - Modify: `packages/agent-runtime/src/runtime.ts`
 - Modify: `packages/agent-runtime/src/runtime.test.ts`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
 - Test: `packages/conversation/src/conversation-store.test.ts`
 
 **Interfaces:**
@@ -365,7 +365,7 @@ expect(result.actions).toContainEqual({
 
 - [ ] **Step 2: 运行 agent tests 并确认 RED**
 
-Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts`
+Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts`
 
 Expected: FAIL，因为 assistant turn 当前固定 `relatedArtifactIds: []`。
 
@@ -375,27 +375,27 @@ Expected: FAIL，因为 assistant turn 当前固定 `relatedArtifactIds: []`。
 
 - [ ] **Step 4: 运行 agent tests 并确认 GREEN**
 
-Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts`
+Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts`
 
 Expected: PASS。
 
 - [ ] **Step 5: 提交 Task 6**
 
 ```powershell
-git add packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts
+git add packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/conversation.test.ts packages/conversation/src/conversation-store.test.ts
 git commit -m "fix(f6): persist canonical final report references"
 ```
 
 ### Task 7: 在 Web 与 VS Code 窗口呈现可点击报告链接
 
 **Files:**
-- Modify: `the retired F8 server app/src/routes/artifacts.ts`
-- Modify: `the retired F8 server app/src/security.test.ts`
-- Modify: `the retired F8 web app/src/components/ConversationPane.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.test.tsx`
-- Modify: `the retired F8 web app/src/components/TaAssistantPanel.tsx`
-- Modify: `the retired F8 web app/src/components/EngineeringWorkspace.tsx`
-- Modify: `the retired F8 web app/src/components/EngineeringWorkspace.test.tsx`
+- Modify: `apps/workbench-server/src/routes/artifacts.ts`
+- Modify: `apps/workbench-server/src/security.test.ts`
+- Modify: `apps/workbench-web/src/components/ConversationPane.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.test.tsx`
+- Modify: `apps/workbench-web/src/components/TaAssistantPanel.tsx`
+- Modify: `apps/workbench-web/src/components/EngineeringWorkspace.tsx`
+- Modify: `apps/workbench-web/src/components/EngineeringWorkspace.test.tsx`
 - Modify: `apps/vscode-extension/src/participant.ts`
 - Modify: `apps/vscode-extension/src/participant.test.ts`
 - Modify: `apps/vscode-extension/src/extension.ts`
@@ -411,13 +411,13 @@ git commit -m "fix(f6): persist canonical final report references"
 
 - [ ] **Step 2: 运行 server security test 并确认 RED**
 
-Run: `npx vitest run the retired F8 server app/src/security.test.ts`
+Run: `npx vitest run apps/workbench-server/src/security.test.ts`
 
 Expected: FAIL，因为 `f6_report` 当前按 JSON MIME 返回且持久化路径未执行 hash 比对。
 
 - [ ] **Step 3: 实现最小 artifact endpoint 修复并确认 GREEN**
 
-Run: `npx vitest run the retired F8 server app/src/security.test.ts`
+Run: `npx vitest run apps/workbench-server/src/security.test.ts`
 
 Expected: PASS。
 
@@ -427,7 +427,7 @@ Expected: PASS。
 
 - [ ] **Step 5: 运行 Workbench Web tests 并确认 RED**
 
-Run: `npx vitest run --project workbench-web the retired F8 web app/src/components/ConversationPane.test.tsx the retired F8 web app/src/components/EngineeringWorkspace.test.tsx`
+Run: `npx vitest run --project workbench-web apps/workbench-web/src/components/ConversationPane.test.tsx apps/workbench-web/src/components/EngineeringWorkspace.test.tsx`
 
 Expected: FAIL，因为 conversation 当前只显示 `Evidence:` 文本，主界面未挂载 report link。
 
@@ -435,7 +435,7 @@ Expected: FAIL，因为 conversation 当前只显示 `Evidence:` 文本，主界
 
 复用 `artifactUrl()` 和 `ReportLink`，不引入新 router 或改变页面结构。
 
-Run: `npx vitest run --project workbench-web the retired F8 web app/src/components/ConversationPane.test.tsx the retired F8 web app/src/components/EngineeringWorkspace.test.tsx`
+Run: `npx vitest run --project workbench-web apps/workbench-web/src/components/ConversationPane.test.tsx apps/workbench-web/src/components/EngineeringWorkspace.test.tsx`
 
 Expected: PASS。
 
@@ -452,7 +452,7 @@ Expected before implementation: FAIL；实现后再次运行并要求 PASS。
 - [ ] **Step 9: 提交 Task 7**
 
 ```powershell
-git add the retired F8 server app/src/routes/artifacts.ts the retired F8 server app/src/security.test.ts the retired F8 web app/src/components/ConversationPane.tsx the retired F8 web app/src/components/ConversationPane.test.tsx the retired F8 web app/src/components/TaAssistantPanel.tsx the retired F8 web app/src/components/EngineeringWorkspace.tsx the retired F8 web app/src/components/EngineeringWorkspace.test.tsx apps/vscode-extension/src/participant.ts apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.ts apps/vscode-extension/src/extension.test.ts
+git add apps/workbench-server/src/routes/artifacts.ts apps/workbench-server/src/security.test.ts apps/workbench-web/src/components/ConversationPane.tsx apps/workbench-web/src/components/ConversationPane.test.tsx apps/workbench-web/src/components/TaAssistantPanel.tsx apps/workbench-web/src/components/EngineeringWorkspace.tsx apps/workbench-web/src/components/EngineeringWorkspace.test.tsx apps/vscode-extension/src/participant.ts apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.ts apps/vscode-extension/src/extension.test.ts
 git commit -m "fix(f6): show final report links in agent windows"
 ```
 
@@ -478,7 +478,7 @@ npx vitest run packages/workbook-catalog/src/f6-scenario-adapter.test.ts package
 npx vitest run scripts/f6-artifact-loader.test.mjs scripts/f6-report.test.mjs scripts/f6-final-report.test.mjs scripts/f6-full-flow.test.mjs scripts/f6-skill.test.mjs
 npx vitest run packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.test.ts
 npx vitest run packages/agent-runtime/src/runtime.test.ts packages/conversation/src/conversation-store.test.ts
-npx vitest run the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/security.test.ts the retired F8 server app/src/server.test.ts
+npx vitest run apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/security.test.ts apps/workbench-server/src/server.test.ts
 npx vitest run --project workbench-web
 npx vitest run apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts
 ```

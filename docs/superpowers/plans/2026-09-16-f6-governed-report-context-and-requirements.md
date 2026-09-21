@@ -53,7 +53,7 @@ Expected: 分支为 `feat/f6-pdf-report-polish-v2`，除 plan 文档外，未提
 Run:
 
 ```powershell
-npx vitest run --project node packages/product-export/src/f6-pdf-export.test.ts scripts/f6-final-report.test.mjs the retired F8 server app/src/f6-pdf-report.test.ts
+npx vitest run --project node packages/product-export/src/f6-pdf-export.test.ts scripts/f6-final-report.test.mjs apps/workbench-server/src/f6-pdf-report.test.ts
 ```
 
 Expected: renderer/projection/server PDF tests 全部 PASS。
@@ -233,11 +233,11 @@ git commit -m "feat(contracts): add governed request and ADO context"
 **Files:**
 - Modify: `packages/workbench/src/session-store.ts`
 - Test: `packages/workbench/src/session-store.test.ts`
-- Modify: `the retired F8 server app/src/routes/sessions.ts`
-- Modify: `the retired F8 server app/src/server.ts`
-- Test: `the retired F8 server app/src/server.test.ts`
-- Modify: `the retired F8 web app/src/api.ts`
-- Test: `the retired F8 web app/src/api.test.ts`
+- Modify: `apps/workbench-server/src/routes/sessions.ts`
+- Modify: `apps/workbench-server/src/server.ts`
+- Test: `apps/workbench-server/src/server.test.ts`
+- Modify: `apps/workbench-web/src/api.ts`
+- Test: `apps/workbench-web/src/api.test.ts`
 
 **Interfaces:**
 - Consumes: `AnalysisRequestContext`。
@@ -277,8 +277,8 @@ it("server stamps the request instant and rejects a client instant", async () =>
 - [ ] **Step 3: 运行 RED**
 
 ```powershell
-npx vitest run the retired F8 web app/src/api.test.ts -t "UTC offset"
-npx vitest run the retired F8 server app/src/server.test.ts -t "request instant"
+npx vitest run apps/workbench-web/src/api.test.ts -t "UTC offset"
+npx vitest run apps/workbench-server/src/server.test.ts -t "request instant"
 npx vitest run packages/workbench/src/session-store.test.ts -t "request context"
 ```
 
@@ -296,8 +296,8 @@ Expected: FAIL，因为 request body、snapshot 和 store 尚无字段。
 - [ ] **Step 5: 运行 GREEN 并提交**
 
 ```powershell
-npx vitest run packages/workbench/src/session-store.test.ts the retired F8 web app/src/api.test.ts the retired F8 server app/src/server.test.ts
-git add -- packages/workbench/src/session-store.ts packages/workbench/src/session-store.test.ts the retired F8 server app/src/routes/sessions.ts the retired F8 server app/src/server.ts the retired F8 server app/src/server.test.ts the retired F8 web app/src/api.ts the retired F8 web app/src/api.test.ts
+npx vitest run packages/workbench/src/session-store.test.ts apps/workbench-web/src/api.test.ts apps/workbench-server/src/server.test.ts
+git add -- packages/workbench/src/session-store.ts packages/workbench/src/session-store.test.ts apps/workbench-server/src/routes/sessions.ts apps/workbench-server/src/server.ts apps/workbench-server/src/server.test.ts apps/workbench-web/src/api.ts apps/workbench-web/src/api.test.ts
 git commit -m "feat(workbench): capture analysis request context"
 ```
 
@@ -390,8 +390,8 @@ git commit -m "feat(entry): forward analysis request context"
 - Modify: `packages/workflow-runners/src/types.ts`
 - Modify: `packages/workflow-runners/src/f6.ts`
 - Test: `packages/workflow-runners/src/f6.test.ts`
-- Modify: `the retired F8 server app/src/production-stage-runner.ts`
-- Test: `the retired F8 server app/src/production-stage-runner.test.ts`
+- Modify: `apps/workbench-server/src/production-stage-runner.ts`
+- Test: `apps/workbench-server/src/production-stage-runner.test.ts`
 - Modify: `scripts/f6-cli-args.mjs`
 - Test: `scripts/f6-cli-args.test.mjs`
 - Modify: `scripts/run-f6-full-validation.mjs`
@@ -454,8 +454,8 @@ npx vitest run scripts/run-f6-full-validation.test.mjs -t "request context"
 - [ ] **Step 5: 运行 GREEN 并提交**
 
 ```powershell
-npx vitest run packages/workflow-runners/src/f6.test.ts the retired F8 server app/src/production-stage-runner.test.ts scripts/f6-cli-args.test.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-artifact-loader.test.mjs
-git add -- packages/workflow-runners/src/types.ts packages/workflow-runners/src/f6.ts packages/workflow-runners/src/f6.test.ts the retired F8 server app/src/production-stage-runner.ts the retired F8 server app/src/production-stage-runner.test.ts scripts/f6-cli-args.mjs scripts/f6-cli-args.test.mjs scripts/run-f6-full-validation.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-artifact-loader.mjs scripts/f6-artifact-loader.test.mjs
+npx vitest run packages/workflow-runners/src/f6.test.ts apps/workbench-server/src/production-stage-runner.test.ts scripts/f6-cli-args.test.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-artifact-loader.test.mjs
+git add -- packages/workflow-runners/src/types.ts packages/workflow-runners/src/f6.ts packages/workflow-runners/src/f6.test.ts apps/workbench-server/src/production-stage-runner.ts apps/workbench-server/src/production-stage-runner.test.ts scripts/f6-cli-args.mjs scripts/f6-cli-args.test.mjs scripts/run-f6-full-validation.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-artifact-loader.mjs scripts/f6-artifact-loader.test.mjs
 git commit -m "feat(f6): bind request context to governed output"
 ```
 
@@ -473,8 +473,8 @@ git commit -m "feat(f6): bind request context to governed output"
 - Modify: `packages/workflow-runners/src/index.ts`
 - Modify: `scripts/write-f3-ado-reminder.mjs`
 - Test: `scripts/write-f3-ado-reminder.test.mjs`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Test: `the retired F8 server app/src/routes/host-actions.test.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Test: `apps/workbench-server/src/routes/host-actions.test.ts`
 - Modify: `.github/skills/drawing-governance/SKILL.md`
 - Modify: `.github/skills/drawing-governance/references/ado-publishing.md`
 - Test: `scripts/f3-skill.test.mjs`
@@ -558,8 +558,8 @@ npx vitest run scripts/write-f3-ado-reminder.test.mjs -t "structured"
 - [ ] **Step 6: 运行 GREEN 并提交**
 
 ```powershell
-npx vitest run packages/adapters/src/surface-mcp-drawing-governance-adapter.test.ts apps/vscode-extension/src/surface-host-client.test.ts packages/workflow-runners/src/f3-ado-outcome.test.ts scripts/write-f3-ado-reminder.test.mjs the retired F8 server app/src/routes/host-actions.test.ts scripts/f3-skill.test.mjs
-git add -- packages/adapters/src/surface-mcp-drawing-governance-adapter.ts packages/adapters/src/surface-mcp-drawing-governance-adapter.test.ts apps/vscode-extension/src/surface-host-client.ts apps/vscode-extension/src/surface-host-client.test.ts packages/workflow-runners/src/f3-ado-outcome.ts packages/workflow-runners/src/f3-ado-outcome.test.ts packages/workflow-runners/src/index.ts scripts/write-f3-ado-reminder.mjs scripts/write-f3-ado-reminder.test.mjs the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/host-actions.test.ts .github/skills/drawing-governance/SKILL.md .github/skills/drawing-governance/references/ado-publishing.md scripts/f3-skill.test.mjs
+npx vitest run packages/adapters/src/surface-mcp-drawing-governance-adapter.test.ts apps/vscode-extension/src/surface-host-client.test.ts packages/workflow-runners/src/f3-ado-outcome.test.ts scripts/write-f3-ado-reminder.test.mjs apps/workbench-server/src/routes/host-actions.test.ts scripts/f3-skill.test.mjs
+git add -- packages/adapters/src/surface-mcp-drawing-governance-adapter.ts packages/adapters/src/surface-mcp-drawing-governance-adapter.test.ts apps/vscode-extension/src/surface-host-client.ts apps/vscode-extension/src/surface-host-client.test.ts packages/workflow-runners/src/f3-ado-outcome.ts packages/workflow-runners/src/f3-ado-outcome.test.ts packages/workflow-runners/src/index.ts scripts/write-f3-ado-reminder.mjs scripts/write-f3-ado-reminder.test.mjs apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/host-actions.test.ts .github/skills/drawing-governance/SKILL.md .github/skills/drawing-governance/references/ado-publishing.md scripts/f3-skill.test.mjs
 git commit -m "feat(f3): persist structured ADO traceability"
 ```
 
@@ -780,7 +780,7 @@ git commit -m "feat(f6): project governed request and process checks"
 **Files:**
 - Modify: `packages/product-export/src/f6-pdf-report.ts`
 - Test: `packages/product-export/src/f6-pdf-export.test.ts`
-- Modify: `the retired F8 server app/src/f6-pdf-report.test.ts`
+- Modify: `apps/workbench-server/src/f6-pdf-report.test.ts`
 
 **Interfaces:**
 - Consumes: validated Markdown tables/checks。
@@ -847,8 +847,8 @@ npx vitest run --project node packages/product-export/src/f6-pdf-export.test.ts 
 - [ ] **Step 6: 运行 GREEN 并提交**
 
 ```powershell
-npx vitest run --project node packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts
-git add -- packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts
+npx vitest run --project node packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts
+git add -- packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts
 git commit -m "feat(f6): render governed requirement checks and palette"
 ```
 
@@ -965,7 +965,7 @@ Expected after implementation: PDF 非空、页数正确、无 overflow、图片
 
 ```powershell
 npm run build -- --force
-npx vitest run --project node packages/contracts/src/analysis-request-context.test.ts packages/contracts/src/contracts.test.ts packages/contracts/src/f8-contracts.test.ts packages/workbook-catalog/src/f6-process-requirements.test.ts packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts scripts/f6-final-report.test.mjs scripts/f6-full-flow.test.mjs scripts/verify-current-f6.test.mjs
+npx vitest run --project node packages/contracts/src/analysis-request-context.test.ts packages/contracts/src/contracts.test.ts packages/contracts/src/f8-contracts.test.ts packages/workbook-catalog/src/f6-process-requirements.test.ts packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts scripts/f6-final-report.test.mjs scripts/f6-full-flow.test.mjs scripts/verify-current-f6.test.mjs
 npm test -- --maxWorkers=1
 node scripts/verify-current-f6.mjs
 git diff --check
@@ -1016,4 +1016,3 @@ git commit -m "test(f6): validate governed PDF presentation"
 - [ ] 全报告使用 image3 token，无旧 palette 残留。
 - [ ] overview + 每 worksheet 一页，无 overflow/cropping。
 - [ ] 五文件、hash、signature、manifest-last 和历史只读兼容通过。
-

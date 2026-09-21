@@ -264,11 +264,11 @@ git commit -m "fix(f6): preserve image observation evidence lineage"
 ### Task 4: 实现 Server-owned immutable drafts 与独立确认
 
 **Files:**
-- Create: `the retired F8 server app/src/routes/f6-inputs.ts`
-- Create: `the retired F8 server app/src/routes/f6-inputs.test.ts`
-- Modify: `the retired F8 server app/src/server.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
+- Create: `apps/workbench-server/src/routes/f6-inputs.ts`
+- Create: `apps/workbench-server/src/routes/f6-inputs.test.ts`
+- Modify: `apps/workbench-server/src/server.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
 - Modify: `packages/workbench/src/state-machine.ts`
 - Modify: `packages/workbench/src/state-machine.test.ts`
 - Modify: `packages/workbench/src/session-store-side-tables.ts`
@@ -291,7 +291,7 @@ git commit -m "fix(f6): preserve image observation evidence lineage"
 
 - [ ] **Step 2: 运行 route tests 并确认 RED**
 
-Run: `npx vitest run the retired F8 server app/src/routes/f6-inputs.test.ts`
+Run: `npx vitest run apps/workbench-server/src/routes/f6-inputs.test.ts`
 
 Expected: FAIL，因为 route 和 managed writer 尚不存在。
 
@@ -311,7 +311,7 @@ Expected: FAIL，因为 route 和 managed writer 尚不存在。
 
 - [ ] **Step 5: 运行 state/store tests 并确认 RED**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts the retired F8 server app/src/server.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts apps/workbench-server/src/server.test.ts`
 
 Expected: FAIL，因为 state 仍信任旧 decision reference。
 
@@ -321,30 +321,30 @@ Expected: FAIL，因为 state 仍信任旧 decision reference。
 
 - [ ] **Step 7: 运行 Task 4 tests 并确认 GREEN**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts the retired F8 server app/src/routes/f6-inputs.test.ts the retired F8 server app/src/routes/conversation.test.ts the retired F8 server app/src/server.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts apps/workbench-server/src/routes/f6-inputs.test.ts apps/workbench-server/src/routes/conversation.test.ts apps/workbench-server/src/server.test.ts`
 
 Expected: PASS。
 
 - [ ] **Step 8: 提交 Task 4**
 
 ```powershell
-git add the retired F8 server app/src/routes/f6-inputs.ts the retired F8 server app/src/routes/f6-inputs.test.ts the retired F8 server app/src/server.ts the retired F8 server app/src/routes/conversation.ts the retired F8 server app/src/routes/conversation.test.ts packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store-side-tables.ts packages/workbench/src/session-store.test.ts
+git add apps/workbench-server/src/routes/f6-inputs.ts apps/workbench-server/src/routes/f6-inputs.test.ts apps/workbench-server/src/server.ts apps/workbench-server/src/routes/conversation.ts apps/workbench-server/src/routes/conversation.test.ts packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store-side-tables.ts packages/workbench/src/session-store.test.ts
 git commit -m "feat(f6): persist governed chat input drafts"
 ```
 
 ### Task 5: 接通 Web 与 Agent 的自然语言输入体验
 
 **Files:**
-- Create: `the retired F8 web app/src/components/F6InputGate.tsx`
-- Create: `the retired F8 web app/src/components/F6InputGate.test.tsx`
-- Modify: `the retired F8 web app/src/api.ts`
-- Modify: `the retired F8 web app/src/app.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.test.tsx`
+- Create: `apps/workbench-web/src/components/F6InputGate.tsx`
+- Create: `apps/workbench-web/src/components/F6InputGate.test.tsx`
+- Modify: `apps/workbench-web/src/api.ts`
+- Modify: `apps/workbench-web/src/app.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.test.tsx`
 - Modify: `packages/agent-runtime/src/runtime.ts`
 - Modify: `packages/agent-runtime/src/runtime.test.ts`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
 - Modify: `.github/skills/design-optimization/SKILL.md`
 - Modify: `scripts/f6-skill.test.mjs`
 
@@ -373,7 +373,7 @@ Targets state 显示：
 
 - [ ] **Step 2: 运行 Web tests 并确认 RED**
 
-Run: `npx vitest run --project workbench-web the retired F8 web app/src/components/F6InputGate.test.tsx the retired F8 web app/src/components/ConversationPane.test.tsx`
+Run: `npx vitest run --project workbench-web apps/workbench-web/src/components/F6InputGate.test.tsx apps/workbench-web/src/components/ConversationPane.test.tsx`
 
 Expected: FAIL，因为 gate UI/API 尚不存在。
 
@@ -387,7 +387,7 @@ Expected: FAIL，因为 gate UI/API 尚不存在。
 
 - [ ] **Step 5: 运行 Agent/server tests 并确认 RED**
 
-Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/conversation.test.ts`
+Run: `npx vitest run packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/conversation.test.ts`
 
 Expected: FAIL，因为 model outcome 尚不支持受限 proposal。
 
@@ -397,14 +397,14 @@ Expected: FAIL，因为 model outcome 尚不支持受限 proposal。
 
 - [ ] **Step 7: 运行 Task 5 tests 并确认 GREEN**
 
-Run: `npx vitest run --project workbench-web the retired F8 web app/src/components/F6InputGate.test.tsx the retired F8 web app/src/components/ConversationPane.test.tsx the retired F8 web app/src/app.test.tsx; npx vitest run packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/conversation.test.ts scripts/f6-skill.test.mjs`
+Run: `npx vitest run --project workbench-web apps/workbench-web/src/components/F6InputGate.test.tsx apps/workbench-web/src/components/ConversationPane.test.tsx apps/workbench-web/src/app.test.tsx; npx vitest run packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/conversation.test.ts scripts/f6-skill.test.mjs`
 
 Expected: PASS，且 product language surface 不出现 JSON path 请求。
 
 - [ ] **Step 8: 提交 Task 5**
 
 ```powershell
-git add the retired F8 web app/src/components/F6InputGate.tsx the retired F8 web app/src/components/F6InputGate.test.tsx the retired F8 web app/src/api.ts the retired F8 web app/src/app.tsx the retired F8 web app/src/components/ConversationPane.tsx the retired F8 web app/src/components/ConversationPane.test.tsx packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/conversation.test.ts .github/skills/design-optimization/SKILL.md scripts/f6-skill.test.mjs
+git add apps/workbench-web/src/components/F6InputGate.tsx apps/workbench-web/src/components/F6InputGate.test.tsx apps/workbench-web/src/api.ts apps/workbench-web/src/app.tsx apps/workbench-web/src/components/ConversationPane.tsx apps/workbench-web/src/components/ConversationPane.test.tsx packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/conversation.test.ts .github/skills/design-optimization/SKILL.md scripts/f6-skill.test.mjs
 git commit -m "feat(f6): collect governed inputs through chat"
 ```
 
@@ -415,10 +415,10 @@ git commit -m "feat(f6): collect governed inputs through chat"
 - Modify: `apps/cli/src/commands/feature6.test.ts`
 - Modify: `packages/agent-runtime/src/runtime.ts`
 - Modify: `packages/agent-runtime/src/runtime.test.ts`
-- Modify: `the retired F8 server app/src/routes/host-actions.ts`
-- Modify: `the retired F8 server app/src/routes/conversation.test.ts`
-- Modify: `the retired F8 web app/src/components/EngineeringWorkspace.test.tsx`
-- Modify: `the retired F8 web app/src/components/ConversationPane.test.tsx`
+- Modify: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `apps/workbench-server/src/routes/conversation.test.ts`
+- Modify: `apps/workbench-web/src/components/EngineeringWorkspace.test.tsx`
+- Modify: `apps/workbench-web/src/components/ConversationPane.test.tsx`
 - Modify: `apps/vscode-extension/src/participant.test.ts`
 - Modify: `apps/vscode-extension/src/extension.test.ts`
 - Modify: `.github/skills/design-optimization/SKILL.md`
@@ -461,7 +461,7 @@ Expected: FAIL，因为当前只打印 F6 output directory。
 
 - [ ] **Step 5: 运行链接 tests 并确认 RED**
 
-Run: `npx vitest run scripts/f6-skill.test.mjs packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/conversation.test.ts --project workbench-web the retired F8 web app/src/components/EngineeringWorkspace.test.tsx the retired F8 web app/src/components/ConversationPane.test.tsx apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts`
+Run: `npx vitest run scripts/f6-skill.test.mjs packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/conversation.test.ts --project workbench-web apps/workbench-web/src/components/EngineeringWorkspace.test.tsx apps/workbench-web/src/components/ConversationPane.test.tsx apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts`
 
 Expected: 新的 direct-final-answer/CLI 链接断言失败。
 
@@ -472,7 +472,7 @@ Skill 使用 existing-artifact validator 的 final path 转换 workspace link。
 - [ ] **Step 7: 提交 Task 6**
 
 ```powershell
-git add apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/conversation.test.ts the retired F8 web app/src/components/EngineeringWorkspace.test.tsx the retired F8 web app/src/components/ConversationPane.test.tsx apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts .github/skills/design-optimization/SKILL.md scripts/f6-skill.test.mjs
+git add apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts packages/agent-runtime/src/runtime.ts packages/agent-runtime/src/runtime.test.ts apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/conversation.test.ts apps/workbench-web/src/components/EngineeringWorkspace.test.tsx apps/workbench-web/src/components/ConversationPane.test.tsx apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts .github/skills/design-optimization/SKILL.md scripts/f6-skill.test.mjs
 git commit -m "fix(f6): require clickable final report delivery"
 ```
 
@@ -518,7 +518,7 @@ npx vitest run packages/contracts/src/contracts.test.ts packages/contracts/src/f
 npx vitest run packages/workflow-runners/src/f6-input-materializer.test.ts packages/workflow-runners/src/f6.test.ts
 npx vitest run scripts/f6-artifact-loader.test.mjs scripts/f6-full-flow.test.mjs scripts/f6-model-observation-regression.test.mjs scripts/f6-skill.test.mjs
 npx vitest run packages/workbench/src/state-machine.test.ts packages/workbench/src/session-store.test.ts
-npx vitest run the retired F8 server app/src/routes/f6-inputs.test.ts the retired F8 server app/src/routes/conversation.test.ts the retired F8 server app/src/server.test.ts --maxWorkers=1
+npx vitest run apps/workbench-server/src/routes/f6-inputs.test.ts apps/workbench-server/src/routes/conversation.test.ts apps/workbench-server/src/server.test.ts --maxWorkers=1
 npx vitest run --project workbench-web
 npx vitest run packages/agent-runtime/src/runtime.test.ts apps/vscode-extension/src/participant.test.ts apps/vscode-extension/src/extension.test.ts apps/cli/src/commands/feature6.test.ts
 ```
