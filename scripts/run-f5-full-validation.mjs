@@ -165,12 +165,13 @@ function executeF5(options, dependencyOverrides) {
       emit: () => {},
     }, {
       resolveOutputLayout: () => dependencies.resolveLayout(parsed, options),
-      loadBundle: (request) => dependencies.loadBundle({
+      loadBundle: (request, observationBytes) => dependencies.loadBundle({
         f1ArtifactRoot: request.f1ArtifactRoot,
         f3ArtifactRoot: request.f3ArtifactRoot,
         f4ArtifactRoot: request.f4ArtifactRoot,
         selectedWorksheetNames: request.selectedWorksheetNames,
         imageObservationArtifact: request.imageObservationsPath,
+        imageObservationBytes: observationBytes,
       }),
       createInterpretation: dependencies.createInterpretation,
       renderReport: dependencies.renderReport,

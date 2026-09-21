@@ -95,6 +95,7 @@ Follow this order without omission or reordering:
 	- Do not state pass/fail, compliance, or capability conclusions unless the validated deterministic evidence contains the required specification.
 	- Model-generated reference interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.
 4. **Create one immutable `f5-image-observation-v2` artifact.** In the current/default workspace flow, write the optional strict JSON artifact only at `<validated-analysis-root>/05 - F5 Result Interpretation/Feature5-Image-Observations.json`. Do not invent a CLI for image analysis.
+   F5 accepts this single precreated file as immutable input when passed with `--image-observations`; all other stage debris is rejected. F5 pins its canonical file identity and original bytes through validation and publication, records their hash, and never replaces or deletes the input.
 5. **Read back and validate schema, identity, and source rows.** After creation, read back and validate the artifact with `f5ImageObservationArtifactSchema`. Validate the contract version, workbook identity, selected worksheets, images, five scopes, complete snapshots, source provenance, and structured links. W6 readback must exactly match those already verified image references and the v2 snapshot and source identities.
 6. **Pass completed worksheet evidence to F5 and preserve failed worksheet outcomes for the final report.** Every selected worksheet reaches one terminal outcome. Any worksheet, scope, snapshot, readback, image, or mapping mismatch fails that worksheet without discarding valid completed worksheets. Never repair an immutable artifact in place.
 
@@ -109,7 +110,7 @@ Creation controls apply to the entire v2 artifact:
 - If the target already exists, fail closed; do not delete, repair, or relocate existing stage artifacts to make room.
 - Readback must exactly match the validated workbook content hash and selected worksheets.
 - Each readback `imageReference` must exactly match the W3-verified `relativePath`, `contentHash`, and `worksheetName`; W6 does not independently rehash the physical image or the new observation artifact.
-- If reread, schema, identity, source-row, provenance, link, or hash validation fails, discard the entire artifact from the F5 invocation. Do not partially consume it.
+- If reread, schema, identity, source-row, provenance, link, or hash validation fails, do not partially consume the artifact. A precreated workspace artifact remains immutable: fail the current workspace attempt rather than deleting it or silently falling back to baseline interpretation.
 - The F5 loader is the authoritative runtime revalidation gate for physical image SHA and content identity when consuming v2.
 - Current/default workspace publication keeps `Feature5-Report.json`, `Feature5-Report.md`, `Feature5-Run-Summary.json`, `Feature5-Image-Observations.json`, and `manifest.json` directly under the fixed F5 stage. Do not publish under `f5-runs`, `f5-observations`, workbook-hash, run-id, or UUID subdirectories.
 - Legacy explicit-root layouts remain low-level read compatibility only; do not switch the governed workspace flow back to them.

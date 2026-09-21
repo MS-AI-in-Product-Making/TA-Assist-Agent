@@ -5,12 +5,12 @@ import {
   fsyncSync,
   fstatSync,
   lstatSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
   realpathSync,
-  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -157,10 +157,10 @@ function captureDirectoryIdentity(targetPath, label) {
 function captureFileIdentity(targetPath, label) {
   const requestedPath = path.resolve(targetPath);
   if (!existsSync(requestedPath)) throw new Error(`${label} is missing.`);
-  const requestedStats = lstatSync(requestedPath);
+  const requestedStats = lstatSync(requestedPath, { bigint: true });
   if (!requestedStats.isFile()) throw new Error(`${label} is invalid.`);
   const canonicalPath = realpathSync(requestedPath);
-  const canonicalStats = statSync(canonicalPath);
+  const canonicalStats = statSync(canonicalPath, { bigint: true });
   if (!canonicalStats.isFile()) throw new Error(`${label} is invalid.`);
   return {
     requestedPath,
@@ -189,13 +189,13 @@ function assertIdentityUnchanged(expected, label, capture) {
 
 function captureRegularFileIdentity(targetPath, descriptor, label) {
   const requestedPath = path.resolve(targetPath);
-  const handleStats = fstatSync(descriptor);
-  const requestedStats = lstatSync(requestedPath);
+  const handleStats = fstatSync(descriptor, { bigint: true });
+  const requestedStats = lstatSync(requestedPath, { bigint: true });
   if (!handleStats.isFile() || requestedStats.isSymbolicLink() || !requestedStats.isFile()) {
     throw new Error(`${label} is invalid.`);
   }
   const canonicalPath = realpathSync(requestedPath);
-  const canonicalStats = statSync(canonicalPath);
+  const canonicalStats = statSync(canonicalPath, { bigint: true });
   if (!canonicalStats.isFile()
     || handleStats.dev !== requestedStats.dev
     || handleStats.ino !== requestedStats.ino
@@ -213,12 +213,12 @@ function captureRegularFileIdentity(targetPath, descriptor, label) {
 
 function captureRegularFilePathIdentity(targetPath, label) {
   const requestedPath = path.resolve(targetPath);
-  const requestedStats = lstatSync(requestedPath);
+  const requestedStats = lstatSync(requestedPath, { bigint: true });
   if (requestedStats.isSymbolicLink() || !requestedStats.isFile()) {
     throw new Error(`${label} is invalid.`);
   }
   const canonicalPath = realpathSync(requestedPath);
-  const canonicalStats = statSync(canonicalPath);
+  const canonicalStats = statSync(canonicalPath, { bigint: true });
   if (!canonicalStats.isFile()
     || requestedStats.dev !== canonicalStats.dev
     || requestedStats.ino !== canonicalStats.ino) {
@@ -271,8 +271,16 @@ function removeOwnedRegularFile(ownedFile) {
 function resolveAnalysisWorkspace(analysisRoot) {
   const resolvedRoot = path.resolve(analysisRoot);
   const summaryPath = path.join(resolvedRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
-  const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+  const summaryIdentity = captureFileIdentity(summaryPath, "Feature 6 workspace summary");
+  if (summaryIdentity.canonicalPath !== summaryPath) throw new Error("Feature 6 workspace summary path is not canonical.");
+  const summaryBytes = readFileSync(summaryPath);
+  const summary = JSON.parse(summaryBytes.toString("utf8"));
   validateAnalysisWorkspaceSummary(summary);
+  if (summary.overallStatus !== "in_progress" || summary.currentStage !== "f6"
+    || !["pending", "running"].includes(summary.stages.f6.status)
+    || ["f1", "f2", "f3", "f4", "f5"].some((stage) => summary.stages[stage].status !== "completed")) {
+    throw new Error("Feature 6 model interpretation requires an eligible in-progress F6 workspace.");
+  }
   const layout = {
     contractVersion: summary.contractVersion,
     analysisRoot: summary.analysisRoot,
@@ -294,7 +302,17 @@ function resolveAnalysisWorkspace(analysisRoot) {
     f5: captureDirectoryIdentity(layout.stagePaths.f5, "Feature 6 validated F5 stage path"),
     f6: captureDirectoryIdentity(layout.stagePaths.f6, "Feature 6 validated F6 stage path"),
   };
-  return { layout, analysisRootIdentity, stageIdentities };
+  const interpretationPath = path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  for (const target of [interpretationPath, path.join(layout.stagePaths.f6, "evidence", "candidate"), path.join(layout.stagePaths.f6, "manifest.json")]) {
+    try {
+      lstatSync(target);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    throw new Error("Feature 6 fixed evidence or publication already exists; it is immutable.");
+  }
+  return { layout, analysisRootIdentity, stageIdentities, summaryIdentity, summaryHash: sha256(summaryBytes) };
 }
 
 function assertExpectedWorkspaceArtifact(stageIdentity, artifactFileName, label) {
@@ -344,6 +362,13 @@ function semanticEvidenceRoots(stageRoot) {
 function assertWorkspaceBoundaryUnchanged(workspace) {
   assertIdentityUnchanged(workspace.analysisRootIdentity, "Feature 6 analysis workspace root", captureDirectoryIdentity);
   assertIdentityUnchanged(workspace.stageIdentities.f6, "Feature 6 validated F6 stage path", captureDirectoryIdentity);
+  assertIdentityUnchanged(workspace.summaryIdentity, "Feature 6 workspace summary", captureFileIdentity);
+  if (sha256(readFileSync(workspace.layout.summaryPath)) !== workspace.summaryHash) {
+    throw new Error("Feature 6 workspace summary changed during materialization.");
+  }
+  if (existsSync(path.join(workspace.layout.stagePaths.f6, "evidence", "candidate"))) {
+    throw new Error("Feature 6 candidate-backed evidence is immutable.");
+  }
 }
 
 function assertEvidenceDirectoryUnchanged(expected, label) {
@@ -546,17 +571,22 @@ function atomicWriteWorkspaceArtifact(artifactPath, content, workspace, director
     assertWorkspaceBoundaryUnchanged(workspace);
     assertEvidenceDirectoryUnchanged(directoryState.evidenceRootIdentity, "Feature 6 stage6 evidence root");
     assertEvidenceDirectoryUnchanged(directoryState.interpretationRootIdentity, "Feature 6 stage6 model interpretation root");
-    renameSync(temporaryPath, artifactPath);
-    ownedFinalFile = captureRegularFilePathIdentity(artifactPath, "Feature 6 model interpretation artifact");
-    if (!sameOwnedRegularFile(ownedTemporaryFile, ownedFinalFile)) {
+    // A same-filesystem hard link publishes complete bytes atomically and fails
+    // if the fixed destination exists (unlike rename, which can replace it).
+    linkSync(temporaryPath, artifactPath);
+    const publishedIdentity = captureRegularFilePathIdentity(artifactPath, "Feature 6 model interpretation artifact");
+    if (!sameOwnedRegularFile(ownedTemporaryFile, publishedIdentity)) {
       throw new Error("Feature 6 model interpretation artifact identity changed during rename.");
     }
+    ownedFinalFile = publishedIdentity;
     assertOwnedFileInDirectory(ownedFinalFile, directoryState.interpretationRootIdentity, "Feature 6 model interpretation artifact");
     assertWorkspaceBoundaryUnchanged(workspace);
+    removeOwnedRegularFile(ownedTemporaryFile);
     committed = true;
     return ownedFinalFile;
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
+    if (ownedTemporaryFile) removeOwnedRegularFile(ownedTemporaryFile);
     if (!committed) removeOwnedRegularFile(ownedFinalFile ?? ownedTemporaryFile ?? {
       requestedPath: temporaryPath,
       canonicalPath: temporaryPath,
@@ -633,6 +663,10 @@ export function materializeF6ModelInterpretation(options, hooks = {}) {
   }
 
   const workspace = resolveWorkspaceMode(options);
+  if (workspace && (workspace.layout.workbookFileName !== f2.workbook.fileName
+    || workspace.layout.workbookContentHash !== workbookHash)) {
+    throw new Error("Feature 6 workspace workbook identity does not match the input lineage.");
+  }
   const responseBytes = readGovernedResponse(options.responsePath, options.outputRoot, workbookHash, workspace, hooks);
   const response = responseSchema.parse(JSON.parse(responseBytes.toString("utf8")));
   if (!isDeepStrictEqual(response.worksheets.map(({ worksheetName }) => worksheetName), options.selectedWorksheetNames)) {

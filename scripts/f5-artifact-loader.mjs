@@ -407,6 +407,7 @@ export function loadF5ArtifactBundle({
   f4ArtifactRoot,
   selectedWorksheetNames,
   imageObservationArtifact,
+  imageObservationBytes,
   modelInterpretationArtifact,
   expectedModelInterpretationContentHash,
 }) {
@@ -572,7 +573,9 @@ export function loadF5ArtifactBundle({
       ...(mismatchPath === undefined ? {} : { mismatchPath }),
     },
   });
-  const observationJson = readJson(path.resolve(imageObservationArtifact), observationReference);
+  const observationJson = imageObservationBytes === undefined
+    ? readJson(path.resolve(imageObservationArtifact), observationReference)
+    : { value: JSON.parse(imageObservationBytes.toString("utf8")) };
   if (observationJson.rejection) {
     return observationFallback(observationJson.rejection.reasonCode);
   }

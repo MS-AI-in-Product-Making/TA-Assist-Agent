@@ -47,6 +47,16 @@ function readSkill() {
   return readFileSync(skillPath, "utf8");
 }
 
+it("aligns both image workflows on one immutable precreated workspace input", () => {
+  for (const skill of ["result-interpretation", "design-optimization"]) {
+    const text = readFileSync(path.join(root, ".github", "skills", skill, "SKILL.md"), "utf8");
+    expect(text).not.toContain("test/demo-output/f5-observations/");
+    expect(text).toContain("<validated-analysis-root>/05 - F5 Result Interpretation/Feature5-Image-Observations.json");
+    expect(text).toContain("immutable input");
+    expect(text).toContain("all other stage debris");
+  }
+});
+
 function parseFrontmatter(markdown) {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) throw new Error("Missing or malformed frontmatter block.");

@@ -8,6 +8,7 @@ import { afterEach, expect, it } from "vitest";
 import { createF6ArtifactBundleFixture, F6_FIXTURE_WORKBOOK_HASH, rewriteFixtureJson } from "./f6-artifact-test-fixture.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { materializeF6ModelInterpretation } from "./f6-model-interpretation-materializer.mjs";
+import { recordAnalysisStageCompleted, recordAnalysisStageStarted } from "../packages/workflow-runners/dist/index.js";
 
 const cleanup = [];
 
@@ -73,6 +74,15 @@ function createAnalysisWorkspaceRoot(bundle) {
     },
     overallStatus: "in_progress",
   }, null, 2)}\n`, "utf8");
+  const summaryPath = path.join(analysisRoot, "analysis-run-summary.json");
+  let summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+  for (const stage of ["f1", "f2", "f3", "f4", "f5"]) {
+    const evidence = path.join(stagePaths[stage], "upstream-fixture.json");
+    writeFileSync(evidence, "{}");
+    summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, stage), stage,
+      { evidence: path.relative(analysisRoot, evidence) });
+  }
+  writeFileSync(summaryPath, JSON.stringify(summary));
   Object.assign(bundle, {
     analysisRoot,
     f2ArtifactRoot: stagePaths.f2,
@@ -83,6 +93,85 @@ function createAnalysisWorkspaceRoot(bundle) {
   });
   return { analysisRoot, stagePaths };
 }
+
+it.each(["repeat", "candidate", "failed", "completed", "wrong-workbook", "wrong-stage"])(
+  "never changes fixed evidence for an ineligible %s invocation", (mode) => {
+    const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
+    cleanup.push(bundle.root);
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot(bundle);
+    const responsePath = writeResponse(bundle, ["Analysis-A"]);
+    const options = { ...bundle, responsePath, outputRoot: bundle.publishRoot };
+    const result = materializeF6ModelInterpretation(options);
+    const before = readFileSync(result.artifactPath);
+    if (mode !== "repeat") {
+      if (mode === "candidate") mkdirSync(path.join(stagePaths.f6, "evidence", "candidate", "publication"), { recursive: true });
+      else rewriteFixtureJson(path.join(analysisRoot, "analysis-run-summary.json"), (summary) => {
+        if (mode === "wrong-workbook") summary.workbook.contentHash = "f".repeat(64);
+        if (mode === "wrong-stage") summary.currentStage = "f5";
+        if (mode === "failed") {
+          summary.overallStatus = "failed";
+          summary.stages.f6.status = "failed";
+          summary.failedStage = "f6";
+          summary.failureCategory = "stage_execution_failed";
+        }
+        if (mode === "completed") {
+          summary.overallStatus = "completed";
+          summary.stages.f6 = { status: "completed", artifacts: { evidence: path.relative(analysisRoot, result.artifactPath) } };
+        }
+        return summary;
+      });
+    }
+    expect(() => materializeF6ModelInterpretation(options)).toThrow();
+    expect(readFileSync(result.artifactPath)).toEqual(before);
+  },
+);
+
+it.each(["failed", "completed", "wrong-workbook", "predecessor", "candidate"])(
+  "rejects an ineligible %s root even without a fixed interpretation", (mode) => {
+    const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
+    cleanup.push(bundle.root);
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot(bundle);
+    const responsePath = writeResponse(bundle, ["Analysis-A"]);
+    const before = readFileSync(responsePath);
+    const summaryPath = path.join(analysisRoot, "analysis-run-summary.json");
+    rewriteFixtureJson(summaryPath, (summary) => {
+      if (mode === "wrong-workbook") summary.workbook.fileName = "Other.xlsx";
+      if (mode === "predecessor") {
+        summary.currentStage = "f5";
+        summary.stages.f5 = { status: "pending", artifacts: {} };
+      }
+      if (mode === "failed") {
+        summary.overallStatus = "failed";
+        summary.stages.f6.status = "failed";
+        summary.failedStage = "f6";
+        summary.failureCategory = "stage_execution_failed";
+      }
+      if (mode === "completed") {
+        summary.overallStatus = "completed";
+        summary.stages.f6 = { status: "completed", artifacts: { evidence: path.relative(analysisRoot, responsePath) } };
+      }
+      return summary;
+    });
+    if (mode === "candidate") mkdirSync(path.join(stagePaths.f6, "evidence", "candidate"), { recursive: true });
+    const summaryBefore = readFileSync(summaryPath);
+    expect(() => materializeF6ModelInterpretation({ ...bundle, responsePath, outputRoot: bundle.publishRoot })).toThrow();
+    expect(readFileSync(responsePath)).toEqual(before);
+    expect(readFileSync(summaryPath)).toEqual(summaryBefore);
+    expect(existsSync(path.join(stagePaths.f6, "evidence", "model-interpretation"))).toBe(false);
+  },
+);
+
+it("publishes exclusively when a destination appears immediately before publication", () => {
+  const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
+  cleanup.push(bundle.root);
+  const { stagePaths } = createAnalysisWorkspaceRoot(bundle);
+  const responsePath = writeResponse(bundle, ["Analysis-A"]);
+  const destination = path.join(stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  expect(() => materializeF6ModelInterpretation({ ...bundle, responsePath, outputRoot: bundle.publishRoot }, {
+    beforeRenameOwnedFile() { writeFileSync(destination, "concurrent immutable input", { flag: "wx" }); },
+  })).toThrow();
+  expect(readFileSync(destination, "utf8")).toBe("concurrent immutable input");
+});
 
 it("materializes one current v3 artifact from a terminal drawing-governance-v3 receipt", () => {
   const worksheetNames = ["Analysis-E", "Analysis-C", "Analysis-A", "Analysis-D", "Analysis-B"];

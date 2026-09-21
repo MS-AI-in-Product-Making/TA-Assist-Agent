@@ -3,7 +3,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  cpSync,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -342,6 +344,65 @@ function setup({ rejectedWorksheets = [], observationArtifact } = {}) {
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
+
+it.each(["valid-v2", "swap-during-load", "swap-before-write", "symlink"])(
+  "pins precreated evidence without overwriting it: %s", (mode) => {
+    const { observationArtifact, enrichedRequest } = contextualObservationBundle();
+    const context = setup({ observationArtifact });
+    mkdirSync(context.runRoot, { recursive: true });
+    const observationPath = path.join(context.runRoot, "Feature5-Image-Observations.json");
+    const bytes = JSON.stringify(observationArtifact);
+    writeFileSync(observationPath, bytes);
+    const originalIdentity = lstatSync(observationPath).ino;
+    const parsed = context.deps.parseArgs();
+    const layout = context.deps.resolveLayout();
+    context.deps.parseArgs = () => ({ ...parsed, imageObservationsPath: observationPath });
+    context.deps.resolveLayout = () => ({ ...layout, allowExistingRunRoot: true });
+    if (mode.startsWith("swap")) {
+      // NTFS IDs can collide after conversion to JS numbers; exact IDs cannot.
+      const roundedFileId = (stats) => {
+        if (stats.isFile() && typeof stats.ino === "number") stats.ino = 2 ** 54;
+        return stats;
+      };
+      context.deps.lstat = (...args) => roundedFileId(lstatSync(...args));
+      context.deps.stat = (...args) => roundedFileId(statSync(...args));
+      context.deps.fstat = (...args) => roundedFileId(fstatSync(...args));
+    }
+    const loaded = context.deps.loadBundle();
+    const displaced = path.join(context.root, "original-observation.json");
+    function swap() {
+      renameSync(observationPath, displaced);
+      writeFileSync(observationPath, bytes);
+    }
+    context.deps.loadBundle = ({ imageObservationBytes }) => {
+      expect(imageObservationBytes.toString("utf8")).toBe(bytes);
+      if (mode === "swap-during-load") swap();
+      return { ...loaded, request: enrichedRequest };
+    };
+    context.deps.renderReport = () => {
+      if (mode === "swap-before-write") swap();
+      return "# Feature 5";
+    };
+    if (mode === "symlink") {
+      renameSync(observationPath, displaced);
+      try { symlinkSync(displaced, observationPath, "file"); }
+      catch (error) {
+        if (error.code !== "EPERM") throw error;
+        symlinkSync(path.dirname(displaced), observationPath, "junction");
+      }
+    }
+    const result = runF5FullValidation({}, context.deps);
+    expect(result.status).toBe(mode === "valid-v2" ? "completed" : "failed");
+    expect(readFileSync(mode === "symlink" ? displaced : observationPath, "utf8")).toBe(bytes);
+    if (mode === "valid-v2") {
+      expect(lstatSync(observationPath).ino).toBe(originalIdentity);
+      expect(readJson(result.runSummaryPath).hashes.imageObservationsSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    } else {
+      expect(existsSync(path.join(context.runRoot, "Feature5-Report.json"))).toBe(false);
+      if (existsSync(displaced)) expect(readFileSync(displaced, "utf8")).toBe(bytes);
+    }
+  },
+);
 
 function directoryIdentity(targetPath) {
   const requestedPath = path.resolve(targetPath);
@@ -1512,6 +1573,39 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it.each(["valid", "malformed", "hash", "worksheet", "image", "debris"])("handles immutable precreated workspace observations: %s", (mode) => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    for (const stage of ["f1", "f3", "f4"]) {
+      rmSync(workspace.stagePaths[stage], { recursive: true, force: true });
+      cpSync(bundle[`${stage}ArtifactRoot`], workspace.stagePaths[stage], { recursive: true });
+    }
+    prepareWorkspaceStage(workspace, "f5");
+    const imagePath = path.join(workspace.stagePaths.f1, "sheets", "anonymous.xlsx", "json", "Analysis-A.json");
+    const f1 = readJson(imagePath);
+    const observation = observations();
+    observation.workbookContentHash = f1.workbook.contentHash;
+    observation.worksheets[0].imageReference = {
+      artifact: "f1", worksheetName: "Analysis-A",
+      relativePath: f1.imageAssets[0].outputFile, contentHash: f1.imageAssets[0].contentHash,
+    };
+    if (mode === "hash") observation.workbookContentHash = "f".repeat(64);
+    if (mode === "worksheet") observation.worksheets[0].worksheetName = "Other";
+    if (mode === "image") observation.worksheets[0].imageReference.contentHash = "f".repeat(64);
+    const observationPath = path.join(workspace.stagePaths.f5, "Feature5-Image-Observations.json");
+    const bytes = mode === "malformed" ? "{}" : JSON.stringify(observation);
+    writeFileSync(observationPath, bytes);
+    if (mode === "debris") writeFileSync(path.join(workspace.stagePaths.f5, "note.txt"), "unchanged");
+    const child = runWorkspaceDirectProcess(workspace, observationPath);
+    expect(readFileSync(observationPath, "utf8")).toBe(bytes);
+    if (mode === "valid") {
+      expect(child.status).toBe(0);
+      const result = JSON.parse(child.stdout);
+      expect(result.status).toBe("completed");
+      expect(readJson(result.runSummaryPath).hashes.imageObservationsSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    } else expect(child.status).toBe(1);
   });
 
   it("routes workspace F5 publication directly into the fixed stage without f5-runs or hash directories", () => {

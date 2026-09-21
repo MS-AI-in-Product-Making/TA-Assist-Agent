@@ -1,7 +1,8 @@
 import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { setImmediate } from "node:timers";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
@@ -21,6 +22,7 @@ import {
   recordAnalysisStageStarted,
   resolveAnalysisWorkspaceStagePaths,
   writeAnalysisWorkspaceSummary,
+  validateExistingF6,
 } from "../packages/workflow-runners/dist/index.js";
 
 
@@ -35,6 +37,9 @@ const OPTIONAL_SOURCE_KEYS = [
 ];
 const INTERACTION_LANGUAGE = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false };
 const REQUEST_CONTEXT = { requestedAt: "2026-09-16T08:30:12.000Z", utcOffsetMinutes: -420, source: "cli" };
+
+// Synchronous PDF fixture subprocesses must yield so worker RPC updates settle.
+afterEach(() => new Promise((resolve) => setImmediate(resolve)));
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -104,6 +109,66 @@ function createWorkspacePublication() {
   writeWorkspaceSummary(analysisRoot, runRoot, optimization.workbook);
   return { bundle, analysisRoot, runRoot, workspaceModelInterpretationPath, optimization };
 }
+
+describe("workspace evidence parity", () => {
+  let fixture;
+  let originalModel;
+  let originalManifest;
+  beforeAll(() => {
+    fixture = createWorkspacePublication();
+    originalModel = readFileSync(fixture.workspaceModelInterpretationPath);
+    originalManifest = readFileSync(path.join(fixture.runRoot, "manifest.json"));
+  });
+  afterAll(() => { if (fixture) rmSync(fixture.bundle.root, { recursive: true, force: true }); });
+  it.each(["valid", "valid-response", "missing", "altered", "alias", "response", "response-mismatch", "response-extra-key", "candidate", "internal-marker"])(
+  "matches the authoritative workspace evidence reader for %s evidence", (mode) => {
+    const { runRoot, analysisRoot, workspaceModelInterpretationPath } = fixture;
+    try {
+      let modelPath = workspaceModelInterpretationPath;
+      if (mode === "missing") rmSync(modelPath);
+      if (mode === "altered") writeFileSync(modelPath, "{}");
+      if (mode === "alias") {
+        modelPath = path.join(runRoot, "evidence", "model-interpretation", "..", "model-interpretation", "Feature6-Model-Interpretation.json");
+        modelPath = `${path.dirname(modelPath)}${path.sep}.${path.sep}${path.basename(modelPath)}`;
+      }
+      if (mode.includes("response")) {
+        const responseRoot = path.join(runRoot, "evidence", "model-response");
+        mkdirSync(responseRoot);
+        const interpretation = readJson(modelPath);
+        const response = {
+          contractVersion: "f6-model-interpretation-response-v1",
+          model: interpretation.worksheets[0].result.model,
+          worksheets: interpretation.worksheets.map(({ result }) => ({
+            worksheetName: result.worksheetName,
+            imageTableInterpretation: result.imageTableInterpretation,
+            rows: result.rowMappings.map(({ sourceRow, visibleStatus, interpretation }) => ({ sourceRow, visibleStatus, interpretation })),
+          })),
+        };
+        if (mode === "response-mismatch") response.worksheets[0].imageTableInterpretation = "Different model interpretation.";
+        if (mode === "response-extra-key") response.extra = true;
+        writeJson(path.join(responseRoot, "Feature6-Model-Response.json"), mode === "response" ? {} : response);
+      }
+      if (mode === "candidate") mkdirSync(path.join(runRoot, "evidence", "candidate", "publication"), { recursive: true });
+      if (mode === "internal-marker") {
+        const manifest = readJson(path.join(runRoot, "manifest.json"));
+        manifest.internalOnly = true;
+        writeJson(path.join(runRoot, "manifest.json"), manifest);
+      }
+      const options = { publishRoot: analysisRoot, workspaceModelInterpretationPath: modelPath };
+      const authoritative = validateExistingF6(runRoot, options);
+      const standalone = validateExistingF6Artifact(runRoot, options);
+      expect(authoritative.status).toBe(mode.startsWith("valid") ? "accepted" : "rejected");
+      expect(standalone.status).toBe(authoritative.status);
+    } finally {
+      writeFileSync(workspaceModelInterpretationPath, originalModel);
+      writeFileSync(path.join(runRoot, "manifest.json"), originalManifest);
+      for (const directory of ["model-response", "candidate"]) {
+        rmSync(path.join(runRoot, "evidence", directory), { recursive: true, force: true });
+      }
+    }
+  },
+);
+});
 
 function rewriteAsHistoricalV2(runRoot, optionalArtifacts = {}, blockedWorksheetNames = []) {
   const optimizationPath = path.join(runRoot, "Feature6-Optimization.json");

@@ -19,6 +19,7 @@ import {
   hasF6CandidateMarker,
   resolveAnalysisWorkspaceStagePaths,
   validateAnalysisWorkspaceSummary,
+  validateF6WorkspaceEvidence,
 } from "../packages/workflow-runners/dist/index.js";
 
 const LEGACY_FILES = Object.freeze([
@@ -534,6 +535,7 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
     const contract = artifactContract(manifest, optimization);
     const workspaceEvidence = options.workspaceModelInterpretationPath !== undefined;
     if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence)) return rejected("artifact_file_set_invalid");
+    if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, options.workspaceModelInterpretationPath, optimization)) return rejected("artifact_workspace_evidence_invalid");
     if (!validateWorkspaceFinalSet(options.publishRoot, runRoot, optimization, contract)) return rejected("artifact_validation_failed");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);

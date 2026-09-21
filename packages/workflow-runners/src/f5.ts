@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -16,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   createF5DataInterpretation,
@@ -113,7 +115,7 @@ function captureRegularFilePathIdentity(
 
 export interface F5Dependencies {
   readonly resolveOutputLayout?: (request: F5InterpretationRequest, context: RunContext) => F5Layout;
-  readonly loadBundle?: (request: F5InterpretationRequest) => any;
+  readonly loadBundle?: (request: F5InterpretationRequest, observationBytes?: Buffer) => any;
   readonly createInterpretation?: typeof createF5DataInterpretation;
   readonly renderReport?: (result: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string }) => string;
   readonly mkdir?: typeof mkdirSync;
@@ -378,9 +380,11 @@ function outputPaths(layout: F5Layout) {
   };
 }
 
-function assertWorkspaceStageEmpty(outputRoot: string, readdir: typeof readdirSync): void {
+function assertWorkspaceStageEmpty(outputRoot: string, readdir: typeof readdirSync, observationPath?: string): void {
   const entries = readdir(outputRoot, { withFileTypes: true });
-  if (entries.length > 0) {
+  if (entries.length > 0 && !(entries.length === 1 && entries[0]!.isFile()
+    && entries[0]!.name === "Feature5-Image-Observations.json"
+    && observationPath === path.join(outputRoot, entries[0]!.name))) {
     throw createTypedError({
       code: "prerequisite_not_ready",
       summary: "Workspace stage already contains published artifacts.",
@@ -395,7 +399,7 @@ function safeSources(sourceReferences: Record<string, string>) {
   return Object.fromEntries(Object.entries(sourceReferences).map(([key, value]) => [key, path.basename(String(value))]));
 }
 
-function sha256(content: string): string {
+function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -530,6 +534,21 @@ export function runF5Interpretation(
   const committedArtifacts: Record<string, string> = {};
   let loadStarted = false;
   let failureStage = "input";
+  let pinnedObservation: {
+    identity: ReturnType<typeof captureRegularFileIdentity>;
+    fileId: { dev: bigint; ino: bigint };
+    bytes: Buffer;
+  } | undefined;
+  const assertObservationUnchanged = () => {
+    if (!pinnedObservation) return;
+    const current = captureRegularFilePathIdentity(pinnedObservation.identity.requestedPath, { lstat, realpath, stat });
+    const exactStats = lstat(current.requestedPath, { bigint: true });
+    if (!isDeepStrictEqual(current, pinnedObservation.identity)
+      || exactStats.dev !== pinnedObservation.fileId.dev || exactStats.ino !== pinnedObservation.fileId.ino
+      || !readFileSync(current.requestedPath).equals(pinnedObservation.bytes)) {
+      throw new Error("Feature 5 immutable observation input changed.");
+    }
+  };
   try {
     throwIfAborted(context, "resolve_output_layout");
     layout = resolveOutputLayout(request, context);
@@ -541,13 +560,42 @@ export function runF5Interpretation(
         assertPinnedDirectoryIdentity(layout.workspaceBoundary.publishRootIdentity, { lstat, realpath, stat });
         assertPinnedDirectoryIdentity(layout.workspaceBoundary.runRootIdentity, { lstat, realpath, stat });
       }
-      assertWorkspaceStageEmpty(layout.runRoot, readdir);
+      assertWorkspaceStageEmpty(layout.runRoot, readdir, request.imageObservationsPath);
+      if (layout.workspaceBoundary && request.imageObservationsPath !== undefined && request.imageObservationsPath !== paths.imageObservationsPath) {
+        throw new Error("Feature 5 workspace observation input must use the exact stage path.");
+      }
+      if (request.imageObservationsPath === paths.imageObservationsPath) {
+        const descriptor = open(request.imageObservationsPath, "r");
+        try {
+          const identity = captureRegularFileIdentity(request.imageObservationsPath, descriptor, { lstat, fstat, realpath, stat });
+          if (identity.canonicalPath !== paths.imageObservationsPath) throw new Error("Feature 5 observation path is not canonical.");
+          const bytes = readFileSync(descriptor);
+          f5ImageObservationArtifactSchema.parse(JSON.parse(bytes.toString("utf8")));
+          // Windows file IDs can exceed the exact integer range of JS numbers.
+          const exactStats = fstat(descriptor, { bigint: true });
+          pinnedObservation = { identity, fileId: { dev: exactStats.dev, ino: exactStats.ino }, bytes };
+          assertObservationUnchanged();
+        } finally { close(descriptor); }
+      }
     } else {
       mkdir(layout.runRoot);
     }
     boundary = captureCreatedRunBoundary(layout, { lstat, realpath, stat, rmdir });
     loadStarted = true;
-    const loaded = loadBundle(request);
+    const loaded = loadBundle(request, pinnedObservation && Buffer.from(pinnedObservation.bytes));
+    assertObservationUnchanged();
+    if (pinnedObservation) {
+      const supplied = f5ImageObservationArtifactSchema.parse(JSON.parse(pinnedObservation.bytes.toString("utf8")));
+      if (loaded?.status !== "accepted" || loaded.observationFallback
+        || !isDeepStrictEqual(loaded.observationArtifact, supplied)
+        || supplied.workbookContentHash !== loaded.request?.workbook?.contentHash
+        || !isDeepStrictEqual(supplied.worksheets.map((worksheet) => worksheet.worksheetName).sort(),
+          loaded.request?.worksheets?.map((worksheet: any) => worksheet.worksheetName).sort())
+        || supplied.worksheets.some((worksheet) => !isDeepStrictEqual(worksheet.imageReference,
+          loaded.request.worksheets.find((candidate: any) => candidate.worksheetName === worksheet.worksheetName)?.imageReference))) {
+        throw new Error("Feature 5 immutable observation input failed identity validation.");
+      }
+    }
     if (loaded?.status !== "accepted") {
       return failedResult(layout, paths, committedArtifacts, "input_rejected", boundary, { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
     }
@@ -581,17 +629,20 @@ export function runF5Interpretation(
         f1ArtifactRoot: request.f1ArtifactRoot,
         publishRoot: layout.publishRoot,
       }),
-      ...(observationArtifact === undefined ? {} : { observations: json(observationArtifact) }),
+      ...(observationArtifact === undefined ? {} : { observations: pinnedObservation?.bytes.toString("utf8") ?? json(observationArtifact) }),
     };
     const summary = runSummary(result, summaryLoaded, contents);
-    const writeDependencies = { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm };
+    if (pinnedObservation) summary.hashes.imageObservationsSha256 = sha256(pinnedObservation.bytes);
+    const writeDependencies = { lstat, fstat, fsync, realpath, stat, randomUUID: randomUuid,
+      open: ((...args: Parameters<typeof openSync>) => { assertObservationUnchanged(); return open(...args); }) as typeof openSync,
+      writeFd, close, rename, rm };
 
     atomicWrite(paths.reportJsonPath, contents.reportJson, boundary, writeDependencies);
     committedArtifacts.reportJson = layout.reportJsonName;
     atomicWrite(paths.reportMdPath, contents.reportMarkdown, boundary, writeDependencies);
     committedArtifacts.reportMarkdown = layout.reportMdName;
     if (contents.observations !== undefined) {
-      atomicWrite(paths.imageObservationsPath, contents.observations, boundary, writeDependencies);
+      if (!pinnedObservation) atomicWrite(paths.imageObservationsPath, contents.observations, boundary, writeDependencies);
       committedArtifacts.imageObservations = layout.imageObservationsJsonName;
     }
     atomicWrite(paths.runSummaryPath, json(summary), boundary, writeDependencies);
@@ -599,6 +650,7 @@ export function runF5Interpretation(
     const workflowFailed = result.status === "input_rejected";
     atomicWrite(paths.manifestPath, json(manifest(layout, workflowFailed ? "failed" : result.status, committedArtifacts, workflowFailed ? "input_rejected" : undefined)), boundary, writeDependencies);
     assertRunRootContained(boundary, { lstat, realpath, stat });
+    assertObservationUnchanged();
     context.emit({ kind: "artifact_written", featureId: "F5", stage: "report", timestamp: new Date().toISOString(), path: paths.reportJsonPath });
     const finalStatus = workflowFailed || result.status === "input_rejected" ? "failed" : result.status;
     return {
