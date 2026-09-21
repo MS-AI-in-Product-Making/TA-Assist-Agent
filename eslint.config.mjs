@@ -73,15 +73,7 @@ export default [
     },
   },
   {
-    files: ["apps/workbench-server/src/sse.ts", "packages/agent-runtime/src/context-builder.ts", "packages/agent-runtime/src/runtime.ts"],
-    rules: { "no-control-regex": "off" },
-  },
-  {
     files: ["scripts/f2-excel-runner.mjs", "scripts/run-f3-full-validation.mjs"],
     languageOptions: { globals: { crypto: "readonly", AbortController: "readonly" } },
-  },
-  {
-    files: ["test/f8-e2e/server.mjs"],
-    languageOptions: { globals: { Buffer: "readonly" } },
   },
 ];

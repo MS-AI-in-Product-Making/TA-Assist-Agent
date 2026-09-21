@@ -6,47 +6,48 @@ import { assertNoProhibitedProductIdentifiers } from "@ai-assist/product-languag
 
 const root = process.cwd();
 
-const PRODUCT_SURFACE_FILES = [
-  "apps/workbench-web/src/app.tsx",
-  "apps/workbench-web/src/components/EngineeringWorkspace.tsx",
-  "apps/workbench-web/src/components/AnalysisProgress.tsx",
-  "apps/workbench-web/src/components/WorksheetReview.tsx",
-  "apps/workbench-web/src/components/F6Summary.tsx",
-  "apps/workbench-web/src/components/F6Options.tsx",
-  "apps/workbench-web/src/components/F7Placeholder.tsx",
-  "apps/workbench-web/src/components/EvidenceImagePane.tsx",
-  "apps/workbench-web/src/components/EvidencePane.tsx",
-  "apps/workbench-web/src/components/AdoWorkspaceDecision.tsx",
-  "apps/workbench-web/src/components/ConversationPane.tsx",
-  "apps/workbench-web/src/components/F6InputGate.tsx",
-  "apps/workbench-web/src/components/InputGuidance.tsx",
-  "apps/workbench-web/src/components/UploadPanel.tsx",
-  "apps/workbench-web/src/components/WorksheetSelection.tsx",
-  "apps/workbench-web/src/business-status.ts",
-  "apps/workbench-web/src/web-projection.ts",
-  "apps/workbench-web/src/workbench-session.ts",
-  "packages/agent-runtime/src/runtime.ts",
-  "packages/agent-runtime/src/context-builder.ts",
+const REQUIRED_PRODUCT_SURFACE_FILES = [
+  "apps/f7-web/src/App.vue",
+  "apps/f7-web/src/components/MeasurementImportPanel.vue",
+  "apps/f7-web/src/components/ReportPanel.vue",
+  "apps/f7-web/src/components/TAResultsInterpretation.vue",
   "docs/governance/evidence/f3-f5-f6-report-readability-f4-baseline.json",
 ];
 
-const OPTIONAL_GENERATED_PRODUCT_SURFACE_FILES = [
-  "test/demo-output/f6-runs/f5/2026-09-01T07-30-21-518Z/manifest.json",
+const SCANNED_PRODUCT_SURFACE_FILES = [
+  "apps/f7-web/src/App.vue",
+  "apps/f7-web/src/components/DimensionChainPanel.vue",
+  "apps/f7-web/src/components/MeasurementImportPanel.vue",
+  "apps/f7-web/src/components/TAResultsInterpretation.vue",
+  "apps/f7-web/src/components/WorksheetConfirmation.vue",
 ];
 
 describe("product-language surface scan", () => {
-  it("rejects prohibited internal identifiers from real user surfaces", () => {
+  it("covers retained production surfaces only", () => {
+    for (const relativePath of REQUIRED_PRODUCT_SURFACE_FILES) {
+      expect(existsSync(path.join(root, relativePath)), relativePath).toBe(true);
+    }
+
+    const collected = SCANNED_PRODUCT_SURFACE_FILES;
+    expect(collected.some((relativePath) => relativePath.startsWith("apps/f7-web/src/components/"))).toBe(true);
+    expect(collected.some((relativePath) => relativePath.endsWith(".vue"))).toBe(true);
+    expect(collected.some((relativePath) => relativePath.includes("workbench"))).toBe(false);
+    expect(collected.some((relativePath) => relativePath.includes("agent-runtime"))).toBe(false);
+  });
+
+  it("rejects prohibited internal identifiers from retained real user surfaces", () => {
     const failures = [];
 
-    const surfaceFiles = [
-      ...PRODUCT_SURFACE_FILES,
-      ...OPTIONAL_GENERATED_PRODUCT_SURFACE_FILES.filter((relativePath) => existsSync(path.join(root, relativePath))),
-    ];
+    const surfaceFiles = [...SCANNED_PRODUCT_SURFACE_FILES];
 
-    for (const relativePath of surfaceFiles) {
+    for (const relativePath of [...new Set(surfaceFiles)]) {
       const absolutePath = path.join(root, relativePath);
       const content = readFileSync(absolutePath, "utf8");
-      const candidates = collectUserFacingText(content).filter((text) => text.length > 0);
+      const candidates = (
+        relativePath.endsWith(".vue")
+          ? collectVueUserFacingText(content)
+          : collectUserFacingText(content)
+      ).filter((text) => text.length > 0);
 
       for (const text of candidates) {
         try {
@@ -74,4 +75,39 @@ function collectUserFacingText(content) {
   }
 
   return values;
+}
+
+function collectVueUserFacingText(content) {
+  const templateMatch = content.match(/<template>([\s\S]*?)<\/template>/u);
+  if (!templateMatch) return [];
+
+  const templateContent = templateMatch[1]
+    .replace(/\{\{[\s\S]*?\}\}/gu, " ")
+    .replace(/<script[\s\S]*?<\/script>/gu, " ")
+    .replace(/<style[\s\S]*?<\/style>/gu, " ");
+
+  const values = [];
+
+  for (const match of templateContent.matchAll(/>([^<>{}]{1,240})</gu)) {
+    const text = normalizeCandidateText(match[1] ?? "");
+    if (isUserFacingCandidate(text)) values.push(text);
+  }
+
+  for (const match of templateContent.matchAll(/\b(?:title|placeholder|aria-label|alt)\s*=\s*["']([^"']{1,240})["']/gu)) {
+    const text = normalizeCandidateText(match[1] ?? "");
+    if (isUserFacingCandidate(text)) values.push(text);
+  }
+
+  return values;
+}
+
+function normalizeCandidateText(text) {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
+function isUserFacingCandidate(text) {
+  if (text.length === 0) return false;
+  if (!/[A-Za-z\u4e00-\u9fff]/u.test(text)) return false;
+  if (/^[A-Za-z0-9_-]+$/u.test(text)) return false;
+  return true;
 }

@@ -134,4 +134,14 @@ describe("F8 retirement retained surfaces", () => {
     expect(ciExample).not.toContain("workbench");
     expect(ciExample).not.toContain("vsix");
   });
+
+  it("removes deleted F8 path exceptions from eslint config", () => {
+    const eslintConfig = fs.readFileSync(path.join(rootDir, "eslint.config.mjs"), "utf8");
+
+    expect(eslintConfig).not.toContain("apps/workbench-server/src/sse.ts");
+    expect(eslintConfig).not.toContain("packages/agent-runtime/src/context-builder.ts");
+    expect(eslintConfig).not.toContain("packages/agent-runtime/src/runtime.ts");
+    expect(eslintConfig).not.toContain("test/f8-e2e/server.mjs");
+    expect(eslintConfig).toContain("scripts/f1-composed-snapshot-detection.mjs");
+  });
 });
