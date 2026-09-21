@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将现有实测能力原型产品化为由 `@ta-assist` 独立启动、绑定已验证 TA baseline、分析原始测量样本并发布实测与预测比较报告的 durable Beta workflow。
+**Goal:** 将现有实测能力原型产品化为由 `the retired VS Code participant` 独立启动、绑定已验证 TA baseline、分析原始测量样本并发布实测与预测比较报告的 durable Beta workflow。
 
 **Architecture:** 独立 Measurement Workflow Orchestrator 持久化 session、baseline link、factor decisions 和 attempts，并通过 Runtime Skill facades 复用现有 parser、statistics、simulation 和 report logic。工作流不会由 TA 完成事件自动启动；知识库只生成 review candidate，最终四文件 output 由独立原子 exporter 发布。
 
@@ -644,3 +644,4 @@ Expected: all commands PASS; restart preserves decisions; no automatic TA-to-mea
 git add apps/vscode-extension/src apps/f7-local-api/src apps/f7-web/src packages/agent-runtime/src test/f8-e2e README.md docs/governance/feature-register.md
 git commit -m "feat: release measured capability feedback beta"
 ```
+

@@ -2,7 +2,7 @@
 
 **日期：** 2026-09-01  
 **状态：** 待用户审阅  
-**Beta 主入口：** VS Code Extension + `@ta-assist`  
+**Beta 主入口：** VS Code Extension + `the retired VS Code participant`  
 **架构模式：** Agent 外壳 + Skills 编排 + 确定性 runners  
 **用户界面语言：** 英文；自然语言入口同时支持中文和英文
 
@@ -19,8 +19,8 @@ Beta 将项目整理为一个统一的 TA Assist Agent，并向用户提供两�
 
 ## 2. 已批准决策
 
-1. Beta 以 VS Code Extension 的 `@ta-assist` Chat Participant 为唯一正式入口。
-2. 用户通过自然语言启动流程；TA 分析的标准表达为 `@ta-assist 请帮我分析 <文件> 的 TA`。
+1. Beta 以 VS Code Extension 的 `the retired VS Code participant` Chat Participant 为唯一正式入口。
+2. 用户通过自然语言启动流程；TA 分析的标准表达为 `the retired VS Code participant 请帮我分析 <文件> 的 TA`。
 3. 内部继续保留 `F0-F7`、现有 schema ID、artifact kind、runner 名、审计字段和历史文件名。
 4. 正常用户界面、Agent 回复、操作按钮、错误信息、进度、ADO 用户内容和 output 文件名不得显示裸 `F0-F7` 编号。
 5. TA 工作簿分析保留完整现有交互和工程执行链，不能通过产品改名弱化或绕过治理门。
@@ -47,7 +47,7 @@ TA Workbook Analysis 必须原样保留两次独立 worksheet 确认：
 - 第二次选择包含 blocked worksheet。
 - 下游 runner 得到的 worksheet 集合与已确认集合不一致。
 
-产品界面可以合并内部进度显示，但不能合并、跳过或自动替用户完成这两次确认。Beta 的正式 `@ta-assist` 路径必须由用户分别提交第一次和第二次 worksheet 确认。现有 `auto_confirm_initial_scope` 仅允许用于测试夹具或明确排除在 Beta 用户流程之外的内部入口；由自动确认产生的 session 不得作为用户 output 的来源。
+产品界面可以合并内部进度显示，但不能合并、跳过或自动替用户完成这两次确认。Beta 的正式 `the retired VS Code participant` 路径必须由用户分别提交第一次和第二次 worksheet 确认。现有 `auto_confirm_initial_scope` 仅允许用于测试夹具或明确排除在 Beta 用户流程之外的内部入口；由自动确认产生的 session 不得作为用户 output 的来源。
 
 ### 3.2 ADO 联动
 
@@ -104,7 +104,7 @@ LLM 不得重新计算、改写或总结出另一套工程结论。用户报告�
 
 ```mermaid
 flowchart TB
-    U["VS Code user"] --> A["@ta-assist Agent Shell"]
+    U["VS Code user"] --> A["the retired VS Code participant Agent Shell"]
     A --> I{"Intent Router"}
   I -->|Analyze TA workbook| TA["TA Workbook Analysis Workflow Skill"]
   I -->|Analyze measured capability| MC["Measured Capability Feedback Workflow Skill"]
@@ -288,10 +288,10 @@ Workflow 可以因 blocked factor 或可选 ADO 分支发生受控条件跳转�
 支持示例：
 
 ```text
-@ta-assist 请帮我分析 Gearbox-TA.xlsx 的 TA
-@ta-assist 请分析这个 TA 工作簿
-@ta-assist Analyze Gearbox-TA.xlsx
-@ta-assist Analyze C:\TA Reports\Gearbox-TA.xlsx
+the retired VS Code participant 请帮我分析 Gearbox-TA.xlsx 的 TA
+the retired VS Code participant 请分析这个 TA 工作簿
+the retired VS Code participant Analyze Gearbox-TA.xlsx
+the retired VS Code participant Analyze C:\TA Reports\Gearbox-TA.xlsx
 ```
 
 文件解析按以下顺序执行：
@@ -310,9 +310,9 @@ Workflow 可以因 blocked factor 或可选 ADO 分支发生受控条件跳转�
 支持示例：
 
 ```text
-@ta-assist 请基于之前的 TA 分析评估这份实测数据
-@ta-assist 启动实测能力闭环分析
-@ta-assist Analyze measured capability data for the completed TA analysis
+the retired VS Code participant 请基于之前的 TA 分析评估这份实测数据
+the retired VS Code participant 启动实测能力闭环分析
+the retired VS Code participant Analyze measured capability data for the completed TA analysis
 ```
 
 Agent 必须先解析可用 baseline。Eligible baseline 必须满足 execution completed，final report projection 已通过 schema、hash 和 lineage 验证，且 source artifacts 仍可读取并重新验证。`PASS`、`CONDITIONAL_PASS`、`INCOMPLETE` 和业务 `FAIL` 都可以作为 baseline；业务判定不替代 execution eligibility：
@@ -667,10 +667,11 @@ Beta 后扩展 Skill SDK，至少支持：
 
 Beta 可以发布必须同时满足：
 
-1. 用户可以通过 `@ta-assist 请帮我分析 <文件> 的 TA` 启动完整 TA Workbook Analysis。
+1. 用户可以通过 `the retired VS Code participant 请帮我分析 <文件> 的 TA` 启动完整 TA Workbook Analysis。
 2. 用户完成两次 worksheet 选择、可选 ADO 交互和所有受治理确认后，获得最终总结报告。
 3. 报告发布到约定的 `output/ta-analysis/...` 目录，命名稳定、导出幂等且 manifest/hash 可验证。
 4. 用户可以独立启动 Measured Capability Feedback (Beta)，选择 baseline 并上传原始测量样本。
 5. 实测报告发布到约定的 `output/measured-capability-feedback/...` 目录。
 6. 正常用户表面不显示 `F0-F7`，内部审计和历史兼容保持有效。
 7. 源 workbook、受治理输入 artifacts、ADO 协议和工程计算行为没有回归。
+

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `@ta-assist` natural-language analysis requests create and bind a real Web Session, automatically import an explicitly supplied absolute `.xlsx` path, or wait for Web upload when no path is supplied.
+**Goal:** Make `the retired VS Code participant` natural-language analysis requests create and bind a real Web Session, automatically import an explicitly supplied absolute `.xlsx` path, or wait for Web upload when no path is supplied.
 
 **Architecture:** A deterministic extension-side intent parser extracts an optional path. The CLI creates a real Session before browser launch; workbook bytes travel over bounded launcher IPC into a non-HTTP server host-import API that reuses existing upload validation and session commands.
 
@@ -69,8 +69,8 @@
 - Create: `apps/vscode-extension/src/workbook-import.test.ts`
 - Modify: `apps/vscode-extension/src/workbench-launcher.ts`
 - Modify: `apps/cli/src/commands/agent-launcher.ts`
-- Modify: `apps/workbench-server/src/server.ts`
-- Modify: `apps/workbench-server/src/server.test.ts`
+- Modify: `the retired F8 server app/src/server.ts`
+- Modify: `the retired F8 server app/src/server.test.ts`
 
 **Interfaces:**
 - Extension produces `importWorkbook({ sessionId, workbookPath })`.
@@ -122,3 +122,4 @@
 - [ ] Verify persisted Session/artifact hashes and absence of local paths.
 - [ ] Run root build and affected regression suites.
 - [ ] Final review checkpoint.
+

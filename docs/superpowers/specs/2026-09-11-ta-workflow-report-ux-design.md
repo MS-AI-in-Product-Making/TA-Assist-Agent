@@ -207,14 +207,15 @@ PDF 改为 A4 landscape 自然分页。删除把每个工作表强制压入单�
 - `scripts/f6-skill.test.mjs`
 - `packages/workbench/src/state-machine.ts`
 - `packages/workbench/src/state-machine.test.ts`
-- `apps/workbench-server/src/server.ts`
-- `apps/workbench-server/src/server.test.ts`
-- `apps/workbench-web/src/components/F6InputGate.tsx` 及测试（仅在移除标准 gate 引用所必需时）
-- `apps/workbench-web/src/components/AdoWorkspaceDecision.tsx` 及测试
+- `the retired F8 server app/src/server.ts`
+- `the retired F8 server app/src/server.test.ts`
+- `the retired F8 web app/src/components/F6InputGate.tsx` 及测试（仅在移除标准 gate 引用所必需时）
+- `the retired F8 web app/src/components/AdoWorkspaceDecision.tsx` 及测试
 - `scripts/f6-final-report.mjs`
 - `scripts/f6-final-report.test.mjs`
 - `packages/product-export/src/f6-pdf-report.ts`
 - `packages/product-export/src/f6-pdf-export.test.ts`
-- `apps/workbench-server/src/f6-pdf-report.test.ts`
+- `the retired F8 server app/src/f6-pdf-report.test.ts`
 
 只有测试或编译证明存在直接依赖时，才允许增加邻近文件；不得借机重构或清理无关代码。
+

@@ -235,12 +235,12 @@ git commit -m "feat(f6): publish and validate dynamic report artifacts"
 - Modify: `apps/cli/src/commands/feature6.ts`
 - Modify: `apps/cli/src/commands/feature6.test.ts`
 - Modify: `apps/cli/src/commands/feature6.security.test.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.test.ts`
-- Modify: `apps/workbench-server/src/routes/artifacts.ts`
-- Modify: `apps/workbench-server/src/f6-pdf-report.test.ts`
-- Modify: `apps/workbench-server/src/routes/host-actions.ts`
-- Modify: `apps/workbench-server/src/routes/host-actions.test.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.test.ts`
+- Modify: `the retired F8 server app/src/routes/artifacts.ts`
+- Modify: `the retired F8 server app/src/f6-pdf-report.test.ts`
+- Modify: `the retired F8 server app/src/routes/host-actions.ts`
+- Modify: `the retired F8 server app/src/routes/host-actions.test.ts`
 - Modify: `.github/skills/ta-assist-agent/SKILL.md`
 - Modify: `.github/skills/design-optimization/SKILL.md`
 - Modify: `.github/skills/pdf-report-export/SKILL.md`
@@ -270,7 +270,7 @@ Add route/host action expectations that dynamic names are used and that unvalida
 Run:
 
 ```powershell
-npx vitest run apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/f6-pdf-report.test.ts apps/workbench-server/src/routes/host-actions.test.ts --reporter=verbose
+npx vitest run apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/f6-pdf-report.test.ts the retired F8 server app/src/routes/host-actions.test.ts --reporter=verbose
 ```
 
 Expected: FAIL on fixed basename assumptions.
@@ -317,7 +317,7 @@ Run the Step 6 command. Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```powershell
-git add apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts apps/workbench-server/src/production-stage-runner.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/routes/artifacts.ts apps/workbench-server/src/f6-pdf-report.test.ts apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/host-actions.test.ts .github/skills/ta-assist-agent/SKILL.md .github/skills/design-optimization/SKILL.md .github/skills/pdf-report-export/SKILL.md scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs
+git add apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts the retired F8 server app/src/production-stage-runner.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/routes/artifacts.ts the retired F8 server app/src/f6-pdf-report.test.ts the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/host-actions.test.ts .github/skills/ta-assist-agent/SKILL.md .github/skills/design-optimization/SKILL.md .github/skills/pdf-report-export/SKILL.md scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs
 git commit -m "feat(f6): expose dynamic reports by canonical path"
 ```
 
@@ -418,7 +418,7 @@ git commit -m "fix(f6): polish optimization and summary layout"
 - [ ] **Step 1: Run focused regression suite**
 
 ```powershell
-npx vitest run packages/contracts/src/f6-artifact-names.test.ts packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.test.ts packages/product-export/src/f6-pdf-export.test.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/f6-pdf-report.test.ts apps/workbench-server/src/routes/host-actions.test.ts scripts/f6-output-layout.test.mjs scripts/f6-full-flow.test.mjs scripts/run-f6-full-validation.test.mjs scripts/verify-current-f6.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs --reporter=dot
+npx vitest run packages/contracts/src/f6-artifact-names.test.ts packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.test.ts packages/product-export/src/f6-pdf-export.test.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/f6-pdf-report.test.ts the retired F8 server app/src/routes/host-actions.test.ts scripts/f6-output-layout.test.mjs scripts/f6-full-flow.test.mjs scripts/run-f6-full-validation.test.mjs scripts/verify-current-f6.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs --reporter=dot
 ```
 
 Expected: all test files PASS, zero failures.
@@ -427,7 +427,7 @@ Expected: all test files PASS, zero failures.
 
 ```powershell
 npm run build -- --force
-npx eslint packages/contracts/src/f6-artifact-names.ts packages/contracts/src/f6-artifact-names.test.ts packages/workflow-runners/src/f6.ts packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.ts packages/workflow-runners/src/existing-f6.test.ts packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts apps/workbench-server/src/production-stage-runner.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/routes/artifacts.ts apps/workbench-server/src/routes/host-actions.ts apps/workbench-server/src/routes/host-actions.test.ts scripts/f6-output-layout.mjs scripts/f6-output-layout.test.mjs scripts/run-f6-full-validation.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-full-flow.test.mjs scripts/verify-current-f6.mjs scripts/verify-current-f6.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs test/f8-e2e/f6-governed-pdf.spec.ts
+npx eslint packages/contracts/src/f6-artifact-names.ts packages/contracts/src/f6-artifact-names.test.ts packages/workflow-runners/src/f6.ts packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.ts packages/workflow-runners/src/existing-f6.test.ts packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts apps/cli/src/commands/feature6.ts apps/cli/src/commands/feature6.test.ts apps/cli/src/commands/feature6.security.test.ts the retired F8 server app/src/production-stage-runner.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/routes/artifacts.ts the retired F8 server app/src/routes/host-actions.ts the retired F8 server app/src/routes/host-actions.test.ts scripts/f6-output-layout.mjs scripts/f6-output-layout.test.mjs scripts/run-f6-full-validation.mjs scripts/run-f6-full-validation.test.mjs scripts/f6-full-flow.test.mjs scripts/verify-current-f6.mjs scripts/verify-current-f6.test.mjs scripts/f6-skill.test.mjs scripts/pdf-report-export-skill.test.mjs test/f8-e2e/f6-governed-pdf.spec.ts
 ```
 
 Expected: exit code 0. Restore only known generated tracked dist drift if the build modifies it; never restore source changes.
@@ -515,3 +515,4 @@ git log --oneline --decorate -6
 Expected: no unexpected generated files or whitespace errors; only intentional source/test/doc changes are committed.
 
 If any validation step exposes an in-scope defect, return to the task that owns that behavior, add a failing regression test, repeat its RED/GREEN commands, and amend that task with a new focused commit before rerunning Task 5 from Step 1. Do not create an empty or catch-all validation commit.
+

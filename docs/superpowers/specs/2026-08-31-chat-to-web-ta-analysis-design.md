@@ -18,7 +18,7 @@
 - 不让 Web 或 Server 任意读取客户端路径。
 - 不把本地绝对路径写入 Session、artifact、日志、URL 或模型 prompt。
 - 不执行远程 ADO 写入。
-- 不要求普通 Copilot Chat 自动接管；入口是注册的 `@ta-assist` participant，支持自然语言请求及 `/analyze`。
+- 不要求普通 Copilot Chat 自动接管；入口是注册的 `the retired VS Code participant` participant，支持自然语言请求及 `/analyze`。
 - 不重写 F0-F6 已有业务能力；F8 只负责 Session 编排、受管导入、进度同步和 UI 投影。
 
 ## 2.1 Worksheet Layout Constraint
@@ -119,7 +119,7 @@ TA Assist Workbench is ready. Upload a workbook to begin.
 
 ### Case A: Path supplied
 
-1. 模拟 `@ta-assist 帮我分析 "C:\...\valid.xlsx"`。
+1. 模拟 `the retired VS Code participant 帮我分析 "C:\...\valid.xlsx"`。
 2. 验证真实 Session ID 返回并绑定。
 3. 验证 Web 打开同一 Session。
 4. 验证 workbook 自动成为 managed artifact，Session 进入 F0/F1-F2。
@@ -128,7 +128,7 @@ TA Assist Workbench is ready. Upload a workbook to begin.
 
 ### Case B: No path
 
-1. 模拟 `@ta-assist 帮我分析这份 TA 报告`。
+1. 模拟 `the retired VS Code participant 帮我分析这份 TA 报告`。
 2. 验证 Web 打开同一真实 Session，显示 upload state。
 3. 通过 Web 上传 workbook。
 4. 验证进入与 Case A 相同的受管流程。
@@ -165,3 +165,4 @@ TA Assist Workbench is ready. Upload a workbook to begin.
 - 本地路径不进入持久化或 Web。
 - Case A、Case B、negative E2E 通过。
 - 真实 workbook 运行达到预期终态，或以明确业务阻塞状态结束；不能无进度卡死。
+

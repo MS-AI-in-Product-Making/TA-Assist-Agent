@@ -83,8 +83,43 @@ const retiredLockfileEntries = [
   "node_modules/@ai-assist/workbench-web",
 ];
 
+const retiredDocLiterals = [
+  "@ta-assist",
+  "onChatParticipant:ta-assist",
+  "F8-session-output",
+  "apps/workbench-server",
+  "apps/workbench-web",
+];
+
+const retiredDocLiteralExclusions = new Set([
+  "docs/superpowers/specs/2026-09-21-unified-analysis-workspace-f8-retirement-design.md",
+  "docs/superpowers/plans/2026-09-21-f8-participant-retirement.md",
+  "docs/superpowers/plans/2026-09-21-unified-analysis-workspace.md",
+]);
+
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, relativePath), "utf8"));
+}
+
+function collectMarkdownFiles(currentDir, relativeDir = "") {
+  const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const relativePath = path.posix.join(relativeDir, entry.name);
+    const absolutePath = path.join(currentDir, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...collectMarkdownFiles(absolutePath, relativePath));
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(relativePath);
+    }
+  }
+
+  return files;
 }
 
 describe("F8 retirement retained surfaces", () => {
@@ -143,5 +178,26 @@ describe("F8 retirement retained surfaces", () => {
     expect(eslintConfig).not.toContain("packages/agent-runtime/src/runtime.ts");
     expect(eslintConfig).not.toContain("test/f8-e2e/server.mjs");
     expect(eslintConfig).toContain("scripts/f1-composed-snapshot-detection.mjs");
+  });
+
+  it("removes retired F8 literals from documentation outside approved retirement records", () => {
+    const docRoot = path.join(rootDir, "docs");
+    const markdownFiles = collectMarkdownFiles(docRoot, "docs").filter(
+      (relativePath) => !retiredDocLiteralExclusions.has(relativePath),
+    );
+
+    const violations = [];
+
+    for (const relativePath of markdownFiles) {
+      const content = fs.readFileSync(path.join(rootDir, relativePath), "utf8");
+
+      for (const literal of retiredDocLiterals) {
+        if (content.includes(literal)) {
+          violations.push(`${relativePath}: ${literal}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 });

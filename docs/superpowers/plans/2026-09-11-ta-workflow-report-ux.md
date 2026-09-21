@@ -33,8 +33,8 @@
 **Files:**
 - Modify: `packages/workbench/src/state-machine.ts`
 - Test: `packages/workbench/src/state-machine.test.ts`
-- Modify: `apps/workbench-server/src/server.ts`
-- Test: `apps/workbench-server/src/server.test.ts`
+- Modify: `the retired F8 server app/src/server.ts`
+- Test: `the retired F8 server app/src/server.test.ts`
 - Modify: `.github/skills/design-optimization/SKILL.md`
 - Modify: `.github/skills/result-interpretation/SKILL.md`
 - Modify: `.github/skills/ta-assist-agent/SKILL.md`
@@ -119,7 +119,7 @@ Remove the three standard-flow questions and document direct execution. Preserve
 Run:
 
 ```powershell
-npx vitest run packages/workbench/src/state-machine.test.ts apps/workbench-server/src/server.test.ts
+npx vitest run packages/workbench/src/state-machine.test.ts the retired F8 server app/src/server.test.ts
 npx vitest run scripts/f6-skill.test.mjs
 ```
 
@@ -128,7 +128,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit Task 1**
 
 ```powershell
-git add packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts apps/workbench-server/src/server.ts apps/workbench-server/src/server.test.ts .github/skills/design-optimization/SKILL.md .github/skills/result-interpretation/SKILL.md .github/skills/ta-assist-agent/SKILL.md scripts/f6-skill.test.mjs
+git add packages/workbench/src/state-machine.ts packages/workbench/src/state-machine.test.ts the retired F8 server app/src/server.ts the retired F8 server app/src/server.test.ts .github/skills/design-optimization/SKILL.md .github/skills/result-interpretation/SKILL.md .github/skills/ta-assist-agent/SKILL.md scripts/f6-skill.test.mjs
 git commit -m "feat: simplify governed TA workflow prompts"
 ```
 
@@ -139,10 +139,10 @@ git commit -m "feat: simplify governed TA workflow prompts"
 **Files:**
 - Modify: `packages/contracts/src/ta-multimodal-contracts.ts`
 - Test: `packages/contracts/src/ta-multimodal-contracts.test.ts`
-- Modify: `apps/workbench-server/src/server.ts`
-- Test: `apps/workbench-server/src/multimodal-coordinator.test.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.ts`
-- Test: `apps/workbench-server/src/production-stage-runner.test.ts`
+- Modify: `the retired F8 server app/src/server.ts`
+- Test: `the retired F8 server app/src/multimodal-coordinator.test.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.ts`
+- Test: `the retired F8 server app/src/production-stage-runner.test.ts`
 
 **Interfaces:**
 - Consumes: existing v3 worksheet request/result pair, request hashes, workbook identity and selected worksheet order.
@@ -234,7 +234,7 @@ If the current F6 loader cannot consume this blocker reference without a new fie
 - [ ] **Step 8: Run focused multimodal tests**
 
 ```powershell
-npx vitest run packages/contracts/src/ta-multimodal-contracts.test.ts apps/workbench-server/src/multimodal-coordinator.test.ts apps/workbench-server/src/production-stage-runner.test.ts
+npx vitest run packages/contracts/src/ta-multimodal-contracts.test.ts the retired F8 server app/src/multimodal-coordinator.test.ts the retired F8 server app/src/production-stage-runner.test.ts
 ```
 
 Expected: PASS.
@@ -252,7 +252,7 @@ Expected: only Task 2 files. If implementing the report blocker requires broader
 - [ ] **Step 10: Commit Task 2**
 
 ```powershell
-git add packages/contracts/src/ta-multimodal-contracts.ts packages/contracts/src/ta-multimodal-contracts.test.ts apps/workbench-server/src/server.ts apps/workbench-server/src/multimodal-coordinator.test.ts apps/workbench-server/src/production-stage-runner.ts apps/workbench-server/src/production-stage-runner.test.ts
+git add packages/contracts/src/ta-multimodal-contracts.ts packages/contracts/src/ta-multimodal-contracts.test.ts the retired F8 server app/src/server.ts the retired F8 server app/src/multimodal-coordinator.test.ts the retired F8 server app/src/production-stage-runner.ts the retired F8 server app/src/production-stage-runner.test.ts
 git commit -m "feat: isolate worksheet image evaluation failures"
 ```
 
@@ -361,7 +361,7 @@ git commit -m "feat: include complete factor tables in F6 reports"
 **Files:**
 - Modify: `packages/product-export/src/f6-pdf-report.ts`
 - Test: `packages/product-export/src/f6-pdf-export.test.ts`
-- Test: `apps/workbench-server/src/f6-pdf-report.test.ts`
+- Test: `the retired F8 server app/src/f6-pdf-report.test.ts`
 
 **Interfaces:**
 - Consumes: unchanged governed Markdown with one 14-column table per worksheet.
@@ -386,7 +386,7 @@ Also assert every Factor Description and `MISSING` marker remains in HTML.
 - [ ] **Step 2: Run PDF renderer tests and verify RED**
 
 ```powershell
-npx vitest run packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts
+npx vitest run packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts
 ```
 
 Expected: FAIL because the renderer substitutes the Factor table and injects fit scaling.
@@ -414,7 +414,7 @@ Change only print layout rules:
 - [ ] **Step 5: Run renderer tests**
 
 ```powershell
-npx vitest run packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts
+npx vitest run packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts
 ```
 
 Expected: PASS.
@@ -443,7 +443,7 @@ Open the newly generated local PDF and inspect screenshots for title clipping, r
 - [ ] **Step 9: Commit Task 4**
 
 ```powershell
-git add packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts
+git add packages/product-export/src/f6-pdf-report.ts packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts
 git commit -m "fix: render readable naturally paginated F6 PDFs"
 ```
 
@@ -452,9 +452,9 @@ git commit -m "fix: render readable naturally paginated F6 PDFs"
 ### Task 5: 优化 ADO 标题示例与报告链接
 
 **Files:**
-- Modify: `apps/workbench-web/src/components/AdoWorkspaceDecision.tsx`
-- Test: `apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx`
-- Modify only if needed: `apps/workbench-web/src/styles.css`
+- Modify: `the retired F8 web app/src/components/AdoWorkspaceDecision.tsx`
+- Test: `the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx`
+- Modify only if needed: `the retired F8 web app/src/styles.css`
 - Modify: `.github/skills/design-optimization/SKILL.md`
 - Modify: `.github/skills/ta-assist-agent/SKILL.md`
 - Test: `scripts/f6-skill.test.mjs`
@@ -479,7 +479,7 @@ Mock `navigator.clipboard.writeText`; clicking copy must pass the complete expan
 - [ ] **Step 2: Run component test and verify RED**
 
 ```powershell
-npx vitest run apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx
+npx vitest run the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx
 ```
 
 Expected: FAIL because the example remains generic and has no copy button.
@@ -512,7 +512,7 @@ Modify only final user-facing presentation language. Do not change CLI machine o
 - [ ] **Step 7: Run focused UI and Skill tests**
 
 ```powershell
-npx vitest run apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx
+npx vitest run the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx
 npx vitest run scripts/f6-skill.test.mjs
 ```
 
@@ -521,7 +521,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit Task 5**
 
 ```powershell
-git add apps/workbench-web/src/components/AdoWorkspaceDecision.tsx apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx apps/workbench-web/src/styles.css .github/skills/design-optimization/SKILL.md .github/skills/ta-assist-agent/SKILL.md scripts/f6-skill.test.mjs
+git add the retired F8 web app/src/components/AdoWorkspaceDecision.tsx the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx the retired F8 web app/src/styles.css .github/skills/design-optimization/SKILL.md .github/skills/ta-assist-agent/SKILL.md scripts/f6-skill.test.mjs
 git commit -m "feat: streamline TA report links and ADO title copy"
 ```
 
@@ -539,7 +539,7 @@ git commit -m "feat: streamline TA report links and ADO title copy"
 - [ ] **Step 1: Run all focused tests**
 
 ```powershell
-npx vitest run packages/contracts/src/ta-multimodal-contracts.test.ts packages/workbench/src/state-machine.test.ts apps/workbench-server/src/multimodal-coordinator.test.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/server.test.ts scripts/f6-final-report.test.mjs packages/product-export/src/f6-pdf-export.test.ts apps/workbench-server/src/f6-pdf-report.test.ts apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx
+npx vitest run packages/contracts/src/ta-multimodal-contracts.test.ts packages/workbench/src/state-machine.test.ts the retired F8 server app/src/multimodal-coordinator.test.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/server.test.ts scripts/f6-final-report.test.mjs packages/product-export/src/f6-pdf-export.test.ts the retired F8 server app/src/f6-pdf-report.test.ts the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx
 npx vitest run scripts/f6-skill.test.mjs
 ```
 
@@ -590,3 +590,4 @@ Use `superpowers:requesting-code-review` against `main...HEAD`. Resolve only fin
 - [ ] **Step 7: Final verification before completion**
 
 Use `superpowers:verification-before-completion`; rerun the focused tests, build and governed verifier after the last code change. Report exact commands and outcomes.
+

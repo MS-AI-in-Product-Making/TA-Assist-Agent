@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将现有完整 TA 分析产品化为可由 `@ta-assist 请帮我分析 <文件> 的 TA` 启动的 Beta Agent，同时保留 worksheet 双确认、ADO governed interaction、确定性最终报告，并发布到稳定的用户 `output/`。
+**Goal:** 将现有完整 TA 分析产品化为可由 `the retired VS Code participant 请帮我分析 <文件> 的 TA` 启动的 Beta Agent，同时保留 worksheet 双确认、ADO governed interaction、确定性最终报告，并发布到稳定的用户 `output/`。
 
 **Architecture:** VS Code Agent Shell 只做意图与文件路由；`packages/workbench` 继续作为 durable Workflow Orchestrator，通过稳定 Runtime Skill facade 调用现有 deterministic runners。用户表面通过共享 product-language 投影隐藏内部 Feature ID；最终报告从同一 validated projection 生成，并由独立 exporter 原子发布。
 
@@ -216,9 +216,9 @@ git commit -m "feat: start TA analysis from workspace workbook names"
 - Modify: `packages/contracts/src/f8-contracts.test.ts`
 - Modify: `packages/workbench/src/state-machine.ts`
 - Modify: `packages/workbench/src/state-machine.test.ts`
-- Modify: `apps/workbench-server/src/server.ts`
-- Modify: `apps/workbench-server/src/server.test.ts`
-- Modify: `apps/workbench-web/src/app.test.tsx`
+- Modify: `the retired F8 server app/src/server.ts`
+- Modify: `the retired F8 server app/src/server.test.ts`
+- Modify: `the retired F8 web app/src/app.test.tsx`
 - Modify: `packages/workflow-runners/src/f1-f2.test.ts`
 
 **Interfaces:**
@@ -247,7 +247,7 @@ Add cases for empty selection, duplicate names, stale workbook hash, blocked dow
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
-Run: `npx vitest run packages/contracts/src/f8-contracts.test.ts packages/workbench/src/state-machine.test.ts apps/workbench-server/src/server.test.ts`
+Run: `npx vitest run packages/contracts/src/f8-contracts.test.ts packages/workbench/src/state-machine.test.ts the retired F8 server app/src/server.test.ts`
 
 Expected: FAIL because provenance is absent and production auto-entry still confirms selections.
 
@@ -268,14 +268,14 @@ Make normal commands write `user`. Gate `applyAutoEntry()` and `applyAutoDownstr
 
 - [ ] **Step 4: Run workflow and UI confirmation tests**
 
-Run: `npx vitest run packages/workbench/src/state-machine.test.ts apps/workbench-server/src/server.test.ts apps/workbench-web/src/app.test.tsx packages/workflow-runners/src/f1-f2.test.ts`
+Run: `npx vitest run packages/workbench/src/state-machine.test.ts the retired F8 server app/src/server.test.ts the retired F8 web app/src/app.test.tsx packages/workflow-runners/src/f1-f2.test.ts`
 
 Expected: PASS; production session stops at both confirmation states.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add packages/contracts/src/f8-contracts* packages/workbench/src/state-machine* apps/workbench-server/src/server* apps/workbench-web/src/app.test.tsx packages/workflow-runners/src/f1-f2.test.ts
+git add packages/contracts/src/f8-contracts* packages/workbench/src/state-machine* the retired F8 server app/src/server* the retired F8 web app/src/app.test.tsx packages/workflow-runners/src/f1-f2.test.ts
 git commit -m "fix: require user worksheet confirmations"
 ```
 
@@ -288,11 +288,11 @@ git commit -m "fix: require user worksheet confirmations"
 - Create: `packages/workbench/src/runtime-skill-facade.test.ts`
 - Create: `packages/workbench/src/ta-workbook-orchestrator.ts`
 - Create: `packages/workbench/src/ta-workbook-orchestrator.test.ts`
-- Create: `apps/workbench-server/src/ta-runtime-skill-facades.ts`
-- Create: `apps/workbench-server/src/ta-runtime-skill-facades.test.ts`
+- Create: `the retired F8 server app/src/ta-runtime-skill-facades.ts`
+- Create: `the retired F8 server app/src/ta-runtime-skill-facades.test.ts`
 - Modify: `packages/workbench/src/index.ts`
-- Modify: `apps/workbench-server/src/server.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.ts`
+- Modify: `the retired F8 server app/src/server.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.ts`
 
 **Interfaces:**
 - Produces: `RuntimeSkillMetadata`, `RuntimeSkillInvocation<Input>`, `RuntimeSkillResult<Output>`, `RuntimeSkillFacade<Input, Output>`.
@@ -328,7 +328,7 @@ it("delegates calculation exactly once to the existing runner", async () => {
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
-Run: `npx vitest run packages/workbench/src/runtime-skill-facade.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts apps/workbench-server/src/ta-runtime-skill-facades.test.ts`
+Run: `npx vitest run packages/workbench/src/runtime-skill-facade.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts the retired F8 server app/src/ta-runtime-skill-facades.test.ts`
 
 Expected: FAIL because facade contracts do not exist.
 
@@ -359,14 +359,14 @@ Replace direct calls in `runDefaultStage()` and `runProductionStage()` with inje
 
 - [ ] **Step 5: Prove old and facade paths are equivalent**
 
-Run: `npx vitest run packages/workbench/src/runtime-skill-facade.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts apps/workbench-server/src/ta-runtime-skill-facades.test.ts packages/workflow-runners/src`
+Run: `npx vitest run packages/workbench/src/runtime-skill-facade.test.ts packages/workbench/src/ta-workbook-orchestrator.test.ts the retired F8 server app/src/ta-runtime-skill-facades.test.ts packages/workflow-runners/src`
 
 Expected: PASS and fixtures produce deep-equal structured outputs.
 
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add packages/workbench/src apps/workbench-server/src
+git add packages/workbench/src the retired F8 server app/src
 git commit -m "refactor: route TA workflow through runtime skill facades"
 ```
 
@@ -377,14 +377,14 @@ git commit -m "refactor: route TA workflow through runtime skill facades"
 **Files:**
 - Modify: `packages/workbench/src/projections.ts`
 - Modify: `packages/workbench/src/projections.test.ts`
-- Modify: `apps/workbench-web/src/workbench-session.ts`
-- Modify: `apps/workbench-web/src/web-projection.ts`
-- Modify: `apps/workbench-web/src/components/AnalysisProgress.tsx`
-- Modify: `apps/workbench-web/src/components/AnalysisProgress.test.tsx`
-- Modify: `apps/workbench-web/src/components/EvidenceImagePane.tsx`
-- Modify: `apps/workbench-web/src/components/EvidencePane.tsx`
-- Modify: `apps/workbench-web/src/components/AdoWorkspaceDecision.tsx`
-- Modify: `apps/workbench-web/src/business-status.ts`
+- Modify: `the retired F8 web app/src/workbench-session.ts`
+- Modify: `the retired F8 web app/src/web-projection.ts`
+- Modify: `the retired F8 web app/src/components/AnalysisProgress.tsx`
+- Modify: `the retired F8 web app/src/components/AnalysisProgress.test.tsx`
+- Modify: `the retired F8 web app/src/components/EvidenceImagePane.tsx`
+- Modify: `the retired F8 web app/src/components/EvidencePane.tsx`
+- Modify: `the retired F8 web app/src/components/AdoWorkspaceDecision.tsx`
+- Modify: `the retired F8 web app/src/business-status.ts`
 - Modify: `packages/agent-runtime/src/context-builder.ts`
 - Modify: `packages/agent-runtime/src/runtime.ts`
 - Create: `scripts/product-language-surface.test.mjs`
@@ -415,7 +415,7 @@ it("does not render internal feature identifiers", () => {
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
-Run: `npx vitest run packages/workbench/src/projections.test.ts apps/workbench-web/src/components/AnalysisProgress.test.tsx scripts/product-language-surface.test.mjs`
+Run: `npx vitest run packages/workbench/src/projections.test.ts the retired F8 web app/src/components/AnalysisProgress.test.tsx scripts/product-language-surface.test.mjs`
 
 Expected: FAIL because progress still renders Feature IDs and F7 placeholder.
 
@@ -429,14 +429,14 @@ Make `scripts/product-language-surface.test.mjs` scan extension participant meta
 
 - [ ] **Step 5: Run product surface tests**
 
-Run: `npx vitest run packages/workbench/src/projections.test.ts apps/workbench-web/src packages/agent-runtime/src scripts/product-language-surface.test.mjs`
+Run: `npx vitest run packages/workbench/src/projections.test.ts the retired F8 web app/src packages/agent-runtime/src scripts/product-language-surface.test.mjs`
 
 Expected: PASS with no user-visible prohibited identifiers.
 
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add packages/workbench/src/projections* apps/workbench-web/src packages/agent-runtime/src scripts/product-language-surface.test.mjs
+git add packages/workbench/src/projections* the retired F8 web app/src packages/agent-runtime/src scripts/product-language-surface.test.mjs
 git commit -m "feat: present TA workflow in product language"
 ```
 
@@ -451,12 +451,12 @@ git commit -m "feat: present TA workflow in product language"
 - Modify: `packages/workbench/src/host-actions.test.ts`
 - Modify: `packages/workbench/src/host-action-support.ts`
 - Modify: `packages/workbench/src/session-store-schema.ts`
-- Modify: `apps/workbench-server/src/routes/ado.ts`
-- Modify: `apps/workbench-server/src/server.test.ts`
+- Modify: `the retired F8 server app/src/routes/ado.ts`
+- Modify: `the retired F8 server app/src/server.test.ts`
 - Modify: `apps/vscode-extension/src/surface-host-client.ts`
 - Modify: `apps/vscode-extension/src/surface-host-client.test.ts`
-- Modify: `apps/workbench-web/src/components/AdoWorkspaceDecision.tsx`
-- Modify: `apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx`
+- Modify: `the retired F8 web app/src/components/AdoWorkspaceDecision.tsx`
+- Modify: `the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx`
 
 **Interfaces:**
 - Produces: ADO phases `validate_target | prepare_preview | execute_write | readback | reconcile`.
@@ -483,7 +483,7 @@ Add cases for confirmed absent, inconclusive, target mismatch and preview hash m
 
 - [ ] **Step 2: Run ADO tests and confirm failure**
 
-Run: `npx vitest run packages/workbench/src/host-actions.test.ts apps/workbench-server/src/server.test.ts apps/vscode-extension/src/surface-host-client.test.ts`
+Run: `npx vitest run packages/workbench/src/host-actions.test.ts the retired F8 server app/src/server.test.ts apps/vscode-extension/src/surface-host-client.test.ts`
 
 Expected: FAIL because unknown outcome and reconciliation are absent.
 
@@ -511,14 +511,14 @@ Use only existing Surface MCP read channel. Matching marker/hash completes witho
 
 - [ ] **Step 5: Run six-step regression suite**
 
-Run: `npx vitest run packages/contracts/src/f8-contracts.test.ts packages/workbench/src/host-actions.test.ts apps/workbench-server/src/server.test.ts apps/vscode-extension/src/surface-host-client.test.ts apps/workbench-web/src/components/AdoWorkspaceDecision.test.tsx`
+Run: `npx vitest run packages/contracts/src/f8-contracts.test.ts packages/workbench/src/host-actions.test.ts the retired F8 server app/src/server.test.ts apps/vscode-extension/src/surface-host-client.test.ts the retired F8 web app/src/components/AdoWorkspaceDecision.test.tsx`
 
 Expected: PASS; existing validate/preview/confirm/write/readback tests remain unchanged.
 
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add packages/contracts/src/f8-contracts* packages/workbench/src/host-action* packages/workbench/src/session-store-schema.ts apps/workbench-server/src apps/vscode-extension/src/surface-host-client* apps/workbench-web/src/components/AdoWorkspaceDecision*
+git add packages/contracts/src/f8-contracts* packages/workbench/src/host-action* packages/workbench/src/session-store-schema.ts the retired F8 server app/src apps/vscode-extension/src/surface-host-client* the retired F8 web app/src/components/AdoWorkspaceDecision*
 git commit -m "feat: reconcile uncertain ADO write outcomes"
 ```
 
@@ -537,17 +537,17 @@ git commit -m "feat: reconcile uncertain ADO write outcomes"
 - Create: `packages/product-export/src/atomic-product-export.ts`
 - Create: `packages/product-export/src/atomic-product-export.test.ts`
 - Modify: `tsconfig.json`
-- Modify: `apps/workbench-server/package.json`
-- Modify: `apps/workbench-server/tsconfig.json`
+- Modify: `the retired F8 server app/package.json`
+- Modify: `the retired F8 server app/tsconfig.json`
 - Modify: `scripts/f6-final-report.mjs`
 - Modify: `scripts/f6-final-report.test.mjs`
 - Modify: `packages/workflow-runners/src/f6.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.ts`
-- Create: `apps/workbench-server/src/product-export-store.ts`
-- Create: `apps/workbench-server/src/ta-product-exporter.ts`
-- Create: `apps/workbench-server/src/ta-product-exporter.test.ts`
-- Create: `apps/workbench-server/src/routes/product-export.ts`
-- Modify: `apps/workbench-server/src/server.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.ts`
+- Create: `the retired F8 server app/src/product-export-store.ts`
+- Create: `the retired F8 server app/src/ta-product-exporter.ts`
+- Create: `the retired F8 server app/src/ta-product-exporter.test.ts`
+- Create: `the retired F8 server app/src/routes/product-export.ts`
+- Modify: `the retired F8 server app/src/server.ts`
 
 **Interfaces:**
 - Produces: `taEngineeringReportProjectionSchema`, `computeTaReportSemanticDigest()`.
@@ -592,7 +592,7 @@ Cover symlink ancestors, additional files, staging crash, stale hash, internal a
 
 - [ ] **Step 3: Run focused tests and confirm failure**
 
-Run: `npx vitest run packages/contracts/src/ta-report-contracts.test.ts packages/workbench/src/report-semantic-digest.test.ts packages/product-export/src/atomic-product-export.test.ts scripts/f6-final-report.test.mjs apps/workbench-server/src/ta-product-exporter.test.ts`
+Run: `npx vitest run packages/contracts/src/ta-report-contracts.test.ts packages/workbench/src/report-semantic-digest.test.ts packages/product-export/src/atomic-product-export.test.ts scripts/f6-final-report.test.mjs the retired F8 server app/src/ta-product-exporter.test.ts`
 
 Expected: FAIL because structured projection, digest and exporter are absent.
 
@@ -615,14 +615,14 @@ Create `evidence/` only when the final report references validated evidence.
 
 - [ ] **Step 6: Run report and exporter tests**
 
-Run: `npx vitest run packages/workbench/src/report-semantic-digest.test.ts packages/product-export/src/atomic-product-export.test.ts scripts/f6-final-report.test.mjs apps/workbench-server/src/ta-product-exporter.test.ts`
+Run: `npx vitest run packages/workbench/src/report-semantic-digest.test.ts packages/product-export/src/atomic-product-export.test.ts scripts/f6-final-report.test.mjs the retired F8 server app/src/ta-product-exporter.test.ts`
 
 Expected: PASS, including identical retry and crash recovery.
 
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add packages/contracts/src/ta-report-contracts* packages/workbench/src/report-semantic-digest* packages/product-export tsconfig.json scripts/f6-final-report* packages/workflow-runners/src/f6.ts apps/workbench-server
+git add packages/contracts/src/ta-report-contracts* packages/workbench/src/report-semantic-digest* packages/product-export tsconfig.json scripts/f6-final-report* packages/workflow-runners/src/f6.ts the retired F8 server app
 git commit -m "feat: publish validated TA product reports"
 ```
 
@@ -690,7 +690,7 @@ Run:
 
 ```powershell
 npm run build -- --force
-npx vitest run apps/vscode-extension/src packages/workbench/src apps/workbench-server/src apps/workbench-web/src packages/agent-runtime/src scripts/product-language-surface.test.mjs scripts/f6-final-report.test.mjs
+npx vitest run apps/vscode-extension/src packages/workbench/src the retired F8 server app/src the retired F8 web app/src packages/agent-runtime/src scripts/product-language-surface.test.mjs scripts/f6-final-report.test.mjs
 npx playwright test test/f8-e2e/chat-entry.spec.ts test/f8-e2e/engineering-workspace.spec.ts test/f8-e2e/product-output.spec.ts
 npm run package:vsix
 npm run check:repository
@@ -705,3 +705,4 @@ Expected: all commands PASS; VSIX installs without repository source dependency;
 git add apps/vscode-extension package.json test/f8-e2e README.md docs/governance/feature-register.md
 git commit -m "feat: package TA Assist workbook analysis beta"
 ```
+

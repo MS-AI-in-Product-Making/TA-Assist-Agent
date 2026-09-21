@@ -305,12 +305,12 @@ git commit -m "feat(workflow): publish one F6 Markdown report"
 ### Task 6: Update Workbench, CLI, and Export Consumers
 
 **Files:**
-- Modify: `apps/workbench-server/src/production-stage-runner.test.ts`
-- Modify: `apps/workbench-server/src/production-stage-runner.ts`
-- Modify: `apps/workbench-server/src/ta-product-exporter.test.ts`
-- Modify: `apps/workbench-server/src/ta-product-exporter.ts`
-- Modify if current registration includes optimization Markdown: `apps/workbench-server/src/routes/artifacts.ts`
-- Modify if current registration includes optimization Markdown: `apps/workbench-server/src/routes/host-actions.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.test.ts`
+- Modify: `the retired F8 server app/src/production-stage-runner.ts`
+- Modify: `the retired F8 server app/src/ta-product-exporter.test.ts`
+- Modify: `the retired F8 server app/src/ta-product-exporter.ts`
+- Modify if current registration includes optimization Markdown: `the retired F8 server app/src/routes/artifacts.ts`
+- Modify if current registration includes optimization Markdown: `the retired F8 server app/src/routes/host-actions.ts`
 - Verify: `apps/cli/src/commands/feature6.test.ts`
 - Verify: `apps/cli/src/commands/feature6.ts`
 
@@ -325,7 +325,7 @@ Assert that production artifact registration and product export do not request o
 - [ ] **Step 2: Verify RED**
 
 ```powershell
-npx vitest run apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/ta-product-exporter.test.ts apps/cli/src/commands/feature6.test.ts
+npx vitest run the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/ta-product-exporter.test.ts apps/cli/src/commands/feature6.test.ts
 ```
 
 Expected: FAIL where current export still reads optimization Markdown.
@@ -341,7 +341,7 @@ Run the command from Step 2. Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add apps/workbench-server/src/production-stage-runner* apps/workbench-server/src/ta-product-exporter* apps/workbench-server/src/routes/artifacts.ts apps/workbench-server/src/routes/host-actions.ts apps/cli/src/commands/feature6*
+git add the retired F8 server app/src/production-stage-runner* the retired F8 server app/src/ta-product-exporter* the retired F8 server app/src/routes/artifacts.ts the retired F8 server app/src/routes/host-actions.ts apps/cli/src/commands/feature6*
 git commit -m "feat(workbench): expose one final TA report"
 ```
 
@@ -470,7 +470,7 @@ git commit -m "refactor(product): rename project to TA Assist Agent"
 - [ ] **Step 1: Run focused validation**
 
 ```powershell
-npx vitest run scripts/f6-final-report.test.mjs scripts/f6-full-flow.test.mjs scripts/f6-output-layout.test.mjs scripts/f6-skill.test.mjs scripts/product-skills.test.mjs scripts/agent-triggering-surface.test.mjs scripts/verify-repository.test.mjs packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.test.ts apps/workbench-server/src/production-stage-runner.test.ts apps/workbench-server/src/ta-product-exporter.test.ts apps/vscode-extension/src
+npx vitest run scripts/f6-final-report.test.mjs scripts/f6-full-flow.test.mjs scripts/f6-output-layout.test.mjs scripts/f6-skill.test.mjs scripts/product-skills.test.mjs scripts/agent-triggering-surface.test.mjs scripts/verify-repository.test.mjs packages/workflow-runners/src/f6.test.ts packages/workflow-runners/src/existing-f6.test.ts the retired F8 server app/src/production-stage-runner.test.ts the retired F8 server app/src/ta-product-exporter.test.ts apps/vscode-extension/src
 ```
 
 Expected: PASS.
