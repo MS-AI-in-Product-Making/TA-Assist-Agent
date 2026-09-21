@@ -6,6 +6,29 @@ import { describe, expect, it } from "vitest";
 import { findEngineeringLanguageViolations, hasCjkText, isEnglishEngineeringPath, isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
 const COMPOSED_REPORT_ARTIFACT_TOKEN = ["Feature6", "Composed", "Report"].join("-");
+const RETAINED_PATHS = [
+  ".github/skills/ta-assist-agent/SKILL.md",
+  "scripts/run-f1-full-validation.mjs",
+  "scripts/run-f2-full-validation.mjs",
+  "scripts/run-f3-full-validation.mjs",
+  "scripts/run-f4-full-validation.mjs",
+  "scripts/run-f5-full-validation.mjs",
+  "scripts/run-f6-full-validation.mjs",
+  "apps/f7-local-api",
+  "apps/f7-web",
+];
+const RETAINED_WORKFLOW_SCRIPTS = [
+  "workflow:f1",
+  "workflow:f2",
+  "workflow:f3",
+  "workflow:f4",
+  "workflow:f5",
+  "workflow:f6",
+  "dev:f7",
+  "dev:f7:api",
+  "dev:f7:web",
+  "build:f7:web",
+];
 
 function normalizeRepositoryPath(repositoryPath) {
   return repositoryPath.replaceAll("\\", "/");
@@ -54,6 +77,18 @@ function writeRepositoryFixture(repositoryPath, fixturePath, content) {
 }
 
 describe("isForbiddenRepositoryPath", () => {
+  it.each(RETAINED_PATHS)("keeps retained product surface %s present", (repositoryPath) => {
+    expect(existsSync(resolve(process.cwd(), repositoryPath))).toBe(true);
+  });
+
+  it("keeps the direct F1-F6 workflows and F7 scripts defined in package.json", () => {
+    const scripts = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")).scripts ?? {};
+
+    for (const scriptName of RETAINED_WORKFLOW_SCRIPTS) {
+      expect(scripts[scriptName]).toBeDefined();
+    }
+  });
+
   it("enforces English on engineering entry assets without rejecting localized product files", () => {
     expect(hasCjkText("English only")).toBe(false);
     expect(hasCjkText("中文 product copy")).toBe(true);
