@@ -1446,6 +1446,34 @@ describe("runF5FullValidation", () => {
     expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 
+  it("fails closed on unrelated workspace debris without changing bytes or entries", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+    const debrisFilePath = path.join(workspace.stagePaths.f5, "unrelated-note.txt");
+    const debrisDirPath = path.join(workspace.stagePaths.f5, "debris-folder");
+    writeFileSync(debrisFilePath, "do not touch\n", "utf8");
+    mkdirSync(debrisDirPath);
+    const beforeEntries = readdirSync(workspace.stagePaths.f5).sort();
+    const beforeBytes = readFileSync(debrisFilePath, "utf8");
+
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(1);
+    expect(JSON.parse(child.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(child.stderr).toBe("");
+    expect(readdirSync(workspace.stagePaths.f5).sort()).toEqual(beforeEntries);
+    expect(readFileSync(debrisFilePath, "utf8")).toBe(beforeBytes);
+  });
+
   it.each([
     ["missing", (observationPath) => observationPath],
     ["malformed JSON", (observationPath) => {

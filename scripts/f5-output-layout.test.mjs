@@ -18,6 +18,9 @@ function createAnalysisWorkspaceRoot() {
     f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
   };
   for (const stagePath of Object.values(stagePaths)) fs.mkdirSync(stagePath, { recursive: true });
+  fs.writeFileSync(path.join(stagePaths.f1, "Feature1-Report.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(stagePaths.f3, "Feature3-Report.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(stagePaths.f4, "Feature4-Calculation.json"), "{}\n", "utf8");
   fs.writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
     contractVersion: "analysis-workspace-v1",
     analysisRoot,
@@ -81,6 +84,78 @@ describe("resolveFeature5OutputLayout", () => {
     });
   });
 
+  it("rejects a symlink or junction analysis root alias in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const linkPath = path.join(path.dirname(analysisRoot), `${path.basename(analysisRoot)}-link`);
+    cleanupRoots.push(linkPath);
+    try {
+      fs.symlinkSync(analysisRoot, linkPath, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f1)),
+      f3ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f3)),
+      f4ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f4)),
+      analysisRoot: linkPath,
+    }, undefined, fixedNow)).toThrow(/analysis workspace root|invalid|exact validated/i);
+  });
+
+  it("rejects a symlink or junction stage alias in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const stageAlias = path.join(analysisRoot, "f1-alias");
+    cleanupRoots.push(stageAlias);
+    try {
+      fs.symlinkSync(stagePaths.f1, stageAlias, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stageAlias,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toThrow(/exact validated F1 stage path|invalid/i);
+  });
+
+  it("rejects a symlinked workspace artifact file in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f5-layout-artifact-outside-"));
+    cleanupRoots.push(outsideRoot);
+    const targetFile = path.join(outsideRoot, "Feature1-Report.json");
+    fs.writeFileSync(targetFile, "{}\n", "utf8");
+    fs.rmSync(path.join(stagePaths.f1, "Feature1-Report.json"), { force: true });
+    try {
+      fs.symlinkSync(targetFile, path.join(stagePaths.f1, "Feature1-Report.json"), "file");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toThrow(/Feature 5 F1 artifact|exact validated F1 stage path|invalid/i);
+  });
+
   it("does not treat lookalike stage names as a validated workspace", () => {
     const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
     const lookalikeStagePaths = {
@@ -102,7 +177,35 @@ describe("resolveFeature5OutputLayout", () => {
       f3ArtifactRoot: stagePaths.f3,
       f4ArtifactRoot: stagePaths.f4,
       analysisRoot,
-    }, undefined, fixedNow)).toThrow(/exact validated F1 stage path/i);
+    }, undefined, fixedNow)).toThrow(/validated F1 stage path.*missing|exact validated F1 stage path/i);
+  });
+
+  it("rejects a workspace root whose canonical identity changes during validation", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const changedRoot = path.join(path.dirname(analysisRoot), "retargeted-root");
+    let realpathCallCount = 0;
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow, undefined, {
+      realpathSync(targetPath) {
+        if (path.resolve(targetPath) === path.resolve(analysisRoot)) {
+          realpathCallCount += 1;
+          return realpathCallCount === 1 ? path.resolve(analysisRoot) : changedRoot;
+        }
+        return fs.realpathSync(targetPath);
+      },
+      statSync(targetPath) {
+        if (path.resolve(targetPath) === path.resolve(changedRoot)) {
+          return fs.statSync(analysisRoot);
+        }
+        return fs.statSync(targetPath);
+      },
+    })).toThrow(/changed during allocation|changed during validation|analysis workspace root/i);
   });
 
   it("builds the deterministic default layout and controlled publish root", () => {

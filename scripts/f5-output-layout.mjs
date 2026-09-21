@@ -119,15 +119,89 @@ function appendRunId(outputBase, runId) {
     : path.posix.join(normalizedResultPath(outputBase), runId);
 }
 
+function normalizedDependencies(overrides = {}) {
+  return {
+    existsSync: overrides.existsSync ?? fs.existsSync,
+    readFileSync: overrides.readFileSync ?? fs.readFileSync,
+    lstatSync: overrides.lstatSync ?? fs.lstatSync,
+    statSync: overrides.statSync ?? fs.statSync,
+    realpathSync: overrides.realpathSync ?? fs.realpathSync,
+  };
+}
+
+function isIdentityEqual(expected, actual) {
+  return expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno
+    && expected.canonicalPath === actual.canonicalPath;
+}
+
+function captureDirectoryIdentity(targetPath, label, dependencies) {
+  const requestedPath = path.resolve(targetPath);
+  if (!dependencies.existsSync(requestedPath)) {
+    throw new Error(`${label} is missing.`);
+  }
+  const requestedStats = dependencies.lstatSync(requestedPath);
+  if (!requestedStats.isDirectory()) {
+    throw new Error(`${label} is invalid.`);
+  }
+  const canonicalPath = dependencies.realpathSync(requestedPath);
+  const canonicalStats = dependencies.statSync(canonicalPath);
+  if (!canonicalStats.isDirectory()) {
+    throw new Error(`${label} is invalid.`);
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function captureFileIdentity(targetPath, label, dependencies) {
+  const requestedPath = path.resolve(targetPath);
+  if (!dependencies.existsSync(requestedPath)) {
+    throw new Error(`${label} is missing.`);
+  }
+  const requestedStats = dependencies.lstatSync(requestedPath);
+  if (!requestedStats.isFile()) {
+    throw new Error(`${label} is invalid.`);
+  }
+  const canonicalPath = dependencies.realpathSync(requestedPath);
+  const canonicalStats = dependencies.statSync(canonicalPath);
+  if (!canonicalStats.isFile()) {
+    throw new Error(`${label} is invalid.`);
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function assertIdentityUnchanged(expected, label, capture) {
+  const current = capture(expected.requestedPath, label);
+  if (!isIdentityEqual(expected, current)) {
+    throw new Error(`${label} changed during validation.`);
+  }
+  return current;
+}
+
 function outputRootOverride(value) {
   if (value === undefined) return undefined;
   return validatePathValue(value, "output root override");
 }
 
-function resolveAnalysisWorkspace(analysisRoot) {
+function resolveAnalysisWorkspace(analysisRoot, dependencies) {
   const resolvedRoot = path.resolve(analysisRoot);
   const summaryPath = path.join(resolvedRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
-  const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+  const summary = JSON.parse(dependencies.readFileSync(summaryPath, "utf8"));
   validateAnalysisWorkspaceSummary(summary);
   const layout = {
     contractVersion: summary.contractVersion,
@@ -139,13 +213,60 @@ function resolveAnalysisWorkspace(analysisRoot) {
     stagePaths: resolveAnalysisWorkspaceStagePaths(summary.analysisRoot),
   };
   validateAnalysisWorkspaceLayout(layout);
-  if (path.resolve(layout.analysisRoot) !== resolvedRoot) {
+  const analysisRootIdentity = captureDirectoryIdentity(resolvedRoot, "Feature 5 analysis workspace root", dependencies);
+  if (analysisRootIdentity.canonicalPath !== path.resolve(layout.analysisRoot)) {
     throw new Error("Feature 5 analysis workspace root does not match the validated summary.");
   }
-  return layout;
+  const stageIdentities = {
+    f1: captureDirectoryIdentity(layout.stagePaths.f1, "Feature 5 validated F1 stage path", dependencies),
+    f2: captureDirectoryIdentity(layout.stagePaths.f2, "Feature 5 validated F2 stage path", dependencies),
+    f3: captureDirectoryIdentity(layout.stagePaths.f3, "Feature 5 validated F3 stage path", dependencies),
+    f4: captureDirectoryIdentity(layout.stagePaths.f4, "Feature 5 validated F4 stage path", dependencies),
+    f5: captureDirectoryIdentity(layout.stagePaths.f5, "Feature 5 validated F5 stage path", dependencies),
+    f6: captureDirectoryIdentity(layout.stagePaths.f6, "Feature 5 validated F6 stage path", dependencies),
+  };
+  return { layout, analysisRootIdentity, stageIdentities };
 }
 
-export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot) {
+function assertExpectedWorkspaceArtifact(stageIdentity, artifactFileName, label, dependencies) {
+  const currentStageIdentity = assertIdentityUnchanged(
+    stageIdentity,
+    label,
+    (targetPath, identityLabel) => captureDirectoryIdentity(targetPath, identityLabel, dependencies),
+  );
+  if (currentStageIdentity.canonicalPath !== stageIdentity.canonicalPath) {
+    throw new Error(`${label} changed during validation.`);
+  }
+  const artifactIdentity = captureFileIdentity(path.join(stageIdentity.requestedPath, artifactFileName), `${label} artifact`, dependencies);
+  if (!isContained(stageIdentity.canonicalPath, artifactIdentity.canonicalPath)) {
+    throw new Error(`${label} artifact escaped the validated stage.`);
+  }
+  const expectedArtifactPath = path.join(stageIdentity.canonicalPath, artifactFileName);
+  if (artifactIdentity.canonicalPath !== expectedArtifactPath) {
+    throw new Error(`${label} artifact is invalid.`);
+  }
+}
+
+function assertExactWorkspaceStage(requestedStagePath, stageIdentity, artifactFileName, label, workspaceRootIdentity, dependencies) {
+  assertIdentityUnchanged(
+    workspaceRootIdentity,
+    "Feature 5 analysis workspace root",
+    (targetPath, identityLabel) => captureDirectoryIdentity(targetPath, identityLabel, dependencies),
+  );
+  const requestedIdentity = captureDirectoryIdentity(requestedStagePath, label, dependencies);
+  if (!isContained(workspaceRootIdentity.canonicalPath, requestedIdentity.canonicalPath)
+    || requestedIdentity.canonicalPath !== stageIdentity.canonicalPath
+    || requestedIdentity.requestedDev !== stageIdentity.requestedDev
+    || requestedIdentity.requestedIno !== stageIdentity.requestedIno
+    || requestedIdentity.canonicalDev !== stageIdentity.canonicalDev
+    || requestedIdentity.canonicalIno !== stageIdentity.canonicalIno) {
+    throw new Error(`Feature 5 current workspace flow requires the exact validated ${label.match(/F\d/)?.[0] ?? "workspace"} stage path.`);
+  }
+  assertExpectedWorkspaceArtifact(stageIdentity, artifactFileName, label, dependencies);
+}
+
+export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new Date(), publishRoot, dependencyOverrides = {}) {
+  const dependencies = normalizedDependencies(dependencyOverrides);
   const override = outputRootOverride(outputRoot);
   validatePathValue(parsed?.f1ArtifactRoot, "F1 artifact root");
   validatePathValue(parsed?.f3ArtifactRoot, "F3 artifact root");
@@ -156,20 +277,14 @@ export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new 
   }
 
   if (parsed?.analysisRoot !== undefined) {
-    const layout = resolveAnalysisWorkspace(parsed.analysisRoot);
-    if (path.resolve(parsed.f1ArtifactRoot) !== path.resolve(layout.stagePaths.f1)) {
-      throw new Error("Feature 5 current workspace flow requires the exact validated F1 stage path.");
-    }
-    if (path.resolve(parsed.f3ArtifactRoot) !== path.resolve(layout.stagePaths.f3)) {
-      throw new Error("Feature 5 current workspace flow requires the exact validated F3 stage path.");
-    }
-    if (path.resolve(parsed.f4ArtifactRoot) !== path.resolve(layout.stagePaths.f4)) {
-      throw new Error("Feature 5 current workspace flow requires the exact validated F4 stage path.");
-    }
+    const workspace = resolveAnalysisWorkspace(parsed.analysisRoot, dependencies);
+    assertExactWorkspaceStage(parsed.f1ArtifactRoot, workspace.stageIdentities.f1, "Feature1-Report.json", "Feature 5 validated F1 stage path", workspace.analysisRootIdentity, dependencies);
+    assertExactWorkspaceStage(parsed.f3ArtifactRoot, workspace.stageIdentities.f3, "Feature3-Report.json", "Feature 5 validated F3 stage path", workspace.analysisRootIdentity, dependencies);
+    assertExactWorkspaceStage(parsed.f4ArtifactRoot, workspace.stageIdentities.f4, "Feature4-Calculation.json", "Feature 5 validated F4 stage path", workspace.analysisRootIdentity, dependencies);
     return {
       runId: now().toISOString().replace(/[:.]/g, "-"),
-      runRoot: layout.stagePaths.f5,
-      publishRoot: layout.analysisRoot,
+      runRoot: workspace.layout.stagePaths.f5,
+      publishRoot: workspace.layout.analysisRoot,
       reportJsonName: "Feature5-Report.json",
       reportMdName: "Feature5-Report.md",
       runSummaryJsonName: "Feature5-Run-Summary.json",
@@ -196,11 +311,11 @@ export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new 
 
   assertSameRoot(controlledPublishRoot, parsed.f1ArtifactRoot);
   assertSameRoot(controlledPublishRoot, outputBase);
-  if (!fs.existsSync(path.resolve(controlledPublishRoot))) {
+  if (!dependencies.existsSync(path.resolve(controlledPublishRoot))) {
     throw new Error("Feature 5 publish root must exist before resolving output layout.");
   }
 
-  const realPublishRoot = fs.realpathSync(path.resolve(controlledPublishRoot));
+  const realPublishRoot = dependencies.realpathSync(path.resolve(controlledPublishRoot));
   const realF1ArtifactRoot = resolveThroughNearestExistingAncestor(parsed.f1ArtifactRoot);
   const realOutputBase = resolveThroughNearestExistingAncestor(outputBase);
 

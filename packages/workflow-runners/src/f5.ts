@@ -2,9 +2,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -51,6 +51,7 @@ export interface F5Dependencies {
   readonly writeFd?: (fd: number, content: string) => void;
   readonly close?: typeof closeSync;
   readonly rename?: typeof renameSync;
+  readonly readdir?: typeof readdirSync;
   readonly rmdir?: typeof rmdirSync;
   readonly rm?: typeof rmSync;
 }
@@ -147,17 +148,16 @@ function outputPaths(layout: F5Layout) {
   };
 }
 
-function assertOutputArtifactsAbsent(paths: ReturnType<typeof outputPaths>): void {
-  for (const filePath of Object.values(paths)) {
-    if (existsSync(filePath)) {
-      throw createTypedError({
-        code: "prerequisite_not_ready",
-        summary: "Workspace stage already contains published artifacts.",
-        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
-        affectedInputReferences: [filePath],
-        details: { reasonCode: "workspace_stage_not_empty" },
-      });
-    }
+function assertWorkspaceStageEmpty(outputRoot: string, readdir: typeof readdirSync): void {
+  const entries = readdir(outputRoot, { withFileTypes: true });
+  if (entries.length > 0) {
+    throw createTypedError({
+      code: "prerequisite_not_ready",
+      summary: "Workspace stage already contains published artifacts.",
+      suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+      affectedInputReferences: [outputRoot],
+      details: { reasonCode: "workspace_stage_not_empty" },
+    });
   }
 }
 
@@ -281,6 +281,7 @@ export function runF5Interpretation(
   const writeFd = dependencies.writeFd ?? ((fd, content) => writeFileSync(fd, content, "utf8"));
   const close = dependencies.close ?? closeSync;
   const rename = dependencies.rename ?? renameSync;
+  const readdir = dependencies.readdir ?? readdirSync;
   const rmdir = dependencies.rmdir ?? rmdirSync;
   const rm = dependencies.rm ?? rmSync;
   if (!resolveOutputLayout || !loadBundle || !renderReport) {
@@ -303,7 +304,7 @@ export function runF5Interpretation(
     mkdir(path.dirname(layout.runRoot), { recursive: true });
     if (layout.allowExistingRunRoot) {
       mkdir(layout.runRoot, { recursive: true });
-      assertOutputArtifactsAbsent(paths);
+      assertWorkspaceStageEmpty(layout.runRoot, readdir);
     } else {
       mkdir(layout.runRoot);
     }

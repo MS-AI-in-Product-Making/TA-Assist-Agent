@@ -236,6 +236,7 @@ describe("runF5Interpretation", () => {
       realpath: vi.fn((value) => String(value)),
       stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
       open: vi.fn(() => 1),
+      readdir: vi.fn(() => []),
       writeFd: vi.fn(),
       close: vi.fn(),
       rename: vi.fn(),
@@ -296,6 +297,7 @@ describe("runF5Interpretation", () => {
       randomUUID: vi.fn(() => "temp-id"),
       realpath: vi.fn((value) => String(value)),
       stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
+      readdir: vi.fn(() => []),
       open: vi.fn(() => 1),
       writeFd: vi.fn(),
       close: vi.fn(),
@@ -340,6 +342,44 @@ describe("runF5Interpretation", () => {
         summary: "Workspace stage already contains published artifacts.",
       }));
       expect(loadBundle).not.toHaveBeenCalled();
+    } finally {
+      rmSync(runRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unrelated debris in a workspace stage before loading bundles or writing reports", () => {
+    const runRoot = mkdtempSync(path.join(tmpdir(), "f5-runner-debris-"));
+    try {
+      writeFileSync(path.join(runRoot, "unrelated-note.txt"), "keep me\n", "utf8");
+      const loadBundle = vi.fn();
+
+      expect(() => runF5Interpretation({
+        f1ArtifactRoot: "C:/repo/f1",
+        f3ArtifactRoot: "C:/repo/f3",
+        f4ArtifactRoot: "C:/repo/f4",
+        selectedWorksheetNames: ["Analysis-A"],
+        imageObservationsPath: undefined,
+      }, context(), {
+        resolveOutputLayout: vi.fn(() => ({
+          runId: "2026-08-24T01-02-03-000Z",
+          runRoot,
+          publishRoot: "C:/repo/test/20260921 - Demo",
+          reportJsonName: "Feature5-Report.json",
+          reportMdName: "Feature5-Report.md",
+          runSummaryJsonName: "Feature5-Run-Summary.json",
+          imageObservationsJsonName: "Feature5-Image-Observations.json",
+          manifestName: "manifest.json",
+          allowExistingRunRoot: true,
+        })),
+        loadBundle,
+        createInterpretation: vi.fn(),
+        renderReport: vi.fn(),
+      })).toThrow(expect.objectContaining({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+      }));
+      expect(loadBundle).not.toHaveBeenCalled();
+      expect(path.join(runRoot, "unrelated-note.txt")).toContain("unrelated-note.txt");
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
