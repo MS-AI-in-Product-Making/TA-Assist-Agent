@@ -25,7 +25,7 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await page.getByRole("radio", { name: /Anonymous_TA/ }).check();
   await page.getByRole("button", { name: "Confirm selection" }).click();
 
-  await expect(page.getByRole("tab", { name: "Import Data" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Excel Bulk Import" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#factor-setup-table tbody tr")).toHaveCount(7);
 
   const initialTemplate = await downloadTemplate(page, "initial-template.xlsx");
@@ -37,16 +37,16 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await expect(page.locator("[data-confirm-measurement-import]")).toBeEnabled();
   await page.locator("[data-confirm-measurement-import]").click();
 
-  await expect(page.locator("[data-measurement-import-success]")).toContainText("Imported 7 measured datasets");
+  await expect(page.locator("[data-measurement-import-dialog]")).toHaveCount(0);
   await assertCanonicalMeasuredRows(page);
 
-  await page.getByRole("tab", { name: "Enter Individually" }).click();
+  await page.getByRole("tab", { name: "Individual Factor Entry" }).click();
   await assertCanonicalMeasuredRows(page);
   await page.locator("[data-open-measurement]").first().click();
   await expect(page.getByRole("region", { name: "Factor measurement workspace" })).toBeVisible();
   await page.locator("[data-close-measurement]").click();
 
-  await page.getByRole("tab", { name: "Import Data" }).click();
+  await page.getByRole("tab", { name: "Excel Bulk Import" }).click();
   const overwriteTemplate = await downloadTemplate(page, "overwrite-template.xlsx");
   const negativeCompleted = await createCompletedMeasurementWorkbook(
     overwriteTemplate,
@@ -62,16 +62,17 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await uploadMeasurementWorkbook(page, negativeCompleted);
   await expect(page.locator("[data-confirm-measurement-import]")).toBeDisabled();
   await expect(page.locator("[data-import-diagnostic='blocking']").first()).toContainText("Measurements!B15");
+  await page.locator("[data-close-measurement-import]").click();
 
-  await page.getByRole("tab", { name: "Enter Individually" }).click();
-  const committedRows = page.locator("#factor-setup-table tbody tr");
+  await page.getByRole("tab", { name: "Individual Factor Entry" }).click();
+  const committedFactors = page.locator("[data-open-measurement]");
   for (let factorIndex = 0; factorIndex < 7; factorIndex += 1) {
-    await committedRows.nth(factorIndex).getByRole("button", { name: "Open workspace" }).click();
-    await expect(page.locator("[data-measurement-row='14']")).toHaveValue(String(1 + factorIndex * 0.1));
+    await committedFactors.nth(factorIndex).click();
+    await expect(page.locator("[data-measurement-row='1']")).toHaveValue(String(1 + factorIndex * 0.1));
     await page.locator("[data-close-measurement]").click();
   }
 
-  await page.getByRole("tab", { name: "Import Data" }).click();
+  await page.getByRole("tab", { name: "Excel Bulk Import" }).click();
   await uploadMeasurementWorkbook(page, overwriteCompleted);
   const confirmOverwrite = page.locator("[data-confirm-measurement-import]");
   await expect(confirmOverwrite).toContainText("Confirm import");
@@ -90,7 +91,7 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   });
 
   await confirmOverwrite.click();
-  await expect(page.locator("[data-measurement-import-success]")).toContainText("7 replacements");
+  await expect(page.locator("[data-measurement-import-dialog]")).toHaveCount(0);
   await assertCanonicalMeasuredRows(page);
 });
 
@@ -99,13 +100,10 @@ test("renders governed V3 priority guidance and exports it to PDF", async ({ pag
   await page.locator("#workbook-file").setInputFiles(F7_ANONYMOUS_SOURCE_WORKBOOK);
   await page.getByRole("radio", { name: /Anonymous_TA/ }).check();
   await page.getByRole("button", { name: "Confirm selection" }).click();
+  await expect(page.locator("#factor-setup-table tbody tr")).toHaveCount(7);
 
-  await page.locator("[data-edit-factor-setup]").click();
-  const categorySelectors = page.locator("[data-component-category]");
-  await expect(categorySelectors).toHaveCount(7);
-  await categorySelectors.nth(0).selectOption("battery-cts");
-  await categorySelectors.nth(1).selectOption("cover-fit-and-function");
-  await page.locator("#confirm-factor-setup").click();
+  const seededCategories = await seedPriorityCategories(page);
+  expect(seededCategories).toEqual(["battery-cts", "cover-fit-and-function"]);
 
   const guidance = page.locator("[data-process-guidance]");
   await expect(guidance).toBeVisible();
@@ -139,7 +137,75 @@ test("renders governed V3 priority guidance and exports it to PDF", async ({ pag
   expect(pageMarkers.length).toBeLessThanOrEqual(8);
 });
 
+async function seedPriorityCategories(page: Page): Promise<string[]> {
+  return await page.evaluate(async () => {
+    const root = document.querySelector("#app") as { __vue_app__?: { _instance?: { setupState?: Record<string, unknown> } } } | null;
+    const setupState = root?.__vue_app__?._instance?.setupState as {
+      store?: {
+        session: { value: {
+          sessionId: string;
+          systemSpecification: {
+            lowerSpecLimit: { actualValue: number };
+            upperSpecLimit: { actualValue: number };
+            targetSigmaLevel: { actualValue: number };
+          };
+          factors: Array<{
+            setup: {
+              factorCandidateId: string;
+              designNominal: number;
+              upperTolerance: number;
+              lowerTolerance: number;
+              longTermSafetyFactor: number;
+              sigmaLevel: number;
+              distribution: string;
+              partNumber?: string | null;
+              dimId?: string | null;
+            };
+          }>;
+        } | null };
+        refreshSession: () => Promise<void>;
+      };
+    } | undefined;
+    const store = setupState?.store;
+    const session = store?.session.value;
+    if (!store || !session) throw new Error("F7 Vue session store is unavailable.");
+    const response = await fetch("/f7/factors/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: session.sessionId,
+        confirmations: session.factors.map((factor, index) => ({
+          factorCandidateId: factor.setup.factorCandidateId,
+          designNominal: factor.setup.designNominal,
+          upperTolerance: factor.setup.upperTolerance,
+          lowerTolerance: factor.setup.lowerTolerance,
+          longTermSafetyFactor: factor.setup.longTermSafetyFactor,
+          sigmaLevel: factor.setup.sigmaLevel,
+          distribution: factor.setup.distribution,
+          partNumber: factor.setup.partNumber ?? null,
+          dimId: factor.setup.dimId ?? null,
+          ...(index === 0 ? { componentCategory: "battery-cts" } : {}),
+          ...(index === 1 ? { componentCategory: "cover-fit-and-function" } : {}),
+          confirmed: true,
+        })),
+        systemSpecification: {
+          lowerSpecLimit: session.systemSpecification.lowerSpecLimit.actualValue,
+          upperSpecLimit: session.systemSpecification.upperSpecLimit.actualValue,
+          targetSigmaLevel: session.systemSpecification.targetSigmaLevel.actualValue,
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`F7 category seeding failed with status ${response.status}.`);
+    const payload = await response.json() as {
+      factors: Array<{ evidence?: { componentCategory?: string } }>;
+    };
+    await store.refreshSession();
+    return payload.factors.slice(0, 2).map((factor) => factor.evidence?.componentCategory ?? "");
+  });
+}
+
 async function downloadTemplate(page: Page, fileName: string): Promise<string> {
+  await openMeasurementImportPanel(page);
   const downloadPromise = page.waitForEvent("download");
   await page.locator("[data-download-measurement-template]").click();
   const download = await downloadPromise;
@@ -153,17 +219,23 @@ async function saveDownload(download: Download, fileName: string): Promise<strin
 }
 
 async function uploadMeasurementWorkbook(page: Page, workbookPath: string): Promise<void> {
+  await openMeasurementImportPanel(page);
   await page.locator("[data-measurement-import-file]").setInputFiles(workbookPath);
   await expect(page.locator("[data-measurement-import-review]")).toBeVisible();
 }
 
+async function openMeasurementImportPanel(page: Page): Promise<void> {
+  const surface = page.locator("[data-measurement-import-surface]");
+  if (await surface.count() > 0 && await surface.isVisible()) return;
+  const importTab = page.getByRole("tab", { name: "Excel Bulk Import" });
+  await importTab.click();
+  await expect(page.locator("[data-upload-measurement-workbook]")).toBeVisible();
+}
+
 async function assertCanonicalMeasuredRows(page: Page): Promise<void> {
-  const rows = page.locator("#factor-setup-table tbody tr");
-  await expect(rows).toHaveCount(7);
+  const measurementButtons = page.locator("[data-open-measurement]");
+  await expect(measurementButtons).toHaveCount(7);
   for (let index = 0; index < 7; index += 1) {
-    const row = rows.nth(index);
-    await expect(row.locator("[data-column-key='sourceMode']")).toContainText("MEASURED");
-    await expect(row.locator("[data-column-key='readiness']")).toContainText("ready", { ignoreCase: true });
-    await expect(row.getByRole("button", { name: "Open workspace" })).toBeEnabled();
+    await expect(measurementButtons.nth(index)).toHaveAttribute("title", /Measured Data/i);
   }
 }

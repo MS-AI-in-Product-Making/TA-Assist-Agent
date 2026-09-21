@@ -47,13 +47,25 @@ export async function createCompletedMeasurementWorkbook(
     const cells = Array.from({ length: FACTOR_COUNT }, (_, factorIndex) => {
       const column = String.fromCharCode(65 + FIRST_FACTOR_COLUMN + factorIndex);
       const address = `${column}${rowNumber}`;
-      if (new RegExp(`<c r="${address}"(?:\\s|>)`).test(worksheetXml)) {
-        throw new Error(`Downloaded F7 template measurement cell ${address} is not empty.`);
-      }
       const value = address === options.negativeCell
         ? -0.125
         : Number((baseValue + factorIndex * 0.1 + sampleIndex * 0.001).toFixed(6));
-      return `<c r="${address}" s="1"><v>${value}</v></c>`;
+      const populatedCell = `<c r="${address}" s="1"><v>${value}</v></c>`;
+      const selfClosingCellPattern = new RegExp(`<c r="${address}"([^>]*)\\/>`);
+      const emptyCellPattern = new RegExp(`<c r="${address}"([^>]*)><\\/c>`);
+      const populatedCellPattern = new RegExp(`<c r="${address}"(?:\\s[^>]*)?>[\\s\\S]*?<\\/c>`);
+      if (selfClosingCellPattern.test(worksheetXml)) {
+        worksheetXml = worksheetXml.replace(selfClosingCellPattern, populatedCell);
+        return "";
+      }
+      if (emptyCellPattern.test(worksheetXml)) {
+        worksheetXml = worksheetXml.replace(emptyCellPattern, populatedCell);
+        return "";
+      }
+      if (populatedCellPattern.test(worksheetXml)) {
+        throw new Error(`Downloaded F7 template measurement cell ${address} is not empty.`);
+      }
+      return populatedCell;
     }).join("");
     const populatedRowPattern = new RegExp(`(<row r="${rowNumber}"[^>]*>)(.*?)(</row>)`);
     const emptyRowPattern = new RegExp(`<row r="${rowNumber}"([^>]*)/>`);

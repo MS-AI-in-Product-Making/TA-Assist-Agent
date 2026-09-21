@@ -364,7 +364,7 @@ test("publishes one overview page plus one page per worksheet without overflow",
       ].map((token) => style.getPropertyValue(token).trim());
     })).toEqual([
       "#000000", "#FFFFFF", "#F2F2F2", "#D2D2D2", "#505050", "#FF9349",
-      "#FEF000", "#9BF00B", "#30E5D0", "#50E6FF", "#D59DFF", "#A72929",
+      "#FEF000", "#107C10", "#30E5D0", "#50E6FF", "#8661C5", "#A72929",
     ]);
     expect(await missingStatus.evaluate((cell) => getComputedStyle(cell).fontWeight)).toBe("800");
     expect(await missingStatus.evaluate((cell) => getComputedStyle(cell).color)).toBe("rgb(167, 41, 41)");
