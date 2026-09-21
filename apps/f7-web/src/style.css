@@ -1183,10 +1183,6 @@ textarea {
   gap: 10px;
 }
 
-.ready-panel {
-  border-color: var(--success);
-}
-
 .monte-carlo-panel {
   border-top: 4px solid var(--accent);
 }

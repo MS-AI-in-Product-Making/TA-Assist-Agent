@@ -14,22 +14,27 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./process-requirements": {
       "types": "./dist/process-requirements/query.d.ts",
+      "source": "./src/process-requirements/query.ts",
       "import": "./dist/process-requirements/query.js"
     },
     "./public-engineering-rules": {
       "types": "./dist/public-engineering-rules.d.ts",
+      "source": "./src/public-engineering-rules.ts",
       "import": "./dist/public-engineering-rules.js"
     },
     "./public-distribution-rules": {
       "types": "./dist/public-distribution-rules.d.ts",
+      "source": "./src/public-distribution-rules.ts",
       "import": "./dist/public-distribution-rules.js"
     },
     "./interpretation-rules": {
       "types": "./dist/interpretation-rules.d.ts",
+      "source": "./src/interpretation-rules.ts",
       "import": "./dist/interpretation-rules.js"
     }
   },

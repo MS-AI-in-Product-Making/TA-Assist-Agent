@@ -224,10 +224,6 @@ const simulationReady = computed(() => {
   ));
 });
 
-const pendingMeasuredFitCount = computed(() => store.session.value?.factors.filter((factor) => (
-  factor.sourceMode === "MEASURED" && factor.distributionApproval === undefined
-)).length ?? 0);
-
 const measuredDatasetPresent = computed(() => store.session.value?.factors.some((factor) => factor.measurementPasteResult?.dataset !== undefined) ?? false);
 
 const measurementImportPanelVisible = computed(() => {
@@ -832,7 +828,7 @@ async function openReport(): Promise<void> {
                   :size="15"
                   aria-hidden="true"
                 />
-                Individual Factor Entry
+                Individual Factor Input
               </button>
             </div>
             <div
@@ -1033,18 +1029,6 @@ async function openReport(): Promise<void> {
           :generate-pdf="generateAssumptionResultsPdf"
           v-bind="currentEngineeringEvidence === undefined ? {} : { engineeringEvidence: currentEngineeringEvidence }"
         />
-
-        <section
-          v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && store.session.value.status === 'phase_1_ready'"
-          class="workbench-panel ready-panel"
-        >
-          <h2>Phase 1 setup ready</h2>
-          <p>
-            {{ simulationReady
-              ? "All factor models are governed. Use Workflow Step 3 to run the system simulation and generate the report."
-              : `Complete Distribution Fit for each measured factor to automatically select its final Monte Carlo distribution. ${pendingMeasuredFitCount} measured factor${pendingMeasuredFitCount === 1 ? "" : "s"} remain.` }}
-          </p>
-        </section>
         </template>
       </section>
     </div>

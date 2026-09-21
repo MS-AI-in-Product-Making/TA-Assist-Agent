@@ -1692,7 +1692,7 @@ describe("F7 workbench shell", () => {
     const initialSpecifications = addedRow.findAll("input.factor-spec-input");
     expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "", "", "1", "4"]);
     expect((addedRow.get("select.factor-distribution-select").element as HTMLSelectElement).value).toBe("Normal");
-    expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", "1.3333", ""]);
+    expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", "1.33", ""]);
     expect(addedRow.find("[role='alert']").exists()).toBe(false);
 
     const addedNominal = addedRow.get("[data-factor-field='designNominal'] input");
@@ -2589,16 +2589,14 @@ describe("F7 workbench shell", () => {
     expect(selectedDistributionEl.parentElement).toBe(measuredInterpretationEl);
   });
 
-  it("8) phase_1_ready banner states readiness without contradicting the available factor capability analysis", async () => {
+  it("8) does not render a redundant phase_1_ready banner", async () => {
     const client = createMockClient(phaseReadySnapshot(), { importWorkbook: phaseReadySnapshot() });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
-    expect(wrapper.text()).toContain("Phase 1 setup ready");
-    expect(wrapper.text()).not.toContain("Capability analysis and Monte Carlo are not executed in this phase");
-    expect(wrapper.text()).toContain("automatically select its final Monte Carlo distribution");
-    const buttonLabels = wrapper.findAll("button").map((button) => button.text().toLowerCase());
-    expect(buttonLabels.some((text) => text.includes("capability") || text.includes("fit") || text.includes("simulation") || text.includes("recommend"))).toBe(false);
+    expect(wrapper.find(".ready-panel").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Phase 1 setup ready");
+    expect(wrapper.text()).not.toContain("All factor models are governed.");
   });
 
   it("8b) unlocks factor step 3, fits on entry, and renders governed comparison results", async () => {
@@ -3063,7 +3061,7 @@ describe("F7 workbench shell", () => {
 
     await monteCarloStep.get("[data-workflow-open-monte-carlo]").trigger("click");
     expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
-    expect(wrapper.get("#monte-carlo-title").text()).toBe("Monte Carlo simulation");
+    expect(wrapper.get("#monte-carlo-title").text()).toBe("Tolerance Analysis Results");
     const restartFromStepOne = wrapper.findAll(".workflow-steps li")[0]!.get("[data-workflow-restart]");
     expect(restartFromStepOne.attributes("disabled")).toBeUndefined();
     expect(restartFromStepOne.text()).toBe("Change selection");
@@ -3075,7 +3073,7 @@ describe("F7 workbench shell", () => {
         lowerSpecLimit: -0.15,
         upperSpecLimit: 0.05,
         targetSigmaLevel: 3,
-        iterations: 100_000,
+        iterations: 1_000_000,
         runSeed: "3039".padStart(64, "0"),
         correlationMode: "INDEPENDENT",
       });
@@ -3092,17 +3090,19 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='out-of-spec']").length).toBeGreaterThan(0);
     expect(wrapper.find("[data-monte-carlo-fit]").exists()).toBe(true);
     expect(wrapper.findAll("[data-monte-carlo-reference]")).toHaveLength(6);
-    expect(wrapper.get("[data-reference-id='lower-spec-limit']").text()).toContain("LSL -0.1500");
-    expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target -0.0500");
-    expect(wrapper.get("[data-reference-id='upper-spec-limit']").text()).toContain("USL 0.0500");
-    expect(wrapper.get("[data-reference-id='minus-target-sigma']").text()).toContain("−4σ -0.1800");
-    expect(wrapper.get("[data-reference-id='mean']").text()).toContain("Mean -0.0200");
-    expect(wrapper.get("[data-reference-id='plus-target-sigma']").text()).toContain("+4σ 0.1400");
+    expect(wrapper.get("[data-reference-id='lower-spec-limit']").text()).toContain("LSL -0.15");
+    expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target -0.05");
+    expect(wrapper.get("[data-reference-id='upper-spec-limit']").text()).toContain("USL 0.05");
+    expect(wrapper.get("[data-reference-id='minus-target-sigma']").text()).toContain("−4σ -0.18");
+    expect(wrapper.get("[data-reference-id='mean']").text()).toContain("Mean -0.02");
+    expect(wrapper.get("[data-reference-id='plus-target-sigma']").text()).toContain("+4σ 0.14");
     expect(wrapper.findAll("[data-reference-row='top']")).toHaveLength(3);
-    expect(wrapper.findAll("[data-reference-row='bottom']")).toHaveLength(4);
+    expect(wrapper.findAll("[data-reference-row='bottom']")).toHaveLength(3);
     for (const row of ["top", "bottom"]) {
       const intervals = wrapper.findAll(`[data-reference-row='${row}'] .monte-carlo-reference-badge`).map((badge) => {
-        const x = Number(badge.attributes("transform").match(/translate\(([-\d.]+)/)?.[1]);
+        const transformMatch = badge.attributes("transform").match(/translate\(([-\d.]+)/);
+        expect(transformMatch).not.toBeNull();
+        const x = Number(transformMatch![1]);
         const width = Number(badge.get("rect").attributes("width"));
         return { left: x - width / 2, right: x + width / 2 };
       }).sort((left, right) => left.left - right.left);
@@ -3111,7 +3111,7 @@ describe("F7 workbench shell", () => {
     }
     expect(wrapper.get("[data-factor-setup-fit]").attributes("d")).not.toBe("");
     expect(wrapper.get(".monte-carlo-histogram").attributes("aria-label")).toContain("Factor Setup");
-    expect(wrapper.get("[data-factor-setup-mean]").text()).toContain("Setup Mean -0.5700");
+    expect(wrapper.get("[data-factor-setup-mean]").text()).toContain("Setup Mean -0.57");
     expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Factor Setup TA Normal expected count");
     expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Setup Mean");
   });
@@ -3226,6 +3226,7 @@ describe("F7 workbench shell", () => {
       sessionId: "session-01",
       report,
       dimensionChainVisual: { status: "empty" },
+      includeFactorDistributionAppendix: false,
     }));
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
@@ -3977,7 +3978,7 @@ describe("F7 workbench shell", () => {
     expect(restart.attributes("disabled")).toBeUndefined();
     expect(listItems[1]!.findAll("button").map((button) => button.text())).toEqual([
       "Excel Bulk Import",
-      "Web Factor Entry",
+      "Individual Factor Input",
     ]);
 
     await restart.trigger("click");
@@ -4281,11 +4282,11 @@ describe("F7 workbench shell", () => {
     });
     await uploadWorkbook(individualWrapper);
     const individualStep = individualWrapper.findAll(".workflow-steps > li")[1]!;
-    expect(individualStep.get("[role='tab'][aria-selected='true']").text()).toContain("Web Factor Entry");
+    expect(individualStep.get("[role='tab'][aria-selected='true']").text()).toContain("Individual Factor Input");
     expect(individualWrapper.find("[data-measurement-process-flow]").exists()).toBe(false);
   });
 
-  it("keeps Web Factor Entry keyboard reachable when Excel Bulk Import is unavailable", async () => {
+  it("keeps Individual Factor Input keyboard reachable when Excel Bulk Import is unavailable", async () => {
     const snapshot = measurementEntrySnapshot();
     const wrapper = mount(App, {
       props: { client: createMockClient(snapshot, { importWorkbook: snapshot }) },
@@ -4547,7 +4548,7 @@ describe("F7 workbench shell", () => {
     expect(wrapper.get("button[aria-label='Measured Data: validation is blocked; correction or re-upload is required for C-cover height']").attributes("data-measured-state")).toBe("blocked");
   });
 
-  it("clears retained blocked measurement state after a successful Web Factor Entry save", async () => {
+  it("clears retained blocked measurement state after a successful Individual Factor Input save", async () => {
     const session = measurementEntrySnapshot();
     const client = createMockClient(session, {
       importWorkbook: session,
