@@ -75,8 +75,8 @@ export interface AnalysisWorkspaceSummary {
 	readonly stageDirectories: AnalysisWorkspaceStageDirectoryNames;
 	readonly stages: Readonly<Record<AnalysisStage, AnalysisWorkspaceStageSummary>>;
 	readonly overallStatus: AnalysisWorkspaceOverallStatus;
-	readonly failedStage?: AnalysisStage;
-	readonly failureCategory?: string;
+	readonly failedStage?: AnalysisStage | undefined;
+	readonly failureCategory?: string | undefined;
 }
 
 interface DirectoryIdentity {
@@ -304,13 +304,19 @@ export function recordAnalysisStageCompleted(
 	assertSummaryCanTransition(summary);
 	assertStageIsRunning(summary, stage);
 	const normalizedArtifacts = normalizeStageArtifactsForPersistence(summary.analysisRoot, stage, artifacts);
+	const stageIndex = ANALYSIS_STAGES.indexOf(stage);
+	const isFinalStage = stageIndex === ANALYSIS_STAGES.length - 1;
+	const nextStage = ANALYSIS_STAGES[stageIndex + 1];
 
 	return createUpdatedSummary(summary, {
-		currentStage: stage,
+		currentStage: isFinalStage ? stage : nextStage!,
 		stages: updateStageSummary(summary.stages, stage, {
 			status: "completed",
 			artifacts: normalizedArtifacts,
 		}),
+		overallStatus: isFinalStage ? "completed" : "in_progress",
+		failedStage: undefined,
+		failureCategory: undefined,
 	});
 }
 
@@ -328,11 +334,11 @@ export function recordAnalysisStageFailed(
 	}
 
 	const failedStageIndex = ANALYSIS_STAGES.indexOf(stage);
-	const stages = createStageRecord((candidateStage) => {
+	const stages: AnalysisWorkspaceSummary["stages"] = createStageRecord((candidateStage) => {
 		const candidateStageIndex = ANALYSIS_STAGES.indexOf(candidateStage);
 		if (candidateStageIndex < failedStageIndex) return cloneStageSummary(summary.stages[candidateStage]);
-		if (candidateStage === stage) return { status: "failed", artifacts: cloneArtifacts(summary.stages[candidateStage].artifacts) };
-		return { status: "blocked", artifacts: {} };
+		if (candidateStage === stage) return { status: "failed" as const, artifacts: cloneArtifacts(summary.stages[candidateStage].artifacts) };
+		return { status: "blocked" as const, artifacts: {} };
 	});
 
 	return createUpdatedSummary(summary, {
@@ -358,6 +364,7 @@ export function writeAnalysisWorkspaceSummary(layout: AnalysisWorkspaceLayout, s
 	let ownsTemporaryPath = false;
 	let committed = false;
 	let writeError: unknown;
+	let cleanupError: Error | undefined;
 
 	try {
 		fileDescriptor = fs.openSync(temporaryPath, "wx");
@@ -375,21 +382,24 @@ export function writeAnalysisWorkspaceSummary(layout: AnalysisWorkspaceLayout, s
 		committed = true;
 	} catch (error) {
 		writeError = error;
-		throw error;
 	} finally {
 		if (ownsTemporaryPath && !committed) {
-			const cleanupError = cleanupExactTemporarySummaryFile(temporaryPath);
-			if (cleanupError !== undefined) {
-				if (writeError === undefined) throw cleanupError;
-				throw new AggregateError(
-					[
-						writeError instanceof Error ? writeError : new Error(String(writeError)),
-						cleanupError,
-					],
-					"Analysis workspace summary write failed during cleanup.",
-				);
-			}
+			cleanupError = cleanupExactTemporarySummaryFile(temporaryPath);
 		}
+	}
+
+	if (writeError !== undefined) {
+		const normalizedWriteError = writeError instanceof Error ? writeError : new Error(String(writeError));
+		if (cleanupError !== undefined) {
+			throw new AggregateError(
+				[normalizedWriteError, cleanupError],
+				"Analysis workspace summary write failed during cleanup.",
+			);
+		}
+		throw normalizedWriteError;
+	}
+	if (cleanupError !== undefined) {
+		throw cleanupError;
 	}
 }
 
@@ -730,6 +740,9 @@ function assertSummaryCanTransition(summary: AnalysisWorkspaceSummary): void {
 }
 
 function assertStageCanStart(summary: AnalysisWorkspaceSummary, stage: AnalysisStage): void {
+	if (summary.currentStage !== stage) {
+		throw new Error(`Analysis workspace stage ${stage} must match the current stage before it can start.`);
+	}
 	const stageStatus = summary.stages[stage].status;
 	if (stageStatus !== "pending") {
 		throw new Error(`Analysis workspace stage ${stage} must be pending before it can start.`);

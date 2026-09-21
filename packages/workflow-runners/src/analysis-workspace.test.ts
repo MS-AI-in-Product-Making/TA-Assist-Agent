@@ -27,6 +27,7 @@ const HASH = "a".repeat(64);
 const ROOT = path.resolve("test", "20260921 - Demo");
 const ALLOCATION_TEST_ROOT = path.resolve("test-output", "analysis-workspace");
 const cleanupRoots: string[] = [];
+const STAGES: AnalysisStage[] = ["f1", "f2", "f3", "f4", "f5", "f6"];
 
 function stageStatuses(
 	statusByStage: Partial<Record<AnalysisStage, AnalysisWorkspaceSummary["stages"][AnalysisStage]["status"]>>,
@@ -109,6 +110,23 @@ function isContained(rootPath: string, candidatePath: string): boolean {
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function artifactFixture(stage: AnalysisStage): Readonly<Record<string, string>> {
+	switch (stage) {
+		case "f1":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") };
+		case "f2":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f2, "Feature2-Report.json") };
+		case "f3":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f3, "Feature3-Report.json") };
+		case "f4":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f4, "Feature4-Calculation.json") };
+		case "f5":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f5, "Feature5-Report.json") };
+		case "f6":
+			return { report: path.join(ANALYSIS_STAGE_DIRS.f6, "Feature6-Optimization.json") };
+	}
+}
+
 afterEach(() => {
 	vi.restoreAllMocks();
 	vi.doUnmock("node:fs");
@@ -144,24 +162,50 @@ describe("analysis workspace lifecycle", () => {
 		expect(() => validateAnalysisWorkspaceSummary(summary)).not.toThrow();
 	});
 
-	it("records legal ordered transitions immutably", () => {
+	it("advances currentStage through f1 to f6 immutably and completes at f6", () => {
 		const initial = createInitialAnalysisWorkspaceSummary(layoutFixture());
 		const initialBefore = JSON.parse(JSON.stringify(initial));
-		const f1Artifacts = Object.freeze({
-			report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json"),
-		});
+		const snapshots: Array<{ readonly value: AnalysisWorkspaceSummary; readonly snapshot: AnalysisWorkspaceSummary }> = [
+			{ value: initial, snapshot: JSON.parse(JSON.stringify(initial)) as AnalysisWorkspaceSummary },
+		];
+		let current = initial;
 
-		const started = recordAnalysisStageStarted(initial, "f1");
-		const completed = recordAnalysisStageCompleted(started, "f1", f1Artifacts);
+		for (const [index, stage] of STAGES.entries()) {
+			const started = recordAnalysisStageStarted(current, stage);
+			const completed = recordAnalysisStageCompleted(started, stage, Object.freeze(artifactFixture(stage)));
+			snapshots.push(
+				{ value: started, snapshot: JSON.parse(JSON.stringify(started)) as AnalysisWorkspaceSummary },
+				{ value: completed, snapshot: JSON.parse(JSON.stringify(completed)) as AnalysisWorkspaceSummary },
+			);
+
+			expect(started).not.toBe(current);
+			expect(started.currentStage).toBe(stage);
+			expect(started.stages[stage]).toEqual({ status: "running", artifacts: {} });
+			expect(completed).not.toBe(started);
+			expect(completed.stages[stage]).toEqual({ status: "completed", artifacts: artifactFixture(stage) });
+
+			if (stage === "f6") {
+				expect(completed.currentStage).toBe("f6");
+				expect(completed.overallStatus).toBe("completed");
+				expect(completed.failedStage).toBeUndefined();
+				expect(completed.failureCategory).toBeUndefined();
+				for (const candidateStage of STAGES) {
+					expect(completed.stages[candidateStage].status).toBe("completed");
+				}
+			} else {
+				expect(completed.currentStage).toBe(STAGES[index + 1]);
+				expect(completed.overallStatus).toBe("in_progress");
+				expect(completed.stages[STAGES[index + 1]].status).toBe("pending");
+			}
+
+			expect(() => validateAnalysisWorkspaceSummary(completed)).not.toThrow();
+			current = completed;
+		}
 
 		expect(initial).toEqual(initialBefore);
-		expect(started).not.toBe(initial);
-		expect(started.stages.f1).toEqual({ status: "running", artifacts: {} });
-		expect(completed).not.toBe(started);
-		expect(completed.stages.f1).toEqual({ status: "completed", artifacts: f1Artifacts });
-		expect(completed.currentStage).toBe("f1");
-		expect(started.stages.f1).toEqual({ status: "running", artifacts: {} });
-		expect(() => validateAnalysisWorkspaceSummary(completed)).not.toThrow();
+		for (const { value, snapshot } of snapshots) {
+			expect(value).toEqual(snapshot);
+		}
 	});
 
 	it("blocks downstream stages after a recorded failure", () => {
@@ -194,10 +238,11 @@ describe("analysis workspace lifecycle", () => {
 		const completedF1 = recordAnalysisStageCompleted(
 			startedF1,
 			"f1",
-			{ report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json") },
+			artifactFixture("f1"),
 		);
 
-		expect(() => recordAnalysisStageStarted(initial, "f2")).toThrow(/predecessor|order/i);
+		expect(() => recordAnalysisStageStarted(initial, "f2")).toThrow(/current stage|predecessor|order/i);
+		expect(() => recordAnalysisStageStarted(completedF1, "f3")).toThrow(/current stage|predecessor|order/i);
 		expect(() => recordAnalysisStageCompleted(initial, "f1", {
 			report: path.join(ANALYSIS_STAGE_DIRS.f1, "Feature1-Workbook.json"),
 		})).toThrow(/running/i);
@@ -211,6 +256,11 @@ describe("analysis workspace lifecycle", () => {
 			"f2",
 			{ report: path.join("..", "escape.json") },
 		)).toThrow(/artifact path/i);
+		expect(() => recordAnalysisStageCompleted(
+			recordAnalysisStageStarted(completedF1, "f2"),
+			"f3",
+			artifactFixture("f3"),
+		)).toThrow(/running|current/i);
 		expect(() => recordAnalysisStageFailed(completedF1, "f2", "validation_error")).toThrow(/running/i);
 	});
 });
@@ -747,14 +797,6 @@ describe("analysis workspace contract", () => {
 				f1: { status: "completed", artifacts: {} },
 			},
 		}))).toThrow(/validated artifacts/i);
-	});
-
-	it("allows valid in-progress persistence windows after all stages complete", () => {
-		expect(() => validateAnalysisWorkspaceSummary(summaryFixture({
-			stages: stageStatuses({ f1: "completed", f2: "completed", f3: "completed", f4: "completed", f5: "completed", f6: "completed" }),
-			currentStage: "f6",
-			overallStatus: "in_progress",
-		}))).not.toThrow();
 	});
 
 	it("rejects a failed stage that does not match the recorded failed stage", () => {
