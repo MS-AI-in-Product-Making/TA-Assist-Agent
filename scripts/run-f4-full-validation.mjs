@@ -2,10 +2,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRunnerError, runF4Calculation } from "../packages/workflow-runners/dist/index.js";
-import {
-  createTypedError,
-  typedErrorSchema,
-} from "../packages/contracts/dist/index.js";
+import { typedErrorSchema } from "../packages/contracts/dist/index.js";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 import { compareF4WithExcel } from "./f4-excel-comparison.mjs";
@@ -77,7 +74,6 @@ function reasonCodeForWorkspacePreflight(error) {
   if (typed.success && typed.data.code === "validation_error") {
     return "invalid_arguments_or_output_root";
   }
-  if (typed.success) return typed.data.code;
   return undefined;
 }
 
@@ -134,22 +130,13 @@ export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
       rm: dependencies.rm,
     });
   } catch (error) {
-    if (error?.code === "EEXIST") throw error;
+    const reasonCode = reasonCodeForWorkspacePreflight(error);
+    if (reasonCode === undefined) throw error;
     const layout = dependencies.resolveLayout(args);
     if (layout.allowExistingRunRoot) {
-      const reasonCode = reasonCodeForWorkspacePreflight(error);
-      if (reasonCode !== undefined) {
-        return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
-      }
-      throw error;
+      return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
     }
     const paths = outputPaths(layout);
-    const typed = error?.code === undefined ? createTypedError({
-      code: "internal_error",
-      summary: "Feature 4 workflow execution failed.",
-      affectedInputReferences: ["feature4-workflow"],
-    }) : error;
-    const reasonCode = typed.code === "validation_error" ? "invalid_arguments_or_output_root" : "calculation_failed";
     atomicWrite(paths.manifestPath, json(failedManifest(layout, reasonCode)), dependencies);
     return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifestPath };
   }

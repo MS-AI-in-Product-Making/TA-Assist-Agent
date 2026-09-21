@@ -3,13 +3,49 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { f4ExcelComparisonResultSchema, f4WorkflowCalculationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createTypedError } from "../packages/contracts/dist/index.js";
 import { runF4CliMain, runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
 
 const cleanup = [];
 const runnerPath = fileURLToPath(new URL("./run-f4-full-validation.mjs", import.meta.url));
+const contractsUrl = new URL("../packages/contracts/dist/index.js", import.meta.url).href;
+const operationalErrorCodes = ["dependency_error", "internal_error", "prerequisite_not_ready"];
+const publicRunId = "cf91da4e-02e7-42b8-a0ed-201d2808b07f";
+
+function operationalErrorOptions(code) {
+  return {
+    code,
+    runId: publicRunId,
+    summary: "Approved public failure summary.",
+    retryable: false,
+    suggestedAction: "Inspect the runner logs before retrying.",
+    affectedInputReferences: ["f4-preflight"],
+    details: {
+      message: "secret operational message at C:\\private\\workbook.xlsx",
+      stack: "secret operational stack",
+      reasonCode: "unapproved_internal_reason",
+    },
+  };
+}
+
+function expectSafeOperationalFailure({ status, stdout, stderr }, code) {
+  expect(status).toBe(1);
+  expect(stdout).toBe("");
+  expect(JSON.parse(stderr)).toEqual({
+    status: "failed",
+    error: {
+      code,
+      runId: publicRunId,
+      summary: "Approved public failure summary.",
+      retryable: false,
+      suggestedAction: "Inspect the runner logs before retrying.",
+      affectedInputReferences: ["f4-preflight"],
+    },
+  });
+  expect(stderr).not.toMatch(/secret|private|workbook\.xlsx|unapproved_internal_reason|message|stack/u);
+}
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -504,6 +540,60 @@ describe("runF4FullValidation", () => {
 });
 
 describe("runF4CliMain", () => {
+  it.each(operationalErrorCodes)("serializes a direct typed %s on stderr", (code) => {
+    const stdout = [];
+    const stderr = [];
+    const status = runF4CliMain({
+      runFullValidation: () => { throw createTypedError(operationalErrorOptions(code)); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+  });
+
+  it.each(["dependency_error", "internal_error"])("does not treat %s with a dirty-stage reason as the known preflight error", (code) => {
+    const options = operationalErrorOptions(code);
+    const error = createTypedError({
+      ...options,
+      details: { ...options.details, reasonCode: "workspace_stage_not_empty" },
+    });
+    const stdout = [];
+    const stderr = [];
+    const status = runF4CliMain({
+      runFullValidation: () => { throw error; },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+  });
+
+  it.each(operationalErrorCodes.flatMap((code) => [true, false].map((workspace) => ({ code, workspace }))))(
+    "propagates typed $code from real preflight (workspace=$workspace) to safe stderr",
+    ({ code, workspace }) => {
+      const context = setup();
+      const layout = { ...context.deps.resolveLayout(), allowExistingRunRoot: workspace };
+      const stdout = [];
+      const stderr = [];
+      const status = runF4CliMain({
+        runFullValidation: (options) => runF4FullValidation(options, {
+          ...context.deps,
+          resolveLayout: () => layout,
+          mkdir: (target, options) => {
+            if (target === layout.runRoot) throw createTypedError(operationalErrorOptions(code));
+            return mkdirSync(target, options);
+          },
+        }),
+        writeStdout: (value) => stdout.push(value),
+        writeStderr: (value) => stderr.push(value),
+      });
+
+      expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+      expect(existsSync(path.join(layout.runRoot, "manifest.json"))).toBe(false);
+    },
+  );
+
   it("returns invalid_arguments_or_output_root only for argument/layout validation failures", () => {
     const stdout = [];
     const stderr = [];
@@ -567,6 +657,38 @@ describe("runF4CliMain", () => {
 });
 
 describe("run-f4-full-validation CLI", () => {
+  it.each(operationalErrorCodes)("prints only safe stderr for typed %s during workspace preflight", (code) => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-cli-operational-"));
+    cleanup.push(root);
+    const workspace = createAnalysisWorkspaceRoot(root);
+    const preloadPath = path.join(root, "preflight-failure.mjs");
+    // Patch only this subprocess's stage mkdir; execute the real CLI and full-validation wrapper.
+    writeFileSync(preloadPath, `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      import { createTypedError } from ${JSON.stringify(contractsUrl)};
+      const mkdir = fs.mkdirSync;
+      fs.mkdirSync = (target, options) => {
+        if (target === ${JSON.stringify(workspace.stagePaths.f4)}) {
+          throw createTypedError(${JSON.stringify(operationalErrorOptions(code))});
+        }
+        return mkdir(target, options);
+      };
+      syncBuiltinESMExports();
+    `, "utf8");
+
+    const result = spawnSync(process.execPath, [
+      "--import", pathToFileURL(preloadPath).href,
+      runnerPath,
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      "--analysis-root", workspace.analysisRoot,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.error).toBeUndefined();
+    expectSafeOperationalFailure(result, code);
+    expect(readdirSync(workspace.stagePaths.f4)).toEqual([]);
+  });
+
   it("prints invalid_arguments_or_output_root and exits nonzero for invalid arguments", () => {
     const result = spawnSync(process.execPath, [runnerPath, "--f2-report"], {
       cwd: process.cwd(),
