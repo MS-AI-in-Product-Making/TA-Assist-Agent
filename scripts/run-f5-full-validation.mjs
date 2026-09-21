@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   realpathSync,
@@ -37,6 +38,7 @@ function normalizeDependencies(overrides = {}) {
     randomUUID: overrides.randomUUID ?? randomUUID,
     realpath: overrides.realpath ?? realpathSync,
     stat: overrides.stat ?? statSync,
+    lstat: overrides.lstat ?? lstatSync,
     open: overrides.open ?? openSync,
     writeFd: overrides.writeFd ?? ((fd, content) => writeFileSync(fd, content, "utf8")),
     close: overrides.close ?? closeSync,
@@ -166,6 +168,7 @@ export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
       randomUUID: dependencies.randomUUID,
       realpath: dependencies.realpath,
       stat: dependencies.stat,
+      lstat: dependencies.lstat,
       open: dependencies.open,
       writeFd: dependencies.writeFd,
       close: dependencies.close,

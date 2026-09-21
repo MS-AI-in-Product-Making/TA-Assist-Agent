@@ -137,6 +137,17 @@ function isIdentityEqual(expected, actual) {
     && expected.canonicalPath === actual.canonicalPath;
 }
 
+function serializeIdentity(identity) {
+  return {
+    requestedPath: identity.requestedPath,
+    canonicalPath: identity.canonicalPath,
+    requestedDev: identity.requestedDev,
+    requestedIno: identity.requestedIno,
+    canonicalDev: identity.canonicalDev,
+    canonicalIno: identity.canonicalIno,
+  };
+}
+
 function captureDirectoryIdentity(targetPath, label, dependencies) {
   const requestedPath = path.resolve(targetPath);
   if (!dependencies.existsSync(requestedPath)) {
@@ -291,6 +302,10 @@ export function resolveFeature5OutputLayout(parsed, outputRoot, now = () => new 
       imageObservationsJsonName: "Feature5-Image-Observations.json",
       manifestName: "manifest.json",
       allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: serializeIdentity(workspace.analysisRootIdentity),
+        runRootIdentity: serializeIdentity(workspace.stageIdentities.f5),
+      },
     };
   }
 

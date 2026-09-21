@@ -4,13 +4,16 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeSync,
   writeFileSync,
@@ -336,6 +339,21 @@ function setup({ rejectedWorksheets = [], observationArtifact } = {}) {
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function directoryIdentity(targetPath) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = lstatSync(requestedPath);
+  const canonicalPath = realpathSync(requestedPath);
+  const canonicalStats = statSync(canonicalPath);
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
 }
 
 function cloneJson(value) {
@@ -1293,6 +1311,96 @@ describe("runF5FullValidation", () => {
     expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
     expect(readFileSync(outsideSentinel, "utf8")).toBe("outside-sentinel");
     expect(context.renameCalls).toEqual([]);
+  });
+
+  it("fails closed in workspace mode when the pinned destination is swapped before the first write", () => {
+    const context = setup();
+    mkdirSync(context.runRoot, { recursive: true });
+    const pinnedRunRootIdentity = directoryIdentity(context.runRoot);
+    const pinnedPublishRootIdentity = directoryIdentity(context.publishRoot);
+    const outsideRoot = path.join(context.root, "workspace-outside-before-first-write");
+    mkdirSync(outsideRoot);
+    context.deps.resolveLayout = () => ({
+      runId: "2026-08-11T12-00-00-000Z",
+      runRoot: context.runRoot,
+      publishRoot: context.publishRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: pinnedPublishRootIdentity,
+        runRootIdentity: pinnedRunRootIdentity,
+      },
+    });
+    context.deps.loadBundle.mockImplementation(() => {
+      rmSync(context.runRoot, { recursive: true, force: true });
+      symlinkSync(outsideRoot, context.runRoot, process.platform === "win32" ? "junction" : "dir");
+      return {
+        status: "accepted",
+        request: request(),
+        rejectedWorksheets: [],
+        sourceReferences: {
+          f1: "Feature1-Report.json",
+          f3: "Feature3-Report.json",
+          f4: "Feature4-Calculation.json",
+        },
+      };
+    });
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(readdirSync(outsideRoot)).toEqual([]);
+    expect(context.renameCalls).toEqual([]);
+    expect(existsSync(path.join(context.runRoot, "manifest.json"))).toBe(false);
+  });
+
+  it("fails closed in workspace mode when the pinned destination is swapped between writes and rename", () => {
+    const context = setup();
+    mkdirSync(context.runRoot, { recursive: true });
+    const pinnedRunRootIdentity = directoryIdentity(context.runRoot);
+    const pinnedPublishRootIdentity = directoryIdentity(context.publishRoot);
+    const outsideRoot = path.join(context.root, "workspace-outside-between-writes");
+    const displacedRunRoot = path.join(context.root, "workspace-displaced-run-root");
+    const token = "11111111-1111-4111-8111-111111111111";
+    const outsideSentinel = path.join(outsideRoot, `Feature5-Report.json.${token}.tmp`);
+    mkdirSync(outsideRoot);
+    writeFileSync(outsideSentinel, "outside-sentinel", "utf8");
+    context.deps.resolveLayout = () => ({
+      runId: "2026-08-11T12-00-00-000Z",
+      runRoot: context.runRoot,
+      publishRoot: context.publishRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: pinnedPublishRootIdentity,
+        runRootIdentity: pinnedRunRootIdentity,
+      },
+    });
+    context.deps.randomUUID = vi.fn(() => token);
+    let replaced = false;
+    context.deps.close = (fd) => {
+      closeSync(fd);
+      if (!replaced) {
+        replaced = true;
+        renameSync(context.runRoot, displacedRunRoot);
+        symlinkSync(outsideRoot, context.runRoot, process.platform === "win32" ? "junction" : "dir");
+      }
+    };
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(readFileSync(outsideSentinel, "utf8")).toBe("outside-sentinel");
+    expect(context.renameCalls).toEqual([]);
+    expect(existsSync(path.join(outsideRoot, "manifest.json"))).toBe(false);
   });
 
   it("returns controlled invalid-argument JSON and a nonzero exit code from the direct CLI", () => {

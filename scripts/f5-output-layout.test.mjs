@@ -71,7 +71,7 @@ describe("resolveFeature5OutputLayout", () => {
       f3ArtifactRoot: stagePaths.f3,
       f4ArtifactRoot: stagePaths.f4,
       analysisRoot,
-    }, undefined, fixedNow)).toEqual({
+    }, undefined, fixedNow)).toMatchObject({
       runId: "2026-08-11T12-34-56-789Z",
       runRoot: stagePaths.f5,
       publishRoot: analysisRoot,
@@ -81,6 +81,10 @@ describe("resolveFeature5OutputLayout", () => {
       imageObservationsJsonName: "Feature5-Image-Observations.json",
       manifestName: "manifest.json",
       allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: { canonicalPath: analysisRoot, requestedPath: analysisRoot },
+        runRootIdentity: { canonicalPath: stagePaths.f5, requestedPath: stagePaths.f5 },
+      },
     });
   });
 

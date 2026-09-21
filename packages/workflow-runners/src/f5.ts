@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -36,6 +37,24 @@ interface F5Layout {
   readonly imageObservationsJsonName: string;
   readonly manifestName: string;
   readonly allowExistingRunRoot?: boolean;
+  readonly workspaceBoundary?: {
+    readonly publishRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+    readonly runRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+  };
 }
 
 export interface F5Dependencies {
@@ -47,6 +66,7 @@ export interface F5Dependencies {
   readonly randomUUID?: typeof randomUUID;
   readonly realpath?: typeof realpathSync;
   readonly stat?: typeof statSync;
+  readonly lstat?: typeof lstatSync;
   readonly open?: typeof openSync;
   readonly writeFd?: (fd: number, content: string) => void;
   readonly close?: typeof closeSync;
@@ -71,6 +91,30 @@ function directoryIdentity(target: string, dependencies: Required<Pick<F5Depende
   return { dev: stats.dev, ino: stats.ino };
 }
 
+function captureDirectoryIdentity(
+  targetPath: string,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat">>,
+) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = dependencies.lstat(requestedPath);
+  if (!requestedStats.isDirectory() && !requestedStats.isSymbolicLink()) {
+    throw new Error("Feature 5 workspace root identity is invalid.");
+  }
+  const canonicalPath = dependencies.realpath(requestedPath);
+  const canonicalStats = dependencies.stat(canonicalPath);
+  if (!canonicalStats.isDirectory()) {
+    throw new Error("Feature 5 workspace root identity is invalid.");
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
 function identityAvailable(identity: { dev: unknown; ino: unknown }): boolean {
   const valid = (value: unknown) => typeof value === "bigint"
     || (typeof value === "number" && Number.isFinite(value));
@@ -82,7 +126,47 @@ function sameIdentity(expected: { dev: unknown; ino: unknown }, actual: { dev: u
   return identityAvailable(actual) && expected.dev === actual.dev && expected.ino === actual.ino;
 }
 
-function captureCreatedRunBoundary(layout: F5Layout, dependencies: Required<Pick<F5Dependencies, "realpath" | "stat" | "rmdir">>) {
+function samePinnedIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  actual: ReturnType<typeof captureDirectoryIdentity>,
+): boolean {
+  return expected.requestedPath === actual.requestedPath
+    && expected.canonicalPath === actual.canonicalPath
+    && expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno;
+}
+
+function assertPinnedDirectoryIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat">>,
+): void {
+  const actual = captureDirectoryIdentity(expected.requestedPath, dependencies);
+  if (!samePinnedIdentity(expected, actual)) {
+    throw new Error("Feature 5 workspace root changed after validation.");
+  }
+}
+
+function captureCreatedRunBoundary(layout: F5Layout, dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "rmdir">>) {
+  if (layout.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(layout.workspaceBoundary.publishRootIdentity, dependencies);
+    assertPinnedDirectoryIdentity(layout.workspaceBoundary.runRootIdentity, dependencies);
+  }
   const realPublishRoot = dependencies.realpath(path.resolve(layout.publishRoot));
   const realRunRoot = dependencies.realpath(path.resolve(layout.runRoot));
   if (!isContained(realPublishRoot, realRunRoot)) {
@@ -95,10 +179,15 @@ function captureCreatedRunBoundary(layout: F5Layout, dependencies: Required<Pick
     realRunRoot,
     publishIdentity: directoryIdentity(realPublishRoot, dependencies),
     runIdentity: directoryIdentity(realRunRoot, dependencies),
+    workspaceBoundary: layout.workspaceBoundary,
   };
 }
 
-function assertRunRootContained(boundary: ReturnType<typeof captureCreatedRunBoundary>, dependencies: Required<Pick<F5Dependencies, "realpath" | "stat">>): void {
+function assertRunRootContained(boundary: ReturnType<typeof captureCreatedRunBoundary>, dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat">>): void {
+  if (boundary.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(boundary.workspaceBoundary.publishRootIdentity, dependencies);
+    assertPinnedDirectoryIdentity(boundary.workspaceBoundary.runRootIdentity, dependencies);
+  }
   const realPublishRoot = dependencies.realpath(path.resolve(boundary.layout.publishRoot));
   const realRunRoot = dependencies.realpath(path.resolve(boundary.layout.runRoot));
   const publishIdentity = directoryIdentity(realPublishRoot, dependencies);
@@ -116,7 +205,7 @@ function atomicWrite(
   filePath: string,
   content: string,
   boundary: ReturnType<typeof captureCreatedRunBoundary>,
-  dependencies: Required<Pick<F5Dependencies, "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
 ): void {
   assertRunRootContained(boundary, dependencies);
   const temporaryPath = `${filePath}.${dependencies.randomUUID()}.tmp`;
@@ -246,7 +335,7 @@ function failedResult(
   artifacts: Record<string, string>,
   reasonCode: string,
   boundary: ReturnType<typeof captureCreatedRunBoundary>,
-  dependencies: Required<Pick<F5Dependencies, "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
+  dependencies: Required<Pick<F5Dependencies, "lstat" | "realpath" | "stat" | "randomUUID" | "open" | "writeFd" | "close" | "rename" | "rm">>,
 ): F5InterpretationResult {
   try {
     atomicWrite(paths.manifestPath, json(manifest(layout, "failed", artifacts, reasonCode)), boundary, dependencies);
@@ -277,6 +366,7 @@ export function runF5Interpretation(
   const randomUuid = dependencies.randomUUID ?? randomUUID;
   const realpath = dependencies.realpath ?? realpathSync;
   const stat = dependencies.stat ?? statSync;
+  const lstat = dependencies.lstat ?? lstatSync;
   const open = dependencies.open ?? openSync;
   const writeFd = dependencies.writeFd ?? ((fd, content) => writeFileSync(fd, content, "utf8"));
   const close = dependencies.close ?? closeSync;
@@ -304,15 +394,19 @@ export function runF5Interpretation(
     mkdir(path.dirname(layout.runRoot), { recursive: true });
     if (layout.allowExistingRunRoot) {
       mkdir(layout.runRoot, { recursive: true });
+      if (layout.workspaceBoundary) {
+        assertPinnedDirectoryIdentity(layout.workspaceBoundary.publishRootIdentity, { lstat, realpath, stat });
+        assertPinnedDirectoryIdentity(layout.workspaceBoundary.runRootIdentity, { lstat, realpath, stat });
+      }
       assertWorkspaceStageEmpty(layout.runRoot, readdir);
     } else {
       mkdir(layout.runRoot);
     }
-    boundary = captureCreatedRunBoundary(layout, { realpath, stat, rmdir });
+    boundary = captureCreatedRunBoundary(layout, { lstat, realpath, stat, rmdir });
     loadStarted = true;
     const loaded = loadBundle(request);
     if (loaded?.status !== "accepted") {
-      return failedResult(layout, paths, committedArtifacts, "input_rejected", boundary, { realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
+      return failedResult(layout, paths, committedArtifacts, "input_rejected", boundary, { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
     }
 
     failureStage = "interpretation";
@@ -347,7 +441,7 @@ export function runF5Interpretation(
       ...(observationArtifact === undefined ? {} : { observations: json(observationArtifact) }),
     };
     const summary = runSummary(result, summaryLoaded, contents);
-    const writeDependencies = { realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm };
+    const writeDependencies = { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm };
 
     atomicWrite(paths.reportJsonPath, contents.reportJson, boundary, writeDependencies);
     committedArtifacts.reportJson = layout.reportJsonName;
@@ -361,6 +455,7 @@ export function runF5Interpretation(
     committedArtifacts.runSummary = layout.runSummaryJsonName;
     const workflowFailed = result.status === "input_rejected";
     atomicWrite(paths.manifestPath, json(manifest(layout, workflowFailed ? "failed" : result.status, committedArtifacts, workflowFailed ? "input_rejected" : undefined)), boundary, writeDependencies);
+    assertRunRootContained(boundary, { lstat, realpath, stat });
     context.emit({ kind: "artifact_written", featureId: "F5", stage: "report", timestamp: new Date().toISOString(), path: paths.reportJsonPath });
     const finalStatus = workflowFailed || result.status === "input_rejected" ? "failed" : result.status;
     return {
@@ -388,7 +483,10 @@ export function runF5Interpretation(
       const reasonCode = failureStage === "interpretation"
         ? "interpretation_failed"
         : "workflow_output_failed";
-      return failedResult(layout, paths, committedArtifacts, reasonCode, boundary, { realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
+      if (error && typeof error === "object" && "reasonCode" in error && error.reasonCode === "workspace_stage_not_empty") {
+        throw error;
+      }
+      return failedResult(layout, paths, committedArtifacts, reasonCode, boundary, { lstat, realpath, stat, randomUUID: randomUuid, open, writeFd, close, rename, rm });
     }
     throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f5"] });
   }

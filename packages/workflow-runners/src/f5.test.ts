@@ -16,6 +16,18 @@ function context() {
   };
 }
 
+function pinnedDirectoryIdentity(targetPath: string) {
+  const resolved = path.resolve(targetPath);
+  return {
+    requestedPath: resolved,
+    canonicalPath: resolved,
+    requestedDev: 1,
+    requestedIno: 1,
+    canonicalDev: 1,
+    canonicalIno: 1,
+  };
+}
+
 describe("runF5Interpretation", () => {
   it("publishes accepted v2 image evidence and preserves the controlled worksheet scope", async () => {
     const scopes = [
@@ -233,7 +245,7 @@ describe("runF5Interpretation", () => {
       renderReport: vi.fn(() => "# Feature 5\n"),
       mkdir: vi.fn(),
       randomUUID: vi.fn(() => "temp-id"),
-      realpath: vi.fn((value) => String(value)),
+      realpath: vi.fn((value) => path.resolve(String(value))),
       stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
       open: vi.fn(() => 1),
       readdir: vi.fn(() => []),
@@ -289,14 +301,19 @@ describe("runF5Interpretation", () => {
         imageObservationsJsonName: "Feature5-Image-Observations.json",
         manifestName: "manifest.json",
         allowExistingRunRoot: true,
+        workspaceBoundary: {
+          publishRootIdentity: pinnedDirectoryIdentity("C:/repo/test/20260921 - Demo"),
+          runRootIdentity: pinnedDirectoryIdentity("C:/repo/test/20260921 - Demo/05 - F5 Result Interpretation"),
+        },
       })),
       loadBundle,
       createInterpretation: vi.fn(() => createF5DataInterpretation(loadBundle.mock.results[0].value.request)),
       renderReport: vi.fn(() => "# Feature 5\n"),
       mkdir,
       randomUUID: vi.fn(() => "temp-id"),
-      realpath: vi.fn((value) => String(value)),
+      realpath: vi.fn((value) => path.resolve(String(value))),
       stat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true })),
+      lstat: vi.fn(() => ({ dev: 1, ino: 1, isDirectory: () => true, isSymbolicLink: () => false })),
       readdir: vi.fn(() => []),
       open: vi.fn(() => 1),
       writeFd: vi.fn(),
@@ -383,5 +400,89 @@ describe("runF5Interpretation", () => {
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
+  });
+
+  it("fails closed when the pinned workspace destination is swapped before the first write", () => {
+    const loadBundle = vi.fn(() => ({
+      status: "accepted",
+      request: {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+        knowledgeBaseVersion: "interpretation-rules-v2",
+        worksheets: [],
+      },
+      rejectedWorksheets: [],
+      worksheetOrder: [],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+    }));
+    let swapped = false;
+    const realpath = vi.fn((value) => String(value));
+    const lstat = vi.fn((value) => {
+      const target = String(value);
+      if (target.endsWith("05 - F5 Result Interpretation") && swapped) {
+        return { dev: 9, ino: 9, isDirectory: () => false, isSymbolicLink: () => true };
+      }
+      return { dev: 1, ino: 1, isDirectory: () => true, isSymbolicLink: () => false };
+    });
+    const stat = vi.fn((value) => {
+      const target = String(value);
+      if (target.endsWith("05 - F5 Result Interpretation") && swapped) {
+        return { dev: 9, ino: 9, isDirectory: () => true };
+      }
+      return { dev: 1, ino: 1, isDirectory: () => true };
+    });
+
+    const result = runF5Interpretation({
+      f1ArtifactRoot: "C:/repo/test/20260921 - Demo/01 - F1 Data Parsing",
+      f3ArtifactRoot: "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
+      f4ArtifactRoot: "C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine",
+      selectedWorksheetNames: ["Analysis-A"],
+      imageObservationsPath: undefined,
+    }, context(), {
+      resolveOutputLayout: vi.fn(() => ({
+        runId: "2026-08-24T01-02-03-000Z",
+        runRoot: "C:/repo/test/20260921 - Demo/05 - F5 Result Interpretation",
+        publishRoot: "C:/repo/test/20260921 - Demo",
+        reportJsonName: "Feature5-Report.json",
+        reportMdName: "Feature5-Report.md",
+        runSummaryJsonName: "Feature5-Run-Summary.json",
+        imageObservationsJsonName: "Feature5-Image-Observations.json",
+        manifestName: "manifest.json",
+        allowExistingRunRoot: true,
+        workspaceBoundary: {
+          publishRootIdentity: pinnedDirectoryIdentity("C:/repo/test/20260921 - Demo"),
+          runRootIdentity: pinnedDirectoryIdentity("C:/repo/test/20260921 - Demo/05 - F5 Result Interpretation"),
+        },
+      })),
+      loadBundle: vi.fn((request) => {
+        swapped = true;
+        return loadBundle(request);
+      }),
+      createInterpretation: vi.fn(() => createF5DataInterpretation(loadBundle.mock.results[0].value.request)),
+      renderReport: vi.fn(() => "# Feature 5\n"),
+      mkdir: vi.fn(),
+      randomUUID: vi.fn(() => "temp-id"),
+      realpath,
+      stat,
+      lstat,
+      readdir: vi.fn(() => []),
+      open: vi.fn(),
+      writeFd: vi.fn(),
+      close: vi.fn(),
+      rename: vi.fn(),
+      rmdir: vi.fn(),
+      rm: vi.fn(),
+    });
+
+    expect(result).toMatchObject({
+      featureId: "F5",
+      status: "failed",
+      reasonCode: "workflow_output_failed",
+    });
   });
 });
