@@ -69,9 +69,6 @@ import {
   f2WorksheetFindingProjectionSchema,
   f4HandoffReadySchema,
   f2UserReportSchema,
-  f8AdoProjectionSchema,
-  f8AdoWriteConfirmationSchema,
-  f8PublicSessionCommandSchema,
   identifierQualityCheckRequestSchema,
   identifierQualityCheckResultSchema,
   interpretationRequestSchema,
@@ -298,71 +295,6 @@ describe("F7 report narrative contracts", () => {
       ...unavailable,
       narrative: {},
     }).success).toBe(false);
-  });
-});
-
-describe("F8 Web ADO contracts", () => {
-  const confirmation = {
-    status: "confirmation_required" as const,
-    workItemReference: "WI-42",
-    ownerReference: "owner@example.com",
-    commentReference: "C0",
-    expectedVersion: "7",
-    beforeContentHash: "a".repeat(64),
-    nextContent: "# Governed preview",
-    factorCount: 2,
-    confirmationHash: "b".repeat(64),
-    diff: [{ before: "old", after: "new", changed: true }],
-  };
-
-  describe("F8 Scenario public command contracts", () => {
-    it("accepts a public saved worksheet Scenario with system specification overrides", () => {
-      const command = {
-        contractVersion: "f8-session-command-v1",
-        sessionId: "session-a",
-        commandId: "save-system-spec-draft",
-        expectedRevision: 4,
-        command: "save_what_if_draft",
-        payload: {
-          draftId: "draft-system-spec",
-          worksheetName: "Analysis-A",
-          inputRevision: 2,
-          factorOverrides: [],
-          systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 },
-        },
-      };
-
-      expect(f8PublicSessionCommandSchema.parse(command)).toEqual(command);
-    });
-  });
-
-  it("accepts a sanitized validation preview and rejects host lease data", () => {
-    const preview = {
-      contractVersion: "f8-ado-projection-v1",
-      sessionId: "session-a",
-      state: "preview_ready",
-      actionId: "ado-validation:session-a:2",
-      expectedRevision: 2,
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
-      markdown: confirmation.nextContent,
-      contentHash: "c".repeat(64),
-      confirmation,
-    };
-    expect(f8AdoProjectionSchema.parse(preview)).toEqual(preview);
-    expect(f8AdoProjectionSchema.safeParse({ ...preview, leaseId: "secret" }).success).toBe(false);
-  });
-
-  it("binds Web write confirmation to revision, action, and confirmation hash", () => {
-    const request = {
-      contractVersion: "f8-ado-write-confirmation-v1",
-      validationActionId: "ado-validation:session-a:2",
-      expectedRevision: 2,
-      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", sponsorEmail: "sponsor@example.com" },
-      contentHash: "c".repeat(64),
-      confirmationHash: "b".repeat(64),
-      confirmed: true,
-    };
-    expect(f8AdoWriteConfirmationSchema.parse(request)).toEqual(request);
   });
 });
 

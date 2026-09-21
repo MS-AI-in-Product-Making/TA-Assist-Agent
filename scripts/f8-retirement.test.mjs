@@ -19,6 +19,21 @@ const retainedPaths = [
 const retiredParticipantPaths = [
   "apps/vscode-extension",
   "apps/cli/src/commands/agent-launcher.ts",
+  "apps/cli/src/commands/agent.test.ts",
+];
+
+const retiredRuntimeGraphPaths = [
+  "apps/workbench-server",
+  "apps/workbench-web",
+  "packages/workbench",
+  "packages/conversation",
+  "packages/agent-runtime",
+  "packages/contracts/src/f8-contracts.ts",
+  "packages/contracts/src/f8-contracts.test.ts",
+  "test/f8-e2e",
+  "scripts/f8-ado-fixture-contract.test.mjs",
+  "scripts/verify-chat-entry-e2e.mjs",
+  "scripts/workbench-review-import-boundary.test.mjs",
 ];
 
 const workflowScripts = [
@@ -44,6 +59,10 @@ describe("F8 retirement retained surfaces", () => {
   });
 
   it.each(retiredParticipantPaths)("removes retired participant surface %s", (retiredPath) => {
+    expect(fs.existsSync(path.join(rootDir, retiredPath))).toBe(false);
+  });
+
+  it.each(retiredRuntimeGraphPaths)("removes retired F8 runtime graph path %s", (retiredPath) => {
     expect(fs.existsSync(path.join(rootDir, retiredPath))).toBe(false);
   });
 
