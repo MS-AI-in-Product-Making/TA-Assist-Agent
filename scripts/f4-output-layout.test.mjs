@@ -1,8 +1,27 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { resolveFeature4OutputLayout } from "./f4-output-layout.mjs";
 
 describe("resolveFeature4OutputLayout", () => {
   const fixedNow = () => new Date("2026-08-07T12:34:56.789Z");
+
+  it("routes the canonical workspace F2 report directly into the fixed F4 stage", () => {
+    expect(resolveFeature4OutputLayout([
+      "--f2-report",
+      "test/20260921 - Demo/02 - F2 Data Cleaning/Feature2-Report.json",
+    ], undefined, fixedNow)).toEqual({
+      runId: "2026-08-07T12-34-56-789Z",
+      f2ReportPath: "test/20260921 - Demo/02 - F2 Data Cleaning/Feature2-Report.json",
+      workbookPath: undefined,
+      runRoot: path.join("test", "20260921 - Demo", "04 - F4 Calculation Engine"),
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+  });
 
   it("parses required --f2-report and builds deterministic default layout", () => {
     expect(resolveFeature4OutputLayout([
@@ -18,6 +37,7 @@ describe("resolveFeature4OutputLayout", () => {
       comparisonJsonName: "Feature4-Comparison.json",
       manifestName: "manifest.json",
       validationDirName: "validation",
+      allowExistingRunRoot: false,
     });
   });
 
@@ -31,6 +51,7 @@ describe("resolveFeature4OutputLayout", () => {
 
     expect(layout.workbookPath).toBe("input/Demo Workbook.xlsx");
     expect(layout.runRoot).toBe("test/demo-output/f4-runs/Demo-Workbook/2026-08-07T12-34-56-789Z");
+    expect(layout.allowExistingRunRoot).toBe(false);
   });
 
   it("derives deterministic run stem from f2 report parent for absolute paths", () => {

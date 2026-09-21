@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -105,6 +105,29 @@ function f2Report() {
 }
 
 describe("Feature 3 local artifact flow", () => {
+  it("defaults the current workspace flow to the fixed F3 stage without a feature3-output child", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f3-flow-workspace-"));
+    roots.push(root);
+    const analysisRoot = path.join(root, "20260921 - Anonymous");
+    const f2Root = path.join(analysisRoot, "02 - F2 Data Cleaning");
+    const f3Root = path.join(analysisRoot, "03 - F3 Drawing Governance");
+    mkdirSync(f2Root, { recursive: true });
+    mkdirSync(f3Root, { recursive: true });
+    writeFileSync(path.join(f2Root, "Feature2-Report.json"), JSON.stringify(f2Report()));
+
+    const stdout = execFileSync(process.execPath, ["scripts/run-f3-full-validation.mjs", f2Root], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: process.env,
+    });
+    const result = JSON.parse(stdout);
+
+    expect(result.outputDirectory).toBe(f3Root);
+    expect(result.reportJsonPath).toBe(path.join(f3Root, "Feature3-Report.json"));
+    expect(existsSync(path.join(analysisRoot, "feature3-output"))).toBe(false);
+    expect(readFileSync(result.reportMdPath, "utf8")).toContain("Dimension Description");
+  });
+
   it("writes matching Feature 3 JSON and Markdown reports", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f3-flow-"));
     roots.push(root);

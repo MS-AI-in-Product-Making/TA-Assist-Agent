@@ -186,7 +186,7 @@ export function runF3Analysis(
   const writeOutputs = dependencies.writeOutputs ?? defaultWriteOutputs;
   try {
     throwIfAborted(context, "load_bundle");
-    const outputLayout = resolveOutputLayout([request.artifactRoot], context.managedOutputRoot);
+    const outputLayout = resolveOutputLayout([request.artifactRoot], request.outputRoot ?? context.managedOutputRoot);
     const loaded = request.selectedWorksheetNames === undefined
       ? loadBundle(request.artifactRoot)
       : loadBundle(request.artifactRoot, { selectedWorksheetNames: request.selectedWorksheetNames });

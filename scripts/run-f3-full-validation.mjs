@@ -1,4 +1,5 @@
 import { parseF3CliArgs } from "./f3-cli-args.mjs";
+import { resolveFeature3OutputLayout } from "./f3-output-layout.mjs";
 import { runF3Analysis, normalizeRunnerError } from "../packages/workflow-runners/dist/index.js";
 import { typedErrorSchema } from "../packages/contracts/dist/errors.js";
 
@@ -18,9 +19,10 @@ function safeTypedError(error) {
 try {
   const cliArgs = process.argv.slice(2);
   const { artifactRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
-  const result = runF3Analysis({ artifactRoot, selectedWorksheetNames }, {
+  const outputLayout = resolveFeature3OutputLayout([artifactRoot], process.env.AI_TVA_F3_OUTPUT_ROOT);
+  const result = runF3Analysis({ artifactRoot, selectedWorksheetNames, outputRoot: outputLayout.outRoot }, {
     repositoryRoot: process.cwd(),
-    managedOutputRoot: process.env.AI_TVA_F3_OUTPUT_ROOT ?? "test/demo-output/feature3-output",
+    managedOutputRoot: process.cwd(),
     attemptId: crypto.randomUUID(),
     signal: new AbortController().signal,
     emit: () => {},

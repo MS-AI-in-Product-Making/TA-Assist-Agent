@@ -92,6 +92,21 @@ describe("product Agent Skills", () => {
     expect(cleaningSkill).toContain("Keep cleaning reports, cleaning-stage logs, and cleaning validation artifacts in `02 - F2 Data Cleaning`");
   });
 
+  it("routes governance and calculation skills through the canonical F3 and F4 stage folders", () => {
+    const governanceSkill = readFileSync(join(root, ".github", "skills", "drawing-governance", "SKILL.md"), "utf8");
+    const calculationSkill = readFileSync(join(root, ".github", "skills", "ta-calculation", "SKILL.md"), "utf8");
+
+    expect(governanceSkill).toContain("03 - F3 Drawing Governance");
+    expect(governanceSkill).toContain("reuse the canonical analysis root");
+    expect(governanceSkill).toContain("Do not create or fall back to legacy `feature3-output` write roots");
+    expect(governanceSkill).toContain("Consume the exact cleaning-stage artifact reference");
+
+    expect(calculationSkill).toContain("04 - F4 Calculation Engine");
+    expect(calculationSkill).toContain("reuse the canonical analysis root");
+    expect(calculationSkill).toContain("Do not create a new `f4-runs` or run-id child for the current workspace flow");
+    expect(calculationSkill).toContain("Consume the exact cleaning-stage artifact reference");
+  });
+
   it("keeps measured-data routing and reviewed feedback routing mutually exclusive", () => {
     const measuredSkill = readFileSync(join(root, ".github", "skills", "ta-real-measurement-analysis", "SKILL.md"), "utf8");
     const feedbackSkill = readFileSync(join(root, ".github", "skills", "feedback-application", "SKILL.md"), "utf8");

@@ -233,6 +233,31 @@ describe("runF4FullValidation", () => {
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ comparisonStatus: "passed" });
   });
 
+  it("publishes the current workspace flow directly into the fixed F4 stage without a run-id child", () => {
+    const context = setup();
+    context.runRoot = path.join(context.root, "20260921 - Demo", "04 - F4 Calculation Engine");
+    mkdirSync(context.runRoot, { recursive: true });
+    context.deps.resolveLayout = () => ({
+      runId: context.calculation.runId,
+      f2ReportPath: path.join(context.root, "20260921 - Demo", "02 - F2 Data Cleaning", "Feature2-Report.json"),
+      workbookPath: undefined,
+      runRoot: context.runRoot,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+
+    const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    expect(result.outputDirectory).toBe(context.runRoot);
+    expect(result.outputDirectory.endsWith(context.calculation.runId)).toBe(false);
+    expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ status: "completed" });
+  });
+
   it("writes every artifact atomically without leftover temporary files", () => {
     const context = setup({ workbook: true });
     runF4FullValidation({ args: [] }, context.deps);

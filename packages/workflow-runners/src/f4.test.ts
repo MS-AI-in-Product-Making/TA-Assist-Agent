@@ -126,6 +126,12 @@ describe("runF4Calculation", () => {
       ...workflowResult(),
     }));
 
+    const mkdir = vi.fn((target, options) => {
+      if (target === "C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine" && options?.recursive !== true) {
+        throw Object.assign(new Error("EEXIST"), { code: "EEXIST" });
+      }
+    });
+
     const result = await runF4Calculation({
       artifactRoot: "C:/repo/test/demo-output/f2",
       selectedWorksheetNames: ["A"],
@@ -134,16 +140,17 @@ describe("runF4Calculation", () => {
         runId: "2026-08-24T01-02-03-000Z",
         f2ReportPath: "C:/repo/test/demo-output/f2/Feature2-Report.json",
         workbookPath: undefined,
-        runRoot: "C:/repo/managed-output/f4-runs/demo/2026-08-24T01-02-03-000Z",
+        runRoot: "C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine",
         calculationJsonName: "Feature4-Calculation.json",
         reportMdName: "Feature4-Report.md",
         comparisonJsonName: "Feature4-Comparison.json",
         manifestName: "manifest.json",
+        allowExistingRunRoot: true,
       })),
       loadHandoffs,
       calculateWorkflow,
       renderReport: vi.fn(() => "# F4 Report\n"),
-      mkdir: vi.fn(),
+      mkdir,
       writeFile: vi.fn(),
       rename: vi.fn(),
       rm: vi.fn(),
@@ -151,5 +158,7 @@ describe("runF4Calculation", () => {
 
     expect(result.acceptedCalculations.map((item) => item.worksheetName)).toEqual(["A"]);
     expect(result.extraCalculations.map((item) => item.worksheetName)).toEqual(["B"]);
+    expect(result.outputDirectory).toBe("C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine");
+    expect(mkdir).toHaveBeenCalledWith("C:/repo/test/20260921 - Demo/04 - F4 Calculation Engine", { recursive: true });
   });
 });

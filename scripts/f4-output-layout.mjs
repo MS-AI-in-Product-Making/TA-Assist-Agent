@@ -2,6 +2,8 @@ import path from "node:path";
 import { safeName } from "./f1-output-layout.mjs";
 
 const F4_DEFAULT_BASE = path.resolve("test", "demo-output", "f4-runs");
+const F2_STAGE_DIR = "02 - F2 Data Cleaning";
+const F4_STAGE_DIR = "04 - F4 Calculation Engine";
 
 function isDotSegment(value) {
   return value === "." || value === "..";
@@ -77,6 +79,14 @@ function validateWorkbookPath(workbookPath) {
   }
 }
 
+function canonicalWorkspaceStageRoot(reportPath) {
+  const normalizedReportPath = path.normalize(reportPath);
+  if (path.basename(normalizedReportPath) !== "Feature2-Report.json") return undefined;
+  const reportDirectory = path.dirname(normalizedReportPath);
+  if (path.basename(reportDirectory) !== F2_STAGE_DIR) return undefined;
+  return path.join(path.dirname(reportDirectory), F4_STAGE_DIR);
+}
+
 export function resolveFeature4OutputLayout(args, outputRoot, now = () => new Date()) {
   const override = outputRootOverride(outputRoot);
   const { f2ReportPath, workbookPath } = parseCliArgs(args);
@@ -90,16 +100,18 @@ export function resolveFeature4OutputLayout(args, outputRoot, now = () => new Da
     : resolveF2RunStem(f2ReportPath);
   if (!runStem || isDotSegment(runStem)) throw new Error("Feature 4 output name is unsafe.");
 
-  const runRootBase = override ?? resolveDefaultRunRoot(runStem);
+  const workspaceStageRoot = override === undefined ? canonicalWorkspaceStageRoot(f2ReportPath) : undefined;
+  const runRootBase = workspaceStageRoot ?? override ?? resolveDefaultRunRoot(runStem);
   return {
     runId,
     f2ReportPath,
     workbookPath,
-    runRoot: path.posix.join(runRootBase, runId),
+    runRoot: workspaceStageRoot ? runRootBase : path.posix.join(runRootBase, runId),
     calculationJsonName: "Feature4-Calculation.json",
     reportMdName: "Feature4-Report.md",
     comparisonJsonName: "Feature4-Comparison.json",
     manifestName: "manifest.json",
     validationDirName: "validation",
+    allowExistingRunRoot: workspaceStageRoot !== undefined,
   };
 }
