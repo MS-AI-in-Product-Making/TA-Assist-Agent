@@ -3,14 +3,19 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  cpSync,
   existsSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeSync,
   writeFileSync,
@@ -24,6 +29,8 @@ import {
 } from "../packages/contracts/dist/contracts.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/index.js";
 import { runF5Cli, runF5FullValidation } from "./run-f5-full-validation.mjs";
+import { prepareWorkspaceStage } from "./analysis-workspace-test-support.mjs";
+import { validateAnalysisStageArtifacts } from "./analysis-stage-validation.mjs";
 
 const cleanup = [];
 const WORKBOOK_HASH = "a".repeat(64);
@@ -338,6 +345,80 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
+it.each(["valid-v2", "swap-during-load", "swap-before-write", "symlink"])(
+  "pins precreated evidence without overwriting it: %s", (mode) => {
+    const { observationArtifact, enrichedRequest } = contextualObservationBundle();
+    const context = setup({ observationArtifact });
+    mkdirSync(context.runRoot, { recursive: true });
+    const observationPath = path.join(context.runRoot, "Feature5-Image-Observations.json");
+    const bytes = JSON.stringify(observationArtifact);
+    writeFileSync(observationPath, bytes);
+    const originalIdentity = lstatSync(observationPath).ino;
+    const parsed = context.deps.parseArgs();
+    const layout = context.deps.resolveLayout();
+    context.deps.parseArgs = () => ({ ...parsed, imageObservationsPath: observationPath });
+    context.deps.resolveLayout = () => ({ ...layout, allowExistingRunRoot: true });
+    if (mode.startsWith("swap")) {
+      // NTFS IDs can collide after conversion to JS numbers; exact IDs cannot.
+      const roundedFileId = (stats) => {
+        if (stats.isFile() && typeof stats.ino === "number") stats.ino = 2 ** 54;
+        return stats;
+      };
+      context.deps.lstat = (...args) => roundedFileId(lstatSync(...args));
+      context.deps.stat = (...args) => roundedFileId(statSync(...args));
+      context.deps.fstat = (...args) => roundedFileId(fstatSync(...args));
+    }
+    const loaded = context.deps.loadBundle();
+    const displaced = path.join(context.root, "original-observation.json");
+    function swap() {
+      renameSync(observationPath, displaced);
+      writeFileSync(observationPath, bytes);
+    }
+    context.deps.loadBundle = ({ imageObservationBytes }) => {
+      expect(imageObservationBytes.toString("utf8")).toBe(bytes);
+      if (mode === "swap-during-load") swap();
+      return { ...loaded, request: enrichedRequest };
+    };
+    context.deps.renderReport = () => {
+      if (mode === "swap-before-write") swap();
+      return "# Feature 5";
+    };
+    if (mode === "symlink") {
+      renameSync(observationPath, displaced);
+      try { symlinkSync(displaced, observationPath, "file"); }
+      catch (error) {
+        if (error.code !== "EPERM") throw error;
+        symlinkSync(path.dirname(displaced), observationPath, "junction");
+      }
+    }
+    const result = runF5FullValidation({}, context.deps);
+    expect(result.status).toBe(mode === "valid-v2" ? "completed" : "failed");
+    expect(readFileSync(mode === "symlink" ? displaced : observationPath, "utf8")).toBe(bytes);
+    if (mode === "valid-v2") {
+      expect(lstatSync(observationPath).ino).toBe(originalIdentity);
+      expect(readJson(result.runSummaryPath).hashes.imageObservationsSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    } else {
+      expect(existsSync(path.join(context.runRoot, "Feature5-Report.json"))).toBe(false);
+      if (existsSync(displaced)) expect(readFileSync(displaced, "utf8")).toBe(bytes);
+    }
+  },
+);
+
+function directoryIdentity(targetPath) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = lstatSync(requestedPath);
+  const canonicalPath = realpathSync(requestedPath);
+  const canonicalStats = statSync(canonicalPath);
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -481,6 +562,45 @@ function createRealArtifactBundle() {
   return { root, publishRoot, outputRoot, f1ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot };
 }
 
+function createAnalysisWorkspaceRoot(root) {
+  const analysisRoot = path.join(root, "20260921 - Anonymous");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Anonymous.xlsx", contentHash: WORKBOOK_HASH },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 function runDirectProcess(bundle, imageObservationsPath) {
   return spawnSync(process.execPath, [
     "scripts/run-f5-full-validation.mjs",
@@ -496,6 +616,22 @@ function runDirectProcess(bundle, imageObservationsPath) {
       AI_TVA_F5_OUTPUT_ROOT: bundle.outputRoot,
       AI_TVA_F5_PUBLISH_ROOT: bundle.publishRoot,
     },
+  });
+}
+
+function runWorkspaceDirectProcess(workspace, imageObservationsPath) {
+  return spawnSync(process.execPath, [
+    "scripts/run-f5-full-validation.mjs",
+    workspace.stagePaths.f1,
+    workspace.stagePaths.f3,
+    workspace.stagePaths.f4,
+    ...(imageObservationsPath === undefined ? [] : ["--image-observations", imageObservationsPath]),
+    "--analysis-root",
+    workspace.analysisRoot,
+  ], {
+    cwd: path.resolve("."),
+    encoding: "utf8",
+    env: process.env,
   });
 }
 
@@ -899,6 +1035,10 @@ describe("runF5FullValidation", () => {
     const report = readJson(result.reportJsonPath);
 
     expect(result.status).toBe("partially_completed");
+    expect(validateAnalysisStageArtifacts({
+      analysisRoot: context.publishRoot, stagePaths: { f5: context.runRoot },
+      workbookFileName: report.workbook.fileName, workbookContentHash: report.workbook.contentHash,
+    }, "f5")).toHaveProperty("manifest");
     expect(report).toMatchObject({
       status: "partially_completed",
       summary: { worksheetCount: 2, completedWorksheetCount: 1, inputRejectedWorksheetCount: 1 },
@@ -1240,6 +1380,96 @@ describe("runF5FullValidation", () => {
     expect(context.renameCalls).toEqual([]);
   });
 
+  it("fails closed in workspace mode when the pinned destination is swapped before the first write", () => {
+    const context = setup();
+    mkdirSync(context.runRoot, { recursive: true });
+    const pinnedRunRootIdentity = directoryIdentity(context.runRoot);
+    const pinnedPublishRootIdentity = directoryIdentity(context.publishRoot);
+    const outsideRoot = path.join(context.root, "workspace-outside-before-first-write");
+    mkdirSync(outsideRoot);
+    context.deps.resolveLayout = () => ({
+      runId: "2026-08-11T12-00-00-000Z",
+      runRoot: context.runRoot,
+      publishRoot: context.publishRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: pinnedPublishRootIdentity,
+        runRootIdentity: pinnedRunRootIdentity,
+      },
+    });
+    context.deps.loadBundle.mockImplementation(() => {
+      rmSync(context.runRoot, { recursive: true, force: true });
+      symlinkSync(outsideRoot, context.runRoot, process.platform === "win32" ? "junction" : "dir");
+      return {
+        status: "accepted",
+        request: request(),
+        rejectedWorksheets: [],
+        sourceReferences: {
+          f1: "Feature1-Report.json",
+          f3: "Feature3-Report.json",
+          f4: "Feature4-Calculation.json",
+        },
+      };
+    });
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(readdirSync(outsideRoot)).toEqual([]);
+    expect(context.renameCalls).toEqual([]);
+    expect(existsSync(path.join(context.runRoot, "manifest.json"))).toBe(false);
+  });
+
+  it("fails closed in workspace mode when the pinned destination is swapped between writes and rename", () => {
+    const context = setup();
+    mkdirSync(context.runRoot, { recursive: true });
+    const pinnedRunRootIdentity = directoryIdentity(context.runRoot);
+    const pinnedPublishRootIdentity = directoryIdentity(context.publishRoot);
+    const outsideRoot = path.join(context.root, "workspace-outside-between-writes");
+    const displacedRunRoot = path.join(context.root, "workspace-displaced-run-root");
+    const token = "11111111-1111-4111-8111-111111111111";
+    const outsideSentinel = path.join(outsideRoot, `Feature5-Report.json.${token}.tmp`);
+    mkdirSync(outsideRoot);
+    writeFileSync(outsideSentinel, "outside-sentinel", "utf8");
+    context.deps.resolveLayout = () => ({
+      runId: "2026-08-11T12-00-00-000Z",
+      runRoot: context.runRoot,
+      publishRoot: context.publishRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: pinnedPublishRootIdentity,
+        runRootIdentity: pinnedRunRootIdentity,
+      },
+    });
+    context.deps.randomUUID = vi.fn(() => token);
+    let replaced = false;
+    context.deps.close = (fd) => {
+      closeSync(fd);
+      if (!replaced) {
+        replaced = true;
+        renameSync(context.runRoot, displacedRunRoot);
+        symlinkSync(outsideRoot, context.runRoot, process.platform === "win32" ? "junction" : "dir");
+      }
+    };
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(readFileSync(outsideSentinel, "utf8")).toBe("outside-sentinel");
+    expect(context.renameCalls).toEqual([]);
+    expect(existsSync(path.join(outsideRoot, "manifest.json"))).toBe(false);
+  });
+
   it("returns controlled invalid-argument JSON and a nonzero exit code from the direct CLI", () => {
     const child = spawnSync(process.execPath, ["scripts/run-f5-full-validation.mjs"], {
       cwd: path.resolve("."),
@@ -1343,6 +1573,116 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it.each(["valid", "malformed", "hash", "worksheet", "image", "debris"])("handles immutable precreated workspace observations: %s", (mode) => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    for (const stage of ["f1", "f3", "f4"]) {
+      rmSync(workspace.stagePaths[stage], { recursive: true, force: true });
+      cpSync(bundle[`${stage}ArtifactRoot`], workspace.stagePaths[stage], { recursive: true });
+    }
+    prepareWorkspaceStage(workspace, "f5");
+    const imagePath = path.join(workspace.stagePaths.f1, "sheets", "anonymous.xlsx", "json", "Analysis-A.json");
+    const f1 = readJson(imagePath);
+    const observation = observations();
+    observation.workbookContentHash = f1.workbook.contentHash;
+    observation.worksheets[0].imageReference = {
+      artifact: "f1", worksheetName: "Analysis-A",
+      relativePath: f1.imageAssets[0].outputFile, contentHash: f1.imageAssets[0].contentHash,
+    };
+    if (mode === "hash") observation.workbookContentHash = "f".repeat(64);
+    if (mode === "worksheet") observation.worksheets[0].worksheetName = "Other";
+    if (mode === "image") observation.worksheets[0].imageReference.contentHash = "f".repeat(64);
+    const observationPath = path.join(workspace.stagePaths.f5, "Feature5-Image-Observations.json");
+    const bytes = mode === "malformed" ? "{}" : JSON.stringify(observation);
+    writeFileSync(observationPath, bytes);
+    if (mode === "debris") writeFileSync(path.join(workspace.stagePaths.f5, "note.txt"), "unchanged");
+    const child = runWorkspaceDirectProcess(workspace, observationPath);
+    expect(readFileSync(observationPath, "utf8")).toBe(bytes);
+    if (mode === "valid") {
+      expect(child.status).toBe(0);
+      const result = JSON.parse(child.stdout);
+      expect(result.status).toBe("completed");
+      expect(readJson(result.runSummaryPath).hashes.imageObservationsSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    } else expect(child.status).toBe(1);
+  });
+
+  it("routes workspace F5 publication directly into the fixed stage without f5-runs or hash directories", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+
+    prepareWorkspaceStage(workspace, "f5");
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(0);
+    expect(child.stderr).toBe("");
+    const result = JSON.parse(child.stdout);
+    expect(result.outputDirectory).toBe(workspace.stagePaths.f5);
+    expect(result.reportJsonPath).toBe(path.join(workspace.stagePaths.f5, "Feature5-Report.json"));
+    expect(result.runSummaryPath).toBe(path.join(workspace.stagePaths.f5, "Feature5-Run-Summary.json"));
+    expect(result.manifestPath).toBe(path.join(workspace.stagePaths.f5, "manifest.json"));
+    expect(existsSync(path.join(workspace.analysisRoot, "f5-runs"))).toBe(false);
+    expect(existsSync(path.join(workspace.analysisRoot, "f5-observations"))).toBe(false);
+  });
+
+  it("fails closed on a dirty workspace stage before loading or rewriting any F5 artifacts", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+    const staleManifestPath = path.join(workspace.stagePaths.f5, "manifest.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+
+    prepareWorkspaceStage(workspace, "f5");
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(1);
+    expect(JSON.parse(child.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(child.stderr).toBe("");
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
+  });
+
+  it("fails closed on unrelated workspace debris without changing bytes or entries", () => {
+    const bundle = createRealArtifactBundle();
+    const workspace = createAnalysisWorkspaceRoot(bundle.root);
+    rmSync(workspace.stagePaths.f1, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f3, { recursive: true, force: true });
+    rmSync(workspace.stagePaths.f4, { recursive: true, force: true });
+    renameSync(bundle.f1ArtifactRoot, workspace.stagePaths.f1);
+    renameSync(bundle.f3ArtifactRoot, workspace.stagePaths.f3);
+    renameSync(bundle.f4ArtifactRoot, workspace.stagePaths.f4);
+    const debrisFilePath = path.join(workspace.stagePaths.f5, "unrelated-note.txt");
+    const debrisDirPath = path.join(workspace.stagePaths.f5, "debris-folder");
+    writeFileSync(debrisFilePath, "do not touch\n", "utf8");
+    mkdirSync(debrisDirPath);
+    const beforeEntries = readdirSync(workspace.stagePaths.f5).sort();
+    const beforeBytes = readFileSync(debrisFilePath, "utf8");
+
+    prepareWorkspaceStage(workspace, "f5");
+    const child = runWorkspaceDirectProcess(workspace);
+
+    expect(child.status).toBe(1);
+    expect(JSON.parse(child.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(child.stderr).toBe("");
+    expect(readdirSync(workspace.stagePaths.f5).sort()).toEqual(beforeEntries);
+    expect(readFileSync(debrisFilePath, "utf8")).toBe(beforeBytes);
   });
 
   it.each([

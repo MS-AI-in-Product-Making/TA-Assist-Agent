@@ -19,6 +19,7 @@ import type {
   TypedError,
   WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
+import type { AnalysisWorkspaceLayout } from "./analysis-workspace.js";
 
 export type WorkflowFeatureId = "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
 
@@ -48,6 +49,7 @@ export interface F0ValidationResult {
 
 export interface F1F2SelectionRequest {
   readonly workbookPath: string;
+  readonly analysisWorkspace?: AnalysisWorkspaceLayout;
   readonly now?: () => Date;
 }
 
@@ -79,6 +81,7 @@ export interface F1F2ConfirmedRequest {
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
   readonly selectionReference?: F1F2SelectionReference;
+  readonly analysisWorkspace?: AnalysisWorkspaceLayout;
   readonly refreshF2?: boolean;
   readonly now?: () => Date;
 }
@@ -200,7 +203,10 @@ export interface F6OptimizationResult {
     readonly code: "report_projection_failed" | "pdf_render_failed" | "pdf_artifact_invalid" | "pdf_render_unavailable";
     readonly attempts?: readonly {
       readonly browser: string;
-      readonly reason: "execution_failed" | "invalid_pdf";
+      readonly reason: "execution_failed" | "invalid_pdf" | "timed_out" | "cleanup_failed";
+      readonly strategy?: "playwright" | "cli";
+      readonly elapsedMs?: number;
+      readonly deadlineMs?: number;
     }[];
   };
   readonly outputDirectory: string;
@@ -221,6 +227,7 @@ export interface F6OptimizationResult {
 
 export interface ExistingF6ValidationRequest {
   readonly publishRoot: string;
+  readonly workspaceModelInterpretationPath?: string;
 }
 
 export interface ExistingF6ValidationResult {

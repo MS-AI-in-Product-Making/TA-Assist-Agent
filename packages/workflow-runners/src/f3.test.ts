@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { runF3Analysis } from "./index.js";
 
@@ -37,23 +40,36 @@ describe("runF3Analysis", () => {
       summary: { worksheetCount: 1, factorCount: 0, completeCount: 0, governanceRequiredCount: 1, duplicateConflictCount: 0 },
       ado: { status: "not_requested" },
     }));
+    const resolveOutputLayout = vi.fn((_args, managedOutputRoot) => ({
+      outRoot: managedOutputRoot,
+      reportJsonName: "Feature3-Report.json",
+      reportMdName: "Feature3-Report.md",
+    }));
 
-    const result = await runF3Analysis({ artifactRoot: "C:/repo/test/demo-output/f2", selectedWorksheetNames: ["Analysis-A"], outputRoot: "C:/unsafe/browser-output" }, context(), {
+    const result = await runF3Analysis({
+      artifactRoot: "C:/repo/test/demo-output/f2",
+      selectedWorksheetNames: ["Analysis-A"],
+      outputRoot: "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
+    }, context(), {
       loadBundle,
       createGovernance,
       renderReport: vi.fn(() => "# report\n"),
       renderAdoReminder: vi.fn(() => "# reminder\n"),
       renderAdoHistoryHtml: vi.fn(() => "<table></table>\n"),
-      resolveOutputLayout: vi.fn(() => ({ outRoot: "C:/repo/managed-output/feature3-output/f2", reportJsonName: "Feature3-Report.json", reportMdName: "Feature3-Report.md" })),
+      resolveOutputLayout,
       writeOutputs: vi.fn(),
     });
 
+    expect(resolveOutputLayout).toHaveBeenCalledWith(
+      ["C:/repo/test/demo-output/f2"],
+      "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
+    );
     expect(loadBundle).toHaveBeenCalledWith("C:/repo/test/demo-output/f2", { selectedWorksheetNames: ["Analysis-A"] });
     expect(createGovernance).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: "governance_required",
       selectedWorksheetNames: ["Analysis-A"],
-      outputDirectory: "C:/repo/managed-output/feature3-output/f2",
+      outputDirectory: "C:/repo/test/20260921 - Demo/03 - F3 Drawing Governance",
       ado: { status: "not_requested" },
     });
   });
@@ -94,5 +110,30 @@ describe("runF3Analysis", () => {
       code: "internal_error",
       summary: "Workflow runner failed unexpectedly.",
     }));
+  });
+
+  it("rejects a dirty workspace stage before loading bundles or writing reports", () => {
+    const outputRoot = mkdtempSync(path.join(tmpdir(), "f3-runner-dirty-"));
+    try {
+      writeFileSync(path.join(outputRoot, "Feature3-ADO-Reminder.md"), "stale reminder\n", "utf8");
+      const loadBundle = vi.fn();
+
+      expect(() => runF3Analysis({ artifactRoot: "C:/repo/f2", outputRoot }, context(), {
+        loadBundle,
+        resolveOutputLayout: vi.fn(() => ({
+          outRoot: outputRoot,
+          reportJsonName: "Feature3-Report.json",
+          reportMdName: "Feature3-Report.md",
+          workspaceMode: true,
+        })),
+      })).toThrow(expect.objectContaining({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+      }));
+      expect(loadBundle).not.toHaveBeenCalled();
+      expect(path.join(outputRoot, "Feature3-ADO-Reminder.md")).toContain("Feature3-ADO-Reminder.md");
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -57,10 +57,11 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
   维护。F1 仅接受受控 `confidential` `.xlsx` 字节并创建只读 worksheet catalog。F4 在 Feature
   Register 中为 `available`，但此 public smoke 只打印状态，不提交或执行任何 F4 计算请求。
   本节保留 Phase 0 public smoke 的历史验收语境；后续功能交付后的当前 Feature Register 状态为：
-  根 F2、F3、F4 和 staged 根 F5 均为 `available`，F5.1 保留为 compatibility core，F6 和 F7
+  根 F2、F3、F4、staged 根 F5 与 F6 均为 `available`，F5.1 保留为 compatibility core，F7
   仍为 `unavailable`。当前状态不表示这些后续业务 workflow 属于原始 Phase 0 public smoke 范围。
-- F8 的 `available` 仅表示匿名 `public` fixture 的受治理 Skill runtime 可验收，绝不
-  表示 TA 产品工作流、生产编排、网络访问或外部写入已实现。
+- `F8.public-smoke` 的 `available` 仅表示匿名 `public` fixture 的受治理 Skill runtime 可验收；
+  退休的 F8 participant/workbench runtime 不再是当前 Feature Register 条目，更不表示 TA
+  产品工作流、生产编排、网络访问或外部写入已实现。
 - 默认 Adapter 拒绝外部访问。除 F1 在受控内存处理的 `confidential` 字节外，Phase 0
   不包含真实工作簿、模型、ADO、SharePoint、UI、测量数据、计划任务或外部系统行为；F1
   不会持久化、跟踪或导出原始 `.xlsx`。

@@ -1,11 +1,52 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { f4ExcelComparisonResultSchema, f4WorkflowCalculationResultSchema } from "../packages/contracts/dist/contracts.js";
-import { runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
+import { createTypedError } from "../packages/contracts/dist/index.js";
+import { runF4CliMain, runF4FullValidation, summarizeF4CliResult } from "./run-f4-full-validation.mjs";
+import { prepareWorkspaceStage } from "./analysis-workspace-test-support.mjs";
 
 const cleanup = [];
+const runnerPath = fileURLToPath(new URL("./run-f4-full-validation.mjs", import.meta.url));
+const contractsUrl = new URL("../packages/contracts/dist/index.js", import.meta.url).href;
+const operationalErrorCodes = ["dependency_error", "internal_error", "prerequisite_not_ready"];
+const publicRunId = "cf91da4e-02e7-42b8-a0ed-201d2808b07f";
+
+function operationalErrorOptions(code) {
+  return {
+    code,
+    runId: publicRunId,
+    summary: "Approved public failure summary.",
+    retryable: false,
+    suggestedAction: "Inspect the runner logs before retrying.",
+    affectedInputReferences: ["f4-preflight"],
+    details: {
+      message: "secret operational message at C:\\private\\workbook.xlsx",
+      stack: "secret operational stack",
+      reasonCode: "unapproved_internal_reason",
+    },
+  };
+}
+
+function expectSafeOperationalFailure({ status, stdout, stderr }, code) {
+  expect(status).toBe(1);
+  expect(stdout).toBe("");
+  expect(JSON.parse(stderr)).toEqual({
+    status: "failed",
+    error: {
+      code,
+      runId: publicRunId,
+      summary: "Approved public failure summary.",
+      retryable: false,
+      suggestedAction: "Inspect the runner logs before retrying.",
+      affectedInputReferences: ["f4-preflight"],
+    },
+  });
+  expect(stderr).not.toMatch(/secret|private|workbook\.xlsx|unapproved_internal_reason|message|stack/u);
+}
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -188,6 +229,45 @@ function setup({ workbook = false, comparisonStatus = "passed", calculationError
   return { root, runRoot, calculation, deps, renameCalls };
 }
 
+function createAnalysisWorkspaceRoot(root) {
+  const analysisRoot = path.join(root, "20260921 - Demo");
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
@@ -231,6 +311,72 @@ describe("runF4FullValidation", () => {
     expect(readFileSync(path.join(context.runRoot, "Feature4-Report.md"), "utf8")).toContain("passed");
     expect(context.deps.buildMapping).toHaveBeenCalledWith(expect.objectContaining({ workbookPath: expect.any(String) }));
     expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ comparisonStatus: "passed" });
+  });
+
+  it("publishes the current workspace flow directly into the fixed F4 stage without a run-id child", () => {
+    const context = setup();
+    const workspace = createAnalysisWorkspaceRoot(context.root);
+    context.runRoot = workspace.stagePaths.f4;
+    context.deps.resolveLayout = () => ({
+      runId: context.calculation.runId,
+      f2ReportPath: path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      workbookPath: undefined,
+      runRoot: context.runRoot,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+
+    prepareWorkspaceStage(workspace, "f4");
+    const summaryPath = path.join(workspace.analysisRoot, "analysis-run-summary.json");
+    const sourceHash = readJson(summaryPath).workbook.contentHash;
+    const loaded = context.deps.loadHandoffs();
+    context.deps.loadHandoffs = () => ({ ...loaded, workbook: { ...loaded.workbook, contentHash: sourceHash } });
+    context.deps.calculateWorkflow = () => JSON.parse(JSON.stringify(context.calculation).replaceAll("a".repeat(64), sourceHash));
+    const result = runF4FullValidation({ args: [
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "--analysis-root", workspace.analysisRoot,
+    ] }, context.deps);
+
+    expect(result.status).toBe("completed");
+    expect(readJson(summaryPath)).toMatchObject({ currentStage: "f5", overallStatus: "in_progress", stages: { f4: { status: "completed" } } });
+    expect(result.outputDirectory).toBe(context.runRoot);
+    expect(result.outputDirectory.endsWith(context.calculation.runId)).toBe(false);
+    expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({ status: "completed" });
+  });
+
+  it("leaves a dirty workspace stage unchanged instead of rewriting its manifest", () => {
+    const context = setup();
+    const workspace = createAnalysisWorkspaceRoot(context.root);
+    const staleManifestPath = path.join(workspace.stagePaths.f4, "manifest.json");
+    const staleCalculationPath = path.join(workspace.stagePaths.f4, "Feature4-Calculation.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(staleCalculationPath, '{"status":"completed"}\n', "utf8");
+    context.deps.resolveLayout = () => ({
+      runId: context.calculation.runId,
+      f2ReportPath: path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      workbookPath: undefined,
+      runRoot: workspace.stagePaths.f4,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+
+    const result = runF4FullValidation({ args: ["--f2-report", "Feature2-Report.json"] }, context.deps);
+
+    expect(result).toMatchObject({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+      outputDirectory: workspace.stagePaths.f4,
+      manifestPath: staleManifestPath,
+    });
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
+    expect(readFileSync(staleCalculationPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 
   it("writes every artifact atomically without leftover temporary files", () => {
@@ -400,5 +546,201 @@ describe("runF4FullValidation", () => {
     for (const { to } of context.renameCalls) {
       expect(path.relative(context.runRoot, to)).not.toMatch(/^\.\./u);
     }
+  });
+});
+
+describe("runF4CliMain", () => {
+  it.each(operationalErrorCodes)("serializes a direct typed %s on stderr", (code) => {
+    const stdout = [];
+    const stderr = [];
+    const status = runF4CliMain({
+      runFullValidation: () => { throw createTypedError(operationalErrorOptions(code)); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+  });
+
+  it.each(["dependency_error", "internal_error"])("does not treat %s with a dirty-stage reason as the known preflight error", (code) => {
+    const options = operationalErrorOptions(code);
+    const error = createTypedError({
+      ...options,
+      details: { ...options.details, reasonCode: "workspace_stage_not_empty" },
+    });
+    const stdout = [];
+    const stderr = [];
+    const status = runF4CliMain({
+      runFullValidation: () => { throw error; },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+  });
+
+  it.each(operationalErrorCodes.flatMap((code) => [true, false].map((workspace) => ({ code, workspace }))))(
+    "propagates typed $code from real preflight (workspace=$workspace) to safe stderr",
+    ({ code, workspace }) => {
+      const context = setup();
+      const layout = { ...context.deps.resolveLayout(), allowExistingRunRoot: workspace };
+      const stdout = [];
+      const stderr = [];
+      const status = runF4CliMain({
+        runFullValidation: (options) => runF4FullValidation(options, {
+          ...context.deps,
+          resolveLayout: () => layout,
+          mkdir: (target, options) => {
+            if (target === layout.runRoot) throw createTypedError(operationalErrorOptions(code));
+            return mkdirSync(target, options);
+          },
+        }),
+        writeStdout: (value) => stdout.push(value),
+        writeStderr: (value) => stderr.push(value),
+      });
+
+      expectSafeOperationalFailure({ status, stdout: stdout.join(""), stderr: stderr.join("") }, code);
+      expect(existsSync(path.join(layout.runRoot, "manifest.json"))).toBe(false);
+    },
+  );
+
+  it("returns invalid_arguments_or_output_root only for argument/layout validation failures", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report"],
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+    expect(stderr.join("")).toBe("");
+  });
+
+  it("preserves the explicit dirty-stage reason code at the CLI boundary", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report", "Feature2-Report.json"],
+      runFullValidation: () => { throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: ["Feature4-Calculation.json"],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      }); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(stderr.join("")).toBe("");
+  });
+
+  it("serializes unexpected failures as safe typed internal_error payloads without leaking details", () => {
+    const stdout = [];
+    const stderr = [];
+    const exitCode = runF4CliMain({
+      args: ["--f2-report", "Feature2-Report.json"],
+      runFullValidation: () => { throw new Error("disk failure at C:/secret/path"); },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toBe("");
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      status: "failed",
+      error: { code: "internal_error", summary: "Workflow runner failed unexpectedly." },
+    });
+    expect(stderr.join("")).not.toContain("disk failure");
+    expect(stderr.join("")).not.toContain("C:/secret/path");
+  });
+});
+
+describe("run-f4-full-validation CLI", () => {
+  it.each(operationalErrorCodes)("prints only safe stderr for typed %s during workspace preflight", (code) => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-cli-operational-"));
+    cleanup.push(root);
+    const workspace = createAnalysisWorkspaceRoot(root);
+    const preloadPath = path.join(root, "preflight-failure.mjs");
+    prepareWorkspaceStage(workspace, "f4");
+    // Patch only this subprocess's stage mkdir; execute the real CLI and full-validation wrapper.
+    writeFileSync(preloadPath, `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      import { createTypedError } from ${JSON.stringify(contractsUrl)};
+      const mkdir = fs.mkdirSync;
+      fs.mkdirSync = (target, options) => {
+        if (target === ${JSON.stringify(workspace.stagePaths.f4)}) {
+          throw createTypedError(${JSON.stringify(operationalErrorOptions(code))});
+        }
+        return mkdir(target, options);
+      };
+      syncBuiltinESMExports();
+    `, "utf8");
+
+    const result = spawnSync(process.execPath, [
+      "--import", pathToFileURL(preloadPath).href,
+      runnerPath,
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      "--analysis-root", workspace.analysisRoot,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.error).toBeUndefined();
+    expectSafeOperationalFailure(result, code);
+    expect(readdirSync(workspace.stagePaths.f4)).toEqual([]);
+  });
+
+  it("prints invalid_arguments_or_output_root and exits nonzero for invalid arguments", () => {
+    const result = spawnSync(process.execPath, [runnerPath, "--f2-report"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+    expect(result.stderr.trim()).toBe("");
+  });
+
+  it("prints workspace_stage_not_empty and leaves a dirty workspace stage unchanged", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-cli-dirty-"));
+    cleanup.push(root);
+    const workspace = createAnalysisWorkspaceRoot(root);
+    const staleManifestPath = path.join(workspace.stagePaths.f4, "manifest.json");
+    const staleCalculationPath = path.join(workspace.stagePaths.f4, "Feature4-Calculation.json");
+    writeFileSync(staleManifestPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(staleCalculationPath, '{"status":"completed"}\n', "utf8");
+    writeFileSync(path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "{}\n", "utf8");
+    prepareWorkspaceStage(workspace, "f4");
+
+    const result = spawnSync(process.execPath, [
+      runnerPath,
+      "--f2-report", path.join(workspace.stagePaths.f2, "Feature2-Report.json"),
+      "--analysis-root", workspace.analysisRoot,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "workspace_stage_not_empty",
+    });
+    expect(result.stderr.trim()).toBe("");
+    expect(readFileSync(staleManifestPath, "utf8")).toBe('{"status":"completed"}\n');
+    expect(readFileSync(staleCalculationPath, "utf8")).toBe('{"status":"completed"}\n');
   });
 });

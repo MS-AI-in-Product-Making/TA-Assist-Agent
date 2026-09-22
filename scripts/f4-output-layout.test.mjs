@@ -1,8 +1,94 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { resolveFeature4OutputLayout } from "./f4-output-layout.mjs";
+
+const cleanupRoots = [];
+
+function createAnalysisWorkspaceRoot() {
+  const analysisRoot = mkdtempSync(path.join(tmpdir(), "f4-layout-workspace-"));
+  cleanupRoots.push(analysisRoot);
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) mkdirSync(stagePath, { recursive: true });
+  writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
+afterEach(() => {
+  for (const root of cleanupRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("resolveFeature4OutputLayout", () => {
   const fixedNow = () => new Date("2026-08-07T12:34:56.789Z");
+
+  it("routes the canonical workspace F2 report directly into the fixed F4 stage", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    expect(resolveFeature4OutputLayout([
+      "--f2-report",
+      path.join(stagePaths.f2, "Feature2-Report.json"),
+      "--analysis-root",
+      analysisRoot,
+    ], undefined, fixedNow)).toEqual({
+      runId: "2026-08-07T12-34-56-789Z",
+      f2ReportPath: path.join(stagePaths.f2, "Feature2-Report.json"),
+      workbookPath: undefined,
+      runRoot: stagePaths.f4,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    });
+  });
+
+  it("does not treat lookalike stage names as a validated workspace", () => {
+    const { analysisRoot } = createAnalysisWorkspaceRoot();
+    const lookalikeRoot = mkdtempSync(path.join(tmpdir(), "f4-layout-lookalike-"));
+    cleanupRoots.push(lookalikeRoot);
+    const lookalikeReport = path.join(lookalikeRoot, "02 - F2 Data Cleaning", "Feature2-Report.json");
+    mkdirSync(path.dirname(lookalikeReport), { recursive: true });
+    writeFileSync(lookalikeReport, "{}");
+
+    expect(resolveFeature4OutputLayout(["--f2-report", lookalikeReport], undefined, fixedNow).runRoot)
+      .toContain("test/demo-output/f4-runs");
+    expect(() => resolveFeature4OutputLayout([
+      "--f2-report", lookalikeReport,
+      "--analysis-root", analysisRoot,
+    ], undefined, fixedNow)).toThrow(/exact validated F2 report path/i);
+  });
 
   it("parses required --f2-report and builds deterministic default layout", () => {
     expect(resolveFeature4OutputLayout([
@@ -18,6 +104,7 @@ describe("resolveFeature4OutputLayout", () => {
       comparisonJsonName: "Feature4-Comparison.json",
       manifestName: "manifest.json",
       validationDirName: "validation",
+      allowExistingRunRoot: false,
     });
   });
 
@@ -31,6 +118,16 @@ describe("resolveFeature4OutputLayout", () => {
 
     expect(layout.workbookPath).toBe("input/Demo Workbook.xlsx");
     expect(layout.runRoot).toBe("test/demo-output/f4-runs/Demo-Workbook/2026-08-07T12-34-56-789Z");
+    expect(layout.allowExistingRunRoot).toBe(false);
+  });
+
+  it.each([
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root"]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", ""]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", "--workbook"]],
+    [["--f2-report", "a/Feature2-Report.json", "--analysis-root", "root-a", "--analysis-root", "root-b"]],
+  ])("rejects invalid --analysis-root forms: %j", (args) => {
+    expect(() => resolveFeature4OutputLayout(args, undefined, fixedNow)).toThrow(/analysis workspace root|duplicated|missing/i);
   });
 
   it("derives deterministic run stem from f2 report parent for absolute paths", () => {

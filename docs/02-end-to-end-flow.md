@@ -1,7 +1,7 @@
-# End-to-End Flow (V1)
+# End-to-End Flow (Current)
 
-> The complete runtime flow, from an engineer uploading `.xlsx` files to producing a structured interpretation report, including the closed loop that feeds measured Cpk back into the knowledge base.
-> The `(Fx)` labels in the diagram map to the Feature IDs in the [Feature Breakdown](04-feature-breakdown.md).
+> The complete governed flow from workbook intake to final **Design Optimization** report publication, plus the separate F7 measured-feedback follow-up.
+> `(Fx)` labels map to the active F0-F7 capability set.
 
 ## F1 to F2 Evidence Contract
 
@@ -9,184 +9,105 @@ F1 is the sole producer and physical owner of worksheet image evidence. F2 store
 
 ## F5 Governed Interpretation Contract
 
-F5 directly consumes the controlled F0 rule snapshot plus F1, F3, and F4 artifacts. When the entry is a workbook, F2 is a mandatory upstream gate before those artifacts may enter F5. The supported development entry is `workflow:f5`; product users enter through `/ta-assist-agent`. F5 owns governed result interpretation and passes its validated evidence to F6.
+F5 directly consumes the controlled F0 rule snapshot plus F1, F3, and F4 artifacts. When the entry is a workbook, F2 is a mandatory upstream gate before those artifacts may enter F5. The supported development entry is `workflow:f5`; the supported product entry is the `ta-assist-agent` skill orchestrating the governed sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`.
 
 Historical `f5-image-observation-v1` artifacts remain read-only compatible; new image-mode runs create only `f5-image-observation-v2`. For every selected worksheet, v2 records exactly `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`, plus a context snapshot of all active factor rows. The snapshot preserves original `partName`/`factorName`, mapped `partSubsystem`/`factorDescription`, numeric inputs, and source-cell provenance.
 
 Purely visual, confidence-gated evidence may produce an image `FACT`. Image-plus-text assessment produces only an `image_text_context_review` `SIGNAL` with `requiresEngineeringReview: true`; direction-to-row mapping requires structured `linkedVisualLabels` and never free-text inference. V2 validation is all-or-nothing across the selected worksheet set, five scopes, image hashes, snapshot rows, and provenance. An observation-only failure discards the whole v2 artifact and continues deterministic F5 with clarification; baseline F1/F3/F4 identity or required-image errors fail closed.
 
-F1 remains the sole physical image owner. New v2 artifacts are immutable, created once in UUID-scoped locations, and read back before invocation. The F5 loader validates their exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. No pre-existing observation artifact digest exists; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION`, preserves F0 rule version and scope, and neither auto-publishes to ADO nor writes back to the workbook. Its existing detailed report and delegation to F6 are unchanged; the available F6 workflow accepts the governed F5 v1 baseline and optional v2 observation evidence.
+F6 continues directly after F5. The product path may collect optional Analysis Context and Optimization Targets in order. Valid inputs require separate confirmations; neither may be combined with the F3 ADO confirmation. The skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate current-run F3, then continue through F4, F5, and F6; `governance_required` remains a visible non-blocking F3 result and does not trigger an early ADO interaction. Declined or rejected context continues with explicit gaps.
 
-### F6 Governed Optimization Contract
+F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under the governed run root. Both support controlled `--analysis-context` and `--optimization-targets` inputs after their independent confirmations. F6 owns adjusted-mean assessment, contributor priorities, F4-verified specification proposals, and the final `Feature6-Report.md` plus `Feature6-Report.pdf`; F5 owns baseline interpretation and evidence. Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support remains explicitly unavailable. After the F6 report passes validation, every validated F3 result enters an optional ADO publishing gate that reuses the full F3 confirmation protocol; publication is never automatic or implicit. New image mode creates only immutable `f5-image-observation-v2` evidence. F6 atomically publishes the validated report set and fail-closed manifests.
 
-The `/ta-assist-agent` Skill starts the governed workbook sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`; users do not assemble commands manually. The Skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution must run and validate current-run F3, then continue through F4, F5, and F6; `governance_required` remains a visible non-blocking F3 result and does not trigger an early ADO interaction. After the F6 report passes validation, every validated F3 result enters an optional ADO publishing gate that reuses the F3 two-confirmation protocol; publishing is never automatic or implicit. New image mode creates only immutable `f5-image-observation-v2` evidence.
+For the active unified workspace flow, the analysis root is explicit `analysis-workspace-v1` state, not an inferred folder shape. The root contains exactly one summary plus six fixed stage folders:
 
-After F5, the Skill collects optional Analysis Context and Optimization Targets in order. Valid inputs require separate confirmations; neither may be combined with the F3 ADO confirmation. Declined or rejected context continues with explicit gaps. F6 v3 then evaluates adjusted mean to specification-center shift, ranks every contributor, and produces F4-verified specification-change proposals. It does not generate fixed OP1/OP2/OP3 percentage scenarios.
+```text
+<analysis-root>\
+  analysis-run-summary.json
+  01 - F1 Data Parsing\
+  02 - F2 Data Cleaning\
+  03 - F3 Drawing Governance\
+  04 - F4 Calculation Engine\
+  05 - F5 Result Interpretation\
+  06 - F6 Design Optimization\
+```
 
-After validation, the Skill presents an output ledger plus the controlled knowledge versions and Context/Targets decisions. A phase is complete only after contract, containment, identity, manifest, and recorded hashes pass. Existing artifacts are validated without rerunning upstream phases: current bundles use the explicit five-file contract with required Markdown and PDF reports, while historical artifact-set versions remain read-only compatible.
-
-F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`. Both support controlled `--analysis-context` and `--optimization-targets` inputs after their independent confirmations.
-
-F6 owns adjusted-mean assessment, contributor priorities, F4-verified specification proposals, and the final `Feature6-Report.md` plus `Feature6-Report.pdf`; F5 owns baseline interpretation and evidence. Caller-defined quantified scenarios require caller-authorized targets. New F6 v3 outputs contain no fixed percentage matrix.
-
-Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support remains explicitly unavailable. F6 atomically publishes five confidential artifacts: `Feature6-Report.md`, `Feature6-Report.pdf`, `Feature6-Optimization.json`, `Feature6-Run-Summary.json`, and `manifest.json`. Run Summary owns the structured Workbook/Worksheet dispositions and hashes both report formats. The final report includes Document Overview, Workbook Summary, verified images, every active Factor, complete statistics, F0 guidance, adjusted mean shift, all contributors, and specification recommendations. Blocked worksheets remain visible as evidence-only sections. Source workbooks remain read-only. The deterministic F3/F6 runners and direct CLIs perform no ADO, network, or workbook write; PDF rendering uses only a local controlled Edge or Chrome executable, and the optional external side effect belongs only to the governed agent publishing gate. Identity, hash, association, schema, controlled-root, staging, atomic, and post-commit identity gates fail closed.
-
-The product capability name is Design Optimization.
+The public F6 reader accepts the current workspace publication only from the validated root summary and the exact Stage 6 final artifact set it records. Historical `test/demo-output` F6 runs remain read-only compatibility inputs; current workspace publication never writes back into those legacy roots.
 
 ## Flow Diagram
 
 ```mermaid
 flowchart TB
-    A["Upload one or more TA .xlsx files (F1)<br>Manual upload is required · unique file names"] --> A1["Scan all workbooks and worksheets for TA content (F1)<br>Output: file name, worksheet, version/date, tolerance-loop description, and worksheet list"]
-    A1 --> A2{"Confirm analysis scope (F1)<br>Single select · multi-select · select all · cancel"}
-    A2 -- Confirmed worksheets --> P["Parse factor tables in parallel (F1)<br>Output: normalized JSON and processing trace"]
+    A["Provide one or more TA .xlsx files"] --> A1["Scan workbook and detect TA worksheets (F1)"]
+    A1 --> A2{"Confirm analysis scope against workbook hash"}
+    A2 -- Confirmed --> P["Parse factor tables and extract Loop images (F1)"]
     A2 -- Cancel --> X["End run without analysis"]
-    A2 --> IMG["Extract Loop screenshots in parallel (F1)<br>Add source labels and retain by version"]
-    P --> JOIN["Merge factor data and tagged Loop images"]
-    IMG --> JOIN
-    JOIN --> D{"Clean data against the F0 knowledge base (F2)<br>Check required fields, DIM ID/PN, capability range, and distribution"}
-    D --> REQ{"Are required fields complete? (F2)<br>Nominal, tolerance, safety factor, sigma level, distribution, factor description, and part name"}
-    REQ -- Yes --> DIFF{"Any other differences? (F2)<br>Outside knowledge-base range · unreasonable distribution · missing DIM ID/PN<br>Show all reminders at once"}
-    REQ -- No --> FIX["Summarize missing fields and request Excel correction (F2)<br>User re-uploads the workbook"]
+    P --> D{"Clean data against F0 knowledge (F2)"}
+    D --> REQ{"Are required fields complete?"}
+    REQ -- No --> FIX["Request workbook correction and re-upload"]
     FIX --> A
-    DIFF -- No --> LINK{"Is DIM ID or PN missing? (F3)"}
-    DIFF -- Yes --> REVIEW["Flag differences and show handling options (F2)"]
-    REVIEW --> CHOICE{"How should the difference be handled? (F2)"}
-    CHOICE -- Edit source Excel --> FIX
-    CHOICE -- Continue with recorded exception --> LINK
-    LINK -- No --> G{"Method recommendation (F4)<br>Based on factor count"}
-    LINK -- Yes --> GROUP["Group by Lib 3 part category / drawing (F3)<br>Output: dimension-chain list with part, join number, DIM ID, exact location, and part category"]
-    GROUP --> G
-    G -- Fewer than 4 factors --> H1["Recommend Worst Case (WC) (F4)<br>Arithmetic tolerance sum"]
-    G -- 4 to 10 factors --> H2["Recommend 1D RSS (F4)<br>sqrt(sum R^2)"]
-    G -- More than 10 factors --> DM["Notify DM team for 3D VA follow-up (F4)<br>Flag cumulative tolerance risk"]
-    H1 --> I["Core calculation engine (F4)<br>Calculate both WC and RSS"]
-    H2 --> I
-    DM --> I
-    I --> J["Capability analysis (F4)<br>Cp · Cpk · Z · DPM · Yield"]
-    J --> CC{"Is evidence sufficient? (F5)<br>Assembly datum face / stack start / cross-subsystem"}
-    CC -- No --> CQ["Clarification card (F5): pause only conclusions dependent on the missing information<br>Engineer confirms before continuing"]
-    CQ --> L["Objective interpretation (F5)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
-    CC -- Yes --> L
-    L --> M1["Loop validity (F5)<br>Optional image observation is review-gated visible evidence"]
-    L --> M2["Capability versus specification (F5)"]
-    L --> M3["Top contributors (F5)"]
-    L --> M4["Structural risks (delegated F6)<br>Not synthesized by F5"]
-    L --> M5["Parallel improvement options (delegated F6)<br>Not synthesized by F5"]
-    M4 --> M6["Governed optimization after F5 (F6)<br>options · reverse solve · RSS apportionment<br>feasibility · Highest Impact · cost-gated ROI"]
-    M5 --> M6
-    M6 --> ADO{"Create or link an ADO work item after report validation? (F3)"}
-    ADO -- Yes --> ADO1["Validate the ADO target and owner<br>Preview the F3 governance list and confirm the write"]
-    ADO -- No --> LOCAL["Save the F3 governance list locally"]
-    ADO1 --> NOW["Write the confirmed F3 governance list through Surface MCP"]
-    NOW --> N
-    LOCAL --> N
-    M1 --> N["User view (F8)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
-    M2 --> N
-    M3 --> N
-    M4 --> N
-    M5 --> N
-    N --> R{"Is measured yield / Cpk available? (F7)"}
-    R -- No: wait for later measurement --> WAIT["Retain baseline report (F7)<br>Await later measured-data import"]
-    R -- Yes: manual import by DIM ID --> CL["Closed loop (F7)<br>Compare estimate with actual and recompute real capability<br>Upgrade Lib 1 evidence tier from T3 to T1<br><br>Output actual tolerance range and optimization report: attachment2"]
-    CL -->|Feed measured evidence| KB["Knowledge Base (F0)"]
-
-    A:::start
-    ADO:::dec
-    ADO1:::orch
-    A1:::proc
-    A2:::dec
-    P:::proc
-    X:::done
-    IMG:::proc
-    JOIN:::proc
-    D:::dec
-    REQ:::dec
-    FIX:::warn
-    DIFF:::dec
-    LINK:::dec
-    REVIEW:::warn
-    CHOICE:::dec
-    G:::dec
-    GROUP:::link
-    NOW:::orch
-    LOCAL:::warn
-    H1:::proc
-    H2:::proc
-    DM:::oos
-    I:::proc
-    J:::proc
-    CC:::dec
-    CQ:::warn
-    L:::proc
-    M1:::proc
-    M2:::proc
-    M3:::proc
-    M4:::proc
-    M5:::proc
-    M6:::proc
-    N:::done
-    R:::dec
-    WAIT:::done
-    CL:::loop
-    KB:::loop
-    classDef start fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
-    classDef proc fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
-    classDef dec fill:#fff3e0,stroke:#ef6c00,color:#e65100
-    classDef warn fill:#ffebee,stroke:#c62828,color:#b71c1c
-    classDef oos fill:#fffde7,stroke:#f9a825,color:#f57f17
-    classDef link fill:#e8eaf6,stroke:#3949ab,color:#1a237e
-    classDef loop fill:#f1f8e9,stroke:#558b2f,color:#33691e
-    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
-    classDef orch fill:#fff8e1,stroke:#f9a825,color:#f57f17
+    REQ -- Yes --> DIFF{"Any non-blocking differences or governance signals?"}
+    DIFF --> G["Record differences and exceptions (F2)"]
+    G --> LINK{"Is drawing governance needed? (F3)"}
+    LINK -- Yes --> GOV["Validate DIM ID / Drawing Number and prepare local or ADO list"]
+    LINK -- No --> H["Proceed with current worksheet set"]
+    GOV --> H
+    H --> M{"Method recommendation (F4)"}
+    M --> CALC["Compute WC / RSS metrics and capability results"]
+    CALC --> OBS{"Run governed image evaluation? (F5)"}
+    OBS -- Yes --> F5["Create or validate image observation v2, then interpret"]
+    OBS -- No --> F5
+    F5 --> CTX{"Collect Analysis Context?"}
+    CTX --> TARGETS{"Collect Optimization Targets?"}
+    TARGETS --> F6["Run governed optimization and publish validated Markdown/PDF reports"]
+    F6 --> ADO{"Publish confirmed F3 governance output to ADO?"}
+    ADO -- Yes --> WRITE["Prepare -> confirm -> execute -> verify via Surface MCP"]
+    ADO -- No --> LOCAL["Keep local governance reminder"]
+    WRITE --> OUT["Review validated reports and governed artifacts"]
+    LOCAL --> OUT
+    OUT --> R{"Is measured capability available later? (F7)"}
+    R -- No --> WAIT["Retain baseline report for later follow-up"]
+    R -- Yes --> F7["Run measured-data analysis and compare actual vs estimated capability"]
+    F7 --> KB["Feed measured evidence back to F0 knowledge"]
 ```
 
 ## F8 Workbench Confirmation Order
 
-The local Workbench preserves the governed order: upload/F0 validation -> initial worksheet confirmation -> F1/F2 -> downstream ready-worksheet confirmation -> F3 -> F4 -> image decision -> F5 -> Analysis Context decision -> Optimization Targets decision -> F6 -> optional Surface MCP validation and independent final write -> evidence review and one What-if Draft. No browser or chat message can merge or bypass these confirmations.
+The governed order is unchanged after F8 retirement:
 
-What-if calculation replays the current validated F2/F4 lineage and calls the F4 kernel. It never writes to the source workbook. Tolerance-only changes may produce a separate F6 targets preview; nominal or mean-shift changes stay in `WHAT_IF`. F7 remains `feature_not_available / in_development`, so the first Workbench release shows no measured import or result controls.
+`validate workbook/F0 -> initial worksheet confirmation -> F1/F2 -> downstream ready-worksheet confirmation -> F3 -> F4 -> image decision -> F5 -> Analysis Context decision -> Optimization Targets decision -> F6 -> optional Surface MCP publication -> final report review`
+
+No skill reply, direct command, or optional follow-up may merge or bypass these confirmations.
 
 ## Key Decision Points
 
-| Node | Decision | Branch handling |
-|---|---|---|
-| ADO orchestration | Whether an ADO task is created or linked after the F6 report is validated | ADO is optional. When linked, resolve the owner, return its ID/link, and publish the governed F3 list after confirmation; without ADO, continue to review with the local list. |
-| Worksheet confirmation | Which worksheets enter the analysis | The prompt returns options and a workbook content hash. The user explicitly confirms one or more worksheets against that hash; a changed workbook makes the confirmation stale and fails closed. |
-| Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are complete | Missing evidence blocks only the affected worksheet. Ready worksheets continue and each emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number remain non-blocking governance signals. |
-| Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged at once. The user can edit the source Excel or continue with a recorded exception. |
-| DIM ID association | Whether the factor is linked to a drawing dimension | Linked factors go directly to method recommendation; missing IDs are grouped by Lib 3 category/drawing before governance. |
-| ADO governance | Whether the validated F3 governance list is published after F6 | Every validated F3 result reaches the optional post-report gate. With ADO, the user confirms the prepared list and it is added to Comment 0; otherwise, save the list locally and continue to review. Current F3 provides no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation. |
-| Method recommendation | Factor count | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies the DM team for 3D VA. The core engine always calculates both WC and RSS. |
-| Evidence sufficiency | Whether the required F1 image exists and datum-face, stack-start, or cross-subsystem evidence is ambiguous | Missing physical image/reference fails the worksheet closed. Skipped optional observation produces `not_evaluated`; ambiguity creates an assumption and clarification that pause only dependent conclusions. |
-| Optimization and versioning | Whether design or capability changes are needed | F5 remains `delegated_to_f6`; the available F6 workflow generates deterministic centering/tolerance/reverse/RSS options from bound F2-F5 evidence. Supplier/datum/cost gaps remain explicit, and the legacy comparison placeholder alone returns `feature_not_available`. Future roadmap: any ADO date/milestone/version persistence remains outside current F3 scope. |
-| Measured data feedback | Whether measured Cpk is available after optimization | Compare estimated and actual capability, output actual tolerance range and optimization report, and upgrade the capability-library entry; otherwise retain the baseline report. |
+| Decision | Branch handling |
+|---|---|
+| Worksheet confirmation | The prompt returns options and a workbook content hash. The user explicitly confirms one or more worksheets against that hash; a changed workbook makes the confirmation stale and fails closed. |
+| Required fields | Missing factor inputs, cross-section evidence, LSL/USL, or Target σ Level block only the affected worksheet. Ready worksheets continue and each emits one F4 handoff. |
+| Cleansing consistency | Out-of-library or incomplete items are flagged at once. The user can edit the source Excel or continue with a recorded exception. |
+| DIM ID association | Linked factors go directly to method recommendation; missing IDs are grouped for governance without mutating calculation input. |
+| ADO governance | Every validated F3 result reaches the optional post-report gate. With ADO, the user confirms the prepared list and it is added through Surface MCP; otherwise, the same list is saved locally and TA continues. |
+| Method recommendation | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies the DM team for 3D VA while the engine still computes governed in-scope outputs. |
+| Evidence sufficiency | Missing physical image/reference fails the worksheet closed. Ambiguity creates an assumption and clarification that pause only dependent conclusions. |
+| Optimization | F6 generates deterministic centering/tolerance/reverse/RSS options from bound F2-F5 evidence. Supplier, datum, and cost gaps remain explicit. |
+| Measured feedback | When measured capability becomes available, F7 compares estimated and actual results and proposes governed knowledge feedback; otherwise the baseline report remains the authoritative output. |
 
 ## Drawing Governance ADO Publishing Contract
 
-- User entry is the project Skill `.github/skills/drawing-governance/SKILL.md`.
+- User entry is the project skill `.github/skills/drawing-governance/SKILL.md` or the governed F3 handoff inside `ta-assist-agent` / `design-optimization`.
 - Before a new F3 run, the user must select at least one worksheet from the F2 `ready` set; F3 analyzes only that selected subset.
 - The local F3 Markdown links `Device Level Dim`, `Dimension Description`, and `Factor Description` to the corresponding F1 worksheet image. F1 remains the only image owner; `Source Evidence` shows worksheet, table, row, and field-to-cell mappings.
-- Question call 1 - publishing mode: choose exactly one:
-    - Create a new ADO work item
-    - Use an existing ADO work item
-    - Do not publish to ADO
+- Publishing keeps the two explicit confirmations: choose publishing mode first, then confirm the final write separately.
+- Question call 1 - publishing mode:
+  - Create a new ADO work item
+  - Use an existing ADO work item
+  - Do not publish to ADO
 - Surface MCP entity calls may start only after Question call 1 returns.
-- Existing mode requires one HTTPS Azure DevOps work item URL. F3 parses organization, project, and ID from the URL, verifies the same target through Surface MCP, and does not persist the URL.
-- Surface MCP-only validation scope is `organization/project/type or ID`, with candidate correction before write.
-- New work item type default is `Default: Task` when user does not pick a type.
-- A complete preview is required before final write.
-- Question call 2 - final write confirmation is a separate explicit step.
-- ADO comment template text is fixed English and local reminder template text is fixed English.
-- Exact fixed 12-column contract header:
-    `Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`
-- If user declines, capability is missing, or verification fails, write local fallback `Feature3-ADO-Reminder.md` with governed reason code: `user_declined_write`, `surface_mcp_comment_body_unsupported`, or `write_verification_failed`.
-- If a bodyless Surface schema is detected for the direct comment tool, F3 may use the Surface MCP `update_work_item` `System.History` channel only when its real schema supports one fixed `add /fields/System.History` patch. Direct comments use `confirmedMarkdownBody` from `Feature3-ADO-Reminder.md`; System.History uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`, and raw Markdown must never be sent to System.History. Snapshot comment IDs before preview; execute one write and one readback, then require exactly one new comment with matching work item ID, comment format `html`, and one 12-header payload where rows marked `data-f3-factor-row=true` are counted and rows marked `data-f3-group-row=true` are excluded. ADO-safe canonical HTML text and SHA-256 must match after removing only trailing line endings and ADO-injected whitespace before controlled closing tags. Keep `top: 200` unchanged. If the route is unavailable or verification fails, use the governed local fallback; never empty comment.
-- Never use Azure DevOps MCP/REST/browser/shell HTTP fallback.
-- F3 has no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation.
-
-> Multiple worksheets can be processed in parallel for speed, but review is still completed page by page with a human gate.
-> Interpretation uses four statement types: `FACT` (calculated or directly observed evidence), `RULE` (an applicable F0 rule with version and scope), `SIGNAL` (attention item), and `OPTION` (unranked alternative). The ME engineer makes the final decision.
-
----
-**Related docs:** [Architecture](01-architecture.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)
+- Existing-target validation is Surface MCP-only on `organization/project/type or ID` and may offer candidate correction; never persist the source URL.
+- Future roadmap items such as scheduler, milestone timer, or date-triggered reminder behavior remain outside current F3 scope.
+- The governed path must build a complete preview before Question call 2 - final write confirmation.
+- If the user declines, capability is missing, or verification fails, write the local fallback artifact with the governed reason code to `Feature3-ADO-Reminder.md` instead of attempting an uncontrolled retry.
+- Bodyless direct comment schemas may use the schema-qualified Surface MCP `System.History` channel. Direct comments use `confirmedMarkdownBody`; System.History uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`.
+- Governed publishing requires one write that produces exactly one new comment with comment format `html`, one 12-header payload, counted rows marked `data-f3-factor-row=true`, excluded rows marked `data-f3-group-row=true`, matching the ADO-safe canonical HTML body/hash and unchanged `top: 200` readback scope. This write is verified by governed readback before completion.
+- Never use Azure DevOps MCP/REST/browser/shell HTTP. This boundary also means no scheduler, no milestone timer, no date-triggered reminder execution, and no F4 calculation/handoff mutation.

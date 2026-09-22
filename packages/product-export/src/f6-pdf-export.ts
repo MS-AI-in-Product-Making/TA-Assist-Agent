@@ -1,11 +1,45 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { accessSync, closeSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { f6PdfImageLinks, renderF6PdfHtml } from "./f6-pdf-report.js";
+import { executeF6PdfWorker } from "./f6-pdf-worker-process.js";
+
+interface F6PdfDeadlines {
+  readonly playwrightMs: readonly [number, number, number];
+  readonly cliMs: number;
+}
+
+const DEFAULT_DEADLINES: F6PdfDeadlines = { playwrightMs: [30_000, 120_000, 300_000], cliMs: 600_000 };
+
+function validatedDeadlines(value: F6PdfDeadlines): F6PdfDeadlines {
+  const values = [...value.playwrightMs, value.cliMs];
+  if (value.playwrightMs.length !== 3 || values.some((ms, index) =>
+    !Number.isSafeInteger(ms) || ms <= 0 || ms > 600_000 || (index > 0 && ms <= values[index - 1]!))) {
+    throw pdfError("pdf_render_unavailable", "Invalid F6 PDF deadline configuration.");
+  }
+  return value;
+}
+
+export interface F6PdfWorkerRequest {
+  readonly browser: string;
+  readonly strategy: "playwright" | "cli";
+  readonly htmlPath: string;
+  readonly pdfPath: string;
+  readonly profilePath: string;
+  readonly timeoutMs: number;
+}
+
+type AttemptOutcome = "success" | "execution_failed" | "invalid_pdf" | "timed_out" | "cleanup_failed";
+
+export interface F6PdfRenderAttempt {
+  readonly browser: string;
+  readonly strategy: F6PdfWorkerRequest["strategy"];
+  readonly outcome: AttemptOutcome;
+  readonly elapsedMs: number;
+  readonly deadlineMs: number;
+}
 
 export interface F6PdfRenderInput {
   readonly markdown: string;
@@ -17,26 +51,68 @@ export interface F6PdfRenderInput {
 export interface F6PdfRenderDependencies {
   readonly installedBrowsers?: () => readonly string[];
   readonly executeFile?: (browser: string, args: readonly string[]) => void;
+  readonly executeWorker?: (request: F6PdfWorkerRequest) => void;
+  readonly onAttempt?: (attempt: F6PdfRenderAttempt) => void;
+  readonly deadlines?: F6PdfDeadlines;
 }
 
 export interface F6PdfRenderAttemptFailure {
   readonly browser: string;
-  readonly reason: "execution_failed" | "invalid_pdf";
+  readonly strategy: F6PdfWorkerRequest["strategy"];
+  readonly reason: Exclude<AttemptOutcome, "success">;
+  readonly elapsedMs: number;
+  readonly deadlineMs: number;
 }
 
 function pdfError(code: "pdf_artifact_invalid" | "pdf_render_unavailable", message: string): Error & { readonly code: string } {
   return Object.assign(new Error(message), { code });
 }
 
+function removeWorkingFiles(root: string): void {
+  try {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch {
+    throw pdfError("pdf_render_unavailable", "F6 PDF working files could not be removed.");
+  }
+}
+
 export function browserCandidates(environment: NodeJS.ProcessEnv = process.env): readonly string[] {
-  return [
-    environment.PROGRAMFILES === undefined ? undefined : join(environment.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
-    environment["PROGRAMFILES(X86)"] === undefined ? undefined : join(environment["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
-    environment.LOCALAPPDATA === undefined ? undefined : join(environment.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe"),
+  return preferredBrowsers([
     environment.PROGRAMFILES === undefined ? undefined : join(environment.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
     environment["PROGRAMFILES(X86)"] === undefined ? undefined : join(environment["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
     environment.LOCALAPPDATA === undefined ? undefined : join(environment.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
-  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
+    environment.PROGRAMFILES === undefined ? undefined : join(environment.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
+    environment["PROGRAMFILES(X86)"] === undefined ? undefined : join(environment["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
+    environment.LOCALAPPDATA === undefined ? undefined : join(environment.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe"),
+  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0));
+}
+
+function preferredBrowsers(candidates: readonly string[]): string[] {
+  const unique = new Map<string, string>();
+  for (const candidate of candidates) {
+    const key = resolve(candidate).toLowerCase();
+    if (!unique.has(key)) unique.set(key, candidate);
+  }
+  return [...unique.values()].sort((left, right) =>
+    Number(basename(right).toLowerCase() === "chrome.exe") - Number(basename(left).toLowerCase() === "chrome.exe"));
+}
+
+function safeBrowserName(browser: string): string {
+  const name = basename(browser).toLowerCase();
+  return ["chrome.exe", "msedge.exe", "edge.exe"].includes(name) ? name : "chromium";
+}
+
+export function f6PdfBrowserArgs(request: F6PdfWorkerRequest): string[] {
+  return [
+    "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+    "--disable-extensions", "--disable-background-networking", "--disable-component-update",
+    "--disable-sync", "--metrics-recording-only", "--no-proxy-server",
+    "--host-resolver-rules=MAP * ~NOTFOUND",
+    `--user-data-dir=${request.profilePath}`,
+    ...(request.strategy === "cli"
+      ? ["--no-pdf-header-footer", `--print-to-pdf=${request.pdfPath}`, pathToFileURL(request.htmlPath).href]
+      : ["--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1", "about:blank"]),
+  ];
 }
 
 function installedBrowsers(): readonly string[] {
@@ -87,49 +163,64 @@ export function renderF6PdfSync(
   input: F6PdfRenderInput,
   dependencies: F6PdfRenderDependencies = {},
 ): Buffer {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "ta-assist-f6-pdf-"));
+  const deadlines = validatedDeadlines(dependencies.deadlines ?? DEFAULT_DEADLINES);
+  const sourceHash = createHash("sha256").update(input.markdown).digest("hex");
+  if (sourceHash !== input.sourceHash) throw pdfError("pdf_artifact_invalid", "F6 PDF source hash does not match the Markdown content.");
+  const baseHref = new URL(".", pathToFileURL(input.reportPath)).href;
+  const html = renderF6PdfHtml({ markdown: input.markdown, sourceHash, baseHref, inlineImages: validatedF6InlineImages(input) });
+  const temporaryRoot = mkdtempSync(join(process.cwd(), ".ta-assist-f6-pdf-"));
   const htmlPath = join(temporaryRoot, "Feature6-Report.html");
-  const browsers = dependencies.installedBrowsers ?? installedBrowsers;
-  const executeFile = dependencies.executeFile ?? ((browser: string, args: readonly string[]) => {
-    execFileSync(browser, [...args], { windowsHide: true, timeout: 60_000, stdio: "ignore" });
-  });
+  const executeWorker = dependencies.executeWorker ?? executeF6PdfWorker;
   try {
-    const sourceHash = createHash("sha256").update(input.markdown).digest("hex");
-    if (sourceHash !== input.sourceHash) throw pdfError("pdf_artifact_invalid", "F6 PDF source hash does not match the Markdown content.");
-    const baseHref = new URL(".", pathToFileURL(input.reportPath)).href;
-    writeFileSync(htmlPath, renderF6PdfHtml({ markdown: input.markdown, sourceHash, baseHref, inlineImages: validatedF6InlineImages(input) }), "utf8");
+    writeFileSync(htmlPath, html, "utf8");
+    const browsers = preferredBrowsers((dependencies.installedBrowsers ?? installedBrowsers)());
+    const plan = [
+      ...deadlines.playwrightMs.flatMap((timeoutMs) =>
+        browsers.map((browser) => ({ browser, strategy: "playwright" as const, timeoutMs }))),
+      ...browsers.map((browser) => ({ browser, strategy: "cli" as const, timeoutMs: deadlines.cliMs })),
+    ];
     const attempts: F6PdfRenderAttemptFailure[] = [];
-    for (const [browserIndex, browser] of browsers().entries()) {
-      const profilePath = join(temporaryRoot, `profile-${browserIndex}`);
-      const pdfPath = join(temporaryRoot, `Feature6-Report-${browserIndex}.pdf`);
+    for (const [index, { browser, strategy, timeoutMs }] of plan.entries()) {
+      const attemptRoot = join(temporaryRoot, `attempt-${index}`);
+      mkdirSync(attemptRoot);
+      const request: F6PdfWorkerRequest = {
+        browser, strategy, htmlPath,
+        profilePath: join(attemptRoot, "profile"),
+        pdfPath: join(attemptRoot, "report.pdf"),
+        timeoutMs,
+      };
+      const start = performance.now();
+      let outcome: AttemptOutcome = "invalid_pdf";
+      let pdf: Buffer | undefined;
       try {
-        executeFile(browser, [
-          "--headless=new",
-          "--disable-gpu",
-          "--no-first-run",
-          "--disable-extensions",
-          `--user-data-dir=${profilePath}`,
-          "--no-pdf-header-footer",
-          `--print-to-pdf=${pdfPath}`,
-          pathToFileURL(htmlPath).href,
-        ]);
-      } catch {
-        attempts.push({ browser: basename(browser), reason: "execution_failed" });
-        continue;
+        if (strategy === "cli" && dependencies.executeFile !== undefined) {
+          dependencies.executeFile(browser, f6PdfBrowserArgs(request));
+        } else {
+          executeWorker(request);
+        }
+        try {
+          pdf = readFileSync(request.pdfPath);
+          if (pdf.length >= 8 && pdf.subarray(0, 5).toString("ascii") === "%PDF-") outcome = "success";
+        } catch {
+          // A successful process exit is not proof of a valid PDF artifact.
+        }
+      } catch (error) {
+        const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+        outcome = code === "ETIMEDOUT" ? "timed_out" : code === "cleanup_failed" ? "cleanup_failed"
+          : code === "invalid_pdf" ? "invalid_pdf" : "execution_failed";
       }
-      try {
-        const pdf = readFileSync(pdfPath);
-        if (pdf.length >= 8 && pdf.subarray(0, 5).toString("ascii") === "%PDF-") return pdf;
-      } catch {
-        // The controlled browser returned without a readable output.
-      }
-      attempts.push({ browser: basename(browser), reason: "invalid_pdf" });
+      const event: F6PdfRenderAttempt = {
+        browser: safeBrowserName(browser), strategy, outcome, elapsedMs: Math.round(performance.now() - start), deadlineMs: timeoutMs,
+      };
+      try { dependencies.onAttempt?.(event); } catch { /* Diagnostics must not interrupt recovery. */ }
+      if (outcome === "success" && pdf !== undefined) return pdf;
+      attempts.push({ browser: event.browser, strategy, reason: outcome as Exclude<AttemptOutcome, "success">, elapsedMs: event.elapsedMs, deadlineMs: timeoutMs });
     }
     throw Object.assign(
       pdfError("pdf_render_unavailable", "Installed Chromium browsers did not produce a valid PDF report."),
       { attempts },
     );
   } finally {
-    rmSync(temporaryRoot, { recursive: true, force: true });
+    removeWorkingFiles(temporaryRoot);
   }
 }

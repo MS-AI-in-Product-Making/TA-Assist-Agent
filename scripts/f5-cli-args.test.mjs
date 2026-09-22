@@ -10,12 +10,14 @@ describe("parseF5CliArgs", () => {
       "--worksheet", " Analysis-A ",
       "--worksheet", "Analysis B",
       "--image-observations", "observations/image notes.json",
+      "--analysis-root", "test/20260921 - Demo",
     ])).toEqual({
       f1ArtifactRoot: "f1 artifact/run",
       f3ArtifactRoot: "f3 artifact/run",
       f4ArtifactRoot: "f4 artifact/run",
       selectedWorksheetNames: ["Analysis-A", "Analysis B"],
       imageObservationsPath: "observations/image notes.json",
+      analysisRoot: "test/20260921 - Demo",
     });
   });
 
@@ -26,6 +28,7 @@ describe("parseF5CliArgs", () => {
       f4ArtifactRoot: "f4-run",
       selectedWorksheetNames: undefined,
       imageObservationsPath: undefined,
+      analysisRoot: undefined,
     });
   });
 
@@ -63,6 +66,10 @@ describe("parseF5CliArgs", () => {
     { suffix: ["--image-observations", ""] },
     { suffix: ["--image-observations", " "] },
     { suffix: ["--image-observations", "--worksheet", "Analysis-A"] },
+    { suffix: ["--analysis-root"] },
+    { suffix: ["--analysis-root", ""] },
+    { suffix: ["--analysis-root", " "] },
+    { suffix: ["--analysis-root", "--worksheet", "Analysis-A"] },
   ])("rejects missing or empty option values: $suffix", ({ suffix }) => {
     expect(() => parseF5CliArgs(["f1-run", "f3-run", "f4-run", ...suffix])).toThrow(/requires/i);
   });
@@ -81,6 +88,14 @@ describe("parseF5CliArgs", () => {
       "--image-observations", "first.json",
       "--image-observations", "second.json",
     ])).toThrow(/image-observations.*duplicate|duplicate.*image-observations/i);
+  });
+
+  it("rejects a duplicate analysis root option", () => {
+    expect(() => parseF5CliArgs([
+      "f1-run", "f3-run", "f4-run",
+      "--analysis-root", "root-a",
+      "--analysis-root", "root-b",
+    ])).toThrow(/analysis-root.*duplicate|duplicate.*analysis-root/i);
   });
 
   it.each(["--unknown", "--Worksheet"])("rejects unknown option %s", (option) => {

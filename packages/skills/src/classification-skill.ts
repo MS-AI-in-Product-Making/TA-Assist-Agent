@@ -5,7 +5,7 @@ export const classificationCheckSkill: RegisteredSkill = {
   manifest: {
     skillId: "classification-check",
     version: "v1",
-    featureId: "F8",
+    featureId: "F8.public-smoke",
     inputClassification: ["public", "internal", "confidential"],
     permissions: [],
     adapterCapabilities: [],

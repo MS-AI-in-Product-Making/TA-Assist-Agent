@@ -1,4 +1,11 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+  resolveAnalysisWorkspaceStagePaths,
+  validateAnalysisWorkspaceLayout,
+  validateAnalysisWorkspaceSummary,
+} from "../packages/workflow-runners/dist/index.js";
 import { safeName } from "./f1-output-layout.mjs";
 
 const F4_DEFAULT_BASE = path.resolve("test", "demo-output", "f4-runs");
@@ -48,7 +55,7 @@ function parseCliArgs(args) {
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
     if (!token.startsWith("--")) throw new Error(`Feature 4 option is unsupported: ${token}`);
-    if (token !== "--f2-report" && token !== "--workbook") {
+    if (token !== "--f2-report" && token !== "--workbook" && token !== "--analysis-root") {
       throw new Error(`Feature 4 option is unsupported: ${token}`);
     }
     if (flags.has(token)) throw new Error(`Feature 4 option is duplicated: ${token}`);
@@ -62,6 +69,7 @@ function parseCliArgs(args) {
   return {
     f2ReportPath: flags.get("--f2-report"),
     workbookPath: flags.get("--workbook"),
+    analysisRoot: flags.get("--analysis-root"),
   };
 }
 
@@ -77,18 +85,62 @@ function validateWorkbookPath(workbookPath) {
   }
 }
 
+function resolveAnalysisWorkspace(analysisRoot) {
+  const resolvedRoot = path.resolve(analysisRoot);
+  const summaryPath = path.join(resolvedRoot, ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+  const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+  validateAnalysisWorkspaceSummary(summary);
+  const layout = {
+    contractVersion: summary.contractVersion,
+    analysisRoot: summary.analysisRoot,
+    summaryPath: summary.summaryPath,
+    workbookFileName: summary.workbook.fileName,
+    workbookContentHash: summary.workbook.contentHash,
+    allocationDate: summary.allocationDate,
+    stagePaths: resolveAnalysisWorkspaceStagePaths(summary.analysisRoot),
+  };
+  validateAnalysisWorkspaceLayout(layout);
+  if (path.resolve(layout.analysisRoot) !== resolvedRoot) {
+    throw new Error("Feature 4 analysis workspace root does not match the validated summary.");
+  }
+  return layout;
+}
+
 export function resolveFeature4OutputLayout(args, outputRoot, now = () => new Date()) {
   const override = outputRootOverride(outputRoot);
-  const { f2ReportPath, workbookPath } = parseCliArgs(args);
+  const { f2ReportPath, workbookPath, analysisRoot } = parseCliArgs(args);
 
   validateF2ReportPath(f2ReportPath);
   if (workbookPath !== undefined) validateWorkbookPath(workbookPath);
+  if (analysisRoot !== undefined && override !== undefined) {
+    throw new Error("Feature 4 analysis workspace root cannot be combined with an explicit output root.");
+  }
 
   const runId = now().toISOString().replace(/[:.]/g, "-");
   const runStem = workbookPath
     ? safeName(path.basename(workbookPath, path.extname(workbookPath)))
     : resolveF2RunStem(f2ReportPath);
   if (!runStem || isDotSegment(runStem)) throw new Error("Feature 4 output name is unsafe.");
+
+  if (analysisRoot !== undefined) {
+    const layout = resolveAnalysisWorkspace(analysisRoot);
+    const expectedReportPath = path.join(layout.stagePaths.f2, "Feature2-Report.json");
+    if (path.resolve(f2ReportPath) !== path.resolve(expectedReportPath)) {
+      throw new Error("Feature 4 current workspace flow requires the exact validated F2 report path.");
+    }
+    return {
+      runId,
+      f2ReportPath,
+      workbookPath,
+      runRoot: layout.stagePaths.f4,
+      calculationJsonName: "Feature4-Calculation.json",
+      reportMdName: "Feature4-Report.md",
+      comparisonJsonName: "Feature4-Comparison.json",
+      manifestName: "manifest.json",
+      validationDirName: "validation",
+      allowExistingRunRoot: true,
+    };
+  }
 
   const runRootBase = override ?? resolveDefaultRunRoot(runStem);
   return {
@@ -101,5 +153,6 @@ export function resolveFeature4OutputLayout(args, outputRoot, now = () => new Da
     comparisonJsonName: "Feature4-Comparison.json",
     manifestName: "manifest.json",
     validationDirName: "validation",
+    allowExistingRunRoot: false,
   };
 }

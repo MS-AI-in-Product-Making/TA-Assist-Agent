@@ -1,9 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { AnalysisWorkspaceLayout } from "./analysis-workspace.js";
+import { resolveAnalysisWorkspaceStagePaths } from "./analysis-workspace.js";
 import { runF1F2Confirmed, runF1F2Selection } from "./index.js";
 
 const cleanup = [] as string[];
@@ -30,6 +32,26 @@ function context(repositoryRoot: string) {
     attemptId: "attempt-1",
     signal: new AbortController().signal,
     emit: vi.fn(),
+  };
+}
+
+function workspaceContext(repositoryRoot: string) {
+  return {
+    ...context(repositoryRoot),
+    managedOutputRoot: path.join(repositoryRoot, "test"),
+  };
+}
+
+function analysisWorkspace(repositoryRoot: string): AnalysisWorkspaceLayout {
+  const analysisRoot = path.join(repositoryRoot, "test", "20260805 - Demo");
+  return {
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbookFileName: "Demo.xlsx",
+    workbookContentHash: HASH,
+    allocationDate: "20260805",
+    stagePaths: resolveAnalysisWorkspaceStagePaths(analysisRoot),
   };
 }
 
@@ -180,6 +202,41 @@ describe("runF1F2Selection", () => {
       code: "transient_error",
       retryable: true,
     }));
+  });
+
+  it("writes selection assets directly into workspace F1 and F2 stage folders when analysisWorkspace is provided", async () => {
+    const setup = setupRepo();
+    const workspace = analysisWorkspace(setup.repositoryRoot);
+    const executeStage = vi.fn(({ env }) => {
+      mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+      return { stdout: "ok", stderr: "" };
+    });
+
+    const result = await runF1F2Selection({
+      workbookPath: setup.workbookPath,
+      analysisWorkspace: workspace,
+      now: fixedNow,
+    }, workspaceContext(setup.repositoryRoot), { executeStage });
+
+    expect(result.runRoot).toBe(workspace.analysisRoot);
+    expect(result.f1Root).toBe(workspace.stagePaths.f1);
+    expect(result.f2Root).toBe(workspace.stagePaths.f2);
+    expect(result.validationRoot).toBe(workspace.stagePaths.f1);
+    expect(result.manifestPath).toBe(path.join(workspace.analysisRoot, "manifest.json"));
+    expect(result.promptPath).toBe(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"));
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"), "utf8")).toContain("\"selectionRequired\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1-selection.stdout.log"), "utf8")).toContain("ok");
+    expect(existsSync(path.join(workspace.stagePaths.f2, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stderr.log"))).toBe(false);
+    expect(result.runRoot).not.toContain(`${path.sep}f2-runs${path.sep}`);
+    expect(executeStage).toHaveBeenCalledWith(expect.objectContaining({
+      env: expect.objectContaining({
+        AI_TVA_F1_OUTPUT_ROOT: workspace.stagePaths.f1,
+      }),
+    }));
+    expect(existsSync(path.join(workspace.analysisRoot, "f2-runs"))).toBe(false);
   });
 });
 
@@ -929,5 +986,61 @@ describe("runF1F2Confirmed", () => {
     expect(result.status).toBe("completed");
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "artifact_written", featureId: "F2", stage: "validation" }));
+  });
+
+  it("writes confirmed F1 and F2 artifacts directly into workspace stage folders when analysisWorkspace is provided", () => {
+    const setup = setupRepo();
+    const workspace = analysisWorkspace(setup.repositoryRoot);
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({
+      workbookPath: setup.workbookPath,
+      analysisWorkspace: workspace,
+      now: fixedNow,
+    }, workspaceContext(setup.repositoryRoot), { executeStage });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, workspaceContext(setup.repositoryRoot), { executeStage });
+
+    expect(result.runRoot).toBe(workspace.analysisRoot);
+    expect(result.f1Root).toBe(workspace.stagePaths.f1);
+    expect(result.f2Root).toBe(workspace.stagePaths.f2);
+    expect(result.validationRoot).toBe(workspace.stagePaths.f1);
+    expect(result.runRoot).not.toContain(`${path.sep}f2-runs${path.sep}`);
+    expect(executeStage.mock.calls[1][0].env.AI_TVA_F1_OUTPUT_ROOT).toBe(workspace.stagePaths.f1);
+    expect(executeStage.mock.calls[2][0].env.AI_TVA_F2_OUTPUT_ROOT).toBe(workspace.stagePaths.f2);
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "Feature1-Selection.json"), "utf8")).toContain("\"selectionRequired\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1-selection.stdout.log"), "utf8")).toContain("selection complete");
+    expect(readFileSync(path.join(workspace.stagePaths.f1, "f1.stdout.log"), "utf8")).toContain("f1 complete");
+    expect(JSON.parse(readFileSync(path.join(workspace.stagePaths.f2, "Feature2-Report.json"), "utf8"))).toMatchObject({ status: "completed" });
+    expect(readFileSync(path.join(workspace.stagePaths.f2, "Feature2-Validation.json"), "utf8")).toContain("\"status\": \"valid\"");
+    expect(readFileSync(path.join(workspace.stagePaths.f2, "f2.stdout.log"), "utf8")).toContain("f2 complete");
+    expect(existsSync(path.join(workspace.stagePaths.f2, "Feature1-Selection.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1-selection.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f2, "f1.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "Feature2-Report.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "Feature2-Validation.json"))).toBe(false);
+    expect(existsSync(path.join(workspace.stagePaths.f1, "f2.stdout.log"))).toBe(false);
+    expect(existsSync(path.join(workspace.analysisRoot, "f2-runs"))).toBe(false);
   });
 });

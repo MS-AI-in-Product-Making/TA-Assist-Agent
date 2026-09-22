@@ -36,6 +36,8 @@ npm test
 
 这些运行目录为 git-ignored 验收产物，不进入功能提交，也未修改历史 demo-output。
 
+说明：以上 `test/demo-output` 路径仅作为历史验收证据并保持只读兼容。当前统一工作区发布使用 `analysis-workspace-v1` 根目录和固定六级 stage 结构（`analysis-run-summary.json` + `01 - F1 Data Parsing` … `06 - F6 Design Optimization`），不会回写或迁移这些历史 evidence 路径。
+
 ## 4. F4 数值兼容比较
 
 改造前与改造后 artifacts 的来源 SHA、比较方法和逐 worksheet 数值已固化在仓库内证据：

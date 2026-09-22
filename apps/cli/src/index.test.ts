@@ -11,90 +11,19 @@ import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
 
 const execFileAsync = promisify(execFile);
-const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
-
-it("parses the internal interaction language for a new Agent session", async () => {
-  const runAgent = vi.fn(async () => "started");
-  const result = await executeCli(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)], {
-    cwd: () => "ignored",
-    now: () => new Date("2026-09-16T00:00:00.000Z"),
-    runFeature2: async () => "unused",
-    runAgent,
-    utcOffsetMinutes: () => 480,
-  });
-
-  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(runAgent).toHaveBeenCalledWith({
-    action: "analyze",
-    rootDir: "repo",
-    interactionLanguage: ENGLISH_LOCK,
-    analysisRequestContext: {
-      requestedAt: "2026-09-16T00:00:00.000Z",
-      utcOffsetMinutes: 480,
-      source: "cli",
-    },
-  });
-});
-
-it("parses explicit analysis request context only for a new Agent analysis", async () => {
-  const runAgent = vi.fn(async () => "started");
-
-  const analyzeResult = await executeCli([
-    "agent",
-    "analyze",
-    "--root",
-    "repo",
-    "--interaction-language",
-    JSON.stringify(ENGLISH_LOCK),
-    "--analysis-request-context",
-    '{"requestedAt":"2026-09-16T15:30:12.000Z","utcOffsetMinutes":-420,"source":"cli"}',
-  ], {
+it.each([
+  ["analyze", "--interaction-language", '{"languageTag":"en-US"}'],
+  ["resume", "--session", "session-a"],
+  ["status", "--session", "session-a"],
+  ["workbench", "--interaction-language", '{"languageTag":"en-US"}'],
+])("rejects retired agent %s entrypoints", async (action, flag, value) => {
+  const result = await executeCli(["agent", action, "--root", "repo", flag, value], {
     cwd: () => "ignored",
     runFeature2: async () => "unused",
-    runAgent,
   });
 
-  expect(analyzeResult).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(runAgent).toHaveBeenCalledWith({
-    action: "analyze",
-    rootDir: "repo",
-    interactionLanguage: ENGLISH_LOCK,
-    analysisRequestContext: {
-      requestedAt: "2026-09-16T15:30:12.000Z",
-      utcOffsetMinutes: -420,
-      source: "cli",
-    },
-  });
-
-  const resumeResult = await executeCli([
-    "agent",
-    "resume",
-    "--root",
-    "repo",
-    "--session",
-    "session-a",
-    "--analysis-request-context",
-    "{}",
-  ], {
-    cwd: () => "ignored",
-    runFeature2: async () => "unused",
-    runAgent,
-  });
-
-  expect(resumeResult).toMatchObject({ exitCode: 2, stdout: "" });
-  expect(resumeResult.stderr).toContain("analysis-request-context");
-});
-
-it("routes the CLI Agent to the same workbench session", async () => {
-  const resume = vi.fn(async () => "resumed");
-  const result = await executeCli(["agent", "resume", "--root", "repo", "--session", "session-a"], {
-    cwd: () => "ignored",
-    runFeature2: async () => "unused",
-    runAgent: async (request) => { await resume(request.sessionId); return "session: session-a\nurl: http://127.0.0.1:4317/?session=session-a\n"; },
-  });
-
-  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-  expect(resume).toHaveBeenCalledWith("session-a");
+  expect(result).toMatchObject({ exitCode: 2, stdout: "" });
+  expect(result.stderr).toContain("command is invalid");
 });
 
 async function createTemporaryRoot(): Promise<string> {
@@ -382,6 +311,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
   };
   const result = await executeCli([
     "feature6", "--root", " repo ",
+    "--analysis-root", " analysis ",
+    "--analysis-request-context", '{"requestedAt":"2026-09-22T00:00:00Z","utcOffsetMinutes":480,"source":"cli"}',
     "--f2-artifacts", " f2 ",
     "--f3-artifacts", " f3 ",
     "--f4-artifacts", " f4 ",
@@ -400,6 +331,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
 
   expect(result).toMatchObject({ exitCode: 0, stderr: "" });
   expect(calls).toEqual([["repo", "f2", "f3", "f4", "f5", {
+    analysisRoot: "analysis",
+    analysisRequestContext: { requestedAt: "2026-09-22T00:00:00Z", utcOffsetMinutes: 480, source: "cli" },
     selectedWorksheetNames: ["Overview", "Details"],
     languageTag: "en-US",
     modelInterpretationPath: "model.json",
@@ -415,63 +348,107 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
 it("runs Feature 6 through the default wrapper with workbook-derived report paths", async () => {
   const repoRoot = process.cwd();
   const fixtureId = randomUUID();
-  const f5Stem = `f5-cli-${fixtureId}`;
-  const fixtureRoot = join(repoRoot, "test", "demo-output", `.feature6-cli-${fixtureId}`);
-  const inputsRoot = join(fixtureRoot, "inputs");
-  const outputRoot = join(repoRoot, "test", "demo-output", "f6-runs", f5Stem);
+  const fixtureRoot = join(repoRoot, "test", `.feature6-cli-${fixtureId}`);
   const fixtureModule = pathToFileURL(join(repoRoot, "scripts", "f6-artifact-test-fixture.mjs")).href;
+  const workspaceModule = pathToFileURL(join(repoRoot, "packages", "workflow-runners", "dist", "index.js")).href;
+  const supportModule = pathToFileURL(join(repoRoot, "scripts", "analysis-workspace-test-support.mjs")).href;
+  const materializerModule = pathToFileURL(join(repoRoot, "scripts", "f6-model-interpretation-materializer.mjs")).href;
+  const runnerModule = pathToFileURL(join(repoRoot, "scripts", "run-f6-full-validation.mjs")).href;
+  const requestContext = { requestedAt: "2026-09-22T00:00:00Z", utcOffsetMinutes: 480, source: "cli" };
   const setupCode = `
-import { cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createF6ArtifactBundleFixture, installRequiredMultimodalV3 } from ${JSON.stringify(fixtureModule)};
-const [targetRoot, f5Stem] = process.argv.slice(1);
-const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
-installRequiredMultimodalV3(bundle);
-for (const [source, target] of [
-  [bundle.f2ArtifactRoot, join(targetRoot, "f2")],
-  [bundle.f3ArtifactRoot, join(targetRoot, "f3")],
-  [bundle.f4ArtifactRoot, join(targetRoot, "f4")],
-  [bundle.f5ArtifactRoot, join(targetRoot, f5Stem)],
-]) cpSync(source, target, { recursive: true });
-for (const relativeReport of [join("f2", "Feature2-Report.json"), join("f3", "Feature3-Report.json")]) {
-  const reportPath = join(targetRoot, relativeReport);
-  const report = JSON.parse(readFileSync(reportPath, "utf8"));
-  report.artifactRoot = join(targetRoot, "f2");
-  writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\\n", "utf8");
+import { createF6ArtifactBundleFixture } from ${JSON.stringify(fixtureModule)};
+import { allocateAnalysisWorkspace, createInitialAnalysisWorkspaceSummary, writeAnalysisWorkspaceSummary } from ${JSON.stringify(workspaceModule)};
+import { prepareWorkspaceStage } from ${JSON.stringify(supportModule)};
+import { materializeF6ModelInterpretation } from ${JSON.stringify(materializerModule)};
+import { runF6FullValidation } from ${JSON.stringify(runnerModule)};
+const [targetRoot] = process.argv.slice(1);
+const workbookContentHash = createHash("sha256").update("controlled workbook fixture").digest("hex");
+const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"], workbookContentHash });
+try {
+  const layout = allocateAnalysisWorkspace({
+    testRoot: targetRoot, workbookFileName: "Anonymous.xlsx", workbookContentHash, now: new Date(),
+  });
+  writeAnalysisWorkspaceSummary(layout, createInitialAnalysisWorkspaceSummary(layout));
+  const stage = layout.stagePaths;
+  for (const key of ["f2", "f3", "f4", "f5"]) cpSync(bundle[key + "ArtifactRoot"], stage[key], { recursive: true });
+  for (const [key, name] of [["f2", "Feature2-Report.json"], ["f3", "Feature3-Report.json"]]) {
+    const file = join(stage[key], name);
+    const report = JSON.parse(readFileSync(file, "utf8"));
+    report.artifactRoot = stage.f2;
+    writeFileSync(file, JSON.stringify(report));
+  }
+  // This is a seeded upstream artifact fixture, not a live F1-F5 analysis.
+  prepareWorkspaceStage(layout, "f6");
+  const response = join(stage.f6, "evidence", "model-response", "Feature6-Model-Response.json");
+  mkdirSync(join(stage.f6, "evidence", "model-response"), { recursive: true });
+  writeFileSync(response, JSON.stringify({
+    contractVersion: "f6-model-interpretation-response-v1",
+    model: { modelId: "controlled-cli-test-model", supportsImage: true },
+    worksheets: [{ worksheetName: "Analysis-A", imageTableInterpretation: "Synthetic CLI fixture; not a live model review. Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
+      rows: [{ sourceRow: 2, visibleStatus: "visible", interpretation: "Synthetic fixture Factor A." }] }],
+  }));
+  materializeF6ModelInterpretation({
+    analysisRoot: layout.analysisRoot, f2ArtifactRoot: stage.f2, f3ArtifactRoot: stage.f3, f4ArtifactRoot: stage.f4, f5ArtifactRoot: stage.f5,
+    selectedWorksheetNames: ["Analysis-A"], responsePath: response,
+  });
+  const model = join(stage.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  const args = [stage.f2, stage.f3, stage.f4, stage.f5, "--analysis-root", layout.analysisRoot,
+    "--analysis-request-context", ${JSON.stringify(JSON.stringify(requestContext))},
+    "--worksheet", "Analysis-A", "--language", "en-US", "--model-interpretation", model];
+  const candidate = runF6FullValidation({ args: [...args, "--candidate"] });
+  assert.equal(candidate.status, "candidate_validated", JSON.stringify(candidate));
+  console.log(JSON.stringify({ ...layout, model }));
+} finally {
+  rmSync(bundle.root, { recursive: true, force: true });
 }
-cpSync(join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact), join(targetRoot, "model-interpretation.json"));
-rmSync(bundle.root, { recursive: true, force: true });
 `;
 
   try {
-    await mkdir(inputsRoot, { recursive: true });
-    await execFileAsync(process.execPath, ["--input-type=module", "-e", setupCode, inputsRoot, f5Stem], {
+    await mkdir(fixtureRoot, { recursive: true });
+    const { stdout } = await execFileAsync(process.execPath, ["--input-type=module", "-e", setupCode, fixtureRoot], {
       cwd: repoRoot,
       encoding: "utf8",
     });
+    const layout = JSON.parse(stdout);
+    const beforeDirectories = await readdir(fixtureRoot);
     vi.stubEnv("AI_TVA_F6_OUTPUT_ROOT", join(tmpdir(), "forbidden-f6-output"));
     vi.stubEnv("AI_TVA_F6_PUBLISH_ROOT", tmpdir());
 
     const result = await executeCli([
       "feature6", "--root", repoRoot,
-      "--f2-artifacts", join(inputsRoot, "f2"),
-      "--f3-artifacts", join(inputsRoot, "f3"),
-      "--f4-artifacts", join(inputsRoot, "f4"),
-      "--f5-artifacts", join(inputsRoot, f5Stem),
+      "--analysis-root", layout.analysisRoot,
+      "--analysis-request-context", JSON.stringify(requestContext),
+      "--f2-artifacts", layout.stagePaths.f2,
+      "--f3-artifacts", layout.stagePaths.f3,
+      "--f4-artifacts", layout.stagePaths.f4,
+      "--f5-artifacts", layout.stagePaths.f5,
       "--worksheet", "Analysis-A",
       "--language", "en-US",
-      "--model-interpretation", join(inputsRoot, "model-interpretation.json"),
+      "--model-interpretation", layout.model,
     ]);
 
+    expect(JSON.parse(await readFile(layout.summaryPath, "utf8")).overallStatus).toBe("completed");
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("Feature 6 workflow completed.");
-    expect(result.stdout).toMatch(new RegExp(`fullReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Anonymous - TA ENGINEERING ANALYSIS REPORT\\.md`));
-    expect(result.stdout).toMatch(new RegExp(`fullPdfReportPath: .*test[\\\\/]demo-output[\\\\/]f6-runs[\\\\/]${f5Stem}[\\\\/][^\\r\\n]*Anonymous - TA ENGINEERING ANALYSIS REPORT\\.pdf`));
+    expect(result.stdout).toContain(`fullReportPath: ${join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md")}`);
+    const pdfPath = join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf");
+    expect(result.stdout).toContain(`fullPdfReportPath: ${pdfPath}`);
+    expect((await readFile(pdfPath)).subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(await readdir(fixtureRoot)).toEqual(beforeDirectories);
+    const stage6Entries = await readdir(layout.stagePaths.f6);
+    expect(stage6Entries).toEqual(expect.arrayContaining([
+      "Feature6-Optimization.json", "Feature6-Run-Summary.json", "manifest.json", "evidence",
+    ]));
+    expect(stage6Entries).not.toContain("f6-runs");
+    expect(await readdir(join(layout.stagePaths.f6, "evidence"))).not.toContain("candidate");
     expect(result.stdout).not.toContain(tmpdir());
   } finally {
     vi.unstubAllEnvs();
     await rm(fixtureRoot, { recursive: true, force: true });
-    await rm(outputRoot, { recursive: true, force: true });
   }
 }, 240_000);
 
@@ -515,6 +492,24 @@ it("rejects blank, missing, and duplicate-after-trim Feature 6 values", async ()
   await expect(executeCli([...complete, "--cost", "   "], dependencies))
     .resolves.toMatchObject({ exitCode: 2, stdout: "" });
 });
+
+it.each(["not-json", "{}", '{"requestedAt":"invalid","utcOffsetMinutes":480,"source":"cli"}'])(
+  "rejects invalid Feature 6 request context %j before invoking the runner",
+  async (context) => {
+    let executed = false;
+    const result = await executeCli([
+      "feature6", "--root", "repo",
+      "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
+      "--worksheet", "Overview", "--language", "en-US", "--model-interpretation", "model.json",
+      "--analysis-request-context", context,
+    ], { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => {
+      executed = true;
+      return "unused";
+    } });
+    expect(result).toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("validation_error") });
+    expect(executed).toBe(false);
+  },
+);
 
 it("keeps Feature 6 flags command-specific and provides no phrase alias", async () => {
   const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => "unused" };

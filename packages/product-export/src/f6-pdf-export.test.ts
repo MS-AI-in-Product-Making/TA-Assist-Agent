@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +13,7 @@ const cleanupRoots: string[] = [];
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const temporaryManagedRoot = (): string => {
-  const root = mkdtempSync(join(tmpdir(), "f6-inline-images-"));
+  const root = mkdtempSync(join(process.cwd(), ".f6-inline-images-"));
   cleanupRoots.push(root);
   return root;
 };
@@ -66,6 +65,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["controlled-browser.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile,
     });
 
@@ -81,6 +81,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["controlled-browser.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile: vi.fn(),
     })).toThrow(expect.objectContaining({ code: "pdf_render_unavailable" }));
   });
@@ -91,7 +92,7 @@ describe("renderF6PdfSync", () => {
       const profile = args.find((arg) => arg.startsWith("--user-data-dir="));
       if (profile === undefined) throw new Error("missing browser profile");
       profilePaths.push(profile);
-      if (browser === "edge.exe") throw new Error("render timed out");
+      if (browser === "chrome.exe") throw new Error("render timed out");
 
       const output = args.find((arg) => arg.startsWith("--print-to-pdf="))?.slice("--print-to-pdf=".length);
       if (output === undefined) throw new Error("missing PDF output");
@@ -105,6 +106,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["edge.exe", "chrome.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile,
     });
 
@@ -124,6 +126,7 @@ describe("renderF6PdfSync", () => {
         managedRoot: process.cwd(),
       }, {
         installedBrowsers: () => ["edge.exe", "chrome.exe"],
+        executeWorker: () => { throw new Error("confidential worker output"); },
         executeFile: vi.fn((_browser, args) => {
           attempt += 1;
           if (attempt === 1) throw new Error("confidential browser output");
@@ -139,8 +142,14 @@ describe("renderF6PdfSync", () => {
     expect(failure).toMatchObject({
       code: "pdf_render_unavailable",
       attempts: [
-        { browser: "edge.exe", reason: "execution_failed" },
-        { browser: "chrome.exe", reason: "invalid_pdf" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "cli", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "cli", reason: "invalid_pdf" },
       ],
     });
     expect(String(failure)).not.toContain("confidential browser output");
@@ -151,6 +160,12 @@ describe("renderF6PdfSync", () => {
       markdown: "[Open image](../outside.png)",
       sourceHash: createHash("sha256").update("[Open image](../outside.png)").digest("hex"),
     })).toThrow("validated and inlined");
+  });
+
+  it("blocks network resources and scripts in HTML used by both local render strategies", () => {
+    const html = renderF6PdfHtml({ markdown: MARKDOWN, sourceHash: HASH });
+    expect(html).toContain('http-equiv="Content-Security-Policy"');
+    expect(html).toContain("default-src 'none'; img-src data:; style-src 'unsafe-inline'");
   });
 
   it("renders Markdown image tokens only from validated inline bytes", () => {
@@ -175,7 +190,7 @@ describe("renderF6PdfSync", () => {
       "|---|---|---|---|",
       "| Pass | [Analysis-A](#worksheet-1) | Loop A | Meets target. |",
       "| Need Review | [Analysis-B](#worksheet-2) | Loop B | Review required. |",
-      "| Fail | [Analysis-C](#worksheet-3) | Loop C | Does not meet target. |",
+      "| Block | [Analysis-C](#worksheet-3) | Loop C | Does not meet target. |",
       "",
       '<a id="worksheet-1"></a>',
       "# 3-1 Worksheet: Analysis-A",
@@ -197,7 +212,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('href="#worksheet-1"');
     expect(html).toContain('class="comment comment--pass">Pass</span>');
     expect(html).toContain('class="comment comment--need-review">Need Review</span>');
-    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
+    expect(html).toContain('class="comment comment--block">BLOCK</span>');
     expect(html).toContain('class="contribution-chart"');
     expect(html).not.toContain('<table class="contribution-table"');
     expect(html).not.toContain("fitWorksheetPages");
@@ -290,7 +305,7 @@ describe("renderF6PdfSync", () => {
       "",
       "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| Fail | [Analysis-A](#worksheet-1) | Loop A | Drawing Numbers, drawing dimension definition is missing. |",
+      "| Missing Info | [Analysis-A](#worksheet-1) | Loop A | Drawing Numbers, drawing dimension definition is missing. |",
       "",
       "# 3-1 Worksheet: Analysis-A",
       "",
@@ -335,9 +350,11 @@ describe("renderF6PdfSync", () => {
       "",
       "## Adjusted Mean to Spec Center Shift",
       "",
-      "- Design Nominal: 0.000 mm",
+      "- LSL: -0.150 mm",
+      "- USL: 0.050 mm",
+      "- Spec Center: -0.050 mm",
       "- Adjusted Mean: -0.050 mm",
-      "- Offset: -0.050 mm",
+      "- Offset: 0.000 mm",
       "",
       "## Contributor Priorities",
       "",
@@ -364,7 +381,7 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("grid-template-columns:.72fr 1.28fr");
-    expect(html).toContain('class="comment comment--fail">CPK FAIL</span>');
+    expect(html).toContain('class="comment comment--missing-info">MISSING INFO</span>');
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-spec-line range-spec-line--lower"');
     expect(html).toContain('class="range-spec-line range-spec-line--upper"');
@@ -378,10 +395,13 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('data-worst-case-result="FAIL"');
     expect(html).toContain('data-evaluation-level="4 sigma"');
     expect(html).toContain("<figcaption><span>Capability against target</span><strong>4 sigma · 1.33</strong></figcaption>");
-    expect(html).toContain('class="mean-marker mean-marker--nominal"');
+    expect(html).toContain('class="mean-marker mean-marker--spec-center"');
     expect(html).toContain('class="mean-marker mean-marker--adjusted"');
-    expect(html).toContain('class="mean-value mean-value--nominal">Design nominal');
+    expect(html).toContain('class="mean-value mean-value--spec-center">Spec center -0.050');
     expect(html).toContain('class="mean-value mean-value--adjusted">Adjusted mean');
+    expect(html).toContain('data-offset="0.000"');
+    expect(html).toContain('data-spec-center="-0.050"');
+    expect(html).toContain('style="left:50%"');
     expect(html).toContain('class="spec-marker spec-marker--current"');
     expect(html).toContain('class="spec-marker spec-marker--proposed"');
     expect(html).toContain('<div class="spec-change-legend"><span class="spec-value spec-value--current">Current</span><span class="spec-value spec-value--proposed">Proposed</span></div>');
@@ -393,7 +413,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
     expect(html).toContain("--raw-data:#0078D4");
     expect(html).toContain("--interpretation:#50E6FF");
-    expect(html).toContain("--optimization:#D59DFF");
+    expect(html).toContain("--optimization:#8661C5");
     expect(html).toContain('class="report-stage-legend"');
     expect(html).toContain('<span class="stage-key stage-key--raw">Raw data</span>');
     expect(html).toContain('<span class="stage-key stage-key--interpretation">Interpretation</span>');
@@ -403,9 +423,10 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".workbook-summary td { white-space:nowrap; font-size:12px; line-height:1;");
     expect(html).toContain(".workbook-summary th:nth-child(1),.workbook-summary td:nth-child(1) { width:9%;");
     expect(html).toContain(".workbook-summary th:nth-child(2),.workbook-summary td:nth-child(2) { width:21%;");
-    expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:25%;");
-    expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:45%;");
+    expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:35%;");
+    expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:35%;");
     expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain(".workbook-summary .comment--missing-info { color:var(--warn) !important;");
     expect(html).toContain(".factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:17%; white-space:nowrap;");
     expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
     expect(html).toContain(".range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4;");
@@ -413,7 +434,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".analysis-panel--center>h2,.analysis-panel--contributors>h2,.analysis-panel--specifications>h2 { color:var(--optimization); }");
     expect(html).toContain(".analysis-panel--center h2,.analysis-panel--contributors h2,.analysis-panel--specifications h2 { margin-bottom:6px; font-size:22px; }");
     expect(html).toContain(".analysis-panel--center .mean-offset-graph p { color:var(--p-black); font-size:11px;");
-    expect(html).toContain('.analysis-panel--center::after,.analysis-panel--contributors::after { content:"→";');
+    expect(html).toContain('.analysis-panel--center::after,.analysis-panel--contributors::after { content:"";');
     expect(html).toContain(".analysis-panel--contributors:last-child::after { display:none; }");
     expect(html).toContain("th { background:var(--raw-data) !important;");
     expect(html.match(/class="worksheet-section slide slide-worksheet"/gu)).toHaveLength(1);
@@ -506,6 +527,7 @@ describe("renderF6PdfSync", () => {
     });
 
     expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain(".factor-table td.status-missing,.factor-table td .status-missing { color:var(--p-dark-red) !important; font-weight:800;");
     expect(html).toContain('<strong class="status-warning">WARNING</strong>');
     expect(html).toContain('<strong class="status-complete">COMPLETE</strong>');
     expect(html).toContain('<strong class="dim-id-review">1</strong>');
@@ -526,8 +548,8 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain("object-fit:contain");
     for (const color of [
       "#000000", "#FFFFFF", "#F2F2F2", "#D2D2D2", "#505050",
-      "#FF9349", "#FEF000", "#9BF00B", "#30E5D0", "#50E6FF",
-      "#D59DFF", "#A72929",
+      "#FF9349", "#FEF000", "#107C10", "#30E5D0", "#50E6FF",
+      "#8661C5", "#A72929",
     ]) expect(html).toContain(color);
     expect(html).not.toMatch(/#e2dcc9|#c73b7a|#ee7a2e|#2d7e73|#3f73b7|#d8a93b/iu);
   });
@@ -718,8 +740,10 @@ describe("renderF6PdfSync", () => {
       "## Adjusted Mean to Spec Center Shift",
       "",
       "- Status: offset",
-      "- Adjusted Mean: -0.050 mm",
-      "- Design Nominal: -0.050 mm",
+      "- LSL: -0.150 mm",
+      "- USL: 0.050 mm",
+      "- Spec Center: -0.050 mm",
+      "- Adjusted Mean: -0.040 mm",
       "- Offset: 0.010 mm",
       "",
       "## Contributor Priorities",
@@ -847,7 +871,8 @@ describe("renderF6PdfSync", () => {
       "",
       "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| Fail | [Analysis-A](#worksheet-1) | Loop A | Capability requires review. |",
+      "| Cpk Fail | [Analysis-A](#worksheet-1) | Loop A | CpkL 1.21 does not meet Target Cpk 1.33. |",
+      "| Block | [Analysis-B](#worksheet-2) | Loop B | Factor Description is missing. |",
       "",
       "# 3-1 Worksheet: Analysis-A",
       "",
@@ -877,12 +902,16 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain(">CPK FAIL</span>");
-    expect(html).toContain(".comment--fail { color:var(--p-dark-red) !important;");
+    expect(html).toContain(">BLOCK</span>");
+    expect(html).toContain(".workbook-summary .comment--cpk-fail,.workbook-summary .comment--block { color:var(--p-dark-red) !important;");
     expect(html).toContain(".document-overview,.workbook-summary { align-self:stretch; box-sizing:border-box;");
     expect(html).toContain("clip-path:inset(0 round 24px)");
     expect(html).toContain("text-align:center; text-transform:uppercase;");
     expect(html).toContain(".workbook-summary td:nth-child(2) a { color:var(--raw-data);");
-    expect(html).toContain(".factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:3%;");
+    expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:35%;");
+    expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:35%;");
+    expect(html).toContain(".factor-table th:nth-child(6),.factor-table td:nth-child(6) { width:4.5%;");
+    expect(html).toContain(".factor-table th:nth-child(11),.factor-table td:nth-child(11) { width:3.5%;");
     expect(html).toContain(".factor-table th:nth-child(15),.factor-table td:nth-child(15) { width:12%;");
     expect(html).toContain(".analysis-panel--process>h2,.analysis-panel--image>h2,.analysis-panel--results>h2 { color:var(--interpretation);");
     expect(html).toContain('<span class="step-label">Step 1</span>');
@@ -895,7 +924,69 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".document-overview th:last-child,.workbook-summary th:last-child { border-top-right-radius:22px;");
     expect(html).toContain(".analysis-panel--contributors { padding:20px 22px 10px;");
     expect(html).toContain("--signal-green:var(--p-green)");
-    expect(html).toContain("--p-green:#9BF00B");
+    expect(html).toContain("--p-green:#107C10");
+    expect(html).toContain("--p-purple:#8661C5");
+    expect(html).toContain("--optimization:#8661C5");
+    expect(html).toContain(".report-stage-legend { position:absolute; top:-12px;");
+    expect(html).toContain(".analysis-panel--image>p { min-width:0; grid-column:2; margin:7px 0;");
+    expect(html).toContain("transform:translateY(-8px)");
+    expect(html).toContain(".capability-spectrum>p { font-size:11px; font-weight:700;");
+    expect(html).toContain(".analysis-panel--center::after,.analysis-panel--contributors::after { content:\"\";");
+    expect(html).toContain("clip-path:polygon(0 25%,62% 25%,62% 0,100% 50%,62% 100%,62% 75%,0 75%)");
+  });
+
+  it("shows only the nominal range-axis label and emphasizes a missing Factor Description", () => {
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Complete Factor Table",
+      "",
+      "| Ordinal | Factor Description | Part Name | Part Category | Drawing Number | DIM ID | Design Nominal | + Tolerance | - Tolerance | Long Term / Safety Factor | Sigma Level | Mean | Tolerance | One Sigma | Capability / Knowledge Guidance |",
+      "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| A | MISSING <span class=\"f6-inline-marker\" data-f6-marker=\"required-missing\" data-source-row=\"14\" hidden aria-hidden=\"true\"></span> | Part A | CNC | DWG-1 | MISSING | 1.51 mm | 0.1 mm | -0.1 mm | 1 | 4 | N/A | N/A | N/A | N/A |",
+      "",
+      "## Requirements and Statistical Results",
+      "",
+      "| Requirement | Value |",
+      "|---|---:|",
+      "| Design Nominal | 1.51 mm |",
+      "| LSL | 0.00 mm |",
+      "| USL | 5.00 mm |",
+      "| Target Cpk | 1.33 |",
+      "",
+      "| Metric | Lower | Upper | Minimum Margin | Result |",
+      "|---|---:|---:|---:|---|",
+      "| 3-Sigma Range | 1.10 mm | 1.91 mm | 1.10 mm | PASS |",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain('<td class="status-missing">MISSING <span class="f6-inline-marker"');
+    expect(html).toContain('<div class="range-axis"><span>Nominal 1.51</span></div>');
+    expect(html).not.toContain('<div class="range-axis"><span>0.00</span>');
+    expect(html).not.toContain('<span>5.00</span></div>');
+  });
+
+  it("uses full-precision mean-center metadata while keeping rounded labels", () => {
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- LSL: 0.000 mm <!-- f6-raw=0 -->",
+      "- USL: 0.101 mm <!-- f6-raw=0.101 -->",
+      "- Spec Center: 0.051 mm <!-- f6-raw=0.0505 -->",
+      "- Adjusted Mean: 0.050 mm <!-- f6-raw=0.0504 -->",
+      "- Offset: -0.000 mm <!-- f6-raw=-0.0001 -->",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain('class="mean-offset-graph"');
+    expect(html).toContain('data-spec-center="0.051"');
+    expect(html).toContain('data-offset="-0.000"');
+    expect(html).toContain("Spec center 0.0510&nbsp;mm");
+    expect(html).not.toContain("Insufficient numeric evidence");
   });
 
   it("uses compact Factor rows after seven entries and normalizes unavailable guidance", () => {
@@ -984,7 +1075,7 @@ describe("renderF6PdfSync", () => {
       "",
       "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| Fail | [Analysis-A](#worksheet-1) | Loop A | CpkL 0.7396 and CpkU 0.7396 do not meet Target Cpk 1. |",
+      "| Cpk Fail | [Analysis-A](#worksheet-1) | Loop A | CpkL 0.7396 and CpkU 0.7396 do not meet Target Cpk 1. |",
       "",
       "# 3-1 Worksheet: Analysis-A",
       "",

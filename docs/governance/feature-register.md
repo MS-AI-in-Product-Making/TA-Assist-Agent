@@ -2,7 +2,7 @@
 
 ## 目的
 
-Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
+Feature Register 是 Phase 0 对 F0-F7 的唯一可查询能力清单。它提供规则和查询接口，
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
 误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询，以及经审查的
 `internal-v1` 制程指导和 `interpretation-rules-v2` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
@@ -12,7 +12,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 `available`；F4 为受 F1/F2 证据门禁的 `excel-ta-v1` 计算服务而标记为 `available`；根 F5 为
 直接消费 F0/F1/F3/F4 受控工件的能力、规格与贡献解读而标记为 `available`，F5.1 保留为其
 历史 internal compatible core；F6 为消费 F2/F3/F4/F5 受控工件的本地优化 workflow 而标记为
-`available`，其历史 comparison placeholder API 仍返回 `feature_not_available`；F7 仍为 `unavailable`。产品 F8 已作为本地 `confidential` TA Assist Workbench 标记为 `available`；历史匿名 `public` Skill fixture 保留为 `F8.public-smoke`。这些状态不表示已启用 F7、真实工程知识或未经确认的外部写入
+`available`，其历史 comparison placeholder API 仍返回 `feature_not_available`；F7 仍为 `unavailable`。F8 与 participant/workbench runtime 已退休，当前产品入口为 Copilot Skills 与直接 workflow 脚本。这些状态不表示已启用 F7、真实工程知识或未经确认的外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
 ## 当前条目
@@ -34,8 +34,6 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F6 | 可比较的方案选项 | `available` | `interpretation-rules-v2`, `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
 |   | 产品能力名称：Design Optimization。 |   |   |   |   |   |   |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `interpretation-rules-v2`, `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
-| F8 | TA Assist Workbench | `available` | F8 session/snapshot/conversation/Surface contracts; approved OOXML and Surface MCP access | `f8-session-command-v1` / `f8-session-snapshot-v1` | `confidential` | `f8-browser-integration`, `f8-security-e2e`, `f8-f7-placeholder-e2e`, `f8-what-if-no-writeback`, `f8-product-output-fail-closed-e2e` | `return feature_not_available` |
-| F8.public-smoke | TA Public Workflow Smoke Fixture | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
 
 F5 的 `approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启用治理批准，不是每次运行要求用户提供的交互输入。F5 当前 `status: available` 表示这些部署批准已满足。每次运行中的 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption，以及禁止生成缺少受控证据支持的最终 RULE 共同门禁；physical image、artifact identity/hash 或 schema evidence 校验失败仍在运行时 fail closed。
 
@@ -153,10 +151,21 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   堆叠方向或跨子系统结构风险，也不提供完整澄清流程；调用方应通过根 F5 合同取得完整受治理报告，
   不得把 F5.1 描述为唯一可用 F5 入口。
 - F6 的 `available` 仅覆盖当前本地 `f6-optimization-v2` workflow 和最终报告输出。应用入口为
-  `node apps/cli/dist/index.js feature6 --root "<repository-root>" --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "<worksheet-name>"`；
+  `node apps/cli/dist/index.js feature6 --root "<repository-root>" --analysis-root "<existing-analysis-root>" --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "<worksheet-name>" --language "en-US" --model-interpretation "<workspace-model-artifact>" --analysis-request-context '<candidate-request-context-json>'`；
   `--worksheet` 可重复且至少一次，worksheet 名称必须 trim 后非空且唯一。四个 artifact root 必须分别包含
   `Feature2-Report.json`、`Feature3-Report.json`、`Feature4-Calculation.json` 和 `Feature5-Report.json`，并通过
   artifact identity、内容 hash、schema、workbook 与 worksheet association 门禁；不得扫描目录猜测输入。
+  当前 CLI 只复用 repository `test` 下已完成 F5 的现有 analysis workspace；省略 `--analysis-root` 时只验证
+  F5 root 的直接父目录，不搜索、不分配新 root、不补造 F1-F5。四个 root 必须是该 summary 的精确 F2-F5
+  stage 目录；`test/demo-output` 及其子目录仍禁止写入。最终报告只接受该 workspace 的
+  `06 - F6 Design Optimization` 目录，不接受其他 workspace 的成功输出。历史只读命令不受此写入入口影响。
+  最终发布仍要求受验证的 F6 candidate 和 terminal ADO outcome；CLI 不自动创建 candidate、确认 ADO 或执行
+  上游阶段。`--analysis-request-context` 可复用 candidate 的受治理时间上下文，避免重建 timestamp 导致
+  candidate 不匹配；省略时仍生成当前 CLI 时间上下文。candidate 与 final 的 runner 参数必须完全匹配
+  （仅 candidate 多一个 `--candidate`），包括顺序：F2-F5 roots、`--analysis-root`、
+  `--analysis-request-context`、重复 `--worksheet`、`--language`、`--model-interpretation`，然后依次为可选
+  `--supplier-capability`、`--datum-strategy`、`--cost`、`--image-observations`、`--analysis-context`、
+  `--optimization-targets`。缺少 workspace 或任何发布前提时 fail closed，不退回 legacy 输出。
   可选 `f6-analysis-context-v1` 与 `f6-optimization-targets-v1` 分别经过 `Confirm analysis context` 和
   `Confirm optimization targets` 独立确认后，才可追加 `--analysis-context` 与 `--optimization-targets`。两次确认不得互相合并或与 F3 ADO 确认合并；caller-target scenario 仍要求 confirmed targets。唯一自动例外为 `f6-top3-tolerance-policy-v1`：仅当 CpkL 或 CpkU 低于 worksheet Target Cpk 时，按固定 OP1（25%/10%/10%）、OP2（20%/15%/15%）、OP3（40%/5%/5%）收紧 baseline Top 3 tolerance bands，并通过 F4 完整重算；不得生成其他自动百分比 scenario。supplier capability 与 datum strategy 缺少绑定证据时不得输出已验证可行性；cost 证据缺失、
   身份不一致或未覆盖候选方案时，ROI 必须保持 `not_computed`，不得据此排序或推荐。所有输入、日志、错误、manifest
@@ -170,14 +179,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   orchestrator。Skill 必须执行并验证 current-run F3，并在 F4、F5 与 F6 完成后让每个已验证 F3 结果进入复用 F3 完整双确认协议的
   optional ADO publishing gate，发布 never automatic or implicit。Skill 展示 F1-F6 output ledger，并在缺少 evidence 时保留
   `insufficient_evidence` / `not_computed`。F6 原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions，最终报告使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态进入 review，只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
-- F8 的 `available` 表示本地 `confidential` TA Assist Workbench 已登记：CLI、VS Code 与 Web 共享受治理 session 和 TA Assist 自有 history；不导入其他 Copilot history。浏览器只通过 structured API 推进独立确认，源 workbook 与 F0-F6 工件只读，What-if 不写回，ADO 仅允许 Surface MCP 两阶段确认，F7 保持 unavailable placeholder。
-- F8 产品导出门禁要求 execution status 为 `completed` 且 source lineage 已验证。`failed` 或 `cancelled` session 必须 fail closed，不得生成新的 product export root。该约束由 `test/f8-e2e/product-output.spec.ts` 的 `f8-product-output-fail-closed-e2e` 验收覆盖，并使用 test-only seeded execution failure session 进行校验。
-- `F8.public-smoke` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
-  Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
-  入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与
-  `classification-check`；`workflow-result-v1` 不包含 `runDirectory` 或 Skill 输出。
-  既有 CLI `smoke` 保持为兼容 fixture。`persist`、`network` 和其他外部权限仍由策略门拒绝；
-  不得将该状态解释为生产能力可用。
+- F8 与 participant/workbench runtime 已退休，不再作为当前产品 Feature Register 条目。现行入口以 Copilot Skills 与直接 workflow scripts 为准，且不得恢复已删除的 session/runtime/product-export 假设。
 - 修改任一条目时，必须同步更新 `packages/governance` 的测试、此文档、相关契约
   和匿名验收 fixture。若涉及外部访问，还必须经过策略门审批。
 

@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -21,6 +22,8 @@ import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
+import { beginF6Candidate, cleanupF6Candidate, prepareF6Final, sealF6Candidate } from "./f6-candidate.mjs";
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -29,6 +32,10 @@ function json(value) {
 function governedWorkbookFileName(f2ArtifactRoot) {
   const reportPath = path.join(f2ArtifactRoot, "Feature2-Report.json");
   return f2UserReportSchema.parse(JSON.parse(readFileSync(reportPath, "utf8"))).workbook.fileName;
+}
+
+function authoritativeWorkspaceModelInterpretationPath(layout) {
+  return path.join(layout.runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
 }
 
 function loaderOptions(parsed) {
@@ -83,6 +90,7 @@ function normalizeDependencies(overrides = {}) {
     realpath: overrides.realpath ?? realpathSync,
     lstat: overrides.lstat ?? lstatSync,
     stat: overrides.stat ?? statSync,
+    readdir: overrides.readdir ?? readdirSync,
     open: overrides.open ?? openSync,
     writeFd: overrides.writeFd ?? ((descriptor, content) => writeFileSync(descriptor, content, "utf8")),
     close: overrides.close ?? closeSync,
@@ -127,11 +135,90 @@ function normalizeF6Result(result) {
   };
 }
 
+function outputPaths(layout) {
+  return {
+    manifestPath: path.join(layout.runRoot, layout.manifestName),
+  };
+}
+
+function failedManifest(layout, reasonCode) {
+  return {
+    contractVersion: "v1",
+    artifactSetVersion: layout.artifactSetVersion,
+    featureId: "F6",
+    status: "failed",
+    runId: layout.runId,
+    reasonCode,
+    artifacts: {},
+  };
+}
+
+function atomicWrite(filePath, content, dependencies) {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  let descriptor;
+  let committed = false;
+  try {
+    descriptor = dependencies.open(temporaryPath, "wx");
+    dependencies.writeFd(descriptor, content);
+    dependencies.close(descriptor);
+    descriptor = undefined;
+    dependencies.rename(temporaryPath, filePath);
+    committed = true;
+  } finally {
+    if (descriptor !== undefined) dependencies.close(descriptor);
+    if (!committed) dependencies.rm(temporaryPath, { force: true });
+  }
+}
+
+function reasonCodeForWorkspacePreflight(error) {
+  if (error?.code !== "prerequisite_not_ready") return undefined;
+  return error?.details?.reasonCode === "workspace_stage_not_empty"
+    || error?.reasonCode === "workspace_stage_not_empty"
+    ? "workspace_stage_not_empty"
+    : "workspace_stage_not_empty";
+}
+
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
+  const args = options.args ?? [];
+  const candidate = args.includes("--candidate");
+  if (candidate && !args.includes("--analysis-root")) throw new Error("Feature 6 candidate requires an analysis workspace.");
+  let cleanupPlan;
+  return runAnalysisStage({
+    stage: "f6", args, candidate,
+    afterCompleted: (workspace) => {
+      try {
+        (dependencyOverrides.cleanupCandidate ?? cleanupF6Candidate)(workspace, cleanupPlan);
+        try {
+          lstatSync(cleanupPlan.paths.root);
+          throw new Error("Candidate cleanup left evidence behind.");
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      } catch {
+        throw Object.assign(new Error("Final publication completed but candidate cleanup failed."), { reasonCode: "candidate_cleanup_failed" });
+      }
+    },
+  }, (workspace) => {
+    if (!workspace) return executeF6(options, dependencyOverrides);
+    if (candidate) {
+      const candidateRoot = beginF6Candidate(workspace, args);
+      const result = executeF6(options, dependencyOverrides, candidateRoot);
+      return result.status === "failed" ? result : sealF6Candidate(workspace, args);
+    }
+    cleanupPlan = prepareF6Final(workspace, args);
+    return executeF6(options, dependencyOverrides);
+  });
+}
+
+function executeF6(options, dependencyOverrides, candidateRoot) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
+  const finalLayout = dependencies.resolveLayout(parsed, options);
+  const layout = candidateRoot === undefined ? finalLayout : { ...finalLayout, runRoot: candidateRoot, allowExistingRunRoot: false, internalOnly: true };
+  const authoritativeModelInterpretationPath = parsed.analysisRoot === undefined || !finalLayout.allowExistingRunRoot
+    ? parsed.modelInterpretationArtifact
+    : authoritativeWorkspaceModelInterpretationPath(finalLayout);
   try {
-    const layout = dependencies.resolveLayout(parsed, options);
     return normalizeF6Result(runF6Optimization({
       f2ArtifactRoot: parsed.f2ArtifactRoot,
       f3ArtifactRoot: parsed.f3ArtifactRoot,
@@ -146,9 +233,9 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       imageObservationsPath: parsed.imageObservationArtifact,
       analysisContextPath: parsed.analysisContextArtifact,
       optimizationTargetsPath: parsed.optimizationTargetsArtifact,
-      modelInterpretationPath: parsed.modelInterpretationArtifact,
-      expectedModelInterpretationContentHash: parsed.expectedModelInterpretationContentHash ?? (typeof parsed.modelInterpretationArtifact === "string"
-        ? createHash("sha256").update(readFileSync(parsed.modelInterpretationArtifact)).digest("hex")
+      modelInterpretationPath: authoritativeModelInterpretationPath,
+      expectedModelInterpretationContentHash: parsed.expectedModelInterpretationContentHash ?? (typeof authoritativeModelInterpretationPath === "string"
+        ? createHash("sha256").update(readFileSync(authoritativeModelInterpretationPath)).digest("hex")
         : undefined),
     }, {
       repositoryRoot: process.cwd(),
@@ -171,9 +258,10 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         imageObservationArtifact: request.imageObservationsPath,
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
-        modelInterpretationArtifact: request.modelInterpretationPath,
+        modelInterpretationArtifact: authoritativeModelInterpretationPath === undefined ? request.modelInterpretationPath : authoritativeModelInterpretationPath,
         expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
         requireMultimodalV3: true,
+        analysisRoot: parsed.analysisRoot,
         publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),
@@ -190,10 +278,17 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       rename: dependencies.rename,
       beforeRename: dependencies.beforeRename,
       afterRename: dependencies.afterRename,
+      readdir: dependencies.readdir,
       rmdir: dependencies.rmdir,
       rm: dependencies.rm,
     }));
   } catch (error) {
+    const workspaceReasonCode = reasonCodeForWorkspacePreflight(error);
+    if (workspaceReasonCode !== undefined && layout.allowExistingRunRoot) {
+      const { manifestPath } = outputPaths(layout);
+      atomicWrite(manifestPath, json(failedManifest(layout, workspaceReasonCode)), dependencies);
+      return { status: "failed", reasonCode: workspaceReasonCode, outputDirectory: layout.runRoot, manifestPath };
+    }
     const typed = error?.code === undefined ? createTypedError({
       code: "internal_error",
       summary: "Feature 6 workflow execution failed.",
@@ -221,7 +316,9 @@ export function runF6Cli(options = {}, dependencyOverrides = {}, io = {}) {
   } catch (error) {
     result = {
       status: "failed",
-      reasonCode: error?.reasonCode === "workflow_output_failed"
+      reasonCode: error?.reasonCode === "candidate_cleanup_failed"
+        ? "candidate_cleanup_failed"
+        : error?.reasonCode === "workflow_output_failed"
         ? "workflow_output_failed"
         : error?.reasonCode === "optimization_failed"
           ? "optimization_failed"

@@ -214,19 +214,8 @@ describe("policy gate", () => {
     });
   });
 
-  it("registers confidential F8 Workbench while preserving the public smoke fixture", () => {
-    expect(getFeatureStatus("F8")).toEqual({
-      featureId: "F8",
-      title: "TA Assist Agent Workbench",
-      status: "available",
-      dependsOn: ["f8-session-command-v1", "f8-session-snapshot-v1", "ta-conversation-turn-v1", "surface-mcp-adapter-v1"],
-      inputContractId: "f8-session-command-v1",
-      outputContractId: "f8-session-snapshot-v1",
-      maximumClassification: "confidential",
-      acceptanceChecks: ["f8-browser-integration", "f8-security-e2e", "f8-f7-placeholder-e2e", "f8-what-if-no-writeback"],
-      externalPrerequisites: ["approved-ooxml-parser", "approved-surface-mcp-access"],
-      disableBehavior: "return feature_not_available",
-    });
+  it("retires the confidential F8 Workbench while preserving the public smoke fixture", () => {
+    expect(getFeatureStatus("F8")).toBeUndefined();
     expect(getFeatureStatus("F8.public-smoke")).toMatchObject({
       featureId: "F8.public-smoke",
       inputContractId: "workflow-request-v1",
@@ -430,7 +419,7 @@ describe("policy gate", () => {
   });
 
   it("provides a register entry for every planned feature", () => {
-    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F5.1", "F6", "F7", "F8"]) {
+    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F5.1", "F6", "F7"]) {
       expect(getFeatureStatus(featureId)).toMatchObject({ featureId });
     }
   });

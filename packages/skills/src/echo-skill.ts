@@ -6,7 +6,7 @@ export const publicEchoSkill: RegisteredSkill = {
   manifest: {
     skillId: "public-echo",
     version: "v1",
-    featureId: "F8",
+    featureId: "F8.public-smoke",
     inputClassification: ["public"],
     permissions: ["persist"],
     adapterCapabilities: ["echo"],

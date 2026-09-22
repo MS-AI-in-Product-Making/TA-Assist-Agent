@@ -6,6 +6,29 @@ import { describe, expect, it } from "vitest";
 import { findEngineeringLanguageViolations, hasCjkText, isEnglishEngineeringPath, isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
 const COMPOSED_REPORT_ARTIFACT_TOKEN = ["Feature6", "Composed", "Report"].join("-");
+const RETAINED_PATHS = [
+  ".github/skills/ta-assist-agent/SKILL.md",
+  "scripts/run-f1-full-validation.mjs",
+  "scripts/run-f2-full-validation.mjs",
+  "scripts/run-f3-full-validation.mjs",
+  "scripts/run-f4-full-validation.mjs",
+  "scripts/run-f5-full-validation.mjs",
+  "scripts/run-f6-full-validation.mjs",
+  "apps/f7-local-api",
+  "apps/f7-web",
+];
+const RETAINED_WORKFLOW_SCRIPTS = [
+  "workflow:f1",
+  "workflow:f2",
+  "workflow:f3",
+  "workflow:f4",
+  "workflow:f5",
+  "workflow:f6",
+  "dev:f7",
+  "dev:f7:api",
+  "dev:f7:web",
+  "build:f7:web",
+];
 
 function normalizeRepositoryPath(repositoryPath) {
   return repositoryPath.replaceAll("\\", "/");
@@ -54,13 +77,25 @@ function writeRepositoryFixture(repositoryPath, fixturePath, content) {
 }
 
 describe("isForbiddenRepositoryPath", () => {
+  it.each(RETAINED_PATHS)("keeps retained product surface %s present", (repositoryPath) => {
+    expect(existsSync(resolve(process.cwd(), repositoryPath))).toBe(true);
+  });
+
+  it("keeps the direct F1-F6 workflows and F7 scripts defined in package.json", () => {
+    const scripts = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")).scripts ?? {};
+
+    for (const scriptName of RETAINED_WORKFLOW_SCRIPTS) {
+      expect(scripts[scriptName]).toBeDefined();
+    }
+  });
+
   it("enforces English on engineering entry assets without rejecting localized product files", () => {
     expect(hasCjkText("English only")).toBe(false);
     expect(hasCjkText("中文 product copy")).toBe(true);
     expect(isEnglishEngineeringPath("README.md")).toBe(true);
-    expect(isEnglishEngineeringPath("apps/vscode-extension/src/participant.ts")).toBe(false);
+    expect(isEnglishEngineeringPath("apps/f7-web/src/product-copy.ts")).toBe(false);
     expect(findEngineeringLanguageViolations(
-      ["README.md", "apps/vscode-extension/src/participant.ts"],
+      ["README.md", "apps/f7-web/src/product-copy.ts"],
       (repositoryPath) => repositoryPath === "README.md" ? "中文 developer guide" : "中文 localized response",
     )).toEqual(["README.md"]);
   });
@@ -94,9 +129,6 @@ describe("isForbiddenRepositoryPath", () => {
     "sample.xls",
     "sample.xlsx",
     "sample.xlsm",
-    "F8-session-output/probe.json",
-    "nested/F8-session-output/probe.json",
-    "F8-SESSION-OUTPUT/probe.json",
   ])(
     "rejects %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
@@ -125,10 +157,13 @@ describe("isForbiddenRepositoryPath", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
   });
   it.each([
+    "F8-session-output/probe.json",
+    "nested/F8-session-output/probe.json",
+    "F8-SESSION-OUTPUT/probe.json",
     "F8-session-output-notes/probe.json",
     "nested/F8-session-output-notes/probe.json",
     "F8-session-output-example/probe.json",
-  ])("allows safe neighbors at %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(false));
+  ])("allows retired F8-only output path %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(false));
   it.each([
     "fixtures/confidential/sample.json",
     "fixtures/Confidential/sample.json",
@@ -215,13 +250,13 @@ describe("isForbiddenRepositoryPath", () => {
       expect(result.stderr).toContain("RUNTIME/run.json");
       expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
-      expect(result.stderr).toContain("F8-session-output/probe.json");
-      expect(result.stderr).toContain("nested/F8-session-output/probe.json");
       expect(result.stderr).toContain("sample.XLS");
       expect(result.stderr).toContain("sample.XLSX");
       expect(result.stderr).not.toContain(".ENV.EXAMPLE");
       expect(result.stderr).not.toContain("fixtures/public/smoke-request.json");
       expect(result.stderr).not.toContain("fixtures/confidential-notes/sample.json");
+      expect(result.stderr).not.toContain("F8-session-output/probe.json");
+      expect(result.stderr).not.toContain("nested/F8-session-output/probe.json");
       expect(result.stderr).not.toContain("F8-session-output-notes/probe.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });

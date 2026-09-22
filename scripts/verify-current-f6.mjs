@@ -9,10 +9,19 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import { f6ReadableOptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createF6ReportFileNames } from "../packages/contracts/dist/f6-artifact-names.js";
 import { worstDisposition } from "./f6-final-report.mjs";
+import {
+  ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+  ANALYSIS_WORKSPACE_VERSION,
+  hasF6CandidateMarker,
+  resolveAnalysisWorkspaceStagePaths,
+  validateAnalysisWorkspaceSummary,
+  validateF6WorkspaceEvidence,
+} from "../packages/workflow-runners/dist/index.js";
 
 const LEGACY_FILES = Object.freeze([
   "Feature6-Optimization.json",
@@ -130,7 +139,7 @@ function sameStringSet(left, right) {
 }
 
 function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function isCurrentArtifact(manifest, optimization) {
@@ -247,9 +256,42 @@ function validateBoundary(runRoot, publishRoot) {
   return isContained(realPublishRoot, realRunRoot);
 }
 
-function validateExactFiles(runRoot, expectedFiles) {
+function validateWorkspaceFinalSet(publishRoot, runRoot, optimization, contract) {
+  try {
+    const summaryPath = path.join(path.resolve(publishRoot), ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME);
+    if (!existsSync(summaryPath)) return true;
+    const summary = jsonFile(summaryPath);
+    validateAnalysisWorkspaceSummary(summary);
+    if (summary.contractVersion !== ANALYSIS_WORKSPACE_VERSION
+      || summary.analysisRoot !== path.resolve(publishRoot)
+      || summary.overallStatus !== "completed"
+      || summary.currentStage !== "f6"
+      || summary.stages?.f6?.status !== "completed"
+      || summary.workbook?.fileName !== optimization?.workbook?.fileName
+      || summary.workbook?.contentHash !== optimization?.workbook?.contentHash) {
+      return false;
+    }
+    const stagePaths = resolveAnalysisWorkspaceStagePaths(summary.analysisRoot);
+    if (runRoot !== stagePaths.f6) return false;
+    const expectedArtifacts = {
+      optimizationJsonPath: path.relative(summary.analysisRoot, path.join(runRoot, "Feature6-Optimization.json")),
+      finalReportMarkdownPath: path.relative(summary.analysisRoot, path.join(runRoot, contract.finalReportMdName)),
+      ...(contract.pdf ? { finalReportPdfPath: path.relative(summary.analysisRoot, path.join(runRoot, contract.finalReportPdfName)) } : {}),
+      runSummaryPath: path.relative(summary.analysisRoot, path.join(runRoot, "Feature6-Run-Summary.json")),
+      manifestPath: path.relative(summary.analysisRoot, path.join(runRoot, "manifest.json")),
+    };
+    const actualArtifacts = summary.stages.f6.artifacts;
+    const expectedKeys = Object.keys(expectedArtifacts).sort();
+    return sameStrings(Object.keys(actualArtifacts).sort(), expectedKeys)
+      && expectedKeys.every((key) => actualArtifacts[key] === expectedArtifacts[key]);
+  } catch {
+    return false;
+  }
+}
+
+function validateExactFiles(runRoot, expectedFiles, workspaceEvidence = false) {
   const entries = readdirSync(runRoot, { withFileTypes: true });
-  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...expectedFiles].sort())) return false;
+  if (!sameStrings(entries.map((entry) => entry.name).sort(), [...expectedFiles, ...(workspaceEvidence ? ["evidence"] : [])].sort())) return false;
   return expectedFiles.every((fileName) => {
     const filePath = path.join(runRoot, fileName);
     const stats = lstatSync(filePath);
@@ -485,12 +527,17 @@ export function validateExistingF6Artifact(entryPath, options = {}) {
   try {
     const runRoot = resolveRunRoot(entryPath);
     if (runRoot === undefined) return rejected("invalid_artifact_entry");
+    if (hasF6CandidateMarker(runRoot)) return rejected("internal_candidate_not_final");
     if (!validateBoundary(runRoot, options.publishRoot)) return rejected("artifact_outside_publish_root");
     const manifest = jsonFile(path.join(runRoot, "manifest.json"));
+    if (Object.hasOwn(manifest, "internalOnly")) return rejected("internal_candidate_not_final");
     const optimizationRaw = jsonFile(path.join(runRoot, "Feature6-Optimization.json"));
     const optimization = f6ReadableOptimizationResultSchema.parse(optimizationRaw);
     const contract = artifactContract(manifest, optimization);
-    if (contract === undefined || !validateExactFiles(runRoot, contract.files)) return rejected("artifact_file_set_invalid");
+    const workspaceEvidence = options.workspaceModelInterpretationPath !== undefined;
+    if (contract === undefined || !validateExactFiles(runRoot, contract.files, workspaceEvidence)) return rejected("artifact_file_set_invalid");
+    if (workspaceEvidence && !validateF6WorkspaceEvidence(runRoot, options.workspaceModelInterpretationPath, optimization)) return rejected("artifact_workspace_evidence_invalid");
+    if (!validateWorkspaceFinalSet(options.publishRoot, runRoot, optimization, contract)) return rejected("artifact_validation_failed");
     const summary = jsonFile(path.join(runRoot, "Feature6-Run-Summary.json"));
     const expectedStatus = workflowStatus(optimization);
     if (!validateManifest(manifest, expectedStatus, contract)) return rejected("manifest_invalid");

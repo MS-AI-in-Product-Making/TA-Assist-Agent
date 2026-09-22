@@ -9,7 +9,9 @@ import {
   type F2UserReport,
 } from "@ai-assist/contracts";
 
+import { assertAnalysisWorkspaceWorkbookIdentity, recordAnalysisStageStarted, validateAnalysisWorkspaceLayout, validateAnalysisWorkspaceSummary, type AnalysisWorkspaceSummary } from "./analysis-workspace.js";
 import { normalizeRunnerError } from "./error-normalizer.js";
+import { isWithinOrEqual } from "./path-containment.js";
 import type {
   F1F2ConfirmedRequest,
   F1F2ConfirmedResult,
@@ -163,8 +165,36 @@ function buildCompletedResult(
   };
 }
 
+function usesWorkspaceStageSeparation(layout: { f1Root: string; f2Root: string; validationRoot: string }): boolean {
+  return path.resolve(layout.validationRoot) === path.resolve(layout.f1Root)
+    && path.resolve(layout.f1Root) !== path.resolve(layout.f2Root);
+}
+
+function stageLogRoot(
+  layout: { f1Root: string; f2Root: string; validationRoot: string },
+  stage: string,
+): string {
+  if (usesWorkspaceStageSeparation(layout) && stage === "f2") {
+    return layout.f2Root;
+  }
+  return layout.validationRoot;
+}
+
+function feature2ValidationPath(
+  layout: { f1Root: string; f2Root: string; validationRoot: string },
+): string {
+  return usesWorkspaceStageSeparation(layout)
+    ? path.join(layout.f2Root, "Feature2-Validation.json")
+    : path.join(layout.validationRoot, "Feature2-Validation.json");
+}
+
 function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): ExecuteStageResult {
-  const result = spawnSync(command, [...args], { cwd, env, encoding: "utf8" });
+  const childEnv = { ...env };
+  if (args.includes("--analysis-root")) {
+    delete childEnv.AI_TVA_F1_OUTPUT_ROOT;
+    delete childEnv.AI_TVA_F2_OUTPUT_ROOT;
+  }
+  const result = spawnSync(command, [...args], { cwd, env: childEnv, encoding: "utf8" });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const error = Object.assign(
@@ -176,7 +206,22 @@ function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): 
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date) {
+function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date, analysisWorkspace?: F1F2SelectionRequest["analysisWorkspace"]) {
+  if (analysisWorkspace) {
+    validateAnalysisWorkspaceLayout(analysisWorkspace);
+    if (analysisWorkspace.workbookFileName !== path.basename(workbookPath)) {
+      throw new Error("Feature 2 analysis workspace workbook identity mismatch.");
+    }
+    return {
+      startedAt: now().toISOString(),
+      runId: path.basename(analysisWorkspace.analysisRoot),
+      runRoot: analysisWorkspace.analysisRoot,
+      f1Root: analysisWorkspace.stagePaths.f1,
+      f2Root: analysisWorkspace.stagePaths.f2,
+      validationRoot: analysisWorkspace.stagePaths.f1,
+      manifestPath: path.join(analysisWorkspace.analysisRoot, "manifest.json"),
+    };
+  }
   ensureCreationPathIsPhysical(managedOutputRoot, "Feature 2 managed output root");
   const workbookName = safeName(path.basename(workbookPath, path.extname(workbookPath)));
   if (!workbookName) throw new Error("Feature 2 workbook output name is empty.");
@@ -193,11 +238,6 @@ function createLayout(managedOutputRoot: string, workbookPath: string, now: () =
     validationRoot: path.join(runRoot, "validation"),
     manifestPath: path.join(runRoot, "manifest.json"),
   };
-}
-
-function isWithinOrEqual(parentPath: string, childPath: string): boolean {
-  const relative = path.relative(parentPath, childPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function pathChain(value: string): string[] {
@@ -477,7 +517,7 @@ function runStage(
   context: RunContext,
   manifest: WorkflowManifest,
   manifestPath: string,
-  validationRoot: string,
+  logRoot: string,
   stage: string,
   args: readonly string[],
   outputVariable: "AI_TVA_F1_OUTPUT_ROOT" | "AI_TVA_F2_OUTPUT_ROOT",
@@ -487,6 +527,7 @@ function runStage(
 ): void {
   const featureId = stage === "f1-selection" || stage === "f1" ? "F1" : "F2";
   throwIfAborted(context, stage);
+  mkdirSync(logRoot, { recursive: true });
   setExecutionStatus(manifest, EXECUTION_STATUS.running, now, { preserveError: true });
   manifest.stages[stage] = { status: "running", startedAt: now().toISOString() };
   persistManifest(manifest, manifestPath, now);
@@ -499,16 +540,16 @@ function runStage(
       cwd: context.repositoryRoot,
       env: { ...process.env, [outputVariable]: outputRoot },
     }) ?? {};
-    writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
-    writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "completed", completedAt: now().toISOString() };
     persistManifest(manifest, manifestPath, now);
     context.emit({ kind: "stage_completed", featureId, stage, timestamp: now().toISOString() });
   } catch (error) {
     const details = errorDetails(error);
     const normalized = normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: [stage] });
-    writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), (error as ExecuteStageResult | undefined)?.stdout ?? "", "utf8");
-    writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), (error as ExecuteStageResult | undefined)?.stderr ?? details.message, "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stdout.log`), (error as ExecuteStageResult | undefined)?.stdout ?? "", "utf8");
+    writeFileSync(path.join(logRoot, `${stage}.stderr.log`), (error as ExecuteStageResult | undefined)?.stderr ?? details.message, "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "failed", failedAt: now().toISOString(), error: details };
     manifest.status = "failed";
     manifest.error = details;
@@ -534,7 +575,7 @@ export function runF1F2Selection(
   const now = request.now ?? (() => new Date());
   try {
     const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
-    const layout = createLayout(context.managedOutputRoot, workbook, now);
+    const layout = createLayout(context.managedOutputRoot, workbook, now, request.analysisWorkspace);
     mkdirSync(layout.validationRoot, { recursive: true });
     ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
     const manifest = initialManifest(context.repositoryRoot, workbook, layout, undefined);
@@ -543,9 +584,10 @@ export function runF1F2Selection(
       context,
       manifest,
       layout.manifestPath,
-      layout.validationRoot,
+      stageLogRoot(layout, "f1-selection"),
       "f1-selection",
-      ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only"],
+      ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only",
+        ...(request.analysisWorkspace ? ["--analysis-root", request.analysisWorkspace.analysisRoot] : [])],
       "AI_TVA_F1_OUTPUT_ROOT",
       layout.f1Root,
       executeStage,
@@ -553,6 +595,9 @@ export function runF1F2Selection(
     );
     const generatedPromptPath = path.join(layout.f1Root, "Feature1-Selection.json");
     const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(generatedPromptPath, "utf8")));
+    if (request.analysisWorkspace) {
+      assertAnalysisWorkspaceWorkbookIdentity(request.analysisWorkspace, path.basename(workbook), prompt.workbook.contentHash);
+    }
     const promptPath = path.join(layout.validationRoot, "Feature1-Selection.json");
     writeFileSync(promptPath, `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
     manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };
@@ -613,6 +658,26 @@ export function runF1F2Confirmed(
       validationRoot: manifest.outputs.validationRoot,
       manifestPath: path.resolve(manifest.runRoot, "manifest.json"),
     };
+    if (request.analysisWorkspace && (layout.runRoot !== request.analysisWorkspace.analysisRoot
+      || layout.f1Root !== request.analysisWorkspace.stagePaths.f1
+      || layout.f2Root !== request.analysisWorkspace.stagePaths.f2 || request.refreshF2)) {
+      throw new Error("Feature 2 selection workspace identity mismatch.");
+    }
+    const workspaceArgs = usesWorkspaceStageSeparation(layout)
+      && (request.analysisWorkspace !== undefined || existsSync(path.join(layout.runRoot, "analysis-run-summary.json")))
+      ? ["--analysis-root", layout.runRoot] : [];
+    const summaryPath = path.join(layout.runRoot, "analysis-run-summary.json");
+    if (workspaceArgs.length > 0 && existsSync(summaryPath)) {
+      ensureContainedPhysicalPath(layout.runRoot, summaryPath, "Analysis workspace summary", "file");
+      const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as AnalysisWorkspaceSummary;
+      validateAnalysisWorkspaceSummary(summary);
+      if (summary.analysisRoot !== layout.runRoot || !["f1", "f2"].includes(summary.currentStage)
+        || summary.workbook.fileName !== path.basename(workbook)
+        || summary.workbook.contentHash !== confirmation.workbookContentHash) {
+        throw new Error("Feature 2 workspace cannot resume.");
+      }
+      recordAnalysisStageStarted(summary, summary.currentStage);
+    }
     if (request.refreshF2 === true && (executionStatus(manifest) === EXECUTION_STATUS.completed || manifest.status === "completed")) {
       const startedAt = now().toISOString();
       const runId = `${startedAt.replace(/[:.]/g, "-")}-f2-refresh`;
@@ -678,7 +743,7 @@ export function runF1F2Confirmed(
         context,
         manifest,
         layout.manifestPath,
-        layout.validationRoot,
+        stageLogRoot(layout, "f1"),
         "f1",
         [
           "scripts/run-f1-full-validation.mjs",
@@ -688,6 +753,7 @@ export function runF1F2Confirmed(
           "--worksheets",
           confirmation.selectedWorksheetNames.join(","),
           "--confirm",
+          ...workspaceArgs,
         ],
         "AI_TVA_F1_OUTPUT_ROOT",
         layout.f1Root,
@@ -705,9 +771,9 @@ export function runF1F2Confirmed(
         context,
         manifest,
         layout.manifestPath,
-        layout.validationRoot,
+        stageLogRoot(layout, "f2"),
         "f2",
-        ["scripts/run-f2-full-validation.mjs", layout.f1Root],
+        ["scripts/run-f2-full-validation.mjs", layout.f1Root, ...workspaceArgs],
         "AI_TVA_F2_OUTPUT_ROOT",
         layout.f2Root,
         executeStage,
@@ -720,7 +786,7 @@ export function runF1F2Confirmed(
     const reportPath = ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report");
     const report = parseCompletedReport(reportPath);
     const validation = { status: "valid", validatedAt: now().toISOString(), reportPath, reportStatus: report.status };
-    writeFileSync(path.join(layout.validationRoot, "Feature2-Validation.json"), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
+    writeFileSync(feature2ValidationPath(layout), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
     manifest.stages.validation = { ...manifest.stages.validation, status: "completed", completedAt: now().toISOString() };
     manifest.status = "completed";
     delete manifest.error;

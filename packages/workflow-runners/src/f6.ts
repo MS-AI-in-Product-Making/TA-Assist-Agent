@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
   closeSync,
+  readdirSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -32,6 +33,26 @@ interface F6Layout {
   readonly finalReportPdfName: string;
   readonly runSummaryJsonName: string;
   readonly manifestName: string;
+  readonly allowExistingRunRoot?: boolean;
+  readonly internalOnly?: true;
+  readonly workspaceBoundary?: {
+    readonly publishRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+    readonly runRootIdentity: {
+      readonly requestedPath: string;
+      readonly canonicalPath: string;
+      readonly requestedDev: unknown;
+      readonly requestedIno: unknown;
+      readonly canonicalDev: unknown;
+      readonly canonicalIno: unknown;
+    };
+  };
 }
 
 export interface F6Dependencies {
@@ -51,6 +72,7 @@ export interface F6Dependencies {
   readonly rename?: typeof renameSync;
   readonly beforeRename?: (info: { temporaryPath: string; filePath: string }) => void;
   readonly afterRename?: (info: { temporaryPath: string; filePath: string }) => void;
+  readonly readdir?: typeof readdirSync;
   readonly rmdir?: typeof rmdirSync;
   readonly rm?: typeof rmSync;
 }
@@ -82,6 +104,66 @@ function sameIdentity(expected: { dev: unknown; ino: unknown }, actual: { dev: u
   return !identityAvailable(expected) || (identityAvailable(actual) && expected.dev === actual.dev && expected.ino === actual.ino);
 }
 
+function captureDirectoryIdentity(
+  targetPath: string,
+  dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>,
+) {
+  const requestedPath = path.resolve(targetPath);
+  const requestedStats = dependencies.lstat(requestedPath);
+  if (!requestedStats.isDirectory()) {
+    throw new Error("Feature 6 workspace root identity is invalid.");
+  }
+  const canonicalPath = dependencies.realpath(requestedPath);
+  const canonicalStats = dependencies.stat(canonicalPath);
+  if (!canonicalStats.isDirectory()) {
+    throw new Error("Feature 6 workspace root identity is invalid.");
+  }
+  return {
+    requestedPath,
+    canonicalPath,
+    requestedDev: requestedStats.dev,
+    requestedIno: requestedStats.ino,
+    canonicalDev: canonicalStats.dev,
+    canonicalIno: canonicalStats.ino,
+  };
+}
+
+function samePinnedIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  actual: ReturnType<typeof captureDirectoryIdentity>,
+): boolean {
+  return expected.requestedPath === actual.requestedPath
+    && expected.canonicalPath === actual.canonicalPath
+    && expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno;
+}
+
+function assertPinnedDirectoryIdentity(
+  expected: {
+    readonly requestedPath: string;
+    readonly canonicalPath: string;
+    readonly requestedDev: unknown;
+    readonly requestedIno: unknown;
+    readonly canonicalDev: unknown;
+    readonly canonicalIno: unknown;
+  },
+  dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>,
+): void {
+  const actual = captureDirectoryIdentity(expected.requestedPath, dependencies);
+  if (!samePinnedIdentity(expected, actual)) {
+    throw new Error("Feature 6 workspace root changed after validation.");
+  }
+}
+
 function captureBoundary(layout: F6Layout, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat" | "rmdir">>) {
   const realPublishRoot = dependencies.realpath(path.resolve(layout.publishRoot));
   const realRunRoot = dependencies.realpath(path.resolve(layout.runRoot));
@@ -98,15 +180,21 @@ function captureBoundary(layout: F6Layout, dependencies: Required<Pick<F6Depende
   };
 }
 
-function assertPublishBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat">>): void {
+function assertPublishBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>): void {
+  if (boundary.layout.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(boundary.layout.workspaceBoundary.publishRootIdentity, dependencies);
+  }
   const realPublishRoot = dependencies.realpath(path.resolve(boundary.layout.publishRoot));
   if (realPublishRoot !== boundary.realPublishRoot || !sameIdentity(boundary.publishIdentity, identity(realPublishRoot, dependencies))) {
     throw new Error("Feature 6 publish root changed after creation.");
   }
 }
 
-function assertBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "realpath" | "stat">>): void {
+function assertBoundary(boundary: ReturnType<typeof captureBoundary>, dependencies: Required<Pick<F6Dependencies, "lstat" | "realpath" | "stat">>): void {
   assertPublishBoundary(boundary, dependencies);
+  if (boundary.layout.workspaceBoundary) {
+    assertPinnedDirectoryIdentity(boundary.layout.workspaceBoundary.runRootIdentity, dependencies);
+  }
   const realPublishRoot = boundary.realPublishRoot;
   const realRunRoot = dependencies.realpath(path.resolve(boundary.layout.runRoot));
   if (!isContained(realPublishRoot, realRunRoot)
@@ -241,6 +329,26 @@ function outputPaths(layout: F6Layout) {
   };
 }
 
+function assertWorkspaceStageReady(
+  layout: F6Layout,
+  dependencies: Required<Pick<F6Dependencies, "readdir" | "lstat">>,
+): void {
+  if (!layout.allowExistingRunRoot) return;
+  const entries = dependencies.readdir(layout.runRoot, { withFileTypes: true });
+  const hasOnlySemanticEvidence = entries.length === 1
+    && entries[0]?.name === "evidence"
+    && entries[0].isDirectory()
+    && !dependencies.lstat(path.join(layout.runRoot, entries[0].name)).isSymbolicLink();
+  if (entries.length === 0 || hasOnlySemanticEvidence) return;
+  throw createTypedError({
+    code: "prerequisite_not_ready",
+    summary: "Workspace stage already contains published artifacts.",
+    suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+    affectedInputReferences: [layout.runRoot],
+    details: { reasonCode: "workspace_stage_not_empty" },
+  });
+}
+
 function generatedAtFromRunId(runId: string): string {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/.exec(String(runId));
   if (match === null) return String(runId);
@@ -261,6 +369,7 @@ function manifest(layout: F6Layout, status: string, artifacts: Record<string, st
     artifactSetVersion: layout.artifactSetVersion,
     featureId: "F6",
     status,
+    ...(layout.internalOnly === true ? { internalOnly: true } : {}),
     runId: layout.runId,
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(inputDecisions === undefined ? {} : { inputDecisions }),
@@ -284,14 +393,24 @@ function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationR
   if (code !== "pdf_artifact_invalid" && code !== "pdf_render_unavailable") return { code: "pdf_render_failed" };
   if (!("attempts" in error) || !Array.isArray((error as { attempts?: unknown }).attempts)) return { code };
 
-  const attempts: Array<{ browser: string; reason: "execution_failed" | "invalid_pdf" }> = [];
+  const attempts: Array<NonNullable<NonNullable<F6OptimizationResult["failureDetail"]>["attempts"]>[number]> = [];
   for (const attempt of (error as { attempts: unknown[] }).attempts) {
     if (typeof attempt !== "object" || attempt === null) continue;
     const browser = "browser" in attempt ? attempt.browser : undefined;
     const reason = "reason" in attempt ? attempt.reason : undefined;
     if (typeof browser !== "string" || browser.length === 0
-      || (reason !== "execution_failed" && reason !== "invalid_pdf")) continue;
-    attempts.push({ browser: path.basename(browser), reason });
+      || (reason !== "execution_failed" && reason !== "invalid_pdf" && reason !== "timed_out" && reason !== "cleanup_failed")) continue;
+    const name = path.basename(browser).toLowerCase();
+    const strategy = "strategy" in attempt ? attempt.strategy : undefined;
+    const elapsedMs = "elapsedMs" in attempt ? attempt.elapsedMs : undefined;
+    const deadlineMs = "deadlineMs" in attempt ? attempt.deadlineMs : undefined;
+    attempts.push({
+      browser: ["chrome.exe", "msedge.exe", "edge.exe"].includes(name) ? name : "chromium",
+      reason,
+      ...(strategy === "playwright" || strategy === "cli" ? { strategy } : {}),
+      ...(typeof elapsedMs === "number" && Number.isFinite(elapsedMs) && elapsedMs >= 0 ? { elapsedMs } : {}),
+      ...(typeof deadlineMs === "number" && Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 600_000 ? { deadlineMs } : {}),
+    });
   }
   return attempts.length === 0 ? { code } : { code, attempts };
 }
@@ -374,6 +493,7 @@ export function runF6Optimization(
   const rename = dependencies.rename ?? renameSync;
   const beforeRename = dependencies.beforeRename ?? (() => {});
   const afterRename = dependencies.afterRename ?? (() => {});
+  const readdir = dependencies.readdir ?? readdirSync;
   const rmdir = dependencies.rmdir ?? rmdirSync;
   const rm = dependencies.rm ?? rmSync;
   if (!resolveOutputLayout || !loadBundle || !createFinalReport) {
@@ -392,8 +512,9 @@ export function runF6Optimization(
     const layout = resolveOutputLayout(request, context);
     const paths = outputPaths(layout);
     mkdir(path.dirname(layout.runRoot), { recursive: true });
-    mkdir(layout.runRoot);
+    if (!layout.allowExistingRunRoot) mkdir(layout.runRoot);
     boundary = captureBoundary(layout, { realpath, stat, rmdir });
+    assertWorkspaceStageReady(layout, { readdir, lstat });
     staging = captureStagingBoundary(boundary, { realpath, stat, lstat, mkdir, randomUUID: randomUuid });
     artifacts = {};
     failureStage = "input";
@@ -552,6 +673,9 @@ export function runF6Optimization(
       } finally {
         cleanupStaging(boundary, staging, { realpath, stat, lstat, rmdir, rm });
       }
+    }
+    if (error instanceof Error && "code" in error && (error as any).code === "prerequisite_not_ready") {
+      throw error;
     }
     throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f6"] });
   } finally {

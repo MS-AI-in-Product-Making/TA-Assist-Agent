@@ -308,6 +308,84 @@ function validatedGovernedRoot(artifactRoot, artifactReference, publishRoot = CO
   }
 }
 
+function captureDirectoryIdentity(targetPath, artifactReference) {
+  try {
+    const requestedPath = path.resolve(targetPath);
+    const requestedStats = lstatSync(requestedPath);
+    if (!requestedStats.isDirectory() || requestedStats.isSymbolicLink()) {
+      return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    }
+    const canonicalPath = realpathSync(requestedPath);
+    const canonicalStats = statSync(canonicalPath);
+    if (!canonicalStats.isDirectory()) {
+      return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    }
+    return {
+      requestedPath,
+      canonicalPath,
+      requestedDev: requestedStats.dev,
+      requestedIno: requestedStats.ino,
+      canonicalDev: canonicalStats.dev,
+      canonicalIno: canonicalStats.ino,
+    };
+  } catch (error) {
+    return { rejection: inputRejected(ioReason(error), artifactReference) };
+  }
+}
+
+function captureFileIdentity(targetPath, artifactReference) {
+  try {
+    const requestedPath = path.resolve(targetPath);
+    const requestedStats = lstatSync(requestedPath);
+    if (!requestedStats.isFile() || requestedStats.isSymbolicLink()) {
+      return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    }
+    const canonicalPath = realpathSync(requestedPath);
+    const canonicalStats = statSync(canonicalPath);
+    if (!canonicalStats.isFile()) {
+      return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    }
+    return {
+      requestedPath,
+      canonicalPath,
+      requestedDev: requestedStats.dev,
+      requestedIno: requestedStats.ino,
+      canonicalDev: canonicalStats.dev,
+      canonicalIno: canonicalStats.ino,
+    };
+  } catch (error) {
+    return { rejection: inputRejected(ioReason(error), artifactReference) };
+  }
+}
+
+function samePinnedIdentity(expected, actual) {
+  return expected.requestedPath === actual.requestedPath
+    && expected.canonicalPath === actual.canonicalPath
+    && expected.requestedDev === actual.requestedDev
+    && expected.requestedIno === actual.requestedIno
+    && expected.canonicalDev === actual.canonicalDev
+    && expected.canonicalIno === actual.canonicalIno;
+}
+
+function resolveWorkspaceAuthoritativeModelInterpretation(analysisRoot, artifactReference) {
+  try {
+    const resolvedRoot = path.resolve(analysisRoot);
+    const rootIdentity = captureDirectoryIdentity(resolvedRoot, artifactReference);
+    if (rootIdentity.rejection) return rootIdentity;
+    const stageIdentity = captureDirectoryIdentity(path.join(rootIdentity.requestedPath, "06 - F6 Design Optimization"), artifactReference);
+    if (stageIdentity.rejection) return stageIdentity;
+    const authoritativeRoot = path.join(stageIdentity.requestedPath, "evidence", "model-interpretation");
+    const authoritativePath = path.join(authoritativeRoot, "Feature6-Model-Interpretation.json");
+    return {
+      authoritativeRoot,
+      authoritativeArtifact: "Feature6-Model-Interpretation.json",
+      authoritativePath,
+    };
+  } catch (error) {
+    return { rejection: inputRejected(ioReason(error), artifactReference) };
+  }
+}
+
 function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks, options = {}) {
   const artifactReference = path.basename(String(relativePath)) || "artifact.json";
   if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
@@ -505,6 +583,7 @@ export function loadF6ArtifactBundle({
   optimizationTargetsArtifact,
   modelInterpretationArtifactRoot,
   modelInterpretationArtifact,
+  analysisRoot,
   expectedModelInterpretationContentHash,
   requireMultimodalV3 = false,
 }, hooks) {
@@ -566,14 +645,32 @@ export function loadF6ArtifactBundle({
   let requiredCompletedMultimodalWorksheets = [];
   let requiredFailedMultimodalWorksheets = [];
   if (requireMultimodalV3 === true) {
-    if (typeof modelInterpretationArtifactRoot !== "string"
-      || typeof modelInterpretationArtifact !== "string"
+    let authoritativeWorkspaceModel;
+    let requiredModelInterpretationArtifactRoot = modelInterpretationArtifactRoot;
+    let requiredModelInterpretationArtifact = modelInterpretationArtifact;
+    if (typeof analysisRoot === "string") {
+      authoritativeWorkspaceModel = resolveWorkspaceAuthoritativeModelInterpretation(analysisRoot, "modelInterpretationArtifact");
+      if (authoritativeWorkspaceModel.rejection) return authoritativeWorkspaceModel.rejection;
+      const suppliedPath = typeof modelInterpretationArtifactRoot === "string" && typeof modelInterpretationArtifact === "string"
+        ? captureFileIdentity(path.join(modelInterpretationArtifactRoot, modelInterpretationArtifact), "modelInterpretationArtifact")
+        : undefined;
+      const authoritativePath = captureFileIdentity(authoritativeWorkspaceModel.authoritativePath, "modelInterpretationArtifact");
+      if (authoritativePath.rejection) return authoritativePath.rejection;
+      if (suppliedPath?.rejection) return suppliedPath.rejection;
+      if (suppliedPath !== undefined && !samePinnedIdentity(authoritativePath, suppliedPath)) {
+        return inputRejected("artifact_identity_mismatch", "modelInterpretationArtifact");
+      }
+      requiredModelInterpretationArtifactRoot = authoritativeWorkspaceModel.authoritativeRoot;
+      requiredModelInterpretationArtifact = authoritativeWorkspaceModel.authoritativeArtifact;
+    }
+    if (typeof requiredModelInterpretationArtifactRoot !== "string"
+      || typeof requiredModelInterpretationArtifact !== "string"
       || typeof expectedModelInterpretationContentHash !== "string") {
       return inputRejected("model_interpretation_required", "modelInterpretationArtifact");
     }
-    const validatedModelRoot = validatedGovernedRoot(modelInterpretationArtifactRoot, "modelInterpretationArtifactRoot", publishRoot);
+    const validatedModelRoot = validatedGovernedRoot(requiredModelInterpretationArtifactRoot, "modelInterpretationArtifactRoot", publishRoot);
     if (validatedModelRoot.rejection) return validatedModelRoot.rejection;
-    const loadedModel = readOptionalArtifact(validatedModelRoot.filePath, modelInterpretationArtifact, requiredMultimodalArtifactSchema, hooks);
+    const loadedModel = readOptionalArtifact(validatedModelRoot.filePath, requiredModelInterpretationArtifact, requiredMultimodalArtifactSchema, hooks);
     if (loadedModel.rejection) return loadedModel.rejection;
     const isMixedV4 = loadedModel.value.contractVersion === "f5-multimodal-artifact-v4";
     const completedMultimodalWorksheets = isMixedV4

@@ -242,7 +242,7 @@ describe("runF6Optimization", () => {
       selectedWorksheetNames: ["Analysis-A"],
       analysisRequestContext: REQUEST_CONTEXT,
       expectedAnalysisContextContentHash: "a".repeat(64),
-    } as any, context(), {
+    } as Parameters<typeof runF6Optimization>[0], context(), {
       resolveOutputLayout: vi.fn(() => ({
         runId: "2026-08-24T01-02-03-000Z",
         runRoot,
@@ -341,7 +341,7 @@ describe("runF6Optimization", () => {
       analysisRequestContext: REQUEST_CONTEXT,
       modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
       expectedModelInterpretationContentHash: HASH,
-    } as any, context(), {
+    } as Parameters<typeof runF6Optimization>[0], context(), {
       resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", finalReportPdfName: "Feature6-Report.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
       loadBundle: vi.fn(() => ({ status: "accepted", request: { analysisRequestContext: REQUEST_CONTEXT }, f2Report: { artifactRoot: "f1" }, modelInterpretation: { contractVersion: "f5-multimodal-artifact-v3" }, inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "multimodal.json", contentHash: HASH } } }, sourceReferences: {} })),
       createOptimization,
@@ -412,7 +412,7 @@ describe("runF6Optimization", () => {
         ...(analysisRequestContext === undefined ? {} : { analysisRequestContext }),
       });
 
-      const missingContextResult = runF6Optimization(requestBase as any, context(), {
+      const missingContextResult = runF6Optimization(requestBase as Parameters<typeof runF6Optimization>[0], context(), {
         resolveOutputLayout: vi.fn(() => ({
           artifactSetVersion: "f6-artifact-set-v3",
           runId: "2026-09-16T08-30-12-000Z",
@@ -438,7 +438,7 @@ describe("runF6Optimization", () => {
       const withContextResult = runF6Optimization({
         ...requestBase,
         analysisRequestContext: REQUEST_CONTEXT,
-      } as any, context(), {
+      } as Parameters<typeof runF6Optimization>[0], context(), {
         resolveOutputLayout: vi.fn(() => ({
           artifactSetVersion: "f6-artifact-set-v3",
           runId: "2026-09-16T08-30-13-000Z",

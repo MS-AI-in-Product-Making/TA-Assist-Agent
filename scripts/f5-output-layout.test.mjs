@@ -1,8 +1,57 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { resolveFeature5OutputLayout } from "./f5-output-layout.mjs";
+
+const cleanupRoots = [];
+
+function createAnalysisWorkspaceRoot() {
+  const analysisRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f5-layout-workspace-"));
+  cleanupRoots.push(analysisRoot);
+  const stagePaths = {
+    f1: path.join(analysisRoot, "01 - F1 Data Parsing"),
+    f2: path.join(analysisRoot, "02 - F2 Data Cleaning"),
+    f3: path.join(analysisRoot, "03 - F3 Drawing Governance"),
+    f4: path.join(analysisRoot, "04 - F4 Calculation Engine"),
+    f5: path.join(analysisRoot, "05 - F5 Result Interpretation"),
+    f6: path.join(analysisRoot, "06 - F6 Design Optimization"),
+  };
+  for (const stagePath of Object.values(stagePaths)) fs.mkdirSync(stagePath, { recursive: true });
+  fs.writeFileSync(path.join(stagePaths.f1, "Feature1-Report.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(stagePaths.f3, "Feature3-Report.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(stagePaths.f4, "Feature4-Calculation.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(analysisRoot, "analysis-run-summary.json"), JSON.stringify({
+    contractVersion: "analysis-workspace-v1",
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+    allocationDate: "20260921",
+    currentStage: "f1",
+    stageDirectories: {
+      f1: "01 - F1 Data Parsing",
+      f2: "02 - F2 Data Cleaning",
+      f3: "03 - F3 Drawing Governance",
+      f4: "04 - F4 Calculation Engine",
+      f5: "05 - F5 Result Interpretation",
+      f6: "06 - F6 Design Optimization",
+    },
+    stages: {
+      f1: { status: "pending", artifacts: {} },
+      f2: { status: "pending", artifacts: {} },
+      f3: { status: "pending", artifacts: {} },
+      f4: { status: "pending", artifacts: {} },
+      f5: { status: "pending", artifacts: {} },
+      f6: { status: "pending", artifacts: {} },
+    },
+    overallStatus: "in_progress",
+  }, null, 2));
+  return { analysisRoot, stagePaths };
+}
+
+afterEach(() => {
+  for (const root of cleanupRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
 
 describe("resolveFeature5OutputLayout", () => {
   const fixedNow = () => new Date("2026-08-11T12:34:56.789Z");
@@ -14,6 +63,155 @@ describe("resolveFeature5OutputLayout", () => {
     imageObservationsPath: "notes/image observations.json",
   };
 
+  it("routes the canonical workspace F1/F3/F4 stage refs directly into the fixed F5 stage", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    expect(resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toMatchObject({
+      runId: "2026-08-11T12-34-56-789Z",
+      runRoot: stagePaths.f5,
+      publishRoot: analysisRoot,
+      reportJsonName: "Feature5-Report.json",
+      reportMdName: "Feature5-Report.md",
+      runSummaryJsonName: "Feature5-Run-Summary.json",
+      imageObservationsJsonName: "Feature5-Image-Observations.json",
+      manifestName: "manifest.json",
+      allowExistingRunRoot: true,
+      workspaceBoundary: {
+        publishRootIdentity: { canonicalPath: analysisRoot, requestedPath: analysisRoot },
+        runRootIdentity: { canonicalPath: stagePaths.f5, requestedPath: stagePaths.f5 },
+      },
+    });
+  });
+
+  it("rejects a symlink or junction analysis root alias in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const linkPath = path.join(path.dirname(analysisRoot), `${path.basename(analysisRoot)}-link`);
+    cleanupRoots.push(linkPath);
+    try {
+      fs.symlinkSync(analysisRoot, linkPath, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f1)),
+      f3ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f3)),
+      f4ArtifactRoot: path.join(linkPath, path.basename(stagePaths.f4)),
+      analysisRoot: linkPath,
+    }, undefined, fixedNow)).toThrow(/analysis workspace root|invalid|exact validated/i);
+  });
+
+  it("rejects a symlink or junction stage alias in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const stageAlias = path.join(analysisRoot, "f1-alias");
+    cleanupRoots.push(stageAlias);
+    try {
+      fs.symlinkSync(stagePaths.f1, stageAlias, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stageAlias,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toThrow(/exact validated F1 stage path|invalid/i);
+  });
+
+  it("rejects a symlinked workspace artifact file in workspace mode", ({ skip }) => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f5-layout-artifact-outside-"));
+    cleanupRoots.push(outsideRoot);
+    const targetFile = path.join(outsideRoot, "Feature1-Report.json");
+    fs.writeFileSync(targetFile, "{}\n", "utf8");
+    fs.rmSync(path.join(stagePaths.f1, "Feature1-Report.json"), { force: true });
+    try {
+      fs.symlinkSync(targetFile, path.join(stagePaths.f1, "Feature1-Report.json"), "file");
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES" || error?.code === "UNKNOWN") {
+        skip();
+        return;
+      }
+      throw error;
+    }
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toThrow(/Feature 5 F1 artifact|exact validated F1 stage path|invalid/i);
+  });
+
+  it("does not treat lookalike stage names as a validated workspace", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const lookalikeStagePaths = {
+      f1: path.join("test", "demo-output", "lookalike", "01 - F1 Data Parsing"),
+      f3: path.join("test", "demo-output", "lookalike", "03 - F3 Drawing Governance"),
+      f4: path.join("test", "demo-output", "lookalike", "04 - F4 Calculation Engine"),
+    };
+
+    expect(resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: lookalikeStagePaths.f1,
+      f3ArtifactRoot: lookalikeStagePaths.f3,
+      f4ArtifactRoot: lookalikeStagePaths.f4,
+    }, undefined, fixedNow).runRoot).toBe("test/demo-output/f5-runs/04---F4-Calculation-Engine/2026-08-11T12-34-56-789Z");
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: lookalikeStagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow)).toThrow(/validated F1 stage path.*missing|exact validated F1 stage path/i);
+  });
+
+  it("rejects a workspace root whose canonical identity changes during validation", () => {
+    const { analysisRoot, stagePaths } = createAnalysisWorkspaceRoot();
+    const changedRoot = path.join(path.dirname(analysisRoot), "retargeted-root");
+    let realpathCallCount = 0;
+
+    expect(() => resolveFeature5OutputLayout({
+      ...parsed,
+      f1ArtifactRoot: stagePaths.f1,
+      f3ArtifactRoot: stagePaths.f3,
+      f4ArtifactRoot: stagePaths.f4,
+      analysisRoot,
+    }, undefined, fixedNow, undefined, {
+      realpathSync(targetPath) {
+        if (path.resolve(targetPath) === path.resolve(analysisRoot)) {
+          realpathCallCount += 1;
+          return realpathCallCount === 1 ? path.resolve(analysisRoot) : changedRoot;
+        }
+        return fs.realpathSync(targetPath);
+      },
+      statSync(targetPath) {
+        if (path.resolve(targetPath) === path.resolve(changedRoot)) {
+          return fs.statSync(analysisRoot);
+        }
+        return fs.statSync(targetPath);
+      },
+    })).toThrow(/changed during allocation|changed during validation|analysis workspace root/i);
+  });
+
   it("builds the deterministic default layout and controlled publish root", () => {
     expect(resolveFeature5OutputLayout(parsed, undefined, fixedNow)).toEqual({
       runId: "2026-08-11T12-34-56-789Z",
@@ -24,6 +222,7 @@ describe("resolveFeature5OutputLayout", () => {
       runSummaryJsonName: "Feature5-Run-Summary.json",
       imageObservationsJsonName: "Feature5-Image-Observations.json",
       manifestName: "manifest.json",
+      allowExistingRunRoot: false,
     });
   });
 
@@ -49,6 +248,7 @@ describe("resolveFeature5OutputLayout", () => {
 
       expect(layout.publishRoot).toBe(publishRoot);
       expect(layout.runRoot).toBe(path.join(outputRoot, "2026-08-11T12-34-56-789Z"));
+      expect(layout.allowExistingRunRoot).toBe(false);
     } finally {
       fs.rmSync(publishRoot, { recursive: true, force: true });
     }
@@ -59,6 +259,7 @@ describe("resolveFeature5OutputLayout", () => {
 
     expect(layout.publishRoot).toBe("test/demo-output");
     expect(layout.runRoot).toBe("test/demo-output/custom f5/2026-08-11T12-34-56-789Z");
+    expect(layout.allowExistingRunRoot).toBe(false);
   });
 
   it("rejects unsafe output root override segments", () => {

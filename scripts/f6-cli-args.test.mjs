@@ -19,6 +19,12 @@ const INTERACTION_LANGUAGE = {
 };
 
 describe("parseF6CliArgs", () => {
+  it("accepts an explicit candidate flag only once and only for a workspace", () => {
+    const args = [...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"];
+    expect(parseF6CliArgs([...args, "--analysis-root", "canonical-root", "--candidate"]).candidate).toBe(true);
+    expect(() => parseF6CliArgs([...args, ...MODEL_ARGS, "--candidate"])).toThrow(/requires --analysis-root/);
+    expect(() => parseF6CliArgs([...args, "--analysis-root", "canonical-root", "--candidate", "--candidate"])).toThrow(/duplicated/);
+  });
   it("parses four roots, worksheet selection, and governed evidence options", () => {
     expect(parseF6CliArgs([
       ...ROOTS,
@@ -32,6 +38,7 @@ describe("parseF6CliArgs", () => {
       "--analysis-context", "evidence/context.json",
       "--optimization-targets", "evidence/targets.json",
       "--model-interpretation", "model/run-id/Feature6-Model-Interpretation.json",
+      "--analysis-root", "test/20260921 - Demo",
       ...REQUEST_CONTEXT_ARGS,
     ])).toEqual({
       f2ArtifactRoot: "f2 run",
@@ -39,6 +46,7 @@ describe("parseF6CliArgs", () => {
       f4ArtifactRoot: "f4 run",
       f5ArtifactRoot: "f5 run",
       analysisRequestContext: REQUEST_CONTEXT,
+      analysisRoot: "test/20260921 - Demo",
       interactionLanguage: INTERACTION_LANGUAGE,
       selectedWorksheetNames: ["Analysis-A", "Analysis B"],
       supplierCapabilityArtifact: "evidence/supplier.json",
@@ -58,6 +66,7 @@ describe("parseF6CliArgs", () => {
       f4ArtifactRoot: ROOTS[2],
       f5ArtifactRoot: ROOTS[3],
       analysisRequestContext: REQUEST_CONTEXT,
+      analysisRoot: undefined,
       interactionLanguage: INTERACTION_LANGUAGE,
       selectedWorksheetNames: ["Analysis-A"],
       supplierCapabilityArtifact: undefined,
@@ -82,6 +91,20 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...REQUEST_CONTEXT_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--model-interpretation/i);
   });
 
+  it("allows workspace mode to omit model interpretation because the authoritative stage6 path is derived", () => {
+    expect(parseF6CliArgs([
+      ...ROOTS,
+      ...LANGUAGE_ARGS,
+      "--analysis-root", "test/20260921 - Demo",
+      "--worksheet", "Analysis-A",
+      ...REQUEST_CONTEXT_ARGS,
+    ])).toMatchObject({
+      analysisRoot: "test/20260921 - Demo",
+      modelInterpretationArtifact: undefined,
+      selectedWorksheetNames: ["Analysis-A"],
+    });
+  });
+
   it("rejects a worksheet selection without governed request context", () => {
     expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, ...MODEL_ARGS, "--worksheet", "Analysis-A"])).toThrow(/--analysis-request-context/i);
   });
@@ -97,7 +120,7 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, "extra"])).toThrow(/unexpected argument/i);
   });
 
-  it.each(["--worksheet", "--language", "--analysis-request-context", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
+  it.each(["--worksheet", "--language", "--analysis-root", "--analysis-request-context", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
     "rejects a missing value for %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, option])).toThrow(/requires|duplicate/i),
   );
@@ -107,7 +130,7 @@ describe("parseF6CliArgs", () => {
       .toThrow(/duplicate/i);
   });
 
-  it.each(["--language", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
+  it.each(["--language", "--analysis-root", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
     "rejects duplicate singleton option %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, ...LANGUAGE_ARGS, option, "a.json", option, "b.json"]))
       .toThrow(/duplicate/i),

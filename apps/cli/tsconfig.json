@@ -12,7 +12,7 @@
     { "path": "../../packages/memory" },
     { "path": "../../packages/governance" },
     { "path": "../../packages/orchestrator" },
-    { "path": "../workbench-server" }
+    { "path": "../../packages/workflow-runners" }
   ],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]

@@ -63,6 +63,8 @@ For current v3 publication, read the complete validated F3 `relativePath/content
 11. Run workflow:f3 only after the worksheet selection call returns at least one selection.
 12. Pass every selected name with the repository-verified repeatable `--worksheet <worksheet-name>` flag. Never offer blocked or unknown worksheets.
 13. An existing accepted Feature 3 artifact does not rerun analysis and therefore skips both workbook selection calls.
+14. For the current workbook flow, reuse the canonical analysis root and write governed outputs directly into `03 - F3 Drawing Governance`. Do not create or fall back to legacy `feature3-output` write roots.
+15. Consume the exact cleaning-stage artifact reference from `02 - F2 Data Cleaning` and preserve workbook-hash, worksheet-identity, ADO reminder/receipt, and atomic-publication checks.
 
 ## Phase 2 - Publish mode gate
 

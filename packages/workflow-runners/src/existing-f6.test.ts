@@ -1,10 +1,19 @@
 import path from "node:path";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { createF6OptimizationV4 } from "@ai-assist/workbook-catalog";
 
 import { validateExistingF6 } from "./index.js";
+import {
+  ANALYSIS_STAGE_DIRS,
+  ANALYSIS_WORKSPACE_VERSION,
+  createInitialAnalysisWorkspaceSummary,
+  recordAnalysisStageCompleted,
+  recordAnalysisStageStarted,
+  resolveAnalysisWorkspaceStagePaths,
+  writeAnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
@@ -38,6 +47,69 @@ function syncSummaryCounts(runRoot: string, optimization: { readonly summary: un
   const summary = readJson(summaryPath);
   summary.counts = optimization.summary;
   writeJson(summaryPath, summary);
+}
+
+function writeWorkspaceSummary(analysisRoot: string, runRoot: string, workbook: { fileName: string; contentHash: string }): void {
+  for (const [stage, directoryName] of Object.entries(ANALYSIS_STAGE_DIRS)) {
+    const stagePath = path.join(analysisRoot, directoryName);
+    mkdirSync(stagePath, { recursive: true });
+    if (stage !== "f6") writeFileSync(path.join(stagePath, `${stage}-evidence.json`), "{}\n", "utf8");
+  }
+  const layout = {
+    contractVersion: ANALYSIS_WORKSPACE_VERSION,
+    analysisRoot,
+    summaryPath: path.join(analysisRoot, "analysis-run-summary.json"),
+    workbookFileName: workbook.fileName,
+    workbookContentHash: workbook.contentHash,
+    allocationDate: "20260921",
+    stagePaths: resolveAnalysisWorkspaceStagePaths(analysisRoot),
+  } as const;
+  let summary = createInitialAnalysisWorkspaceSummary(layout);
+  for (const stage of ["f1", "f2", "f3", "f4", "f5"] as const) {
+    summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, stage), stage, {
+      evidence: path.relative(analysisRoot, path.join(analysisRoot, ANALYSIS_STAGE_DIRS[stage], `${stage}-evidence.json`)),
+    });
+  }
+  summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, "f6"), "f6", {
+    optimizationJsonPath: path.relative(analysisRoot, path.join(runRoot, "Feature6-Optimization.json")),
+    finalReportMarkdownPath: path.relative(analysisRoot, path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.md")),
+    finalReportPdfPath: path.relative(analysisRoot, path.join(runRoot, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf")),
+    runSummaryPath: path.relative(analysisRoot, path.join(runRoot, "Feature6-Run-Summary.json")),
+    manifestPath: path.relative(analysisRoot, path.join(runRoot, "manifest.json")),
+  });
+  writeAnalysisWorkspaceSummary(layout, summary);
+}
+
+function createWorkspacePublication() {
+  const bundle = createF6ArtifactBundleFixture();
+  installRequiredMultimodalV3(bundle);
+  cleanup.push(bundle.root);
+  const analysisRoot = path.join(bundle.root, "workspace-v1");
+  const runRoot = path.join(analysisRoot, ANALYSIS_STAGE_DIRS.f6);
+  const model = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+  const sourceRunRoot = path.join(bundle.publishRoot, "f6-runs", "workspace-v1-source");
+  const result = runF6FullValidation({}, {
+    parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: model }),
+    resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId: "workspace-v1-final", runRoot: sourceRunRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+    createOptimization: createF6OptimizationV4,
+    createFinalReport: () => createV4FinalReportStub(),
+    renderFinalReportPdf: () => PDF,
+  });
+  expect(result.status).toBe("completed");
+  mkdirSync(runRoot, { recursive: true });
+  for (const fileName of [
+    "Feature6-Optimization.json",
+    "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+    "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+    "Feature6-Run-Summary.json",
+    "manifest.json",
+  ]) copyFileSync(path.join(sourceRunRoot, fileName), path.join(runRoot, fileName));
+  const workspaceModelInterpretationPath = path.join(runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  mkdirSync(path.dirname(workspaceModelInterpretationPath), { recursive: true });
+  copyFileSync(model, workspaceModelInterpretationPath);
+  const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+  writeWorkspaceSummary(analysisRoot, runRoot, optimization.workbook);
+  return { bundle, analysisRoot, runRoot, workspaceModelInterpretationPath, optimization };
 }
 
 function createV4FinalReportStub() {
@@ -121,6 +193,58 @@ afterEach(() => {
 });
 
 describe("validateExistingF6", () => {
+  it("validates only the exact hash-bound model evidence tree in a workspace publication", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runRoot = path.join(bundle.publishRoot, "workspace-f6");
+    const model = path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: model }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId: "workspace-test", runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+    const workspaceModelInterpretationPath = path.join(runRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+    mkdirSync(path.dirname(workspaceModelInterpretationPath), { recursive: true });
+    copyFileSync(model, workspaceModelInterpretationPath);
+    const request = { publishRoot: bundle.publishRoot, workspaceModelInterpretationPath };
+    expect(validateExistingF6(runRoot, request).status).toBe("accepted");
+    const responseRoot = path.join(runRoot, "evidence", "model-response");
+    mkdirSync(responseRoot);
+    const responsePath = path.join(responseRoot, "Feature6-Model-Response.json");
+    writeJson(responsePath, { contractVersion: "f6-model-interpretation-response-v1" });
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    const interpretation = readJson(model);
+    const response = {
+      contractVersion: "f6-model-interpretation-response-v1",
+      model: interpretation.worksheets[0].result.model,
+      worksheets: interpretation.worksheets.map(({ result }: { result: { worksheetName: string; imageTableInterpretation: string; rowMappings: Array<{ sourceRow: number; visibleStatus: string; interpretation: string }> } }) => ({
+        worksheetName: result.worksheetName,
+        imageTableInterpretation: result.imageTableInterpretation,
+        rows: result.rowMappings.map(({ sourceRow, visibleStatus, interpretation }) => ({ sourceRow, visibleStatus, interpretation })),
+      })),
+    };
+    writeJson(responsePath, response);
+    expect(validateExistingF6(runRoot, request).status).toBe("accepted");
+    for (const mismatch of [
+      { ...response, model: { ...response.model, modelId: "different-model" } },
+      { ...response, worksheets: [{ ...response.worksheets[0], worksheetName: "wrong-sheet" }] },
+      { ...response, worksheets: [{ ...response.worksheets[0], imageTableInterpretation: "different interpretation" }] },
+    ]) {
+      writeJson(responsePath, mismatch);
+      expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    }
+    writeJson(responsePath, response);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot }).status).toBe("rejected");
+    writeFileSync(path.join(runRoot, "evidence", "unrelated.txt"), "debris");
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+    rmSync(path.join(runRoot, "evidence", "unrelated.txt"));
+    writeFileSync(workspaceModelInterpretationPath, "{}");
+    expect(validateExistingF6(runRoot, request).status).toBe("rejected");
+  });
+
   it("accepts a valid current v4 bundle with unchanged five-file publication", () => {
     const bundle = createF6ArtifactBundleFixture();
     installRequiredMultimodalV3(bundle);
@@ -142,6 +266,107 @@ describe("validateExistingF6", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v4");
     expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const summary = readJson(summaryPath);
+    summary.sources = Object.fromEntries(Object.entries(summary.sources).reverse());
+    writeJson(summaryPath, summary);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+  });
+
+  it("uses the workspace summary's exact stage6 final set instead of inferring workspace publications by shape", () => {
+    const { analysisRoot, runRoot, workspaceModelInterpretationPath } = createWorkspacePublication();
+
+    expect(validateExistingF6(runRoot, {
+      publishRoot: analysisRoot,
+      workspaceModelInterpretationPath,
+    })).toMatchObject({ status: "accepted", outputDirectory: runRoot });
+
+    const lookalikeRoot = path.join(analysisRoot, "lookalike-final");
+    mkdirSync(lookalikeRoot, { recursive: true });
+    for (const fileName of [
+      "Feature6-Optimization.json",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]) copyFileSync(path.join(runRoot, fileName), path.join(lookalikeRoot, fileName));
+    const lookalikeModelPath = path.join(lookalikeRoot, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+    mkdirSync(path.dirname(lookalikeModelPath), { recursive: true });
+    copyFileSync(workspaceModelInterpretationPath, lookalikeModelPath);
+
+    expect(validateExistingF6(lookalikeRoot, {
+      publishRoot: analysisRoot,
+      workspaceModelInterpretationPath: lookalikeModelPath,
+    })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it.each([
+    ["fileName", "Spoofed.xlsx"],
+    ["contentHash", "b".repeat(64)],
+  ])("rejects workspace summary workbook %s spoofing", (field, value) => {
+    const { analysisRoot, runRoot, workspaceModelInterpretationPath } = createWorkspacePublication();
+    const summaryPath = path.join(analysisRoot, "analysis-run-summary.json");
+    const summary = readJson(summaryPath);
+    summary.workbook[field] = value;
+    writeJson(summaryPath, summary);
+
+    expect(validateExistingF6(runRoot, {
+      publishRoot: analysisRoot,
+      workspaceModelInterpretationPath,
+    })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects a copied workspace summary from another workbook even when stage6 artifact refs still match", () => {
+    const primary = createWorkspacePublication();
+    const other = createWorkspacePublication();
+    writeWorkspaceSummary(other.analysisRoot, other.runRoot, {
+      fileName: "Other-Workspace.xlsx",
+      contentHash: "c".repeat(64),
+    });
+    const spoofedSummary = readJson(path.join(other.analysisRoot, "analysis-run-summary.json"));
+    spoofedSummary.analysisRoot = primary.analysisRoot;
+    spoofedSummary.summaryPath = path.join(primary.analysisRoot, "analysis-run-summary.json");
+    writeJson(path.join(primary.analysisRoot, "analysis-run-summary.json"), spoofedSummary);
+
+    expect(validateExistingF6(primary.runRoot, {
+      publishRoot: primary.analysisRoot,
+      workspaceModelInterpretationPath: primary.workspaceModelInterpretationPath,
+    })).toEqual({
+      status: "rejected",
+      reasonCode: "artifact_validation_failed",
+    });
+  });
+
+  it("rejects internal-only workspace candidates from the public reader", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    installRequiredMultimodalV3(bundle);
+    cleanup.push(bundle.root);
+    const runId = "2026-09-21T15-10-00-000Z";
+    const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+    const result = runF6FullValidation({}, {
+      parseArgs: () => ({ ...bundle, interactionLanguage, analysisRequestContext, modelInterpretationArtifact: path.join(bundle.modelInterpretationArtifactRoot, bundle.modelInterpretationArtifact) }),
+      resolveLayout: () => ({ artifactSetVersion: "f6-artifact-set-v4", runId, runRoot, publishRoot: bundle.publishRoot, optimizationJsonName: "Feature6-Optimization.json", finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md", finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" }),
+      createOptimization: createF6OptimizationV4,
+      createFinalReport: () => createV4FinalReportStub(),
+      renderFinalReportPdf: () => PDF,
+    });
+    expect(result.status).toBe("completed");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.internalOnly = true;
+    writeJson(manifestPath, manifest);
+
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toEqual({
+      status: "rejected",
+      reasonCode: "internal_candidate_not_final",
+    });
   });
 
   it("rejects v4 selected-result tampering even when optimization hash is recomputed", () => {

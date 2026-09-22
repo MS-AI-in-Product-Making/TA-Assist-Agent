@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile, spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -32,6 +33,12 @@ import {
 import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
+import { validateExistingF6Artifact } from "./verify-current-f6.mjs";
+import * as candidateLifecycle from "./f6-candidate.mjs";
+import {
+  allocateAnalysisWorkspace, createInitialAnalysisWorkspaceSummary, recordAnalysisStageCompleted,
+  recordAnalysisStageStarted, validateExistingF6, writeAnalysisWorkspaceSummary,
+} from "../packages/workflow-runners/dist/index.js";
 
 const execFileAsync = promisify(execFile);
 const cleanup = [];
@@ -209,6 +216,61 @@ function setup({ status = "completed" } = {}) {
   return { root, publishRoot, runRoot, optimization, finalReport, reportSummary, renameCalls, deps };
 }
 
+function workspaceSetup() {
+  const context = setup();
+  const workbookPath = path.join(context.root, "Anonymous.xlsx");
+  writeFileSync(workbookPath, "controlled source workbook");
+  const contentHash = sha256(readFileSync(workbookPath));
+  const layout = allocateAnalysisWorkspace({
+    testRoot: path.join(context.root, "analyses"), workbookFileName: "Anonymous.xlsx",
+    workbookContentHash: contentHash, now: new Date(),
+  });
+  let summary = createInitialAnalysisWorkspaceSummary(layout);
+  for (const stage of ["f1", "f2", "f3", "f4", "f5"]) {
+    const file = path.join(layout.stagePaths[stage], "fixture.json");
+    writeFileSync(file, "{}");
+    summary = recordAnalysisStageCompleted(recordAnalysisStageStarted(summary, stage), stage,
+      { fixture: path.relative(layout.analysisRoot, file).split(path.sep).join("/") });
+  }
+  writeAnalysisWorkspaceSummary(layout, summary);
+  writeFileSync(path.join(layout.stagePaths.f1, "Feature1-Report.json"), JSON.stringify({
+    workbooks: [{ workbookPath, workbook: summary.workbook }],
+  }));
+  for (const stage of ["f2", "f3", "f4", "f5"]) {
+    writeFileSync(path.join(layout.stagePaths[stage], stage === "f4" ? "Feature4-Calculation.json" : `Feature${stage[1]}-Report.json`),
+      JSON.stringify(stage === "f3" ? { ado: { status: "confirmation_required" } } : {}));
+  }
+  const modelPath = path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json");
+  mkdirSync(path.dirname(modelPath), { recursive: true });
+  writeFileSync(modelPath, '{"contractVersion":"controlled-loader-fixture"}');
+  const modelHash = sha256(readFileSync(modelPath));
+  const optimization = JSON.parse(JSON.stringify(context.optimization).replaceAll(HASH, contentHash));
+  optimization.provenance.multimodalReference = { artifact: "Feature6-Model-Interpretation.json", contentHash: modelHash };
+  const loaded = context.deps.loadBundle();
+  loaded.inputDecisions.modelInterpretation.artifactReference = optimization.provenance.multimodalReference;
+  loaded.sourceReferences = Object.fromEntries(["f2", "f3", "f4", "f5"].map((stage) => [stage, optimization.provenance[`${stage}Reference`]]));
+  loaded.sourceReferences.modelInterpretation = optimization.provenance.multimodalReference;
+  const parsed = {
+    ...context.deps.parseArgs(), analysisRoot: layout.analysisRoot,
+    f2ArtifactRoot: layout.stagePaths.f2, f3ArtifactRoot: layout.stagePaths.f3,
+    f4ArtifactRoot: layout.stagePaths.f4, f5ArtifactRoot: layout.stagePaths.f5,
+    modelInterpretationArtifact: modelPath, expectedModelInterpretationContentHash: modelHash,
+  };
+  const deps = {
+    ...context.deps,
+    parseArgs: () => parsed,
+    resolveLayout: () => ({
+      ...context.deps.resolveLayout(), runRoot: layout.stagePaths.f6, publishRoot: layout.analysisRoot,
+      artifactSetVersion: "f6-artifact-set-v4", allowExistingRunRoot: true,
+      finalReportMdName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.md",
+      finalReportPdfName: "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf",
+    }),
+    loadBundle: () => loaded,
+    createOptimization: () => optimization,
+  };
+  return { layout, deps, args: [layout.stagePaths.f2, layout.stagePaths.f3, layout.stagePaths.f4, layout.stagePaths.f5, "--analysis-root", layout.analysisRoot] };
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
@@ -311,6 +373,224 @@ function assertWorksheetLineageMatchesProvenance(optimization) {
 }
 
 describe("runF6FullValidation", () => {
+  it("persists an internal candidate receipt and neither public reader presents candidate reports", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    const publication = path.dirname(candidate.candidate.reportPdfPath);
+    const receiptPath = path.join(publication, "Feature6-Candidate-Receipt.json");
+    expect(existsSync(receiptPath)).toBe(true);
+    expect(readJson(receiptPath)).toMatchObject({ version: "f6-candidate-receipt-v1", internalOnly: true, status: "validated" });
+    expect(Object.keys(readJson(receiptPath).files)).toHaveLength(5);
+    expect(validateExistingF6(layout.stagePaths.f6, {
+      publishRoot: layout.analysisRoot,
+      workspaceModelInterpretationPath: path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+    }).status).toBe("rejected");
+    for (const reader of [validateExistingF6, validateExistingF6Artifact]) {
+      expect(reader(publication, { publishRoot: layout.analysisRoot })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+      expect(reader(path.join(publication, "Feature6-Optimization.json"), { publishRoot: publication })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+    }
+    const renamedCopy = path.join(path.dirname(layout.analysisRoot), "saved-report");
+    cpSync(publication, renamedCopy, { recursive: true });
+    for (const reader of [validateExistingF6, validateExistingF6Artifact]) {
+      expect(reader(renamedCopy, { publishRoot: renamedCopy })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+    }
+    rmSync(path.join(renamedCopy, "Feature6-Candidate-Receipt.json"));
+    for (const reader of [validateExistingF6, validateExistingF6Artifact]) {
+      expect(reader(renamedCopy, { publishRoot: renamedCopy })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+    }
+    rmSync(receiptPath);
+    for (const reader of [validateExistingF6, validateExistingF6Artifact]) {
+      expect(reader(publication, { publishRoot: publication })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+    }
+  });
+
+  it.each(["{invalid", "{}", '{"internalOnly":false}'])("public readers reject a malformed reserved marker %s without report paths", (marker) => {
+    const { deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    const publication = path.dirname(candidate.candidate.reportPdfPath);
+    writeFileSync(path.join(publication, "Feature6-Candidate-Receipt.json"), marker);
+    for (const reader of [validateExistingF6, validateExistingF6Artifact]) {
+      expect(reader(publication, { publishRoot: publication })).toEqual({ status: "rejected", reasonCode: "internal_candidate_not_final" });
+    }
+  });
+
+  it("cleans candidate evidence only after validated final paths and a completed root summary", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"}}');
+    deps.cleanupCandidate = vi.fn((workspace, plan) => {
+      expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+      expect(existsSync(candidate.candidate.reportPdfPath)).toBe(true);
+      expect(validateExistingF6(layout.stagePaths.f6, {
+        publishRoot: layout.analysisRoot,
+        workspaceModelInterpretationPath: path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+      }).status).toBe("accepted");
+      candidateLifecycle.cleanupF6Candidate(workspace, plan);
+    });
+    expect(runF6FullValidation({ args }, deps).status).toBe("completed");
+    expect(deps.cleanupCandidate).toHaveBeenCalledTimes(1);
+    expect(existsSync(path.join(layout.stagePaths.f6, "evidence", "candidate"))).toBe(false);
+  });
+
+  it.each(["directory", "file"])("fails cleanup closed on a swapped candidate %s identity without deleting replacement or original evidence", (swap) => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"}}');
+    const candidateRoot = path.join(layout.stagePaths.f6, "evidence", "candidate");
+    const preserved = path.join(path.dirname(layout.analysisRoot), "preserved-candidate");
+    const originalPdf = readFileSync(candidate.candidate.reportPdfPath);
+    deps.cleanupCandidate = (workspace, plan) => {
+      expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+      if (swap === "directory") {
+        renameSync(candidateRoot, preserved);
+        mkdirSync(candidateRoot);
+        writeFileSync(path.join(candidateRoot, "replacement.txt"), "do not delete");
+      } else {
+        renameSync(candidate.candidate.reportPdfPath, preserved);
+        writeFileSync(candidate.candidate.reportPdfPath, originalPdf);
+      }
+      candidateLifecycle.cleanupF6Candidate(workspace, plan);
+    };
+    const stdout = [];
+    expect(runF6Cli({ args }, deps, { log: (value) => stdout.push(value) })).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({ status: "failed", reasonCode: "candidate_cleanup_failed" });
+    if (swap === "directory") {
+      expect(readFileSync(path.join(candidateRoot, "replacement.txt"), "utf8")).toBe("do not delete");
+      expect(existsSync(path.join(preserved, "publication", path.basename(candidate.candidate.reportPdfPath)))).toBe(true);
+    } else {
+      expect(readFileSync(preserved)).toEqual(originalPdf);
+      expect(readFileSync(candidate.candidate.reportPdfPath)).toEqual(originalPdf);
+    }
+    expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+  });
+
+  it("does not silently report clean success when post-completion candidate cleanup fails", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"}}');
+    deps.cleanupCandidate = () => { throw new Error("private cleanup failure"); };
+    const stdout = [];
+    expect(runF6Cli({ args }, deps, { log: (value) => stdout.push(value) })).toBe(1);
+    expect(JSON.parse(stdout.join(""))).toEqual({ status: "failed", reasonCode: "candidate_cleanup_failed" });
+    expect(existsSync(candidate.candidate.reportPdfPath)).toBe(true);
+    expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+    const completed = readFileSync(layout.summaryPath, "utf8");
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readFileSync(layout.summaryPath, "utf8")).toBe(completed);
+  });
+
+  it.each(["missing", "malformed", "file_hash", "source_hash"])("requires the sealed candidate receipt before final publication: %s", (mutation) => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    const receiptPath = path.join(path.dirname(candidate.candidate.reportPdfPath), "Feature6-Candidate-Receipt.json");
+    if (mutation === "missing") rmSync(receiptPath);
+    else if (mutation === "malformed") writeFileSync(receiptPath, "{}");
+    else {
+      const receipt = readJson(receiptPath);
+      if (mutation === "file_hash") receipt.files["manifest.json"].sha256 = "0".repeat(64);
+      else receipt.inputs.sources.f4 = "0".repeat(64);
+      writeFileSync(receiptPath, JSON.stringify(receipt));
+    }
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"}}');
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readJson(layout.summaryPath).overallStatus).toBe("failed");
+    expect(existsSync(candidate.candidate.reportPdfPath)).toBe(true);
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+  });
+  it("validates an internal candidate before ADO, then publishes final paths exactly once after the terminal outcome", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const adoChoice = vi.fn(() => {
+      expect(readJson(layout.summaryPath).overallStatus).toBe("in_progress");
+      writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    });
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    expect(candidate.status).toBe("candidate_validated");
+    expect(candidate).not.toHaveProperty("finalReportMarkdownPath");
+    expect(candidate).not.toHaveProperty("finalReportPdfPath");
+    expect(candidate.candidate.reportPdfPath).toContain(path.join("evidence", "candidate"));
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "in_progress", stages: { f6: { status: "pending", artifacts: {} } } });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+    expect(adoChoice).not.toHaveBeenCalled();
+    adoChoice(candidate.candidate.reportSummary);
+    const result = runF6FullValidation({ args }, deps);
+    expect(result.status).toBe("completed");
+    expect(readJson(layout.summaryPath).overallStatus).toBe("completed");
+    expect(existsSync(path.join(layout.stagePaths.f6, "evidence", "candidate"))).toBe(false);
+    expect(adoChoice).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not permit ADO or final publication after a candidate PDF validation failure", () => {
+    const { layout, deps, args } = workspaceSetup();
+    deps.renderFinalReportPdf = () => Buffer.from("invalid PDF");
+    const adoChoice = vi.fn();
+    const result = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    if (result.status === "candidate_validated") adoChoice();
+    expect(result.status).toBe("failed");
+    expect(adoChoice).not.toHaveBeenCalled();
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "failed", failedStage: "f6" });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+  });
+
+  it("rejects final workspace publication without a validated candidate", () => {
+    const { layout, deps, args } = workspaceSetup();
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readJson(layout.summaryPath).overallStatus).toBe("failed");
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+  });
+
+  it.each(["candidate_pdf", "upstream_f4", "f3_engineering", "missing_ado"])("rejects final publication when %s no longer matches the report-informed candidate", (change) => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    expect(candidate.status).toBe("candidate_validated");
+    if (change !== "missing_ado") writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    if (change === "candidate_pdf") writeFileSync(candidate.candidate.reportPdfPath, "%PDF-1.7\nchanged");
+    if (change === "upstream_f4") writeFileSync(path.join(layout.stagePaths.f4, "Feature4-Calculation.json"), '{"changed":true}');
+    if (change === "f3_engineering") writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), '{"ado":{"status":"not_requested"},"worksheets":["changed"]}');
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readJson(layout.summaryPath)).toMatchObject({ overallStatus: "failed", failedStage: "f6" });
+    expect(existsSync(path.join(layout.stagePaths.f6, "manifest.json"))).toBe(false);
+  });
+
+  it("completes the root only after governed PDF, manifest, and model evidence validation", () => {
+    const { layout, deps, args } = workspaceSetup();
+    expect(runF6FullValidation({ args: [...args, "--candidate"] }, deps).status).toBe("candidate_validated");
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    const result = runF6FullValidation({ args }, deps);
+    expect(result.status).toBe("completed");
+    expect(validateExistingF6(layout.stagePaths.f6, {
+      publishRoot: layout.analysisRoot,
+      workspaceModelInterpretationPath: path.join(layout.stagePaths.f6, "evidence", "model-interpretation", "Feature6-Model-Interpretation.json"),
+    }).status).toBe("accepted");
+    const summary = readJson(layout.summaryPath);
+    expect(summary.overallStatus).toBe("completed");
+    expect(summary.stages.f6.status).toBe("completed");
+    expect(summary.stages.f6.artifacts.finalReportPdfPath).toBe(path.join("06 - F6 Design Optimization", "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf"));
+    const before = readFileSync(layout.summaryPath, "utf8");
+    expect(() => runF6FullValidation({ args }, deps)).toThrow();
+    expect(readFileSync(layout.summaryPath, "utf8")).toBe(before);
+  });
+
+  it("fails the root instead of advertising paths if the published PDF was corrupted", () => {
+    const { layout, deps, args } = workspaceSetup();
+    const candidate = runF6FullValidation({ args: [...args, "--candidate"] }, deps);
+    expect(candidate.status).toBe("candidate_validated");
+    const candidatePdfBytes = readFileSync(candidate.candidate.reportPdfPath);
+    writeFileSync(path.join(layout.stagePaths.f3, "Feature3-Report.json"), JSON.stringify({ ado: { status: "not_requested" } }));
+    deps.afterRename = () => {
+      const pdfPath = path.join(layout.stagePaths.f6, "Anonymous - TA ENGINEERING ANALYSIS REPORT.pdf");
+      if (existsSync(pdfPath)) writeFileSync(pdfPath, "%PDF-1.7\ncorrupted bytes");
+    };
+    const stdout = [];
+    expect(runF6Cli({ args }, deps, { log: (value) => stdout.push(value) })).toBe(1);
+    expect(stdout.join("")).not.toMatch(/finalReport|outputDirectory/);
+    expect(readJson(layout.summaryPath)).toMatchObject({
+      overallStatus: "failed", failedStage: "f6", stages: { f6: { status: "failed", artifacts: {} } },
+    });
+    expect(readFileSync(candidate.candidate.reportPdfPath)).toEqual(candidatePdfBytes);
+    expect(readJson(path.join(path.dirname(candidate.candidate.reportPdfPath), "Feature6-Candidate-Receipt.json"))).toMatchObject({ internalOnly: true, status: "validated" });
+  });
+
   it("rejects four roots from the direct CLI without creating artifacts", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-direct-cli-"));
     cleanup.push(root);
@@ -499,6 +779,35 @@ describe("runF6FullValidation", () => {
 
     expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
     expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
+  });
+
+  it("persists only safe local-strategy failure metadata and publishes no reports", () => {
+    const context = setup();
+    context.deps.renderFinalReportPdf = () => {
+      throw Object.assign(new Error("confidential worker output"), {
+        code: "pdf_render_unavailable",
+        attempts: [
+          { browser: "C:\\confidential\\chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 120_005, deadlineMs: 120_000, stderr: "secret" },
+          { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700, deadlineMs: 600_000 },
+          ...[0, -1, Infinity, NaN, 600_001, "private-report-path", 1.5].map((deadlineMs) => ({
+            browser: "private-report-name.exe", strategy: "private-report-path", reason: "execution_failed", elapsedMs: -1, deadlineMs,
+          })),
+        ],
+      });
+    };
+    const result = runF6FullValidation({}, context.deps);
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    expect(manifest.failureDetail).toEqual({
+      code: "pdf_render_unavailable",
+      attempts: [
+        { browser: "chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 120_005, deadlineMs: 120_000 },
+        { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700, deadlineMs: 600_000 },
+        ...Array.from({ length: 7 }, () => ({ browser: "chromium", reason: "execution_failed" })),
+      ],
+    });
+    expect(JSON.stringify(manifest)).not.toMatch(/confidential|private-report|secret/);
   });
 
   it("passes optional targets through the v4 gate and records identical input decisions in summary and manifest", () => {
@@ -827,8 +1136,8 @@ describe("F6 real artifact full flow", () => {
     });
     const reportMarkdown = readFileSync(path.join(runRoot, "Feature6-Report.md"), "utf8");
     if (mixed) {
-      expect(reportMarkdown).toContain("| Fail | [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_incomplete): Incomplete image assessment. |");
-      expect(reportMarkdown).toContain("| Fail |");
+      expect(reportMarkdown).toContain("| Block | [Analysis-B](#worksheet-2) | Loop Analysis-B | Multimodal blocker (evaluation\\_incomplete): Incomplete image assessment. |");
+      expect(reportMarkdown).toContain("| Block |");
     }
     expect(readFileSync(modelPath)).toEqual(original);
   });

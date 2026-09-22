@@ -1,6 +1,8 @@
 import { parseF3CliArgs } from "./f3-cli-args.mjs";
+import { resolveFeature3OutputLayout } from "./f3-output-layout.mjs";
 import { runF3Analysis, normalizeRunnerError } from "../packages/workflow-runners/dist/index.js";
 import { typedErrorSchema } from "../packages/contracts/dist/errors.js";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 
 function safeTypedError(error) {
   const parsed = typedErrorSchema.safeParse(error);
@@ -15,17 +17,30 @@ function safeTypedError(error) {
   };
 }
 
+function isWorkspaceStageNotEmpty(error) {
+  return error?.code === "prerequisite_not_ready" && error?.reasonCode === "workspace_stage_not_empty";
+}
+
 try {
   const cliArgs = process.argv.slice(2);
-  const { artifactRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
-  const result = runF3Analysis({ artifactRoot, selectedWorksheetNames }, {
+  const result = runAnalysisStage({ stage: "f3", args: cliArgs }, () => {
+  const { artifactRoot, analysisRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
+  const outputLayout = resolveFeature3OutputLayout([artifactRoot], process.env.AI_TVA_F3_OUTPUT_ROOT, analysisRoot);
+  return runF3Analysis({ artifactRoot, selectedWorksheetNames, outputRoot: outputLayout.outRoot }, {
     repositoryRoot: process.cwd(),
-    managedOutputRoot: process.env.AI_TVA_F3_OUTPUT_ROOT ?? "test/demo-output/feature3-output",
+    managedOutputRoot: process.cwd(),
     attemptId: crypto.randomUUID(),
     signal: new AbortController().signal,
     emit: () => {},
+  }, {
+    resolveOutputLayout: () => outputLayout,
+  });
   });
 
+  if (result.status === "failed") {
+    console.log(JSON.stringify({ status: "failed", reasonCode: result.reasonCode }, null, 2));
+    process.exitCode = 1;
+  } else {
   console.log(JSON.stringify({
     status: result.status,
     outputDirectory: result.outputDirectory,
@@ -34,7 +49,13 @@ try {
     ...(result.reminderMdPath ? { reminderMdPath: result.reminderMdPath, historyHtmlPath: result.historyHtmlPath } : {}),
     ...(result.report.status === "input_rejected" ? { artifactIssues: result.report.artifactIssues } : { summary: result.report.summary }),
   }, null, 2));
+  }
 } catch (error) {
-  console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
-  process.exitCode = 1;
+  if (isWorkspaceStageNotEmpty(error)) {
+    console.log(JSON.stringify({ status: "failed", reasonCode: "workspace_stage_not_empty" }, null, 2));
+    process.exitCode = 1;
+  } else {
+    console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
+    process.exitCode = 1;
+  }
 }

@@ -18,6 +18,8 @@ describe("PDF Report Export skill", () => {
     expect(skill).toContain("<validated workbook basename> - TA ENGINEERING ANALYSIS REPORT.md");
     expect(skill).toContain("English-only content in both reports regardless of the interaction language");
     expect(skill).toContain("exactly two validator-confirmed canonical absolute paths");
+    expect(skill).toContain("validated `06 - F6 Design Optimization` stage root");
+    expect(skill).toContain("stage `evidence` folder");
   });
 
   it("is required by the TA Assist Agent and Design Optimization workflows", () => {

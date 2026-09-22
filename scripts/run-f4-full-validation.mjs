@@ -1,16 +1,15 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runF4Calculation } from "../packages/workflow-runners/dist/index.js";
-import {
-  createTypedError,
-} from "../packages/contracts/dist/index.js";
+import { normalizeRunnerError, runF4Calculation } from "../packages/workflow-runners/dist/index.js";
+import { typedErrorSchema } from "../packages/contracts/dist/index.js";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 import { compareF4WithExcel } from "./f4-excel-comparison.mjs";
 import { buildF4ExcelMapping } from "./f4-excel-mapping.mjs";
 import { resolveFeature4OutputLayout } from "./f4-output-layout.mjs";
 import { renderF4Report } from "./f4-report.mjs";
+import { runAnalysisStage } from "./analysis-stage-lifecycle.mjs";
 
 function atomicWrite(filePath, content, dependencies) {
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
@@ -68,7 +67,49 @@ function normalizeDependencies(overrides = {}) {
   };
 }
 
+function reasonCodeForWorkspacePreflight(error) {
+  if (error?.code === "prerequisite_not_ready" && error?.reasonCode === "workspace_stage_not_empty") {
+    return "workspace_stage_not_empty";
+  }
+  const typed = typedErrorSchema.safeParse(error);
+  if (typed.success && typed.data.code === "validation_error") {
+    return "invalid_arguments_or_output_root";
+  }
+  return undefined;
+}
+
+function safeTypedError(error) {
+  const typed = typedErrorSchema.safeParse(error);
+  if (typed.success) return typed.data;
+  const normalized = normalizeRunnerError(error);
+  return {
+    code: normalized.code,
+    runId: normalized.runId,
+    summary: normalized.summary,
+    retryable: normalized.retryable,
+    suggestedAction: normalized.suggestedAction,
+    affectedInputReferences: [...normalized.affectedInputReferences],
+  };
+}
+
+function classifyCliFailure(error) {
+  const reasonCode = reasonCodeForWorkspacePreflight(error);
+  if (reasonCode !== undefined) {
+    return { stream: "stdout", payload: { status: "failed", reasonCode } };
+  }
+  const normalized = safeTypedError(error);
+  if (normalized.code === "validation_error") {
+    return { stream: "stdout", payload: { status: "failed", reasonCode: "invalid_arguments_or_output_root" } };
+  }
+  return { stream: "stderr", payload: { status: "failed", error: normalized } };
+}
+
 export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
+  return runAnalysisStage({ stage: "f4", args: options.args ?? [] },
+    () => executeF4(options, dependencyOverrides));
+}
+
+function executeF4(options, dependencyOverrides) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const args = options.args ?? [];
   try {
@@ -95,15 +136,13 @@ export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
       rm: dependencies.rm,
     });
   } catch (error) {
-    if (error?.code === "EEXIST") throw error;
+    const reasonCode = reasonCodeForWorkspacePreflight(error);
+    if (reasonCode === undefined) throw error;
     const layout = dependencies.resolveLayout(args);
+    if (layout.allowExistingRunRoot) {
+      return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: path.join(layout.runRoot, layout.manifestName) };
+    }
     const paths = outputPaths(layout);
-    const typed = error?.code === undefined ? createTypedError({
-      code: "internal_error",
-      summary: "Feature 4 workflow execution failed.",
-      affectedInputReferences: ["feature4-workflow"],
-    }) : error;
-    const reasonCode = typed.code === "validation_error" ? "invalid_arguments_or_output_root" : "calculation_failed";
     atomicWrite(paths.manifestPath, json(failedManifest(layout, reasonCode)), dependencies);
     return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifestPath };
   }
@@ -122,18 +161,37 @@ export function summarizeF4CliResult(result) {
   };
 }
 
+function serializeCliResult(result) {
+  if (result.status === "failed"
+    && (result.reasonCode === "invalid_arguments_or_output_root" || result.reasonCode === "workspace_stage_not_empty")) {
+    return { status: "failed", reasonCode: result.reasonCode };
+  }
+  return summarizeF4CliResult(result);
+}
+
+export function runF4CliMain({
+  args = process.argv.slice(2),
+  runFullValidation = runF4FullValidation,
+  writeStdout = (value) => process.stdout.write(value),
+  writeStderr = (value) => process.stderr.write(value),
+} = {}) {
+  try {
+    const result = runFullValidation({ args });
+    writeStdout(json(serializeCliResult(result)));
+    return result.status === "completed" ? 0 : 1;
+  } catch (error) {
+    const failure = classifyCliFailure(error);
+    if (failure.stream === "stdout") writeStdout(json(failure.payload));
+    else writeStderr(json(failure.payload));
+    return 1;
+  }
+}
+
 function isDirectExecution() {
   return process.argv[1] !== undefined
     && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 }
 
 if (isDirectExecution()) {
-  try {
-    const result = runF4FullValidation({ args: process.argv.slice(2) });
-    console.log(json(summarizeF4CliResult(result)).trimEnd());
-    if (result.status !== "completed") process.exitCode = 1;
-  } catch {
-    console.log(json({ status: "failed", reasonCode: "invalid_arguments_or_output_root" }).trimEnd());
-    process.exitCode = 1;
-  }
+  process.exitCode = runF4CliMain();
 }

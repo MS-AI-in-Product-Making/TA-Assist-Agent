@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { typedErrorSchema } from "../packages/contracts/dist/errors.js";
-import { normalizeRunnerError, runF1F2Confirmed, runF1F2Selection } from "../packages/workflow-runners/dist/index.js";
+import { allocateAnalysisWorkspace, assertAnalysisWorkspaceWorkbookIdentity, createInitialAnalysisWorkspaceSummary, recordAnalysisStageStarted, writeAnalysisWorkspaceSummary, normalizeRunnerError, runF1F2Confirmed, runF1F2Selection } from "../packages/workflow-runners/dist/index.js";
+import { loadWorkspace } from "./analysis-stage-lifecycle.mjs";
 
 function safeTypedError(error) {
   const parsed = typedErrorSchema.safeParse(error);
@@ -20,31 +22,84 @@ function safeTypedError(error) {
 function createContext(repositoryRoot) {
   return {
     repositoryRoot: path.resolve(repositoryRoot),
-    managedOutputRoot: path.join(path.resolve(repositoryRoot), "test", "demo-output"),
+    managedOutputRoot: path.join(path.resolve(repositoryRoot), "test"),
     attemptId: crypto.randomUUID(),
     signal: new AbortController().signal,
     emit: () => {},
   };
 }
 
-export function runF2ExcelWorkflow({ workbookPath, worksheetSelection, repositoryRoot = process.cwd(), now = () => new Date(), executeStage }) {
+function workbookContentHash(workbookPath) {
+  return createHash("sha256").update(readFileSync(workbookPath)).digest("hex");
+}
+
+function createAnalysisWorkspaceForWorkbook(repositoryRoot, workbookPath, now) {
+  const layout = allocateAnalysisWorkspace({
+    testRoot: path.join(path.resolve(repositoryRoot), "test"),
+    workbookFileName: path.basename(workbookPath),
+    workbookContentHash: workbookContentHash(workbookPath),
+    now: now(),
+  });
+  writeAnalysisWorkspaceSummary(layout, createInitialAnalysisWorkspaceSummary(layout));
+  return layout;
+}
+
+function validateWorkbookPathForWorkspace(workbookPath) {
+  if (path.extname(workbookPath).toLowerCase() !== ".xlsx") {
+    throw new Error("Feature 2 Excel workflow requires exactly one .xlsx workbook.");
+  }
+  if (!existsSync(workbookPath)) {
+    throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  }
+  const stats = lstatSync(workbookPath);
+  if (!stats.isFile() || stats.isSymbolicLink()) {
+    throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  }
+}
+
+function selectionReferenceFor(worksheetSelection) {
+  return worksheetSelection.selectionReference ?? (
+    worksheetSelection.runId && worksheetSelection.runRoot && worksheetSelection.manifestPath && worksheetSelection.promptPath
+      ? {
+          runId: worksheetSelection.runId,
+          runRoot: worksheetSelection.runRoot,
+          manifestPath: worksheetSelection.manifestPath,
+          promptPath: worksheetSelection.promptPath,
+        }
+      : undefined
+  );
+}
+
+export function runF2ExcelWorkflow({ workbookPath, worksheetSelection, analysisRoot, repositoryRoot = process.cwd(), now = () => new Date(), executeStage }) {
   const context = createContext(repositoryRoot);
+  const existingRoot = analysisRoot ?? selectionReferenceFor(worksheetSelection ?? {})?.runRoot;
+  let analysisWorkspace;
+  if (existingRoot !== undefined) {
+    const loaded = loadWorkspace(existingRoot);
+    if (!["f1", "f2"].includes(loaded.summary.currentStage)) throw new Error("Feature 2 workspace stages have already finished.");
+    const resolvedWorkbook = path.resolve(repositoryRoot, workbookPath);
+    validateWorkbookPathForWorkspace(resolvedWorkbook);
+    assertAnalysisWorkspaceWorkbookIdentity(loaded.layout, path.basename(resolvedWorkbook), workbookContentHash(resolvedWorkbook));
+    recordAnalysisStageStarted(loaded.summary, worksheetSelection === undefined ? "f1" : loaded.summary.currentStage);
+    analysisWorkspace = loaded.layout;
+    context.managedOutputRoot = path.dirname(analysisWorkspace.analysisRoot);
+  }
   return worksheetSelection === undefined
-    ? runF1F2Selection({ workbookPath, now }, context, { executeStage })
+    ? runF1F2Selection({
+        workbookPath,
+        analysisWorkspace: analysisWorkspace ?? (() => {
+          const resolvedWorkbookPath = path.resolve(repositoryRoot, workbookPath);
+          validateWorkbookPathForWorkspace(resolvedWorkbookPath);
+          return createAnalysisWorkspaceForWorkbook(repositoryRoot, resolvedWorkbookPath, now);
+        })(),
+        now,
+      }, context, { executeStage })
     : runF1F2Confirmed({
         workbookPath,
         workbookContentHash: worksheetSelection.workbookContentHash,
         selectedWorksheetNames: worksheetSelection.selectedWorksheetNames,
-        selectionReference: worksheetSelection.selectionReference ?? (
-          worksheetSelection.runId && worksheetSelection.runRoot && worksheetSelection.manifestPath && worksheetSelection.promptPath
-            ? {
-                runId: worksheetSelection.runId,
-                runRoot: worksheetSelection.runRoot,
-                manifestPath: worksheetSelection.manifestPath,
-                promptPath: worksheetSelection.promptPath,
-              }
-            : undefined
-        ),
+        selectionReference: selectionReferenceFor(worksheetSelection),
+        analysisWorkspace,
         now,
       }, context, { executeStage });
 }
@@ -62,7 +117,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
         flags.set(flag, true);
         continue;
       }
-      if (flag !== "--workbook-hash" && flag !== "--worksheets" && flag !== "--selection-manifest") throw new Error(`Feature 2 option is unsupported: ${flag}`);
+      if (flag !== "--workbook-hash" && flag !== "--worksheets" && flag !== "--selection-manifest" && flag !== "--analysis-root") throw new Error(`Feature 2 option is unsupported: ${flag}`);
       const value = args[index + 1];
       if (!value || value.startsWith("--") || flags.has(flag)) throw new Error(`Feature 2 ${flag} value is missing or duplicated.`);
       flags.set(flag, value);
@@ -89,7 +144,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
             confirmed: true,
           }
         : undefined;
-    console.log(JSON.stringify(runF2ExcelWorkflow({ workbookPath, worksheetSelection }), null, 2));
+    console.log(JSON.stringify(runF2ExcelWorkflow({ workbookPath, worksheetSelection, analysisRoot: flags.get("--analysis-root") }), null, 2));
   } catch (error) {
     console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
     process.exitCode = 1;

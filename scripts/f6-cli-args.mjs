@@ -44,10 +44,17 @@ export function parseF6CliArgs(args = []) {
   const selectedWorksheetNames = [];
   let languageTag;
   let analysisRequestContext;
+  let analysisRoot;
+  let candidate = false;
   const optionalPaths = Object.fromEntries(Object.values(OPTIONAL_PATHS).map((field) => [field, undefined]));
   for (let index = 4; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith("--")) throw new Error(`Unexpected argument: ${option}`);
+    if (option === "--candidate") {
+      if (candidate) throw new Error("Feature 6 --candidate option is duplicated.");
+      candidate = true;
+      continue;
+    }
     const value = requiredValue(args, index, option);
     if (option === "--worksheet") {
       const worksheetName = value.trim();
@@ -61,6 +68,9 @@ export function parseF6CliArgs(args = []) {
     } else if (option === "--language") {
       if (languageTag !== undefined) throw new Error("Feature 6 --language option is duplicated.");
       languageTag = value.trim();
+    } else if (option === "--analysis-root") {
+      if (analysisRoot !== undefined) throw new Error("Feature 6 --analysis-root option is duplicated.");
+      analysisRoot = value;
     } else if (OPTIONAL_PATHS[option] !== undefined) {
       const field = OPTIONAL_PATHS[option];
       if (optionalPaths[field] !== undefined) throw new Error(`Feature 6 ${option} option is duplicated.`);
@@ -80,9 +90,10 @@ export function parseF6CliArgs(args = []) {
   if (analysisRequestContext === undefined) {
     throw new Error("Feature 6 requires one governed --analysis-request-context value.");
   }
-  if (optionalPaths.modelInterpretationArtifact === undefined) {
+  if (optionalPaths.modelInterpretationArtifact === undefined && analysisRoot === undefined) {
     throw new Error("Feature 6 requires one governed --model-interpretation artifact.");
   }
+  if (candidate && analysisRoot === undefined) throw new Error("Feature 6 --candidate requires --analysis-root.");
 
   return {
     f2ArtifactRoot,
@@ -90,6 +101,8 @@ export function parseF6CliArgs(args = []) {
     f4ArtifactRoot,
     f5ArtifactRoot,
     analysisRequestContext,
+    analysisRoot,
+    ...(candidate ? { candidate: true } : {}),
     selectedWorksheetNames,
     interactionLanguage: {
       languageTag,

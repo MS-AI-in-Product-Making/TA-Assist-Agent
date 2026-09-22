@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- runner facades validate external workflow artifact JSON at schema boundaries. */
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  createTypedError,
   f4ExcelComparisonResultSchema,
   f4WorkflowCalculationResultSchema,
 } from "@ai-assist/contracts";
@@ -19,6 +20,7 @@ interface F4Layout {
   readonly reportMdName: string;
   readonly comparisonJsonName: string;
   readonly manifestName: string;
+  readonly allowExistingRunRoot?: boolean;
 }
 
 export interface F4Dependencies {
@@ -57,6 +59,20 @@ function outputPaths(layout: F4Layout) {
     reportMdPath: path.join(layout.runRoot, layout.reportMdName),
     manifestPath: path.join(layout.runRoot, layout.manifestName),
   };
+}
+
+function assertOutputArtifactsAbsent(paths: ReturnType<typeof outputPaths>): void {
+  for (const filePath of Object.values(paths)) {
+    if (existsSync(filePath)) {
+      throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: [filePath],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      });
+    }
+  }
 }
 
 function completedManifest(layout: F4Layout, calculationResult: any, comparisonResult?: any) {
@@ -207,7 +223,12 @@ export function runF4Calculation(
     layout = resolveOutputLayout(request, context);
     paths = outputPaths(layout);
     mkdir(path.dirname(layout.runRoot), { recursive: true });
-    mkdir(layout.runRoot);
+    if (layout.allowExistingRunRoot) {
+      mkdir(layout.runRoot, { recursive: true });
+      assertOutputArtifactsAbsent(paths);
+    } else {
+      mkdir(layout.runRoot);
+    }
 
     loadStarted = true;
     throwIfAborted(context, "load_handoffs");

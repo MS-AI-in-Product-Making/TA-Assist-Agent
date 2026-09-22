@@ -1,12 +1,13 @@
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runFeature6WorkflowCommand } from "./feature6.js";
+import { createFeature6CliWorkspace } from "../../../../fixtures/feature6-cli.js";
 
 const trustedRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
-const publishRoot = join(trustedRoot, "test", "demo-output");
+const publishRoot = join(trustedRoot, "test");
 const cleanup: string[] = [];
 const execFileState = vi.hoisted(() => ({
   options: [] as unknown[],
@@ -56,31 +57,32 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
   f4Root: string;
   f5Root: string;
   scriptPath: string;
+  analysisRoot: string;
+  outputDirectory: string;
 }> {
   await mkdir(publishRoot, { recursive: true });
-  const fixtureRoot = await mkdtemp(join(publishRoot, ".feature6-legacy-"));
+  const fixtureRoot = await mkdtemp(join(publishRoot, ".feature6-cli-"));
   cleanup.push(fixtureRoot);
   const rootDir = trustedRoot;
-  const roots = ["f2", "f3", "f4", "f5"].map((feature) => join(fixtureRoot, "inputs", feature));
-  const [f2Root, f3Root, f4Root, f5Root] = roots as [string, string, string, string];
+  const layout = createFeature6CliWorkspace(fixtureRoot);
+  const { f2: f2Root, f3: f3Root, f4: f4Root, f5: f5Root, f6: outputDirectory } = layout.stagePaths;
   const scriptPath = join(fixtureRoot, "runner.mjs");
   execFileState.scriptPath = scriptPath;
   await Promise.all([
-    ...roots.map((root) => mkdir(root, { recursive: true })),
-    mkdir(join(publishRoot, "f6-runs", "demo", "run-1"), { recursive: true }),
-    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md"), "# report\n", "utf8"),
-    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
-    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "manifest.json"), JSON.stringify({ artifactSetVersion: "f6-artifact-set-v3" }), "utf8"),
+    writeFile(join(outputDirectory, "Feature6-Report.md"), "# report\n", "utf8"),
+    writeFile(join(outputDirectory, "Feature6-Report.pdf"), Buffer.from("%PDF-1.7\nvalidated\n")),
+    writeFile(join(outputDirectory, "manifest.json"), JSON.stringify({ artifactSetVersion: "f6-artifact-set-v3" }), "utf8"),
   ]);
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
     writeFile(join(f3Root, "Feature3-Report.json"), "{}", "utf8"),
     writeFile(join(f4Root, "Feature4-Calculation.json"), "{}", "utf8"),
     writeFile(join(f5Root, "Feature5-Report.json"), "{}", "utf8"),
-    writeFile(scriptPath, scriptBody, "utf8"),
+    writeFile(scriptPath, scriptBody.replaceAll("test/demo-output/f6-runs/demo/run-1",
+      relative(trustedRoot, outputDirectory).split(sep).join("/")), "utf8"),
   ]);
   await chmod(scriptPath, 0o755);
-  return { rootDir, f2Root, f3Root, f4Root, f5Root, scriptPath };
+  return { rootDir, f2Root, f3Root, f4Root, f5Root, scriptPath, analysisRoot: layout.analysisRoot, outputDirectory };
 }
 
 describe("Feature 6 CLI command", () => {
@@ -92,15 +94,15 @@ describe("Feature 6 CLI command", () => {
       { selectedWorksheetNames: ["Analysis-A"] },
     );
 
-    expect(result).toContain(`fullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}`);
-    expect(result).toContain(`fullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}`);
+    expect(result).toContain(`fullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}`);
+    expect(result).toContain(`fullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}`);
     expect(result).not.toContain("\nreport: ");
   });
 
   it("labels validator-derived v4 report names with canonical absolute paths", async () => {
     const reportBase = "Meara TP TA_20241030-v0 - test0918 - TA ENGINEERING ANALYSIS REPORT";
-    const outputDirectory = join(publishRoot, "f6-runs", "demo", "run-1");
     const setup = await fixture(`console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/${reportBase}.md",finalReportPdfPath:"test/demo-output/f6-runs/demo/run-1/${reportBase}.pdf"}));\n`);
+    const { outputDirectory } = setup;
     await Promise.all([
       rm(join(outputDirectory, "Feature6-Report.md")),
       rm(join(outputDirectory, "Feature6-Report.pdf")),
@@ -125,6 +127,7 @@ writeFileSync("invocation.json", JSON.stringify({ argv: process.argv.slice(2), c
 console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1", finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md", finalReportPdfPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.pdf" }));
 `);
     const options = {
+      analysisRequestContext: { requestedAt: "2026-09-22T00:00:00Z", utcOffsetMinutes: 480, source: "cli" },
       selectedWorksheetNames: ["Overview", "Details"],
       languageTag: "en-US",
       modelInterpretationPath: "evidence/model.json",
@@ -140,18 +143,19 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root, options,
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nfullPdfReportPath: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.pdf")}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nfullReportPath: ${join(setup.outputDirectory, "Feature6-Report.md")}\nfullPdfReportPath: ${join(setup.outputDirectory, "Feature6-Report.pdf")}\nstatus: partially_completed`);
     const invocation = JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"));
-    const requestContext = JSON.parse(invocation.argv[5]);
+    const requestContext = JSON.parse(invocation.argv[7]);
     expect(requestContext).toEqual({
-      requestedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u),
-      utcOffsetMinutes: expect.any(Number),
+      requestedAt: "2026-09-22T00:00:00Z",
+      utcOffsetMinutes: 480,
       source: "cli",
     });
     expect(invocation).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
-        "--analysis-request-context", invocation.argv[5],
+        "--analysis-root", setup.analysisRoot,
+        "--analysis-request-context", invocation.argv[7],
         "--worksheet", "Overview", "--worksheet", "Details",
         "--language", "en-US", "--model-interpretation", "evidence/model.json",
         "--supplier-capability", "evidence/supplier.json",
@@ -302,13 +306,16 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
   });
 
   it("rejects final report path when it is outside the reported output directory", async () => {
-    const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({
+    const setup = await fixture();
+    const sibling = join(setup.analysisRoot, "other-output");
+    await mkdir(sibling);
+    await writeFile(join(sibling, "Feature6-Report.md"), "# report\n", "utf8");
+    await writeFile(setup.scriptPath, `console.log(${JSON.stringify(JSON.stringify({
       status: "completed",
-      outputDirectory: "test/demo-output/f6-runs/demo/run-1",
-      finalReportMdPath: "test/demo-output/f6-runs/demo/run-2/Feature6-Report.md",
-    }))});\n`);
-    await mkdir(join(publishRoot, "f6-runs", "demo", "run-2"), { recursive: true });
-    await writeFile(join(publishRoot, "f6-runs", "demo", "run-2", "Feature6-Report.md"), "# report\n", "utf8");
+      outputDirectory: relative(trustedRoot, setup.outputDirectory).split(sep).join("/"),
+      finalReportMdPath: join(sibling, "Feature6-Report.md"),
+      finalReportPdfPath: join(setup.outputDirectory, "Feature6-Report.pdf"),
+    }))});\n`, "utf8");
 
     await expect(runFeature6WorkflowCommand(
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,

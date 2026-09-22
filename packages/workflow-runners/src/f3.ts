@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  createTypedError,
   drawingGovernanceRequestV2Schema,
   drawingGovernanceResultV2Schema,
   f2UserReportSchema,
@@ -15,13 +16,20 @@ import { renderF3AdoHistoryHtml } from "./f3-ado-html.js";
 import { renderF3AdoMarkdown } from "./f3-ado-markdown.js";
 import type { F3AnalysisRequest, F3AnalysisResult, RunContext } from "./types.js";
 
+interface F3OutputLayout {
+  readonly outRoot: string;
+  readonly reportJsonName: string;
+  readonly reportMdName: string;
+  readonly workspaceMode?: boolean;
+}
+
 export interface F3Dependencies {
   readonly loadBundle?: (artifactRoot: string, options?: { selectedWorksheetNames?: readonly string[] }) => LoadF2ArtifactBundleResult;
   readonly createGovernance?: (request: DrawingGovernanceRequestV2) => DrawingGovernanceResultV2;
   readonly renderReport?: (report: DrawingGovernanceResultV2, options: { outputRoot: string }) => string;
   readonly renderAdoReminder?: (report: DrawingGovernanceResultV2) => string;
   readonly renderAdoHistoryHtml?: (report: DrawingGovernanceResultV2) => string;
-  readonly resolveOutputLayout?: (args: readonly string[], managedOutputRoot: string) => { outRoot: string; reportJsonName: string; reportMdName: string };
+  readonly resolveOutputLayout?: (args: readonly string[], managedOutputRoot: string) => F3OutputLayout;
   readonly writeOutputs?: (paths: { reportJsonPath: string; reportMdPath: string; reminderMdPath?: string; historyHtmlPath?: string }, report: DrawingGovernanceResultV2, rendered: { markdown: string; reminder?: string; historyHtml?: string }) => void;
 }
 
@@ -101,13 +109,14 @@ function throwIfAborted(context: RunContext, stage: string): void {
   });
 }
 
-export function resolveFeature3OutputLayout(args: readonly string[], managedOutputRoot: string) {
+export function resolveFeature3OutputLayout(args: readonly string[], managedOutputRoot: string): F3OutputLayout {
   if (args.length !== 1) throw new Error("Feature 3 workflow requires exactly one Feature 2 artifact directory.");
   if (/\.xls[xm]?$/i.test(args[0] ?? "")) throw new Error("Feature 3 requires a Feature 2 artifact directory, not an Excel workbook.");
   return {
     outRoot: path.resolve(managedOutputRoot),
     reportJsonName: "Feature3-Report.json",
     reportMdName: "Feature3-Report.md",
+    workspaceMode: false,
   };
 }
 
@@ -172,6 +181,20 @@ function defaultWriteOutputs(
   if (paths.historyHtmlPath && rendered.historyHtml) atomicWrite(paths.historyHtmlPath, rendered.historyHtml);
 }
 
+function assertGovernedArtifactsAbsent(outputRoot: string, fileNames: readonly string[]): void {
+  for (const fileName of fileNames) {
+    if (existsSync(path.join(outputRoot, fileName))) {
+      throw createTypedError({
+        code: "prerequisite_not_ready",
+        summary: "Workspace stage already contains published artifacts.",
+        suggestedAction: "Choose a fresh analysis workspace stage before rerunning this workflow.",
+        affectedInputReferences: [outputRoot],
+        details: { reasonCode: "workspace_stage_not_empty" },
+      });
+    }
+  }
+}
+
 export function runF3Analysis(
   request: F3AnalysisRequest,
   context: RunContext,
@@ -186,7 +209,16 @@ export function runF3Analysis(
   const writeOutputs = dependencies.writeOutputs ?? defaultWriteOutputs;
   try {
     throwIfAborted(context, "load_bundle");
-    const outputLayout = resolveOutputLayout([request.artifactRoot], context.managedOutputRoot);
+    const outputLayout = resolveOutputLayout([request.artifactRoot], request.outputRoot ?? context.managedOutputRoot);
+    if (outputLayout.workspaceMode) {
+      mkdirSync(outputLayout.outRoot, { recursive: true });
+      assertGovernedArtifactsAbsent(outputLayout.outRoot, [
+        outputLayout.reportJsonName,
+        outputLayout.reportMdName,
+        "Feature3-ADO-Reminder.md",
+        "Feature3-ADO-History.html",
+      ]);
+    }
     const loaded = request.selectedWorksheetNames === undefined
       ? loadBundle(request.artifactRoot)
       : loadBundle(request.artifactRoot, { selectedWorksheetNames: request.selectedWorksheetNames });

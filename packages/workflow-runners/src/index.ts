@@ -17,6 +17,33 @@ export { runF4Calculation } from "./f4.js";
 export { runF4WhatIfCalculation } from "./f4-what-if.js";
 export { createF4WhatIfBaselineRequest } from "./f4-what-if-baseline.js";
 export type { F4WhatIfPatch, F4WhatIfRequest, F4WhatIfResult } from "./f4-what-if.js";
+export {
+	ANALYSIS_STAGE_DIRS,
+	ANALYSIS_WORKSPACE_SUMMARY_FILE_NAME,
+	ANALYSIS_WORKSPACE_VERSION,
+	allocateAnalysisWorkspace,
+	assertAnalysisWorkspaceWorkbookIdentity,
+	createInitialAnalysisWorkspaceSummary,
+	formatLocalDateYYYYMMDD,
+	recordAnalysisStageCompleted,
+	recordAnalysisStageFailed,
+	recordAnalysisStageStarted,
+	resolveAnalysisWorkspaceStagePaths,
+	validateAnalysisWorkspaceLayout,
+	validateAnalysisWorkspaceSummary,
+	writeAnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
+export type {
+	AnalysisStage,
+	AnalysisStageStatus,
+	AllocateAnalysisWorkspaceInput,
+	AnalysisWorkspaceLayout,
+	AnalysisWorkspaceOverallStatus,
+	AnalysisWorkspaceResolvedStagePaths,
+	AnalysisWorkspaceStageDirectoryNames,
+	AnalysisWorkspaceStageSummary,
+	AnalysisWorkspaceSummary,
+} from "./analysis-workspace.js";
 export { runF5Interpretation } from "./f5.js";
 export { runF6Optimization } from "./f6.js";
 export {
@@ -26,5 +53,6 @@ export {
 	resolveFactor,
 	resolveWorksheet,
 } from "./f6-input-materializer.js";
-export { validateExistingF6 } from "./existing-f6.js";
+export { validateExistingF6, validateF6WorkspaceEvidence } from "./existing-f6.js";
+export { hasF6CandidateMarker, validateF6CandidateReceipt } from "./f6-candidate-receipt.js";
 export { getF7PlaceholderStatus } from "./f7-placeholder.js";
