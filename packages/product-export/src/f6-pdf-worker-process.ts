@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 import type { F6PdfWorkerRequest } from "./f6-pdf-export.js";
 
@@ -20,8 +21,16 @@ interface WorkerDependencies {
 }
 
 function entryArgs(name: string): string[] {
-  const compiled = new URL(`./${name}.js`, import.meta.url);
-  return existsSync(compiled) ? [fileURLToPath(compiled)] : ["--import", "tsx", fileURLToPath(new URL(`./${name}.ts`, import.meta.url))];
+  const resolver = createRequire(path.join(process.cwd(), ".f6-pdf-worker-resolver.cjs"));
+  let compiledDirectory: string | undefined;
+  try {
+    compiledDirectory = path.dirname(resolver.resolve("@ai-assist/product-export"));
+  } catch {
+    // Source-only development falls back to the repository package paths below.
+  }
+  const compiled = path.join(compiledDirectory ?? path.resolve(process.cwd(), "packages", "product-export", "dist"), `${name}.js`);
+  if (existsSync(compiled)) return [compiled];
+  return ["--import", "tsx", path.resolve(process.cwd(), "packages", "product-export", "src", `${name}.ts`)];
 }
 
 function terminateOwnedTree(child: ChildProcess, done: (error?: Error) => void): void | (() => Promise<void>) {

@@ -51,6 +51,11 @@ function completionFixture(value: ReturnType<typeof request>) {
 }
 
 describe("F6 live worker containment", () => {
+  it("keeps the worker launcher compatible with CommonJS-transformed Playwright imports", () => {
+    const source = readFileSync(fileURLToPath(new URL("./f6-pdf-worker-process.ts", import.meta.url)), "utf8");
+    expect(source).not.toContain("import.meta");
+  });
+
   it("does not launch a browser when its supervisor channel is already absent at startup", async () => {
     const value = request();
     const child = spawn(process.execPath, [
