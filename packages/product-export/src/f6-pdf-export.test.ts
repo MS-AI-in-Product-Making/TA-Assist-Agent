@@ -305,7 +305,7 @@ describe("renderF6PdfSync", () => {
       "",
       "| Result | Worksheet | Tolerance Loop Description | Key Finding |",
       "|---|---|---|---|",
-      "| Block | [Analysis-A](#worksheet-1) | Loop A | Drawing Numbers, drawing dimension definition is missing. |",
+      "| Missing Info | [Analysis-A](#worksheet-1) | Loop A | Drawing Numbers, drawing dimension definition is missing. |",
       "",
       "# 3-1 Worksheet: Analysis-A",
       "",
@@ -350,9 +350,11 @@ describe("renderF6PdfSync", () => {
       "",
       "## Adjusted Mean to Spec Center Shift",
       "",
-      "- Design Nominal: 0.000 mm",
+      "- LSL: -0.150 mm",
+      "- USL: 0.050 mm",
+      "- Spec Center: -0.050 mm",
       "- Adjusted Mean: -0.050 mm",
-      "- Offset: -0.050 mm",
+      "- Offset: 0.000 mm",
       "",
       "## Contributor Priorities",
       "",
@@ -379,7 +381,7 @@ describe("renderF6PdfSync", () => {
     const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
 
     expect(html).toContain("grid-template-columns:.72fr 1.28fr");
-    expect(html).toContain('class="comment comment--block">BLOCK</span>');
+    expect(html).toContain('class="comment comment--missing-info">MISSING INFO</span>');
     expect(html).toContain('analysis-panel--process');
     expect(html).toContain('class="range-spec-line range-spec-line--lower"');
     expect(html).toContain('class="range-spec-line range-spec-line--upper"');
@@ -393,10 +395,13 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('data-worst-case-result="FAIL"');
     expect(html).toContain('data-evaluation-level="4 sigma"');
     expect(html).toContain("<figcaption><span>Capability against target</span><strong>4 sigma · 1.33</strong></figcaption>");
-    expect(html).toContain('class="mean-marker mean-marker--nominal"');
+    expect(html).toContain('class="mean-marker mean-marker--spec-center"');
     expect(html).toContain('class="mean-marker mean-marker--adjusted"');
-    expect(html).toContain('class="mean-value mean-value--nominal">Design nominal');
+    expect(html).toContain('class="mean-value mean-value--spec-center">Spec center -0.050');
     expect(html).toContain('class="mean-value mean-value--adjusted">Adjusted mean');
+    expect(html).toContain('data-offset="0.000"');
+    expect(html).toContain('data-spec-center="-0.050"');
+    expect(html).toContain('style="left:50%"');
     expect(html).toContain('class="spec-marker spec-marker--current"');
     expect(html).toContain('class="spec-marker spec-marker--proposed"');
     expect(html).toContain('<div class="spec-change-legend"><span class="spec-value spec-value--current">Current</span><span class="spec-value spec-value--proposed">Proposed</span></div>');
@@ -421,6 +426,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:35%;");
     expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:35%;");
     expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
+    expect(html).toContain(".workbook-summary .comment--missing-info { color:var(--p-yellow) !important;");
     expect(html).toContain(".factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:17%; white-space:nowrap;");
     expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
     expect(html).toContain(".range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4;");
@@ -521,6 +527,7 @@ describe("renderF6PdfSync", () => {
     });
 
     expect(html).toContain('<strong class="status-missing">MISSING</strong>');
+    expect(html).toContain(".factor-table td.status-missing,.factor-table td .status-missing { color:var(--p-dark-red) !important; font-weight:800;");
     expect(html).toContain('<strong class="status-warning">WARNING</strong>');
     expect(html).toContain('<strong class="status-complete">COMPLETE</strong>');
     expect(html).toContain('<strong class="dim-id-review">1</strong>');
@@ -733,8 +740,10 @@ describe("renderF6PdfSync", () => {
       "## Adjusted Mean to Spec Center Shift",
       "",
       "- Status: offset",
-      "- Adjusted Mean: -0.050 mm",
-      "- Design Nominal: -0.050 mm",
+      "- LSL: -0.150 mm",
+      "- USL: 0.050 mm",
+      "- Spec Center: -0.050 mm",
+      "- Adjusted Mean: -0.040 mm",
       "- Offset: 0.010 mm",
       "",
       "## Contributor Priorities",
@@ -956,6 +965,28 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain('<div class="range-axis"><span>Nominal 1.51</span></div>');
     expect(html).not.toContain('<div class="range-axis"><span>0.00</span>');
     expect(html).not.toContain('<span>5.00</span></div>');
+  });
+
+  it("uses full-precision mean-center metadata while keeping rounded labels", () => {
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- LSL: 0.000 mm <!-- f6-raw=0 -->",
+      "- USL: 0.101 mm <!-- f6-raw=0.101 -->",
+      "- Spec Center: 0.051 mm <!-- f6-raw=0.0505 -->",
+      "- Adjusted Mean: 0.050 mm <!-- f6-raw=0.0504 -->",
+      "- Offset: -0.000 mm <!-- f6-raw=-0.0001 -->",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain('class="mean-offset-graph"');
+    expect(html).toContain('data-spec-center="0.051"');
+    expect(html).toContain('data-offset="-0.000"');
+    expect(html).toContain("Spec center 0.0510&nbsp;mm");
+    expect(html).not.toContain("Insufficient numeric evidence");
   });
 
   it("uses compact Factor rows after seven entries and normalizes unavailable guidance", () => {

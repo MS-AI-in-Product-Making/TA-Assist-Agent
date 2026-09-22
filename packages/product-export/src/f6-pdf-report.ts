@@ -189,16 +189,31 @@ function capabilitySpectrum(requirements: ReadonlyMap<string, string>, rows: rea
 }
 
 function meanOffsetGraph(items: readonly string[]): string {
-  const value = (label: string) => items.map((item) => new RegExp(`^${label}:\\s*(.+)$`, "iu").exec(item)?.[1]).find(Boolean) ?? "N/A";
-  const offsetText = value("Offset");
+  const itemValue = (label: string) => items.map((item) => new RegExp(`^${label}:\\s*(.+)$`, "iu").exec(item)?.[1]).find(Boolean);
+  const value = (label: string) => (itemValue(label) ?? "N/A")
+    .replace(/<!--[\s\S]*?-->/gu, "")
+    .replace(/<[^>]*>/gu, "")
+    .trim();
+  const exactValue = (label: string) => {
+    const raw = itemValue(label);
+    const exact = raw === undefined ? undefined : /<!--\s*f6-raw=([-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?)\s*-->/iu.exec(raw)?.[1];
+    return exact === undefined ? numericValue(value(label)) : Number(exact);
+  };
+  const specCenterText = value("Spec Center");
   const adjustedMean = value("Adjusted Mean");
-  const designNominal = value("Design Nominal");
-  const offset = numericValue(offsetText);
-  if (numericValue(adjustedMean) === undefined || numericValue(designNominal) === undefined || offset === undefined) {
+  const lowerSpec = exactValue("LSL");
+  const upperSpec = exactValue("USL");
+  const specCenter = exactValue("Spec Center");
+  const adjustedMeanValue = exactValue("Adjusted Mean");
+  if (lowerSpec === undefined || upperSpec === undefined || upperSpec <= lowerSpec
+    || specCenter === undefined || adjustedMeanValue === undefined
+    || Math.abs(specCenter - (lowerSpec + upperSpec) / 2) > 1e-9) {
     return unavailableGraph("mean-offset-graph", "Mean-center alignment");
   }
-  const magnitude = Math.min(45, Math.abs(offset) * 500);
-  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--nominal"><span>Design nominal</span></i><b class="mean-marker mean-marker--adjusted" style="left:calc(50% + ${offset < 0 ? -magnitude : magnitude}%)"><span>Adjusted mean</span></b></div><p><span class="mean-value mean-value--nominal">Design nominal ${escapeHtml(designNominal)}</span> · <span class="mean-value mean-value--adjusted">Adjusted mean ${escapeHtml(adjustedMean)}</span> · Offset ${escapeHtml(offsetText)}</p></figure>`;
+  const offset = adjustedMeanValue - specCenter;
+  const unit = /\s+([^\s]+)$/u.exec(adjustedMean)?.[1];
+  const offsetText = `${threeSignificantFigures(offset)}${unit === undefined ? "" : ` ${unit}`}`;
+  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}" data-spec-center="${specCenter.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--spec-center" style="left:50%"><span>Spec center</span></i><b class="mean-marker mean-marker--adjusted" style="left:${graphPosition(adjustedMeanValue, lowerSpec, upperSpec)}%"><span>Adjusted mean</span></b></div><p><span class="mean-value mean-value--spec-center">Spec center ${escapeHtml(specCenterText)}</span> · <span class="mean-value mean-value--adjusted">Adjusted mean ${escapeHtml(adjustedMean)}</span> · Offset ${escapeHtml(offsetText)}</p></figure>`;
 }
 
 function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
@@ -351,13 +366,14 @@ class F6PdfRenderer extends Renderer {
   }
 
   override list(token: Tokens.List): string {
-    const items = token.items.map((item) => item.text.replace(/<[^>]*>/gu, "").trim());
+    const rawItems = token.items.map((item) => item.text.trim());
+    const items = rawItems.map((item) => item.replace(/<[^>]*>/gu, "").trim());
     if (this.inOptimizationSection()) {
             const list = token.ordered ? "ol" : "ul";
       const rows = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
       return `<section class="optimization-decision"><h2>Decision Summary</h2><${list}>${rows}</${list}></section>`;
     }
-    if (this.analysisPanelType === "center") return meanOffsetGraph(items);
+    if (this.analysisPanelType === "center") return meanOffsetGraph(rawItems);
     if (this.analysisPanelType === "specifications") return specificationGuidance(items);
     if (this.analysisPanelType === "results") {
       return `<p class="system-summary">${items.map(escapeHtml).join(" · ")}</p>`;
@@ -384,9 +400,10 @@ class F6PdfRenderer extends Renderer {
           const comment = cellText(cell);
           const sourceStatus = comment.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
           const cpkFail = sourceStatus === "cpk-fail";
-          const blocked = sourceStatus === "block" || sourceStatus === "fail" || sourceStatus === "missing-info";
-          const status = cpkFail ? "cpk-fail" : blocked ? "block" : sourceStatus;
-          const displayComment = cpkFail ? "CPK FAIL" : blocked ? "BLOCK" : comment;
+          const missingInfo = sourceStatus === "missing-info";
+          const blocked = sourceStatus === "block" || sourceStatus === "fail";
+          const status = cpkFail ? "cpk-fail" : missingInfo ? "missing-info" : blocked ? "block" : sourceStatus;
+          const displayComment = cpkFail ? "CPK FAIL" : missingInfo ? "MISSING INFO" : blocked ? "BLOCK" : comment;
           return `<td><span class="comment comment--${status}">${escapeHtml(displayComment)}</span></td>`;
         }).join("");
         return `<tr>${cells}</tr>`;
@@ -541,7 +558,7 @@ const PRINT_CSS = `
   .spec-range-graph,.capability-spectrum,.mean-offset-graph,.spec-change-graph { min-width:0; }
   .range-spec-labels { position:relative; margin:0 12% 1mm; color:var(--signal-red); font-size:6.5pt; min-height:2.4mm; } .range-spec-label { position:absolute; top:0; transform:translateX(-50%); white-space:nowrap; } .range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4; transform:translateX(-50%); } .range-row { display:grid; grid-template-columns:17mm 1fr 10mm 22mm; gap:1.2mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .range-row>strong { font-size:7pt; } .range-row--pass>strong { color:var(--pass); } .range-row--fail>strong { color:var(--fail); } .range-row>small { color:var(--p-black); margin:0; } .range-track,.capability-track,.offset-track,.change-track { position:relative; display:block; height:4mm; background:var(--p-gray-210); } .range-track i { position:absolute; top:.8mm; height:2.4mm; background:var(--blue); z-index:2; }   .range-track em { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); z-index:3; } .range-axis { display:flex; justify-content:center; color:var(--muted); font-size:6.5pt; }
   .capability-spectrum figcaption strong { color:var(--blue); } .capability-row { display:grid; grid-template-columns:12mm 1fr 14mm; gap:1mm; align-items:center; margin:1.2mm 0; font-size:7pt; } .capability-track i { display:block; height:100%; background:var(--p-gray-80); } .capability-row--pass .capability-track i { background:var(--pass); } .capability-row--fail .capability-track i { background:var(--fail); } .capability-track b { position:absolute; top:-.8mm; width:1px; height:5.6mm; background:var(--ink); } .capability-spectrum>p,.system-summary { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
-  .offset-track { margin:3mm 0 2mm; background:var(--p-gray-210); } .offset-track .mean-marker--nominal { position:absolute; left:50%; top:-1mm; width:2px; height:6mm; background:var(--signal-red); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-value--nominal,.spec-value--current { color:var(--signal-red); font-weight:700; } .mean-value--adjusted,.spec-value--proposed { color:var(--signal-green); font-weight:700; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
+  .offset-track { margin:3mm 0 2mm; background:var(--p-gray-210); } .offset-track .mean-marker--spec-center { position:absolute; top:-1mm; width:2px; height:6mm; background:var(--signal-red); transform:translateX(-50%); } .offset-track .mean-marker--adjusted { position:absolute; top:.5mm; width:3mm; height:3mm; background:var(--signal-green); transform:translateX(-50%) rotate(45deg); } .mean-marker>span { display:none; } .mean-value--spec-center,.spec-value--current { color:var(--signal-red); font-weight:700; } .mean-value--adjusted,.spec-value--proposed { color:var(--signal-green); font-weight:700; } .mean-offset-graph p,.spec-change-graph p { margin:1mm 0 0; color:var(--muted); font-size:6.8pt; }
   .contribution-chart { margin:0; } .contribution-chart figcaption { margin-bottom:1mm; font-size:8pt; } .contribution-head,.contribution-row { display:grid; grid-template-columns:6mm minmax(25mm,1fr) 16mm minmax(24mm,.8fr) 12mm 15mm minmax(36mm,1.2fr); gap:.8mm; align-items:center; min-height:3.3mm; font-size:6.8pt; } .contribution-head { color:var(--muted); font-weight:700; } .contribution-track { height:2.4mm; overflow:hidden; background:var(--p-gray-210); } .contribution-fill { display:block; height:100%; background:var(--p-gray-80); } .contribution-row--priority .contribution-fill { background:var(--blue); } .contribution-rank,.contribution-priority { font-weight:700; } .contribution-guidance { overflow-wrap:normal; word-break:normal; }
   .spec-change-legend { display:flex; gap:3mm; margin-bottom:1mm; font-size:6.5pt; } .change-row { display:grid; grid-template-columns:10mm 1fr; gap:1mm; align-items:center; margin:2mm 0; font-size:7pt; } .change-row small { grid-column:2; color:var(--muted); } .change-track { height:2.5mm; } .change-track i,.change-track b { position:absolute; top:-.5mm; width:3.5mm; height:3.5mm; transform:translateX(-50%) rotate(45deg); } .change-track .spec-marker--current { background:var(--signal-red); } .change-track .spec-marker--proposed { background:var(--signal-green); } .spec-guidance-values,.spec-range-summary { margin:4px 0 0; font-size:11px; line-height:1.2; }
   @media print { html,body { background:var(--p-white); } body { max-width:none; } }
@@ -566,6 +583,7 @@ const PRINT_CSS = `
   .workbook-summary td:nth-child(2) a { color:var(--raw-data); font-weight:700; }
   .workbook-summary .comment { display:inline-block; padding:3px 6px; border-radius:999px; background:var(--p-gray-210); color:var(--p-black); font:800 12px/1 var(--st-meta); text-transform:uppercase; }
   .workbook-summary .comment--cpk-fail,.workbook-summary .comment--block { color:var(--p-dark-red) !important; }
+  .workbook-summary .comment--missing-info { color:var(--p-yellow) !important; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { position:relative; display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 58px/.95 var(--st-display); text-transform:uppercase; }
@@ -617,6 +635,7 @@ const PRINT_CSS = `
   .factor-table--dense th:nth-child(15),.factor-table--dense td:nth-child(15) { width:12.5%; }
   .factor-table tbody tr.missing td { background:transparent; }
   .factor-table tbody tr.missing td:nth-child(5) { color:var(--p-dark-red); font-weight:700; }
+  .factor-table td.status-missing,.factor-table td .status-missing { color:var(--p-dark-red) !important; font-weight:800; }
   .guidance { display:inline-block; padding-left:8px; border-left:3px solid rgba(0,0,0,.38); }
   .guidance--pass { border-color:var(--p-green); color:var(--p-black); }
   .guidance--review { border-color:var(--p-orange); }

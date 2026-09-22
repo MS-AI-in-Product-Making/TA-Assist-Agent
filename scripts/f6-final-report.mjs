@@ -33,7 +33,8 @@ const NOT_PROVIDED = "NOT_PROVIDED";
 const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
 const MODEL_RISK_DISCLOSURE = "Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.";
-const MODEL_RISK_DISCLOSURE_PATTERN = /Model interpretation may contain hallucinations,\s*label mismatches,\s*or omissions and must be reviewed by ME\./giu;
+const MODEL_RISK_DISCLOSURE_PATTERN = /(?:This\s+)?Model interpretation may contain hallucinations,\s*label mismatches,\s*or omissions and must be reviewed by ME\./giu;
+const DRAWING_INFORMATION_MISSING_FINDING = "Drawing Numbers, drawing dimension definition is missing.";
 const PRODUCT_CAPABILITIES = {
   dataCleaning: "Data Cleaning",
   calculationEngine: "Calculation Engine",
@@ -92,6 +93,10 @@ function hasClassRequiredInput(item, adjustmentClass) {
   const expected = CLARIFICATION_REQUIRED_INPUTS_BY_CLASS[adjustmentClass];
   if (expected === undefined || !Array.isArray(item.requiredInputs)) return false;
   return item.requiredInputs.some((input) => expected.has(String(input)));
+}
+
+function rawNumberMetadata(value) {
+  return Number.isFinite(value) ? `<!-- f6-raw=${String(value)} -->` : "";
 }
 
 function indexByWorksheetName(records) {
@@ -567,9 +572,16 @@ function renderF6V3Worksheet(worksheet, interpretation, ordinal, catalog, imageL
   );
   lines.push("", `## ${catalog.center}`, "", `- ${catalog.status}: ${clean(center.status)}`);
   if (center.status !== "clarification_required") {
-    lines.push(`- Design Nominal: ${fixedEngineering(calculation.system.designNominal, unit)}`,
-      `- Adjusted Mean: ${fixedEngineering(center.adjustedMean, unit)}`,
-      `- Offset: ${fixedEngineering(center.offset, unit)}`);
+    const specificationMidpoint = calculation.capability.lowerSpecLimit / 2 + calculation.capability.upperSpecLimit / 2;
+    const adjustedMean = center.adjustedMean;
+    const specificationOffset = adjustedMean - specificationMidpoint;
+    lines.push(
+      `- LSL: ${fixedEngineering(calculation.capability.lowerSpecLimit, unit)} ${rawNumberMetadata(calculation.capability.lowerSpecLimit)}`,
+      `- USL: ${fixedEngineering(calculation.capability.upperSpecLimit, unit)} ${rawNumberMetadata(calculation.capability.upperSpecLimit)}`,
+      `- Spec Center: ${fixedEngineering(specificationMidpoint, unit)} ${rawNumberMetadata(specificationMidpoint)}`,
+      `- Adjusted Mean: ${fixedEngineering(adjustedMean, unit)} ${rawNumberMetadata(adjustedMean)}`,
+      `- Offset: ${fixedEngineering(specificationOffset, unit)} ${rawNumberMetadata(specificationOffset)}`,
+    );
   }
   if (center.status === "offset") lines.push(`- ${catalog.nominalReminder}`, `- ${clean(center.interpretation)}`);
   if (center.status === "clarification_required") lines.push(`- ${catalog.clarification}: ${clean(center.reasonCode)}`);
@@ -736,13 +748,17 @@ function renderV4OptimizationModules(worksheet, unit, catalog) {
   const baseline = worksheet.f6Worksheet.baselineResult;
   const selected = worksheet.f6Worksheet.selectedResult.snapshot;
   const contributors = [...selected.factors].sort((left, right) => right.contribution - left.contribution);
+  const specificationMidpoint = selected.capability.lowerSpecLimit / 2 + selected.capability.upperSpecLimit / 2;
+  const specificationOffset = selected.system.mean - specificationMidpoint;
   const lines = [
     "",
     `## ${catalog.center}`,
     "",
-    `- Design Nominal: ${fixedEngineering(baseline.system.designNominal, unit)}`,
-    `- Adjusted Mean: ${fixedEngineering(selected.system.mean, unit)}`,
-    `- Offset: ${fixedEngineering(selected.system.meanOffset, unit)}`,
+    `- LSL: ${fixedEngineering(selected.capability.lowerSpecLimit, unit)} ${rawNumberMetadata(selected.capability.lowerSpecLimit)}`,
+    `- USL: ${fixedEngineering(selected.capability.upperSpecLimit, unit)} ${rawNumberMetadata(selected.capability.upperSpecLimit)}`,
+    `- Spec Center: ${fixedEngineering(specificationMidpoint, unit)} ${rawNumberMetadata(specificationMidpoint)}`,
+    `- Adjusted Mean: ${fixedEngineering(selected.system.mean, unit)} ${rawNumberMetadata(selected.system.mean)}`,
+    `- Offset: ${fixedEngineering(specificationOffset, unit)} ${rawNumberMetadata(specificationOffset)}`,
     `- Selected Result: ${v4SelectedStatusText(worksheet.f6Worksheet.selectedResult.status)}`,
     "",
     `## ${catalog.contributors}`,
@@ -1273,6 +1289,7 @@ function dispositionComment(worksheet) {
   if (worksheet.disposition === "PASS") return "Pass";
   const capability = worksheet.f4Calculation?.capability;
   if (capability?.lowerCpkStatus === "FAIL" || capability?.upperCpkStatus === "FAIL") return "Cpk Fail";
+  if (v3PrimaryFinding(worksheet) === DRAWING_INFORMATION_MISSING_FINDING) return "Missing Info";
   return "Block";
 }
 
@@ -1356,7 +1373,7 @@ function v3PrimaryFinding(context) {
   const missingDimId = governanceRows.filter(({ dimId }) => dimId == null || dimId === "").length;
   const openDrawingDefinition = governanceRows.some(({ governanceStatus }) => governanceStatus !== "complete");
   if (context.disposition === "CONDITIONAL_PASS" || missingDrawing > 0 || missingDimId > 0 || openDrawingDefinition) {
-    return "Drawing Numbers, drawing dimension definition is missing.";
+    return DRAWING_INFORMATION_MISSING_FINDING;
   }
 
   return `CpkL ${numberText(lowerCpk)} and CpkU ${numberText(upperCpk)} meet Target Cpk ${numberText(targetCpk)}; required inputs and reviews are complete.`;

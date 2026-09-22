@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,6 +27,7 @@ import {
   installRequiredMultimodalV3,
 } from "./f6-artifact-test-fixture.mjs";
 import { createF6FinalReportProjection, worstDisposition } from "./f6-final-report.mjs";
+import { f6PdfImageLinks, renderF6PdfHtml } from "../packages/product-export/src/f6-pdf-report.js";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
@@ -1582,7 +1584,7 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(report.markdown).toContain("| Analysis Requested At | 2026-09-16 01:30:12 (UTC -7) |");
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
-    expect(report.markdown).toContain("| Block | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
+    expect(report.markdown).toContain("| Missing Info | [Analysis-A](#worksheet-1) | Loop Analysis-A |");
     expect(report.markdown).toContain("[Analysis-A](#worksheet-1)");
     expect(report.markdown).toContain("[Analysis-B](#worksheet-2)");
     expect(report.markdown).toContain('<a id="worksheet-1"></a>');
@@ -1762,6 +1764,7 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(report.markdown).toContain("| Result | Worksheet | Tolerance Loop Description | Key Finding |");
     expect(report.markdown).toContain("Drawing Numbers, drawing dimension definition is missing.");
+    expect(report.markdown).toContain("| Missing Info | [Analysis-A](#worksheet-1) |");
     expect(report.markdown).not.toContain("engineering review remains incomplete");
     expect(report.markdown).not.toContain("analysis closure is not complete");
     expect(worksheetSection).toContain("| Ordinal | Factor Description | Part Name |");
@@ -1771,8 +1774,11 @@ describe("createF6FinalReportProjection v3", () => {
     expect(worksheetSection).toContain("| 6-Sigma Range |");
     expect(worksheetSection).toContain("| Worst-Case Range |");
     expect(worksheetSection).toContain("## Adjusted Mean to Spec Center Shift");
-    expect(worksheetSection).toContain("- Design Nominal:");
+    expect(worksheetSection).toContain("- Spec Center:");
     expect(worksheetSection).toContain("- Adjusted Mean:");
+    expect(worksheetSection).toContain("- LSL:");
+    expect(worksheetSection).toContain("- USL:");
+    expect(worksheetSection).not.toContain("- Design Nominal:");
     expect(worksheetSection).toContain("## Contributor Priorities");
     expect(worksheetSection).not.toContain("## Specification Changes");
     expect(worksheetSection).not.toContain("## Optimization Comparison");
@@ -1853,7 +1859,7 @@ describe("createF6FinalReportProjection v3", () => {
 
     expect(markdown).toContain("## Adjusted Mean to Spec Center Shift");
     expect(markdown).toContain("Adjusted Mean: 0.200 mm");
-    expect(markdown).toContain("- Design Nominal:");
+    expect(markdown).toContain("- Spec Center:");
     expect(markdown).toContain("Offset: 0.200 mm");
     expect(markdown).toContain("optimize Factor nominal values");
 
@@ -2033,6 +2039,10 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     expect(markdown).not.toContain("## Optimization Comparison");
     expect(markdown).not.toContain("<!-- f6-optimization-comparison -->");
     expect(markdown).toContain("## Adjusted Mean to Spec Center Shift");
+    expect(markdown).toContain("- LSL:");
+    expect(markdown).toContain("- USL:");
+    expect(markdown).toContain("- Spec Center:");
+    expect(markdown).not.toContain("- Design Nominal:");
     expect(markdown).toContain(`- Selected Result: ${v4SelectedStatusTextForTest(selectedStatus)}`);
     expect(markdown).toContain("## Contributor Priorities");
     expect(markdown).toContain("| Rank | Factor | One Sigma | Variance Contribution | Priority | Guidance |");
@@ -2063,6 +2073,30 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
     }
   });
 
+  it("preserves full-precision spec-center metadata through PDF projection", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    configureV4Outcome(inputs, "baseline_meets_target");
+    const snapshot = inputs.f6Optimization.worksheets[0].selectedResult.snapshot;
+    snapshot.capability.lowerSpecLimit = 0;
+    snapshot.capability.upperSpecLimit = 0.101001;
+    snapshot.system.specificationMidpoint = 0.0505005;
+    snapshot.system.mean = 0.0504004;
+    snapshot.system.meanOffset = -0.0001001;
+
+    const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
+    const html = renderF6PdfHtml({
+      markdown: report.markdown,
+      sourceHash: createHash("sha256").update(report.markdown).digest("hex"),
+      inlineImages: new Map(f6PdfImageLinks(report.markdown).map((link) => [link, "data:image/png;base64,iVBORw0KGgo="])),
+    });
+
+    expect(report.markdown).toContain("<!-- f6-raw=0.0505005 -->");
+    expect(report.markdown).toContain("<!-- f6-raw=0.0504004 -->");
+    expect(html).toContain('class="mean-offset-graph"');
+    expect(html).toContain('data-spec-center="0.051"');
+    expect(html).not.toContain("Insufficient numeric evidence");
+  });
+
   it("renders a specification alternative when lower Cpk equals the target FAIL boundary", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
     configureV4Outcome(inputs, "step2_tolerance_optimized");
@@ -2090,6 +2124,8 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
       "Model interpretation may contain hallucinations,\nlabel mismatches, or omissions and must be reviewed by ME.",
       "",
       "  Contributors remain visible.  ",
+      "",
+      "This model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
     ].join("\n\n");
 
     const report = createF6FinalReportProjection(inputs, { requireMultimodalV3: true });
@@ -2097,6 +2133,7 @@ describe("createF6FinalReportProjection v4 mixed outcomes", () => {
 
     expect(markdown).toContain("Process review remains required.");
     expect(markdown).toContain("Contributors remain visible.");
+    expect(markdown).not.toMatch(/(?:^|\n)This(?:\n|$)/u);
     expect(markdown.match(/Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME\./gu)).toHaveLength(1);
     expect(markdown).toContain("*Model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.*");
   });
