@@ -27,7 +27,7 @@ describe("f7 project wiring", () => {
 
     const apiPackage = readJson("apps/f7-local-api/package.json");
     expect(apiPackage.name).toBe("@ai-assist/f7-local-api");
-    expect(apiPackage.scripts?.dev).toBe("tsx watch src/main.ts");
+    expect(apiPackage.scripts?.dev).toBe("node --conditions=source --import tsx --watch src/main.ts");
 
     const apiIndexPath = path.join(rootDir, "apps/f7-local-api/src/index.ts");
     const apiMainPath = path.join(rootDir, "apps/f7-local-api/src/main.ts");
