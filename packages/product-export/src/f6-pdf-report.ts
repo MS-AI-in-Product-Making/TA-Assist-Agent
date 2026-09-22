@@ -698,7 +698,7 @@ export function renderF6PdfHtml(input: F6PdfHtmlInput): string {
   const parsedContent = marked.parse(input.markdown, { async: false, renderer });
   const content = formatReportHtml(`${parsedContent}${renderer.finishContent()}`);
   const base = input.baseHref === undefined ? "" : `<base href="${escapeHtml(input.baseHref)}">`;
-  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}</main></body></html>`;
+  return `<!doctype html>\n<html lang="en" data-source-sha256="${input.sourceHash}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">${base}<meta name="color-scheme" content="light"><title>TA Engineering Analysis Report</title><style>${PRINT_CSS}</style></head><body><main><section class="report-content slide slide-summary">${content}</main></body></html>`;
 }
 
 export function f6PdfImageLinks(markdown: string): readonly string[] {

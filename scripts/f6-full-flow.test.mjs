@@ -781,6 +781,33 @@ describe("runF6FullValidation", () => {
     expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
   });
 
+  it("persists only safe local-strategy failure metadata and publishes no reports", () => {
+    const context = setup();
+    context.deps.renderFinalReportPdf = () => {
+      throw Object.assign(new Error("confidential worker output"), {
+        code: "pdf_render_unavailable",
+        attempts: [
+          { browser: "C:\\confidential\\chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 60_005, stderr: "secret" },
+          { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700 },
+          { browser: "private-report-name.exe", strategy: "private-report-path", reason: "execution_failed", elapsedMs: -1 },
+        ],
+      });
+    };
+    const result = runF6FullValidation({}, context.deps);
+    expect(result).toMatchObject({ status: "failed", reasonCode: "report_failed" });
+    expect(readdirSync(context.runRoot)).toEqual(["manifest.json"]);
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    expect(manifest.failureDetail).toEqual({
+      code: "pdf_render_unavailable",
+      attempts: [
+        { browser: "chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 60_005 },
+        { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700 },
+        { browser: "chromium", reason: "execution_failed" },
+      ],
+    });
+    expect(JSON.stringify(manifest)).not.toMatch(/confidential|private-report|secret/);
+  });
+
   it("passes optional targets through the v4 gate and records identical input decisions in summary and manifest", () => {
     const context = setup();
     const inputDecisions = {

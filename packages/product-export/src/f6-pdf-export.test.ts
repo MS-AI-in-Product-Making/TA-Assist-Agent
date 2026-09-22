@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +13,7 @@ const cleanupRoots: string[] = [];
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const temporaryManagedRoot = (): string => {
-  const root = mkdtempSync(join(tmpdir(), "f6-inline-images-"));
+  const root = mkdtempSync(join(process.cwd(), ".f6-inline-images-"));
   cleanupRoots.push(root);
   return root;
 };
@@ -66,6 +65,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["controlled-browser.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile,
     });
 
@@ -81,6 +81,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["controlled-browser.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile: vi.fn(),
     })).toThrow(expect.objectContaining({ code: "pdf_render_unavailable" }));
   });
@@ -91,7 +92,7 @@ describe("renderF6PdfSync", () => {
       const profile = args.find((arg) => arg.startsWith("--user-data-dir="));
       if (profile === undefined) throw new Error("missing browser profile");
       profilePaths.push(profile);
-      if (browser === "edge.exe") throw new Error("render timed out");
+      if (browser === "chrome.exe") throw new Error("render timed out");
 
       const output = args.find((arg) => arg.startsWith("--print-to-pdf="))?.slice("--print-to-pdf=".length);
       if (output === undefined) throw new Error("missing PDF output");
@@ -105,6 +106,7 @@ describe("renderF6PdfSync", () => {
       managedRoot: process.cwd(),
     }, {
       installedBrowsers: () => ["edge.exe", "chrome.exe"],
+      executeWorker: () => { throw new Error("Worker unavailable"); },
       executeFile,
     });
 
@@ -124,6 +126,7 @@ describe("renderF6PdfSync", () => {
         managedRoot: process.cwd(),
       }, {
         installedBrowsers: () => ["edge.exe", "chrome.exe"],
+        executeWorker: () => { throw new Error("confidential worker output"); },
         executeFile: vi.fn((_browser, args) => {
           attempt += 1;
           if (attempt === 1) throw new Error("confidential browser output");
@@ -139,8 +142,14 @@ describe("renderF6PdfSync", () => {
     expect(failure).toMatchObject({
       code: "pdf_render_unavailable",
       attempts: [
-        { browser: "edge.exe", reason: "execution_failed" },
-        { browser: "chrome.exe", reason: "invalid_pdf" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "playwright", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "cli", reason: "execution_failed" },
+        { browser: "edge.exe", strategy: "cli", reason: "invalid_pdf" },
       ],
     });
     expect(String(failure)).not.toContain("confidential browser output");
@@ -151,6 +160,12 @@ describe("renderF6PdfSync", () => {
       markdown: "[Open image](../outside.png)",
       sourceHash: createHash("sha256").update("[Open image](../outside.png)").digest("hex"),
     })).toThrow("validated and inlined");
+  });
+
+  it("blocks network resources and scripts in HTML used by both local render strategies", () => {
+    const html = renderF6PdfHtml({ markdown: MARKDOWN, sourceHash: HASH });
+    expect(html).toContain('http-equiv="Content-Security-Policy"');
+    expect(html).toContain("default-src 'none'; img-src data:; style-src 'unsafe-inline'");
   });
 
   it("renders Markdown image tokens only from validated inline bytes", () => {

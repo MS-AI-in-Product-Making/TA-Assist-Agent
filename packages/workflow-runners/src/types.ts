@@ -203,7 +203,9 @@ export interface F6OptimizationResult {
     readonly code: "report_projection_failed" | "pdf_render_failed" | "pdf_artifact_invalid" | "pdf_render_unavailable";
     readonly attempts?: readonly {
       readonly browser: string;
-      readonly reason: "execution_failed" | "invalid_pdf";
+      readonly reason: "execution_failed" | "invalid_pdf" | "timed_out" | "cleanup_failed";
+      readonly strategy?: "playwright" | "cli";
+      readonly elapsedMs?: number;
     }[];
   };
   readonly outputDirectory: string;

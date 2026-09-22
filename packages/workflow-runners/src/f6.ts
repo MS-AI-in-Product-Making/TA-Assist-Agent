@@ -393,14 +393,22 @@ function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationR
   if (code !== "pdf_artifact_invalid" && code !== "pdf_render_unavailable") return { code: "pdf_render_failed" };
   if (!("attempts" in error) || !Array.isArray((error as { attempts?: unknown }).attempts)) return { code };
 
-  const attempts: Array<{ browser: string; reason: "execution_failed" | "invalid_pdf" }> = [];
+  const attempts: Array<NonNullable<NonNullable<F6OptimizationResult["failureDetail"]>["attempts"]>[number]> = [];
   for (const attempt of (error as { attempts: unknown[] }).attempts) {
     if (typeof attempt !== "object" || attempt === null) continue;
     const browser = "browser" in attempt ? attempt.browser : undefined;
     const reason = "reason" in attempt ? attempt.reason : undefined;
     if (typeof browser !== "string" || browser.length === 0
-      || (reason !== "execution_failed" && reason !== "invalid_pdf")) continue;
-    attempts.push({ browser: path.basename(browser), reason });
+      || (reason !== "execution_failed" && reason !== "invalid_pdf" && reason !== "timed_out" && reason !== "cleanup_failed")) continue;
+    const name = path.basename(browser).toLowerCase();
+    const strategy = "strategy" in attempt ? attempt.strategy : undefined;
+    const elapsedMs = "elapsedMs" in attempt ? attempt.elapsedMs : undefined;
+    attempts.push({
+      browser: ["chrome.exe", "msedge.exe", "edge.exe"].includes(name) ? name : "chromium",
+      reason,
+      ...(strategy === "playwright" || strategy === "cli" ? { strategy } : {}),
+      ...(typeof elapsedMs === "number" && Number.isFinite(elapsedMs) && elapsedMs >= 0 ? { elapsedMs } : {}),
+    });
   }
   return attempts.length === 0 ? { code } : { code, attempts };
 }
