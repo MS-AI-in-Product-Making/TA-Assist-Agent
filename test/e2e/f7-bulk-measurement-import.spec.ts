@@ -40,7 +40,7 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await expect(page.locator("[data-measurement-import-dialog]")).toHaveCount(0);
   await assertCanonicalMeasuredRows(page);
 
-  await page.getByRole("tab", { name: "Individual Factor Entry" }).click();
+  await page.getByRole("tab", { name: "Individual Factor Input" }).click();
   await assertCanonicalMeasuredRows(page);
   await page.locator("[data-open-measurement]").first().click();
   await expect(page.getByRole("region", { name: "Factor measurement workspace" })).toBeVisible();
@@ -64,7 +64,7 @@ test("imports seven measured Factors, blocks negative data, and explicitly confi
   await expect(page.locator("[data-import-diagnostic='blocking']").first()).toContainText("Measurements!B15");
   await page.locator("[data-close-measurement-import]").click();
 
-  await page.getByRole("tab", { name: "Individual Factor Entry" }).click();
+  await page.getByRole("tab", { name: "Individual Factor Input" }).click();
   const committedFactors = page.locator("[data-open-measurement]");
   for (let factorIndex = 0; factorIndex < 7; factorIndex += 1) {
     await committedFactors.nth(factorIndex).click();
