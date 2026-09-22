@@ -583,7 +583,7 @@ const PRINT_CSS = `
   .workbook-summary td:nth-child(2) a { color:var(--raw-data); font-weight:700; }
   .workbook-summary .comment { display:inline-block; padding:3px 6px; border-radius:999px; background:var(--p-gray-210); color:var(--p-black); font:800 12px/1 var(--st-meta); text-transform:uppercase; }
   .workbook-summary .comment--cpk-fail,.workbook-summary .comment--block { color:var(--p-dark-red) !important; }
-  .workbook-summary .comment--missing-info { color:var(--p-yellow) !important; }
+  .workbook-summary .comment--missing-info { color:var(--warn) !important; }
   .slide-worksheet { display:flex; flex-direction:column; gap:18px; border:0; }
   .slide-worksheet>.worksheet-fit { position:relative; display:grid; min-height:0; flex:1; grid-template-columns:1fr; grid-template-rows:64px 330px 1fr; gap:10px; }
   .slide-worksheet>.worksheet-fit>h1 { margin:0; padding:0; border:0; color:var(--p-black); font:700 58px/.95 var(--st-display); text-transform:uppercase; }

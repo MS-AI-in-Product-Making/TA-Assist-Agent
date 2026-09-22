@@ -426,7 +426,7 @@ describe("renderF6PdfSync", () => {
     expect(html).toContain(".workbook-summary th:nth-child(3),.workbook-summary td:nth-child(3) { width:35%;");
     expect(html).toContain(".workbook-summary th:nth-child(4),.workbook-summary td:nth-child(4) { width:35%;");
     expect(html).toContain(".workbook-summary .comment { display:inline-block; padding:3px 6px;");
-    expect(html).toContain(".workbook-summary .comment--missing-info { color:var(--p-yellow) !important;");
+    expect(html).toContain(".workbook-summary .comment--missing-info { color:var(--warn) !important;");
     expect(html).toContain(".factor-table th:nth-child(2),.factor-table td:nth-child(2) { width:17%; white-space:nowrap;");
     expect(html).toContain(".factor-table--dense th:nth-child(2),.factor-table--dense td:nth-child(2) { width:20%; white-space:nowrap;");
     expect(html).toContain(".range-spec-line { position:absolute; top:-.8mm; width:1px; height:5.6mm; min-height:0; padding:0; background:var(--signal-red); font-size:0; z-index:4;");
