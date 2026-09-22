@@ -206,7 +206,8 @@ export function renderF6PdfSync(
         }
       } catch (error) {
         const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-        outcome = code === "ETIMEDOUT" ? "timed_out" : code === "cleanup_failed" ? "cleanup_failed" : "execution_failed";
+        outcome = code === "ETIMEDOUT" ? "timed_out" : code === "cleanup_failed" ? "cleanup_failed"
+          : code === "invalid_pdf" ? "invalid_pdf" : "execution_failed";
       }
       const event: F6PdfRenderAttempt = {
         browser: safeBrowserName(browser), strategy, outcome, elapsedMs: Math.round(performance.now() - start), deadlineMs: timeoutMs,

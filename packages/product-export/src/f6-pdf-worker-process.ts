@@ -1,17 +1,16 @@
 import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import treeKill from "tree-kill";
 
 import type { F6PdfWorkerRequest } from "./f6-pdf-export.js";
 
-export type WorkerOutcome = "success" | "execution_failed" | "timed_out" | "cleanup_failed";
+export type WorkerOutcome = "success" | "execution_failed" | "invalid_pdf" | "timed_out" | "cleanup_failed";
 const CLEANUP_MS = 5_000;
-const outcomes: readonly WorkerOutcome[] = ["success", "execution_failed", "timed_out", "cleanup_failed"];
+const outcomes: readonly WorkerOutcome[] = ["success", "execution_failed", "invalid_pdf", "timed_out", "cleanup_failed"];
 
 interface SupervisorDependencies {
   readonly spawnWorker?: (executable: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
-  readonly terminateTree?: (child: ChildProcess, done: (error?: Error) => void) => void;
+  readonly terminateTree?: (child: ChildProcess, done: (error?: Error) => void) => void | (() => Promise<void>);
 }
 
 interface WorkerDependencies {
@@ -25,10 +24,28 @@ function entryArgs(name: string): string[] {
   return existsSync(compiled) ? [fileURLToPath(compiled)] : ["--import", "tsx", fileURLToPath(new URL(`./${name}.ts`, import.meta.url))];
 }
 
-function terminateOwnedTree(child: ChildProcess, done: (error?: Error) => void): void {
+function terminateOwnedTree(child: ChildProcess, done: (error?: Error) => void): void | (() => Promise<void>) {
   if (child.pid === undefined) { done(); return; }
   if (process.platform === "win32") {
-    treeKill(child.pid, "SIGKILL", done);
+    // Retain the actual killer handle so the cleanup bound can cancel pending
+    // PID targeting before supervisor exit disconnects the worker.
+    const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      windowsHide: true, stdio: "ignore",
+    });
+    let failed = false;
+    let closed = false;
+    killer.once("error", () => { failed = true; });
+    const completion = new Promise<void>((resolve) => {
+      killer.once("close", (code) => {
+        closed = true;
+        done(!failed && code === 0 ? undefined : new Error("Tree termination failed."));
+        resolve();
+      });
+    });
+    return async () => {
+      if (!closed) killer.kill("SIGKILL");
+      await completion;
+    };
   } else {
     // The supervisor starts the worker as group leader; browsers must not detach.
     try { process.kill(-child.pid, "SIGKILL"); done(); } catch (error) { done(error as Error); }
@@ -48,8 +65,9 @@ export function superviseF6PdfWorker(request: F6PdfWorkerRequest, dependencies: 
     let exited = false;
     let closed = false;
     let settled = false;
-    let stopping = false;
+    let state: "rendering" | "decided" | "terminating" = "rendering";
     let terminationDone = false;
+    let cancelTermination: (() => Promise<void>) | undefined;
     let outcome: WorkerOutcome = "execution_failed";
     let cleanup: ReturnType<typeof setTimeout> | undefined;
     const finish = (value: WorkerOutcome) => {
@@ -60,22 +78,28 @@ export function superviseF6PdfWorker(request: F6PdfWorkerRequest, dependencies: 
       resolve(value);
     };
     const boundCleanup = () => {
-      cleanup ??= setTimeout(() => finish("cleanup_failed"), CLEANUP_MS);
+      cleanup ??= setTimeout(() => {
+        outcome = "cleanup_failed";
+        if (!terminationDone && cancelTermination !== undefined) {
+          // Never disconnect a worker while taskkill could still target its PID.
+          void cancelTermination().then(() => finish("cleanup_failed"));
+        } else finish("cleanup_failed");
+      }, CLEANUP_MS);
     };
     const stop = (reason: WorkerOutcome) => {
-      // This gate and termination initiation run in one event-loop turn. Never
-      // schedule a PID-based termination after our owned child has exited.
-      if (settled || exited || closed || stopping) return;
-      stopping = true;
+      // A READY worker cannot exit without our decision. Claim termination
+      // before asynchronous taskkill starts and never acknowledge later READY.
+      if (settled || exited || closed || state !== "rendering") return;
+      state = "terminating";
       outcome = reason;
       clearTimeout(deadline);
       boundCleanup();
       try {
-        (dependencies.terminateTree ?? terminateOwnedTree)(child, (error) => {
+        cancelTermination = (dependencies.terminateTree ?? terminateOwnedTree)(child, (error) => {
           terminationDone = true;
           if (error != null) outcome = "cleanup_failed";
           if (closed) finish(outcome);
-        });
+        }) ?? undefined;
       } catch {
         terminationDone = true;
         outcome = "cleanup_failed";
@@ -90,7 +114,8 @@ export function superviseF6PdfWorker(request: F6PdfWorkerRequest, dependencies: 
     child.once("close", (code) => {
       closed = true;
       exited = true;
-      if (!stopping) finish(code === 0 ? "success" : "execution_failed");
+      if (state === "decided") finish(outcome === "success" && code !== 0 ? "execution_failed" : outcome);
+      else if (state === "rendering") finish("execution_failed");
       else if (terminationDone) finish(outcome);
     });
     child.once("error", () => {
@@ -98,7 +123,24 @@ export function superviseF6PdfWorker(request: F6PdfWorkerRequest, dependencies: 
       else stop("execution_failed");
     });
     child.on("message", (message) => {
+      if (settled || exited || closed || state !== "rendering") return;
       if (message === "execution_failed" || message === "cleanup_failed") stop(message);
+      if (message !== "READY_SUCCESS") return;
+      state = "decided";
+      clearTimeout(deadline);
+      outcome = "invalid_pdf";
+      try {
+        const pdf = readFileSync(request.pdfPath);
+        if (pdf.length >= 8 && pdf.subarray(0, 5).toString("ascii") === "%PDF-") outcome = "success";
+      } catch { /* Missing/unreadable output is not a successful render. */ }
+      boundCleanup();
+      try {
+        child.send(outcome === "success" ? "ACK_COMMIT" : "ABORT", (error) => {
+          // A sent decision permits independent exit: never target this PID
+          // again, including on delivery failure. Disconnect cleanup is worker-owned.
+          if (error != null) outcome = "execution_failed";
+        });
+      } catch { outcome = "execution_failed"; }
     });
     const deadline = setTimeout(() => stop("timed_out"), request.timeoutMs);
     child.stdin?.on?.("error", () => stop("execution_failed"));

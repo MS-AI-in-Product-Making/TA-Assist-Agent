@@ -28,15 +28,27 @@ Recovery policy:
 
 The synchronous boundary launches a local asynchronous supervisor that owns the
 worker `ChildProcess` from spawn until close. No browser PID file is used.
-Timeout/failure termination is initiated only while that owned worker has not
-emitted exit or close: Windows uses `tree-kill` (taskkill `/T /F`); Unix kills
-the owned worker process group, with browser descendants kept in that group.
-Once exit/close is observed, no further PID-targeted termination is scheduled.
-The worker awaits page/context/browser close and browser process close before
-normal exit, then flushes the PDF; the parent validates the resulting bytes.
-Launch/close failures leave the worker live for supervisor-owned tree cleanup.
+Both Playwright and CLI workers await browser process close and flush the PDF,
+then send the allowlisted IPC status `READY_SUCCESS`. They hold their PID alive
+until the supervisor sends `ACK_COMMIT` or controlled `ABORT`; there is no
+independent successful exit. The supervisor serializes READY and timeout in
+one event loop. READY-first cancels the render deadline, validates the PDF
+signature/length, sends the decision, and waits for worker close. Invalid output
+gets `ABORT` and remains a failed attempt, not a committed artifact.
+
+Timeout-first marks termination before starting Windows taskkill `/T /F`
+or Unix process-group termination, and never acknowledges late READY.
+The worker therefore remains alive at its original PID while asynchronous
+taskkill is resolving its target. Once a decision is sent, or exit/close is
+observed, no further PID-targeted termination is scheduled. Launch/close
+failures also leave the worker live for supervisor-owned tree cleanup.
+Unexpected supervisor IPC disconnect triggers worker-owned browser cleanup;
+if graceful close cannot complete, the still-live worker terminates its own
+tree. Normal timeout cleanup never disconnects IPC to trigger this guard.
 Process-tree termination and worker close have a separate five-second bound;
-failure to confirm cleanup returns `cleanup_failed`. Transient Windows profile
+an outstanding Windows taskkill is cancelled through its owned process handle
+and its close confirmed before the supervisor can disconnect the worker.
+Failure to confirm cleanup returns `cleanup_failed`. Transient Windows profile
 locks are retried for up to five
 additional seconds after termination. Working files live in unique `.ta-assist-f6-pdf-*` directories
 under the current working directory (which must be writable) and are removed

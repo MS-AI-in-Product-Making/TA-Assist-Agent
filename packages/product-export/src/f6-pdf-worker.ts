@@ -4,8 +4,35 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import treeKill from "tree-kill";
 
 import { f6PdfBrowserArgs, type F6PdfWorkerRequest } from "./f6-pdf-export.js";
+import { createF6PdfWorkerHandshake } from "./f6-pdf-worker-handshake.js";
+
+let browserClosed = true;
+let disconnectBrowser: (() => Promise<void>) | undefined;
+
+function terminateDisconnectedTree(): Promise<void> {
+  // The worker itself holds this PID until termination; no published browser
+  // PID can become stale while an asynchronous Windows taskkill is pending.
+  return new Promise((resolve, reject) => {
+    if (process.platform === "win32") treeKill(process.pid, "SIGKILL", (error) => error ? reject(error) : resolve());
+    else {
+      try { process.kill(-process.pid, "SIGKILL"); resolve(); } catch (error) { reject(error); }
+    }
+  });
+}
+
+const handshake = createF6PdfWorkerHandshake(async () => {
+  if (browserClosed) return;
+  let termination: Promise<void> | undefined;
+  const terminate = () => termination ??= terminateDisconnectedTree().catch(() => process.exit(1));
+  const fallback = setTimeout(() => { void terminate(); }, 5_000);
+  try {
+    try { await disconnectBrowser?.(); } catch { /* Fall back to our still-owned tree. */ }
+    if (!browserClosed) await terminate();
+  } finally { clearTimeout(fallback); }
+});
 
 async function closeBrowser(browser: Browser | undefined, context: BrowserContext | undefined, page: Page | undefined, exit: Promise<void>): Promise<void> {
   try {
@@ -30,9 +57,14 @@ async function render(request: F6PdfWorkerRequest): Promise<void> {
   const child = spawn(request.browser, f6PdfBrowserArgs(request), {
     windowsHide: true, stdio: "ignore",
   });
+  browserClosed = false;
   const exit = new Promise<void>((resolve, reject) => {
     child.once("error", () => reject(new Error("Browser launch failed.")));
-    child.once("close", (code) => code === 0 ? resolve() : reject(new Error("Browser exited.")));
+    child.once("close", (code) => {
+      browserClosed = true;
+      if (code === 0) resolve();
+      else reject(new Error("Browser exited."));
+    });
   });
   void exit.catch(() => {});
   if (request.strategy === "cli") {
@@ -60,6 +92,7 @@ async function render(request: F6PdfWorkerRequest): Promise<void> {
       }
     }
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: request.timeoutMs });
+    disconnectBrowser = () => closeBrowser(browser, context, page, exit);
     context = await browser.newContext({ javaScriptEnabled: false, serviceWorkers: "block" });
     const sourceUrl = pathToFileURL(request.htmlPath).href;
     await context.route("**/*", (route) => {
@@ -75,14 +108,14 @@ async function render(request: F6PdfWorkerRequest): Promise<void> {
 }
 
 try {
+  if (!process.connected) throw new Error("Supervisor channel is required.");
   const request = JSON.parse(readFileSync(0, "utf8")) as F6PdfWorkerRequest;
   await render(request);
   const descriptor = openSync(request.pdfPath, "r+");
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
-  process.exit(0);
+  handshake.ready();
 } catch (error) {
   const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
   // Stay live until our owner terminates the tree, even if launch/close failed.
-  process.send?.(code === "cleanup_failed" ? "cleanup_failed" : "execution_failed");
-  setInterval(() => {}, 1_000);
+  handshake.fail(code === "cleanup_failed" ? "cleanup_failed" : "execution_failed");
 }
