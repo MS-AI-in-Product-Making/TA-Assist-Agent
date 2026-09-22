@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-assist/contracts": "0.1.0",
     "marked": "16.4.1",
-    "playwright-core": "^1.63.0"
+    "playwright-core": "^1.63.0",
+    "tree-kill": "^1.2.2"
   }
 }

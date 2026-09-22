@@ -403,11 +403,13 @@ function safeReportFailureDetail(stage: string, error: unknown): F6OptimizationR
     const name = path.basename(browser).toLowerCase();
     const strategy = "strategy" in attempt ? attempt.strategy : undefined;
     const elapsedMs = "elapsedMs" in attempt ? attempt.elapsedMs : undefined;
+    const deadlineMs = "deadlineMs" in attempt ? attempt.deadlineMs : undefined;
     attempts.push({
       browser: ["chrome.exe", "msedge.exe", "edge.exe"].includes(name) ? name : "chromium",
       reason,
       ...(strategy === "playwright" || strategy === "cli" ? { strategy } : {}),
       ...(typeof elapsedMs === "number" && Number.isFinite(elapsedMs) && elapsedMs >= 0 ? { elapsedMs } : {}),
+      ...(typeof deadlineMs === "number" && Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 600_000 ? { deadlineMs } : {}),
     });
   }
   return attempts.length === 0 ? { code } : { code, attempts };

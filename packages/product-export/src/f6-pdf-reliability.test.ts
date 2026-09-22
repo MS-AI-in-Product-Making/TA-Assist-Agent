@@ -20,6 +20,62 @@ const input = {
 const pdf = Buffer.from("%PDF-1.7\nvalidated\n");
 
 describe("F6 local render recovery", () => {
+  it.each(["playwright", "cli"])("allows a healthy 75-second %s render under a later deadline", (strategy) => {
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+    const attempts: F6PdfRenderAttempt[] = [];
+    try {
+      const result = renderF6PdfSync(input, {
+        installedBrowsers: () => ["chrome.exe", "msedge.exe"],
+        executeWorker: (request) => {
+          const duration = request.strategy === strategy ? 75_000 : Infinity;
+          vi.advanceTimersByTime(Math.min(duration, request.timeoutMs));
+          if (duration > request.timeoutMs) throw Object.assign(new Error("deadline"), { code: "ETIMEDOUT" });
+          writeFileSync(request.pdfPath, pdf);
+        },
+        onAttempt: (attempt) => attempts.push(attempt),
+      });
+      expect(result).toEqual(pdf);
+      expect(attempts.at(-1)).toMatchObject({
+        outcome: "success", strategy, elapsedMs: 75_000,
+        deadlineMs: strategy === "cli" ? 600_000 : 120_000,
+      });
+      expect(attempts.map((attempt) => attempt.deadlineMs)).toEqual(
+        strategy === "cli" ? [30_000, 30_000, 120_000, 120_000, 300_000, 300_000, 600_000] : [30_000, 30_000, 120_000],
+      );
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("supports a bounded internal deadline schedule and records the actual deadline", () => {
+    const deadlines: number[] = [];
+    expect(() => renderF6PdfSync(input, {
+      installedBrowsers: () => ["chrome.exe"],
+      deadlines: { playwrightMs: [10, 20, 30], cliMs: 40 },
+      executeWorker: (request) => { deadlines.push(request.timeoutMs); throw new Error("failed"); },
+    })).toThrow(expect.objectContaining({
+      attempts: [10, 20, 30, 40].map((deadlineMs) => expect.objectContaining({ deadlineMs })),
+    }));
+    expect(deadlines).toEqual([10, 20, 30, 40]);
+  });
+
+  it.each([0, -1, NaN, Infinity, 600_001, 1.5])("rejects unsafe deadline %s before execution", (invalid) => {
+    let executed = false;
+    expect(() => renderF6PdfSync(input, {
+      deadlines: { playwrightMs: [30_000, 120_000, invalid], cliMs: 600_000 },
+      installedBrowsers: () => ["chrome.exe"],
+      executeWorker: () => { executed = true; },
+    })).toThrow("Invalid F6 PDF deadline configuration.");
+    expect(executed).toBe(false);
+  });
+
+  it.each([
+    { playwrightMs: [30_000, 30_000, 300_000], cliMs: 600_000 },
+    { playwrightMs: [30_000, 20_000, 300_000], cliMs: 600_000 },
+    { playwrightMs: [30_000, 120_000, 300_000], cliMs: 300_000 },
+    { playwrightMs: [30_000, 120_000, 300_000], cliMs: Infinity },
+  ] as const)("rejects nonprogressive or unbounded schedules %#", (deadlines) => {
+    expect(() => renderF6PdfSync(input, { deadlines })).toThrow("Invalid F6 PDF deadline configuration.");
+  });
+
   it("prefers Chrome and deduplicates case-insensitive installed locations", () => {
     const candidates = browserCandidates({
       PROGRAMFILES: "C:\\Programs",

@@ -6,8 +6,21 @@ import { pathToFileURL } from "node:url";
 import { f6PdfImageLinks, renderF6PdfHtml } from "./f6-pdf-report.js";
 import { executeF6PdfWorker } from "./f6-pdf-worker-process.js";
 
-const ATTEMPT_TIMEOUT_MS = 60_000;
-const PLAYWRIGHT_ROUNDS = 3;
+interface F6PdfDeadlines {
+  readonly playwrightMs: readonly [number, number, number];
+  readonly cliMs: number;
+}
+
+const DEFAULT_DEADLINES: F6PdfDeadlines = { playwrightMs: [30_000, 120_000, 300_000], cliMs: 600_000 };
+
+function validatedDeadlines(value: F6PdfDeadlines): F6PdfDeadlines {
+  const values = [...value.playwrightMs, value.cliMs];
+  if (value.playwrightMs.length !== 3 || values.some((ms, index) =>
+    !Number.isSafeInteger(ms) || ms <= 0 || ms > 600_000 || (index > 0 && ms <= values[index - 1]!))) {
+    throw pdfError("pdf_render_unavailable", "Invalid F6 PDF deadline configuration.");
+  }
+  return value;
+}
 
 export interface F6PdfWorkerRequest {
   readonly browser: string;
@@ -15,7 +28,6 @@ export interface F6PdfWorkerRequest {
   readonly htmlPath: string;
   readonly pdfPath: string;
   readonly profilePath: string;
-  readonly pidPath: string;
   readonly timeoutMs: number;
 }
 
@@ -26,6 +38,7 @@ export interface F6PdfRenderAttempt {
   readonly strategy: F6PdfWorkerRequest["strategy"];
   readonly outcome: AttemptOutcome;
   readonly elapsedMs: number;
+  readonly deadlineMs: number;
 }
 
 export interface F6PdfRenderInput {
@@ -40,6 +53,7 @@ export interface F6PdfRenderDependencies {
   readonly executeFile?: (browser: string, args: readonly string[]) => void;
   readonly executeWorker?: (request: F6PdfWorkerRequest) => void;
   readonly onAttempt?: (attempt: F6PdfRenderAttempt) => void;
+  readonly deadlines?: F6PdfDeadlines;
 }
 
 export interface F6PdfRenderAttemptFailure {
@@ -47,6 +61,7 @@ export interface F6PdfRenderAttemptFailure {
   readonly strategy: F6PdfWorkerRequest["strategy"];
   readonly reason: Exclude<AttemptOutcome, "success">;
   readonly elapsedMs: number;
+  readonly deadlineMs: number;
 }
 
 function pdfError(code: "pdf_artifact_invalid" | "pdf_render_unavailable", message: string): Error & { readonly code: string } {
@@ -148,6 +163,7 @@ export function renderF6PdfSync(
   input: F6PdfRenderInput,
   dependencies: F6PdfRenderDependencies = {},
 ): Buffer {
+  const deadlines = validatedDeadlines(dependencies.deadlines ?? DEFAULT_DEADLINES);
   const sourceHash = createHash("sha256").update(input.markdown).digest("hex");
   if (sourceHash !== input.sourceHash) throw pdfError("pdf_artifact_invalid", "F6 PDF source hash does not match the Markdown content.");
   const baseHref = new URL(".", pathToFileURL(input.reportPath)).href;
@@ -159,20 +175,19 @@ export function renderF6PdfSync(
     writeFileSync(htmlPath, html, "utf8");
     const browsers = preferredBrowsers((dependencies.installedBrowsers ?? installedBrowsers)());
     const plan = [
-      ...Array.from({ length: PLAYWRIGHT_ROUNDS }, () =>
-        browsers.map((browser) => ({ browser, strategy: "playwright" as const }))).flat(),
-      ...browsers.map((browser) => ({ browser, strategy: "cli" as const })),
+      ...deadlines.playwrightMs.flatMap((timeoutMs) =>
+        browsers.map((browser) => ({ browser, strategy: "playwright" as const, timeoutMs }))),
+      ...browsers.map((browser) => ({ browser, strategy: "cli" as const, timeoutMs: deadlines.cliMs })),
     ];
     const attempts: F6PdfRenderAttemptFailure[] = [];
-    for (const [index, { browser, strategy }] of plan.entries()) {
+    for (const [index, { browser, strategy, timeoutMs }] of plan.entries()) {
       const attemptRoot = join(temporaryRoot, `attempt-${index}`);
       mkdirSync(attemptRoot);
       const request: F6PdfWorkerRequest = {
         browser, strategy, htmlPath,
         profilePath: join(attemptRoot, "profile"),
         pdfPath: join(attemptRoot, "report.pdf"),
-        pidPath: join(attemptRoot, "browser.pid"),
-        timeoutMs: ATTEMPT_TIMEOUT_MS,
+        timeoutMs,
       };
       const start = performance.now();
       let outcome: AttemptOutcome = "invalid_pdf";
@@ -194,11 +209,11 @@ export function renderF6PdfSync(
         outcome = code === "ETIMEDOUT" ? "timed_out" : code === "cleanup_failed" ? "cleanup_failed" : "execution_failed";
       }
       const event: F6PdfRenderAttempt = {
-        browser: safeBrowserName(browser), strategy, outcome, elapsedMs: Math.round(performance.now() - start),
+        browser: safeBrowserName(browser), strategy, outcome, elapsedMs: Math.round(performance.now() - start), deadlineMs: timeoutMs,
       };
       try { dependencies.onAttempt?.(event); } catch { /* Diagnostics must not interrupt recovery. */ }
       if (outcome === "success" && pdf !== undefined) return pdf;
-      attempts.push({ browser: event.browser, strategy, reason: outcome as Exclude<AttemptOutcome, "success">, elapsedMs: event.elapsedMs });
+      attempts.push({ browser: event.browser, strategy, reason: outcome as Exclude<AttemptOutcome, "success">, elapsedMs: event.elapsedMs, deadlineMs: timeoutMs });
     }
     throw Object.assign(
       pdfError("pdf_render_unavailable", "Installed Chromium browsers did not produce a valid PDF report."),

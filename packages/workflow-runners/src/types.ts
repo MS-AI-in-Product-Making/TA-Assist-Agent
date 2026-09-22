@@ -206,6 +206,7 @@ export interface F6OptimizationResult {
       readonly reason: "execution_failed" | "invalid_pdf" | "timed_out" | "cleanup_failed";
       readonly strategy?: "playwright" | "cli";
       readonly elapsedMs?: number;
+      readonly deadlineMs?: number;
     }[];
   };
   readonly outputDirectory: string;

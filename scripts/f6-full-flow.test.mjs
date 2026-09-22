@@ -787,9 +787,11 @@ describe("runF6FullValidation", () => {
       throw Object.assign(new Error("confidential worker output"), {
         code: "pdf_render_unavailable",
         attempts: [
-          { browser: "C:\\confidential\\chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 60_005, stderr: "secret" },
-          { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700 },
-          { browser: "private-report-name.exe", strategy: "private-report-path", reason: "execution_failed", elapsedMs: -1 },
+          { browser: "C:\\confidential\\chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 120_005, deadlineMs: 120_000, stderr: "secret" },
+          { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700, deadlineMs: 600_000 },
+          ...[0, -1, Infinity, NaN, 600_001, "private-report-path", 1.5].map((deadlineMs) => ({
+            browser: "private-report-name.exe", strategy: "private-report-path", reason: "execution_failed", elapsedMs: -1, deadlineMs,
+          })),
         ],
       });
     };
@@ -800,9 +802,9 @@ describe("runF6FullValidation", () => {
     expect(manifest.failureDetail).toEqual({
       code: "pdf_render_unavailable",
       attempts: [
-        { browser: "chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 60_005 },
-        { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700 },
-        { browser: "chromium", reason: "execution_failed" },
+        { browser: "chrome.exe", strategy: "playwright", reason: "timed_out", elapsedMs: 120_005, deadlineMs: 120_000 },
+        { browser: "msedge.exe", strategy: "cli", reason: "cleanup_failed", elapsedMs: 700, deadlineMs: 600_000 },
+        ...Array.from({ length: 7 }, () => ({ browser: "chromium", reason: "execution_failed" })),
       ],
     });
     expect(JSON.stringify(manifest)).not.toMatch(/confidential|private-report|secret/);
