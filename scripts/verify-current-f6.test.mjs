@@ -958,11 +958,16 @@ describe("validateExistingF6Artifact", () => {
 
   it("accepts a governed current imageObservation source on current v4 run summaries", () => {
     const { runRoot, bundle } = createVerifiedRun({ currentObservation: true });
-    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const summary = readJson(summaryPath);
 
     expect(summary.sources.imageObservation).toBeDefined();
     const result = validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot });
     expect(result).toMatchObject({ status: "accepted" });
+
+    summary.sources = Object.fromEntries(Object.entries(summary.sources).reverse());
+    writeJson(summaryPath, summary);
+    expect(validateExistingF6Artifact(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
   });
 
   it("accepts a current v3 report with a governed blocked FAIL worksheet", () => {

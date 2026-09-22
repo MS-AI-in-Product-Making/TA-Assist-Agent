@@ -8,6 +8,7 @@ import {
   realpathSync,
 } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { createF6ReportFileNames, F6_CANDIDATE_RECEIPT_FILE_NAME, f6ReadableOptimizationResultSchema, modelResponseMatchesInterpretation } from "@ai-assist/contracts";
 import { worstDisposition } from "@ai-assist/workbook-catalog";
@@ -137,7 +138,7 @@ function sameStringSet(left: readonly string[], right: readonly string[]): boole
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function inspectPhysicalPath(root: string, candidate: string): boolean {

@@ -266,6 +266,12 @@ describe("validateExistingF6", () => {
     expect(optimization.sequentialPolicyId).toBe("f6-sequential-optimization-policy-v2");
     expect(manifest.artifactSetVersion).toBe("f6-artifact-set-v4");
     expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
+
+    const summaryPath = path.join(runRoot, "Feature6-Run-Summary.json");
+    const summary = readJson(summaryPath);
+    summary.sources = Object.fromEntries(Object.entries(summary.sources).reverse());
+    writeJson(summaryPath, summary);
+    expect(validateExistingF6(runRoot, { publishRoot: bundle.publishRoot })).toMatchObject({ status: "accepted" });
   });
 
   it("uses the workspace summary's exact stage6 final set instead of inferring workspace publications by shape", () => {

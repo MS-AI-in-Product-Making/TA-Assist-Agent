@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { analysisRequestContextSchema } from "../packages/contracts/dist/analysis-request-context.js";
 import { f6ReadableOptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createF6ReportFileNames } from "../packages/contracts/dist/f6-artifact-names.js";
@@ -138,7 +139,7 @@ function sameStringSet(left, right) {
 }
 
 function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function isCurrentArtifact(manifest, optimization) {
