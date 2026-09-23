@@ -10,9 +10,10 @@ import {
   type F3AdoGovernanceGroup,
   type TypedError,
 } from "@ai-assist/contracts";
+import { formatF3WorksheetSource } from "./f3-ado-source.js";
 
-export const F3_ADO_MARKDOWN_TABLE_HEADER = "| Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |";
-const F3_ADO_MARKDOWN_TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
+export const F3_ADO_MARKDOWN_TABLE_HEADER = "| Worksheet Source | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |";
+const F3_ADO_MARKDOWN_TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
 const SUMMARY_TABLE_HEADER = "| Field | Value |";
 const SUMMARY_TABLE_SEPARATOR = "| --- | --- |";
 const GROUP_SUMMARY_TABLE_HEADER = "| Factor count | Missing Drawing Number | Missing DIM ID |";
@@ -107,7 +108,7 @@ function renderGroup(group: F3AdoMarkdownGroup): string[] {
     F3_ADO_MARKDOWN_TABLE_SEPARATOR,
   ];
   for (const row of group.rows) {
-    lines.push(`| ${markdownCell(row.source.worksheetName)} | ${markdownCell(row.deviceLevelDim)} | ${markdownCell(row.dimensionDescription)} | ${markdownCell(partSubsystemLabel(row.partSubsystem))} | ${markdownCell(row.drawingNumber)} | ${markdownCell(row.dimId)} | ${markdownCell(row.factorDescription)} | ${markdownCell(row.nominal)} | ${markdownCell(row.upperTolerance)} | ${markdownCell(row.lowerTolerance)} | ${markdownCell(row.sigmaLevel)} | ${markdownCell(governanceIssue(row))} |`);
+    lines.push(`| ${markdownCell(formatF3WorksheetSource(row.source))} | ${markdownCell(row.dimensionDescription)} | ${markdownCell(partSubsystemLabel(row.partSubsystem))} | ${markdownCell(row.drawingNumber)} | ${markdownCell(row.dimId)} | ${markdownCell(row.factorDescription)} | ${markdownCell(row.nominal)} | ${markdownCell(row.upperTolerance)} | ${markdownCell(row.lowerTolerance)} | ${markdownCell(row.sigmaLevel)} | ${markdownCell(governanceIssue(row))} |`);
   }
   lines.push("");
   return lines;

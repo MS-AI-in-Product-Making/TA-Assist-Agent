@@ -140,7 +140,8 @@ describe("renderF3AdoMarkdown", () => {
     expect(rendered.markdown).not.toContain("Worksheet:");
     expect(rendered.markdown).toContain(F3_ADO_MARKDOWN_TABLE_HEADER);
     expect(F3_ADO_MARKDOWN_TABLE_HEADER).toMatch(/^\| Worksheet Source \|/);
-    expect(markdownColumnCount(F3_ADO_MARKDOWN_TABLE_HEADER)).toBe(12);
+    expect(F3_ADO_MARKDOWN_TABLE_HEADER).not.toContain("Device Level Dim");
+    expect(markdownColumnCount(F3_ADO_MARKDOWN_TABLE_HEADER)).toBe(11);
 
     expect(rendered.groups.map((group) => group.partSubsystem)).toEqual([
       "Bracket",
@@ -150,9 +151,9 @@ describe("renderF3AdoMarkdown", () => {
     expect(rendered.groups.map((group) => group.factorCount)).toEqual([3, 1, 1]);
     expect(rendered.groups[0]?.rows.map((row) => row.factorDescription)).toEqual(["Factor-A1", "Factor-A3", "Factor-B1"]);
     expect(rendered.groups[0]?.rows.map((row) => row.source.worksheetName)).toEqual(["Analysis-A", "Analysis-A", "Analysis-B"]);
-    expect(rendered.markdown).toMatch(/\| Analysis-B \| TP_Gap_X \|[^\n]+\| Factor-B1 \|/);
-    expect(markdownColumnCount(rendered.markdown.split("\n").find((line) => line.includes("Factor-B1"))!)).toBe(12);
-    expect(rendered.contentHash).toBe("ce90cc8288039cf3b716b848a3a7c1b976897c42cf68c4612bc1feb4d7371618");
+    expect(rendered.markdown).toMatch(/\| Analysis-B \(Row 21\) \|[^\n]+\| Factor-B1 \|/);
+    expect(markdownColumnCount(rendered.markdown.split("\n").find((line) => line.includes("Factor-B1"))!)).toBe(11);
+    expect(rendered.contentHash).toBe("e727fb7fb84c7b624f5648ebd056277601733dcfff9e987a5cf197be664070b0");
     expect(rendered.groups[2]).toMatchObject({ missingDrawingNumberCount: 0, missingDimIdCount: 0 });
 
     const bracketIndex = rendered.markdown.indexOf("Factor-A1");

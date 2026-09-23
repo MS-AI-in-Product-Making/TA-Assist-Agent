@@ -155,7 +155,7 @@ describe("renderF3AdoReminder", () => {
     }
   });
 
-  it("renders deterministic English reminder with exact 12-column table header and all records", () => {
+  it("renders deterministic English reminder with exact 11-column table header and all records", () => {
     const rows = [
       baseRow({ qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" }),
       baseRow({ factorInstanceId: "d".repeat(64), drawingDimensionKey: undefined, drawingNumber: null, dimId: null, qualitySignals: ["dim_id_missing"], governanceStatus: "needs_governance" }),
@@ -165,13 +165,13 @@ describe("renderF3AdoReminder", () => {
     const markdown = renderF3AdoReminder(acceptedReport(rows));
 
     expect(markdown).toContain("## F3 DIM ID / Drawing Governance Reminder");
-    expect(ADO_TABLE_HEADER).toBe("| Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |");
+    expect(ADO_TABLE_HEADER).toBe("| Worksheet Source | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |");
     expect(markdown).toContain(ADO_TABLE_HEADER);
     expect(markdown).not.toContain("Source Location");
 
     const rowLines = markdown
       .split("\n")
-      .filter((line) => line.startsWith("| TP_Gap_X | TP_Gap_X |"));
+      .filter((line) => line.startsWith("| TP_Gap_X (Row 14) |"));
     expect(rowLines).toHaveLength(3);
 
     expect(markdown).toContain("Workbook: Anonymous.xlsx");
@@ -233,7 +233,7 @@ describe("renderF3AdoReminder", () => {
 });
 
 describe("renderF3AdoHistoryHtml", () => {
-  it("renders one 12-column header with global Part / Subsystem groups and marked factor rows", () => {
+  it("renders one 11-column header with global Part / Subsystem groups and marked factor rows", () => {
     const report = acceptedReportWithWorksheets([
       {
         worksheetName: "Analysis-A",
@@ -257,16 +257,17 @@ describe("renderF3AdoHistoryHtml", () => {
     const html = renderF3AdoHistoryHtml(report);
 
     expect(html.match(/<thead>/g)).toHaveLength(1);
-    expect(html.match(/<th>/g)).toHaveLength(12);
-    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Device Level Dim</th>");
+    expect(html.match(/<th>/g)).toHaveLength(11);
+    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Dimension Description</th>");
+    expect(html).not.toContain("<th>Device Level Dim</th>");
     expect(html).not.toContain("Worksheet:");
-    expect(html).toContain("<tr data-f3-group-row=true><td colspan=12>Part / Subsystem: Bracket (3 factors)</td></tr>");
-    expect(html).toContain("<tr data-f3-group-row=true><td colspan=12>Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
-    expect(html).toContain("<td>Analysis-B</td><td>TP_Gap_X</td>");
+    expect(html).toContain("<tr data-f3-group-row=true><td colspan=11>Part / Subsystem: Bracket (3 factors)</td></tr>");
+    expect(html).toContain("<tr data-f3-group-row=true><td colspan=11>Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
+    expect(html).toContain("<td>Analysis-B (Row 21)</td>");
 
     const factorRowMatches = html.match(/<tr data-f3-factor-row=true>/g) ?? [];
     expect(factorRowMatches).toHaveLength(report.summary.factorCount);
-    expect(html).not.toMatch(/(?:data-f3-(?:factor|group)-row|colspan)="(?:true|12)"/);
+    expect(html).not.toMatch(/(?:data-f3-(?:factor|group)-row|colspan)="(?:true|11)"/);
 
     const bracketIndex = html.indexOf("Part / Subsystem: Bracket (3 factors)");
     const panelIndex = html.indexOf("Part / Subsystem: Panel (1 factors)");
@@ -275,7 +276,7 @@ describe("renderF3AdoHistoryHtml", () => {
     expect(panelIndex).toBeLessThan(missingIndex);
   });
 
-  it("renders a deterministic 12-column HTML table with every record", () => {
+  it("renders a deterministic 11-column HTML table with every record", () => {
     const rows = [
       baseRow({ factorDescription: "A&B <critical> \"quoted\" 'single'\nnext", qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" }),
       baseRow({ factorInstanceId: "d".repeat(64), drawingDimensionKey: undefined, drawingNumber: null, dimId: null, qualitySignals: ["dim_id_missing"], governanceStatus: "needs_governance" }),
@@ -286,8 +287,9 @@ describe("renderF3AdoHistoryHtml", () => {
 
     expect(html).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
     expect(html).toContain("<table>");
-    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Device Level Dim</th>");
-    expect(html.match(/<th>/g)).toHaveLength(12);
+    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Dimension Description</th>");
+    expect(html).not.toContain("<th>Device Level Dim</th>");
+    expect(html.match(/<th>/g)).toHaveLength(11);
     expect(html.match(/<tr data-f3-factor-row=true>/g)).toHaveLength(3);
     expect(html).toContain("<td>A&amp;B &lt;critical&gt; &quot;quoted&quot; &#39;single&#39;<br>next</td>");
     expect(html).not.toContain("A&B <critical>");

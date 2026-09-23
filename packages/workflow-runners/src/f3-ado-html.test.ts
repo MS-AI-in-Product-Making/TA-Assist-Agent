@@ -4,16 +4,17 @@ import type { DrawingGovernanceResultV2 } from "@ai-assist/contracts";
 import { F3_ADO_HTML_TABLE_HEADERS, renderF3AdoHistoryHtml } from "./f3-ado-html.js";
 
 describe("renderF3AdoHistoryHtml", () => {
-  it("renders Worksheet Source first in a canonical 12-column table", () => {
+  it("renders worksheet row provenance first in a canonical 11-column table", () => {
     const html = renderF3AdoHistoryHtml(report());
 
-    expect(F3_ADO_HTML_TABLE_HEADERS).toHaveLength(12);
+    expect(F3_ADO_HTML_TABLE_HEADERS).toHaveLength(11);
     expect(F3_ADO_HTML_TABLE_HEADERS[0]).toBe("Worksheet Source");
-    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Device Level Dim</th>");
-    expect(html).toContain("<tr data-f3-group-row=true><td colspan=12>Part / Subsystem: Bracket (1 factors)</td></tr>");
-    expect(html).toContain("<td>Analysis&lt;A&amp;</td><td>Gap</td>");
+    expect(html).toContain("<thead><tr><th>Worksheet Source</th><th>Dimension Description</th>");
+    expect(html).not.toContain("<th>Device Level Dim</th>");
+    expect(html).toContain("<tr data-f3-group-row=true><td colspan=11>Part / Subsystem: Bracket (1 factors)</td></tr>");
+    expect(html).toContain("<td>Analysis&lt;A&amp; (Row 12)</td><td>Display gap</td>");
     const factorRow = html.match(/<tr data-f3-factor-row=true>(.*?)<\/tr>/)?.[1];
-    expect(factorRow?.match(/<td>/g)).toHaveLength(12);
+    expect(factorRow?.match(/<td>/g)).toHaveLength(11);
   });
 });
 
