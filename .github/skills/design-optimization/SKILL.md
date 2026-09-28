@@ -11,6 +11,10 @@ Determine the interaction language from the user request that starts the current
 
 The interaction language lock governs conversation only. Regardless of the interaction language, the final Markdown and PDF engineering reports are always English. All model interpretation prose consumed by those reports must also be English. Preserve the locked interaction language in governed metadata and continue using it for user-facing workflow communication; never use it to localize report content.
 
+## Worksheet choice interaction
+
+For every worksheet-scope confirmation, use `vscode_askQuestions` with `multiSelect: true`. Build `choices` with one `choices` entry per validated worksheet name, preserving the validated order and exact names. Do not offer a custom answer or ask the user to type comma-separated worksheet names. Path prompts remain text input because their values are not enumerable.
+
 ## Purpose
 
 Run or present the complete governed TA optimization flow as a single product capability. In workbook mode, this skill owns the end-to-end orchestration and all confirmations. In existing-artifact mode, this skill validates and presents the governed optimization output without rerunning upstream work.

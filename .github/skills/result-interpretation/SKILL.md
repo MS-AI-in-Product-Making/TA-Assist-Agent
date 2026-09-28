@@ -11,6 +11,10 @@ Determine the interaction language from the user request that starts the current
 
 Use product capability names only in user-facing questions, progress updates, operation descriptions, and result narratives.
 
+## Worksheet choice interaction
+
+For every worksheet-scope confirmation, use `vscode_askQuestions` with `multiSelect: true`. Build `choices` with one `choices` entry per validated worksheet name, preserving the validated order and exact names. Do not offer a custom answer or ask the user to type comma-separated worksheet names. Path prompts remain text input because their values are not enumerable.
+
 ## Purpose
 
 Produce or present a controlled Result Interpretation while preserving artifact identity, worksheet scope, deterministic calculation evidence, and confidentiality. This capability consumes validated Data Parsing, Drawing Governance, and TA Calculation evidence; it does not invent missing evidence or perform Design Optimization work.

@@ -17,6 +17,10 @@ For user-facing questions, progress, actions, and results:
 - Use product capability names.
 - Keep internal command keys, artifact base names, status/reason codes, and tool names unchanged.
 
+## Worksheet choice interaction
+
+For every worksheet-scope confirmation, use `vscode_askQuestions` with `multiSelect: true`. Build `choices` with one `choices` entry per validated worksheet name, preserving the validated order and exact names. Do not offer a custom answer or ask the user to type comma-separated worksheet names. Path prompts remain text input because their values are not enumerable.
+
 Reference: [ADO publishing protocol](./references/ado-publishing.md)
 
 ## Internal executor contract

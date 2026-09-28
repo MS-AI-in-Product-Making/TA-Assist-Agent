@@ -111,6 +111,22 @@ describe("product Agent Skills", () => {
     expect(cleaningSkill).toContain("Keep cleaning reports, cleaning-stage logs, and cleaning validation artifacts in `02 - F2 Data Cleaning`");
   });
 
+  it.each([
+    "ta-assist-agent",
+    "data-parsing",
+    "drawing-governance",
+    "result-interpretation",
+    "design-optimization",
+  ])("renders validated worksheet scopes as checkbox choices in %s", (name) => {
+    const skill = readFileSync(join(root, ".github", "skills", name, "SKILL.md"), "utf8");
+
+    expect(skill).toContain("`vscode_askQuestions`");
+    expect(skill).toContain("`multiSelect: true`");
+    expect(skill).toContain("one `choices` entry per validated worksheet name");
+    expect(skill).toContain("Do not offer a custom answer");
+    expect(skill).toContain("comma-separated worksheet names");
+  });
+
   it("routes governance and calculation skills through the canonical F3 and F4 stage folders", () => {
     const governanceSkill = readFileSync(join(root, ".github", "skills", "drawing-governance", "SKILL.md"), "utf8");
     const calculationSkill = readFileSync(join(root, ".github", "skills", "ta-calculation", "SKILL.md"), "utf8");

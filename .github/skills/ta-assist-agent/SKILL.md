@@ -25,6 +25,10 @@ The interaction language lock governs conversation only. Regardless of the inter
 - If no path is supplied, ask for exactly one workbook path.
 - Never infer a workbook from editor state, prior runs, uploads, or similarly named files.
 
+## Worksheet choice interaction
+
+For every worksheet-scope confirmation, use `vscode_askQuestions` with `multiSelect: true`. Build `choices` with one `choices` entry per validated worksheet name, preserving the validated order and exact names. Do not offer a custom answer or ask the user to type comma-separated worksheet names. Path prompts remain text input because their values are not enumerable.
+
 ## Analysis Request Context
 
 Capture the analysis request context once when the workflow-start request is received. Record `requestedAt` as that request instant with an explicit offset, record `utcOffsetMinutes` from the VS Code host, and record source: `vscode`. Do not prompt the user for analysis request context. Preserve the same analysis request context for the entire workbook run and pass it to Design Optimization without reconstructing or refreshing it at a later phase.
