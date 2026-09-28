@@ -989,6 +989,25 @@ describe("renderF6PdfSync", () => {
     expect(html).not.toContain("Insufficient numeric evidence");
   });
 
+  it("renders floating-point mean-center noise as zero", () => {
+    const markdown = [
+      "# 3-1 Worksheet: Analysis-A",
+      "",
+      "## Adjusted Mean to Spec Center Shift",
+      "",
+      "- LSL: -0.150 mm <!-- f6-raw=-0.15 -->",
+      "- USL: 0.0500 mm <!-- f6-raw=0.05 -->",
+      "- Spec Center: -0.0500 mm <!-- f6-raw=-0.049999999999999996 -->",
+      "- Adjusted Mean: -0.0500 mm <!-- f6-raw=-0.0499999999999996 -->",
+      "- Offset: 0.000 mm <!-- f6-raw=3.95516952522712e-16 -->",
+    ].join("\n");
+
+    const html = renderF6PdfHtml({ markdown, sourceHash: createHash("sha256").update(markdown).digest("hex") });
+
+    expect(html).toContain("Offset 0.00&nbsp;mm");
+    expect(html).not.toContain("10^-16");
+  });
+
   it("uses compact Factor rows after seven entries and normalizes unavailable guidance", () => {
     const rows = Array.from({ length: 8 }, (_value, index) => (
       `| ${index + 1} | Factor description ${index + 1} | Part | CNC | DWG-${index + 1} | DIM-${index + 1} | 0 mm | 0.1 mm | -0.1 mm | 1 | 4 | 0 mm | 0.1 mm | 0.020 mm | ${index === 0 ? "Capability: f0_information_insufficient; Knowledge: guidance_unknown" : "Capability: non_f0_process_category"} |`

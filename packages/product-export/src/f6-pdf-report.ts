@@ -45,6 +45,11 @@ function threeSignificantFigures(value: number): string {
   return `${coefficient} × 10^${Number(exponent)}`;
 }
 
+function normalizeFloatingPointNoise(value: number, ...operands: readonly number[]): number {
+  const scale = Math.max(1, ...operands.map((operand) => Math.abs(operand)));
+  return Math.abs(value) <= Number.EPSILON * scale * 4 ? 0 : value;
+}
+
 function formatReportText(value: string): string {
   return value
     .replace(/(-?\d+(?:\.\d+)?)\s*%/gu, (_match, rawValue: string) => `${threeSignificantFigures(Number(rawValue))}&nbsp;%`)
@@ -210,10 +215,15 @@ function meanOffsetGraph(items: readonly string[]): string {
     || Math.abs(specCenter - (lowerSpec + upperSpec) / 2) > 1e-9) {
     return unavailableGraph("mean-offset-graph", "Mean-center alignment");
   }
-  const offset = adjustedMeanValue - specCenter;
+  const offset = normalizeFloatingPointNoise(
+    adjustedMeanValue - specCenter,
+    adjustedMeanValue,
+    specCenter,
+  );
+  const graphMean = offset === 0 ? specCenter : adjustedMeanValue;
   const unit = /\s+([^\s]+)$/u.exec(adjustedMean)?.[1];
   const offsetText = `${threeSignificantFigures(offset)}${unit === undefined ? "" : ` ${unit}`}`;
-  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}" data-spec-center="${specCenter.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--spec-center" style="left:50%"><span>Spec center</span></i><b class="mean-marker mean-marker--adjusted" style="left:${graphPosition(adjustedMeanValue, lowerSpec, upperSpec)}%"><span>Adjusted mean</span></b></div><p><span class="mean-value mean-value--spec-center">Spec center ${escapeHtml(specCenterText)}</span> · <span class="mean-value mean-value--adjusted">Adjusted mean ${escapeHtml(adjustedMean)}</span> · Offset ${escapeHtml(offsetText)}</p></figure>`;
+  return `<figure class="mean-offset-graph" data-offset="${offset.toFixed(3)}" data-spec-center="${specCenter.toFixed(3)}"><figcaption>Mean-center alignment</figcaption><div class="offset-track"><i class="mean-marker mean-marker--spec-center" style="left:50%"><span>Spec center</span></i><b class="mean-marker mean-marker--adjusted" style="left:${graphPosition(graphMean, lowerSpec, upperSpec)}%"><span>Adjusted mean</span></b></div><p><span class="mean-value mean-value--spec-center">Spec center ${escapeHtml(specCenterText)}</span> · <span class="mean-value mean-value--adjusted">Adjusted mean ${escapeHtml(adjustedMean)}</span> · Offset ${escapeHtml(offsetText)}</p></figure>`;
 }
 
 function specificationChangeGraph(rows: readonly Tokens.TableCell[][]): string {
